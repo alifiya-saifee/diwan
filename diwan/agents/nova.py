@@ -167,6 +167,28 @@ def evidence_from(g: Graph, ids: list[str]) -> list[Evidence]:
 SESSIONS: dict[str, str] = {}
 
 
+def converse(office: Office, text: str, person: str = "layla", *, session: str = "default", now: datetime | None = None,
+             tape_root=None) -> dict:
+    """One turn of talking to Nova: finish a read-back, take a request for someone, answer a question, or route work."""
+    from diwan.agents import lobby
+    now = now or datetime.now(DUBAI)
+    person = pid(person) or "layla"
+    t = text.strip()
+    if out := lobby.follow_up(office, t, person, session, now):
+        return out
+    if m := re.match(r"(?i)^(?:brief me|set (?:my )?briefing)(?: at| for| to)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", t):
+        h = int(m.group(1)) + (12 if m.group(3) == "pm" and int(m.group(1)) < 12 else 0)
+        at = f"{h:02d}:{m.group(2) or '00'}"
+        set_briefing_time(office, person, at)
+        return {"kind": "done", "text": f"Done. I'll do my rounds before {at} and have your briefing ready then."}
+    if re.match(r"(?i)^(brief( me)?|play( the)? briefing|what('s| is) (new|happening))\b", t):
+        return brief(office, person, log=False, now=now) | {"kind": "brief"}
+    if out := lobby.draft(t, person, session, now):
+        return out
+    q = t.endswith("?") or re.match(r"(?i)(who|what|when|where|why|how|is|are|does|did|can|which|show|find|any)\b", t)
+    return ask(office, t, person, session=session, tape_root=tape_root, today=now.date()) if q else route(office, t, person, tape_root=tape_root)
+
+
 def ask(office: Office, question: str, person: str = "layla", *, session: str | None = None, tape_root=None, today=None) -> dict:
     g, req, person = office.graph(), _req(office, "ask"), pid(person) or "layla"
     c = get(NOVA)
@@ -295,16 +317,87 @@ HANDLERS = {"formf": formf_plan}
 
 # ---------- brief ----------
 
-def brief(office: Office, person: str, *, since: int = 0, log: bool = True) -> dict:
-    """What needs this person, what changed since `since`, and what the agents are handling. Every line cites records."""
+def greeting(now: datetime) -> str:
+    h = now.astimezone(DUBAI).hour
+    return "Good morning" if h < 12 else "Good afternoon" if h < 17 else "Good evening"
+
+
+def lead_report(office: Office, g: Graph, lead_id: str, day_start: str) -> Pack:
+    """One department's update for Nova's rounds, built only from its records."""
+    from diwan.agents.charters import children
+    lead = get(lead_id)
+    team = {lead_id} | {c.id for c in children(lead_id)}
+    open_tasks = [t for t in g.of("task", status=OPEN) if t.props["agent"] in team and not t.props.get("needs_person")]
+    waiting = [t for t in g.of("task", status=OPEN) if t.props["agent"] in team and t.props.get("needs_person")]
+    cards = [n for typ in ("check", "decision", "request", "question") for n in g.of(typ, status="open") if n.props.get("agent") in team]
+    done_today = [e for e in office.log.list() if e["type"] == "task.done" and e["agent"] in team and e["at"] >= day_start]
+    board = [c for c in g.of("lobby", status={"open", "seen", "late"}) if c.props["team"] == lead_id]
+    parts, refs = [], []
+    if done_today:
+        parts.append(f"{len(done_today)} done today")
+    if open_tasks:
+        parts.append(f"{len(open_tasks)} task{'s' if len(open_tasks) != 1 else ''} in hand")
+        refs += [t.id for t in open_tasks]
+    by_person: dict[str, list] = {}
+    for c in cards:
+        by_person.setdefault(name(c.props.get("who")), []).append(c)
+    for who, cs in by_person.items():
+        what = cs[0].props.get("title") or {"decision": "a decision", "question": "a question", "request": cs[0].props.get("summary", "a sign-off")}.get(cs[0].type, "an item")
+        parts.append(f"{who} to review: {what.lower()}" if len(cs) == 1 else f"{who} has {len(cs)} items to review")
+        refs += [c.id for c in cs]
+    for c in board:
+        parts.append(f"{c.id} for {name(c.props['to'])}, due {lobby_due(c)}{' (LATE)' if c.status == 'late' else ''}")
+        refs.append(c.id)
+    if waiting and not board:
+        parts.append(f"{len(waiting)} waiting on people")
+        refs += [t.id for t in waiting]
+    verdict = f"{lead.name.replace(' lead', '')}: " + ("; ".join(parts) if parts else "all quiet") + "."
+    return Pack(f"rounds", lead_id, verdict, next=refs)
+
+
+def lobby_due(c) -> str:
+    return datetime.fromisoformat(c.props["due"]).strftime("%I:%M %p %a").lstrip("0") if c.props.get("due") else "no deadline"
+
+
+LEADS = ["sales", "ops", "fin", "comp", "review", "records"]
+
+
+def rounds(office: Office, now: datetime | None = None) -> dict:
+    """Nova goes to every department lead and collects its update, so the briefing is ready before anyone asks."""
+    now = now or datetime.now(DUBAI)
+    day_start = now.astimezone(DUBAI).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat()
+    start = office.log.append("rounds.started", actor=NOVA, agent=NOVA, content={"leads": LEADS})
+    g = office.graph()
+    reports = {}
+    for lid in LEADS:
+        pack = lead_report(office, g, lid, day_start)
+        runner.submit(office.log, get(lid), pack, sources={}, caused_by=start["id"])
+        reports[lid] = pack.verdict
+    office.log.append("briefing.ready", actor=NOVA, agent=NOVA, caused_by=start["id"], content={"reports": reports})
+    return reports
+
+
+def brief(office: Office, person: str, *, since: int = 0, log: bool = True, now: datetime | None = None) -> dict:
+    """Hello, then what needs this person, then each department's update from Nova's rounds. Every line cites records."""
     g, person = office.graph(), pid(person) or person
+    now = now or datetime.now(DUBAI)
     lines: list[dict] = []
     for typ in ("check", "decision", "request", "question"):
         for n in g.of(typ, status="open"):
             if n.props.get("who") == person:
                 lines.append({"text": n.props["text"], "refs": [n.id] + list(n.props.get("refs", [])), "needs": True})
+    for c in g.of("lobby", status={"open", "seen", "late"}):
+        if c.props.get("to") == person:
+            lines.append({"text": f"{name(c.props['by'])} asked for \"{c.props['text']}\", due {lobby_due(c)}{' and it is late' if c.status == 'late' else ''}.",
+                          "refs": [c.id], "needs": True})
+        elif c.props.get("by") == person and c.status == "late":
+            lines.append({"text": f"{name(c.props['to'])} is late with \"{c.props['text']}\" (was due {lobby_due(c)}).", "refs": [c.id], "needs": True})
+    for c in g.of("lobby", status="done"):
+        if c.props.get("by") == person and c.event > since:
+            lines.append({"text": f"{name(c.props['to'])} finished \"{c.props['text']}\".", "refs": [c.id], "needs": False})
     for t in g.of("task", status=OPEN):
-        if t.props.get("needs_person") == person:
+        if t.props.get("needs_person") == person and not any(r for ln in lines for r in ln["refs"] if g.nodes.get(r) and g.nodes[r].type == "lobby"
+                                                              and g.nodes[r].props.get("task") == t.id):
             lines.append({"text": t.props["action"], "refs": [t.id], "needs": True})
     mine = [d.deal for d in g.deals() if person in ("layla", "priya", "ahmed", "joseph") or d.props.get("broker") == person]
     for f in g.of("fact", status="superseded"):
@@ -313,27 +406,50 @@ def brief(office: Office, person: str, *, since: int = 0, log: bool = True) -> d
             if not any({f.id, new.id} <= set(ln["refs"]) for ln in lines):
                 lines.append({"text": f'{name(new.props["speaker"])} took back "{f.props["quote"]}" and said "{new.props["quote"]}".',
                               "refs": [f.id, new.id], "needs": False})
+    departments = []
+    if g.rounds:
+        scope = LEADS if person == "layla" else [PEOPLE_TEAM.get(person)] if PEOPLE_TEAM.get(person) else []
+        for lid in scope:
+            if p := g.rounds["reports"].get(lid):
+                departments.append({"text": p["verdict"], "refs": [r for r in p.get("next", []) if r in g.nodes], "lead": lid})
     working = [t for t in g.of("task", status=OPEN) if not t.props.get("needs_person") and t.deal in mine]
     needs = [ln for ln in lines if ln["needs"]]
-    head = f"Good morning, {name(person)}. " + (f"{len(needs)} thing{'s' if len(needs) != 1 else ''} need{'' if len(needs) != 1 else 's'} you."
-                                               if needs else "Nothing needs you.")
+    head = f"{greeting(now)}, {name(person)}. " + (f"{len(needs)} thing{'s' if len(needs) != 1 else ''} need{'' if len(needs) != 1 else 's'} you."
+                                                  if needs else "Nothing needs you.")
     tail = f" The agents are handling {len(working)} task{'s' if len(working) != 1 else ''}." if working else ""
-    text = " ".join([head] + [ln["text"] for ln in needs] + [ln["text"] for ln in lines if not ln["needs"]]) + tail
+    dept = (" Here is the round of the departments. " + " ".join(d["text"] for d in departments)) if departments else ""
+    text = " ".join([head] + [ln["text"] for ln in needs] + [ln["text"] for ln in lines if not ln["needs"]]) + tail + dept
     if log:
         refs = list(dict.fromkeys(r for ln in lines for r in ln["refs"] if r in g.nodes))
         pack = Pack(_req(office, "brief"), NOVA, head, evidence=evidence_from(g, refs), next=[ln["text"] for ln in lines])
         runner.submit(office.log, get(NOVA), pack, sources={r: g.record(r) for r in refs})
-    return {"person": person, "text": text, "lines": lines, "working": [t.id for t in working]}
+    return {"person": person, "text": text, "lines": lines, "departments": departments, "working": [t.id for t in working],
+            "rounds_at": g.rounds["at"] if g.rounds else None}
 
 
+PEOPLE_TEAM = {"priya": "comp", "ahmed": "fin", "joseph": "ops", "omar": "sales"}
 DUBAI = timezone(timedelta(hours=4))
+DEFAULT_TIME = "09:00"
 
 
-def briefing_due(now: datetime, last_day: str | None) -> bool:
-    """07:00 Dubai, once a day."""
+def briefing_time(g: Graph, person: str) -> str:
+    return g.settings.get(person, {}).get("briefing_time", DEFAULT_TIME)
+
+
+def briefing_due(now: datetime, last_day: str | None, at: str = "07:00", lead_minutes: int = 0) -> bool:
+    """Once a day, `lead_minutes` before the time `at` (Dubai)."""
     local = now.astimezone(DUBAI)
-    return local.hour >= 7 and local.date().isoformat() != last_day
+    hh, mm = map(int, at.split(":"))
+    target = local.replace(hour=hh, minute=mm, second=0, microsecond=0) - timedelta(minutes=lead_minutes)
+    return local >= target and local.date().isoformat() != last_day
 
 
-def morning(office: Office) -> list[dict]:
-    return [brief(office, p) for p in PEOPLE]
+def set_briefing_time(office: Office, person: str, at: str) -> None:
+    if not re.fullmatch(r"([01]?\d|2[0-3]):[0-5]\d", at):
+        raise ValueError("Use a time like 09:00")
+    office.log.append("setting.changed", actor=person, content={"person": person, "key": "briefing_time", "value": at.zfill(5)})
+
+
+def morning(office: Office, now: datetime | None = None) -> list[dict]:
+    rounds(office, now)
+    return [brief(office, p, now=now) for p in PEOPLE]

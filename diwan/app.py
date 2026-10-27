@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import re
 from datetime import datetime
 from pathlib import Path
 
@@ -48,17 +47,22 @@ S.office = fresh()
 
 
 async def morning_loop():
+    """Every minute: chase the Lobby board, and do Nova's rounds 30 minutes before the earliest briefing time."""
+    from diwan.agents import lobby
     while True:
         now = datetime.now(slots.DUBAI)
-        if nova.briefing_due(now, S.last_brief):
-            nova.morning(S.office)
+        gr = S.office.graph()
+        first = min(nova.briefing_time(gr, p) for p in PEOPLE)
+        if nova.briefing_due(now, S.last_brief, first, lead_minutes=30):
+            nova.rounds(S.office, now)
             S.last_brief = now.date().isoformat()
+        lobby.chase(S.office, now)
         await asyncio.sleep(60)
 
 
 @contextlib.asynccontextmanager
 async def lifespan(_):
-    S.last_brief = datetime.now(slots.DUBAI).date().isoformat()  # the first briefing is tomorrow 07:00, or on demand
+    S.last_brief = None
     task = asyncio.create_task(morning_loop())
     yield
     task.cancel()
@@ -161,12 +165,55 @@ def route(body: Ask):
 
 @app.post("/api/nova/say")
 def say(body: Ask):
-    """One box for people: a question goes to ask, anything else is an instruction."""
-    t = body.text.strip()
-    if t.lower().startswith("brief"):
-        return nova.brief(S.office, (t.split()[1:] or [body.person])[0], log=False)
-    q = t.endswith("?") or re.match(r"(?i)(who|what|when|where|why|how|is|are|does|did|can|which)\b", t)
-    return nova.ask(S.office, t, body.person, session=body.session) if q else nova.route(S.office, t, body.person)
+    """One box for talking to Nova: questions, instructions, requests for people, read-backs, settings."""
+    return nova.converse(S.office, body.text, body.person, session=body.session or body.person)
+
+
+@app.post("/api/nova/rounds")
+def do_rounds():
+    return nova.rounds(S.office)
+
+
+class SettingIn(BaseModel):
+    briefing_time: str
+
+
+@app.get("/api/settings/{person}")
+def get_settings(person: str):
+    return {"briefing_time": nova.briefing_time(g(), person)}
+
+
+@app.post("/api/settings/{person}")
+def put_settings(person: str, body: SettingIn):
+    try:
+        nova.set_briefing_time(S.office, person, body.briefing_time)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"briefing_time": body.briefing_time}
+
+
+@app.get("/api/lobby")
+def lobby_board():
+    from diwan.agents import lobby
+    return lobby.board(g())
+
+
+class DoneIn(BaseModel):
+    by: str
+    note: str = ""
+
+
+@app.post("/api/lobby/{lid}/done")
+def lobby_done(lid: str, body: DoneIn):
+    from diwan.agents import lobby
+    return lobby.done(S.office, lid, by=body.by, note=body.note)
+
+
+@app.post("/api/lobby/{lid}/seen")
+def lobby_seen(lid: str, body: DoneIn):
+    from diwan.agents import lobby
+    lobby.seen(S.office, lid, by=body.by)
+    return {"ok": True}
 
 
 @app.get("/api/nova/brief/{person}")

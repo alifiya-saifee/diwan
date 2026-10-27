@@ -21,6 +21,9 @@ TYPES = {
     "draft.made", "question.asked", "question.answered", "decision.made",
     # what the office knows, and the front door
     "knowledge.added", "knowledge.confirmed", "listing.added", "document.filed", "sale.closed",
+    # the front desk: settings, Nova's rounds, the Lobby board
+    "setting.changed", "rounds.started", "briefing.ready",
+    "lobby.posted", "lobby.seen", "lobby.reminded", "lobby.late", "lobby.done", "lobby.cancelled",
     "chat.received", "chat.sent", "chat.suggested", "chat.handover", "appointment.booked", "appointment.cancelled",
 }
 

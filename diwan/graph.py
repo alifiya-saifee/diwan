@@ -45,6 +45,8 @@ class Graph:
         self.nodes: dict[str, Node] = {}
         self.edges: list[Edge] = []
         self.last_event = 0
+        self.settings: dict[str, dict] = {}
+        self.rounds: dict | None = None  # the latest round: {"event", "at", "reports": {lead: pack}}
 
     # building
     def add(self, nid: str, type: str, label: str, e: dict, **kw) -> Node:
@@ -137,6 +139,9 @@ class Graph:
         if n.type == "listing":
             return (f"{p['ref']} · {p['title']}, {p['community']} · {p['beds']} bed {p['type']} · AED {p['price_aed']:,} · "
                     f"permit {p.get('permit') or 'MISSING'} · {n.status}")
+        if n.type == "lobby":
+            due = datetime.fromisoformat(p["due"]).strftime("%a %I:%M %p").replace(" 0", " ") if p.get("due") else "no deadline"
+            return f"{n.id} · for {name(p.get('to') or p['team'])}: {p['text']} · due {due} · asked by {name(p['by'])} · {n.status}"
         if n.type == "document":
             amt = f" · AED {p['amount_aed']:,}" if p.get("amount_aed") else ""
             return f"{n.id} · {p['kind']}: {p['title']} · {p['date']}{amt}{' · ' + p['party'] if p.get('party') else ''}"
@@ -253,6 +258,29 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                 ch.props["messages"].append({"event": e["id"], "at": e["at"], "type": t.split(".")[1], "by": e["actor"],
                                              "text": c["text"], "refs": c.get("refs", [])})
                 ch.props["last_at"] = e["at"]
+        elif t == "setting.changed":
+            g.settings.setdefault(c["person"], {})[c["key"]] = c["value"]
+        elif t == "rounds.started":
+            g.rounds = {"event": e["id"], "at": e["at"], "reports": {}}
+        elif t == "agent.pack" and g.rounds and e.get("caused_by") == g.rounds["event"]:
+            g.rounds["reports"][e["agent"]] = c["pack"]
+        elif t == "lobby.posted":
+            n = g.add(c["id"], "lobby", c["text"], e, deal=deal, status="open", props=dict(c))
+            if c.get("task"):
+                g.link(n.id, "tracks", c["task"], e)
+        elif t in ("lobby.seen", "lobby.reminded", "lobby.late", "lobby.done", "lobby.cancelled") and c.get("id") in g.nodes:
+            n = g.nodes[c["id"]]
+            step = t.split(".")[1]
+            n.props.setdefault("history", []).append({"step": step, "at": e["at"], "by": e["actor"], "note": c.get("note")})
+            if step in ("done", "cancelled"):
+                n.status = step
+                n.props["closed_at"] = e["at"]
+            elif step == "late" and n.status != "done":
+                n.status = "late"
+            elif step == "seen" and n.status == "open":
+                n.status = "seen"
+            if step == "reminded":
+                n.props["reminded"] = True
         elif t == "document.filed":
             d = g.add(c["id"], "document", c["title"], e, deal=c.get("deal"), status="filed", props=dict(c))
             if c.get("deal"):

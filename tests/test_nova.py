@@ -163,7 +163,8 @@ def test_unbuilt_specialist_keeps_the_task_and_says_so(corrected):
 # ---------- brief ----------
 
 def test_each_person_hears_what_needs_them_with_records(corrected):
-    priya, ahmed, omar = (nova.brief(corrected, p) for p in ("priya", "ahmed", "omar"))
+    morning = datetime(2026, 10, 28, 9, 0, tzinfo=nova.DUBAI)
+    priya, ahmed, omar = (nova.brief(corrected, p, now=morning) for p in ("priya", "ahmed", "omar"))
     assert priya["text"].startswith("Good morning, Priya. 1 thing needs you. Payment arrangement changed")
     assert {"A1", "F3", "F7"} <= set(ahmed["lines"][0]["refs"])
     assert omar["text"].startswith("Good morning, Omar. Nothing needs you.") and "took back" in omar["text"]
