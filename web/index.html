@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Office</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .nova { display: flex; gap: 8px; }
+  .answer { margin-top: 12px; padding: 12px; border-radius: 10px; background: var(--accent-soft); white-space: pre-wrap; }
+  .answer.question { background: var(--warn-soft); }
+  .answer.refused, .answer.unknown, .answer.unsupported { background: var(--bad-soft); }
+  .people { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .people button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .line { padding: 8px 0; border-bottom: 1px dashed var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Office</h1>
+  <p class="sub">Ask Nova anything about the office, or give an instruction. Every answer names the records it came from.</p>
+  <div class="grid cols-2">
+    <section class="panel">
+      <h2>Nova</h2>
+      <div class="row small muted" style="margin-bottom:6px">Speaking as <select id="as" style="max-width:160px"></select></div>
+      <div class="nova"><input id="say" placeholder='e.g. "Who is paying for Karim?" or "Prepare Form F for the Marina unit"'><button class="primary" id="go">Send</button></div>
+      <div class="small muted" style="margin-top:6px" id="tries"></div>
+      <div id="answer"></div>
+      <h2 style="margin-top:20px">Morning briefing</h2>
+      <div class="people" id="people"></div>
+      <div id="brief"></div>
+      <div class="row" style="margin-top:12px"><span class="small muted">Demo: Karim's deal is open with an approval and a deck resting on "Tariq will send the deposit".</span>
+        <button id="correct">Karim corrects himself</button><button id="reset">Reset</button></div>
+    </section>
+    <section class="panel">
+      <h2>Happening now</h2>
+      <div class="feed" id="feed"></div>
+    </section>
+  </div>
+</main>
+<script type="module">
+import { h, api, post, follow, header, describe, who, loadAgents, time, NAMES, toast } from "./app.js";
+header("index.html");
+const $ = (id) => document.getElementById(id);
+await loadAgents();
+let person = "layla";
+$("as").replaceChildren(...Object.entries(NAMES).map(([k, v]) => h("option", { value: k }, v)));
+const TRIES = ["Who is paying for Karim?", "What changed on the Marina deal?", "Prepare Form F for the Marina unit", "Submit Form F for Karim", "Who pays the deposit?", "What needs me?"];
+$("tries").replaceChildren("Try: ", ...TRIES.map((t) => h("a", { href: "#", onclick: (e) => { e.preventDefault(); $("say").value = t; send(); }, style: "margin-right:10px" }, t)));
+
+async function send() {
+  const text = $("say").value.trim();
+  if (!text) return;
+  const r = await post("/api/nova/say", { text, person: $("as").value });
+  const box = h("div", { class: `answer ${r.kind || ""}` }, r.text);
+  if (r.options) box.append(h("div", { style: "margin-top:8px" }, ...r.options.map((o) => h("button", { style: "margin:4px 6px 0 0",
+    onclick: () => { $("say").value = `${text.replace(/\?$/, "")} (${o})${text.endsWith("?") ? "?" : ""}`; send(); } }, o))));
+  if (r.cites?.length) box.append(h("div", { class: "small", style: "margin-top:8px" }, "Records: ", ...r.cites.map((c) => h("span", { class: "chip" }, c))));
+  if (r.by) box.append(h("div", { class: "small muted" }, r.by === "rules" ? "Composed from records (no model plugged in)" : `Written by ${r.by}, quotes checked`));
+  $("answer").replaceChildren(box);
+}
+$("go").onclick = send;
+$("say").onkeydown = (e) => e.key === "Enter" && send();
+
+async function brief() {
+  $("people").replaceChildren(...Object.entries(NAMES).map(([k, v]) => h("button", { class: k === person ? "on" : "", onclick: () => { person = k; brief(); } }, v)));
+  const b = await api(`/api/nova/brief/${person}`);
+  const speak = h("button", { onclick: () => { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(b.text)); } }, "Read it aloud");
+  $("brief").replaceChildren(h("div", { class: "line" }, h("strong", {}, b.text.split(". ")[0] + ".")),
+    ...b.lines.map((l) => h("div", { class: "line" }, l.needs ? h("span", { class: "chip warn" }, "needs you") : h("span", { class: "chip" }, "changed"), " ", l.text,
+      h("div", {}, ...l.refs.map((r) => h("span", { class: "chip" }, r))))),
+    h("div", { class: "small muted", style: "margin-top:6px" }, `The agents are handling ${b.working.length} task(s).`), speak);
+}
+
+const feed = $("feed");
+function add(evs) {
+  for (const e of evs) {
+    if (["agent.started"].includes(e.type)) continue;
+    feed.prepend(h("div", { class: "ev" }, h("span", { class: "muted small" }, time(e.at), " "), h("span", { class: "who" }, who(e) || "office"), describe(e)));
+  }
+  while (feed.children.length > 200) feed.lastChild.remove();
+}
+$("correct").onclick = async () => {
+  const m = await post("/api/meetings", { deal: "marina-1204", title: "Second meeting" });
+  await post(`/api/meetings/${m.id}/consent?by=Karim%20Haddad`);
+  await post(`/api/meetings/${m.id}/turn`, { speaker: "customer", text: "Actually, forget my brother. I'll pay it all myself." });
+  brief();
+};
+$("reset").onclick = async () => { await post("/api/demo/reset"); feed.replaceChildren(); toast("Demo office reset"); setTimeout(() => location.reload(), 400); };
+brief();
+follow((evs) => { add(evs); brief(); });
+</script>
+</body>
+</html>

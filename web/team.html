@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Team</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .leads { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  .agent { cursor: pointer; }
+  .agent .job { font-size: 12px; color: var(--muted); }
+  .chief { max-width: 420px; margin: 0 auto 16px; text-align: center; }
+  dl { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; margin: 0; }
+  dt { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Team</h1>
+  <p class="sub">Every agent has a charter: its job, what it may read, what it does alone, what needs a person, and what it never does. The charter is its instructions, and it is enforced on every action.</p>
+  <div class="grid cols-2" style="grid-template-columns: 1fr 380px">
+    <div><div id="chief"></div><div class="leads" id="leads"></div></div>
+    <aside class="panel" id="detail"><p class="muted">Click an agent to see its charter and its latest work.</p></aside>
+  </div>
+</main>
+<script type="module">
+import { h, api, header, describe, time } from "./app.js";
+header("team.html");
+const roster = await api("/api/roster");
+const card = (a) => h("div", { class: "item agent", onclick: () => show(a) },
+  h("div", { class: "row" }, h("strong", {}, a.name), h("span", { style: "flex:0" },
+    h("span", { class: `chip ${a.status === "running" ? "ok" : a.status === "parked" ? "" : "warn"}` }, a.hack ? a.runs_on : "later"))),
+  h("div", { class: "job" }, a.role));
+const chief = roster.find((a) => a.level === "chief");
+document.getElementById("chief").append(h("div", { class: "chief" }, card(chief)));
+document.getElementById("leads").append(...roster.filter((a) => a.level === "lead").map((l) => h("section", { class: "panel" },
+  h("h2", {}, l.name, l.review ? " (independent)" : ""), card(l), h("div", { class: "list", style: "margin-top:8px" }, roster.filter((a) => a.parent === l.id).map(card)))));
+
+async function show(a) {
+  const evs = (await api(`/api/events?agent=${a.id}`)).slice(-8).reverse();
+  document.getElementById("detail").replaceChildren(h("h2", {}, `${a.name} · ${a.role}`), h("dl", {},
+    h("dt", {}, "Job"), h("dd", {}, a.job), h("dt", {}, "Runs on"), h("dd", {}, a.runs_on), h("dt", {}, "May use"), h("dd", {}, a.sources),
+    h("dt", {}, "Does alone"), h("dd", {}, a.alone.join(", ") || "—"), h("dt", {}, "Needs a person"), h("dd", {}, a.person.join(", ") || "—"),
+    h("dt", {}, "Never"), h("dd", {}, a.never), h("dt", {}, "When unsure"), h("dd", {}, a.on_missing), h("dt", {}, "Checked by"), h("dd", {}, a.reviewer)),
+    h("h2", { style: "margin-top:16px" }, "Latest work"),
+    evs.length ? h("div", { class: "feed" }, evs.map((e) => h("div", { class: "ev" }, h("span", { class: "muted small" }, time(e.at), " "), describe(e))))
+      : h("p", { class: "muted small" }, "Nothing yet."));
+}
+</script>
+</body>
+</html>

@@ -163,7 +163,7 @@ def say(body: Ask):
     """One box for people: a question goes to ask, anything else is an instruction."""
     t = body.text.strip()
     if t.lower().startswith("brief"):
-        return nova.brief(S.office, (t.split()[1:] or [body.person])[0])
+        return nova.brief(S.office, (t.split()[1:] or [body.person])[0], log=False)
     q = t.endswith("?") or re.match(r"(?i)(who|what|when|where|why|how|is|are|does|did|can|which)\b", t)
     return nova.ask(S.office, t, body.person) if q else nova.route(S.office, t, body.person)
 
@@ -172,7 +172,7 @@ def say(body: Ask):
 def brief(person: str):
     if person not in PEOPLE:
         raise HTTPException(404, "no such person")
-    return nova.brief(S.office, person)
+    return nova.brief(S.office, person, log=False)  # reading a briefing is not an event; the 07:00 run is
 
 
 # ---------- meetings ----------

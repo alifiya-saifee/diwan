@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Inbox</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .inbox { display: grid; grid-template-columns: 280px 1fr 320px; gap: 16px; height: calc(100vh - 110px); }
+  @media (max-width: 1000px) { .inbox { grid-template-columns: 1fr; height: auto; } }
+  .col { display: flex; flex-direction: column; min-height: 0; }
+  .chats { overflow: auto; flex: 1; }
+  .thread { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--bg); border-radius: 10px; }
+  .bubble { max-width: 75%; padding: 8px 11px; border-radius: 12px; white-space: pre-wrap; border: 1px solid var(--line); }
+  .bubble.received { align-self: flex-start; background: var(--customer); }
+  .bubble.sent { align-self: flex-end; background: var(--ai); }
+  .bubble.sent.person { background: var(--person); }
+  .bubble.suggested { align-self: flex-end; background: transparent; border-style: dashed; }
+  .bubble .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .modebar { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+  .phone { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+  .fact { font-size: 13px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Inbox</h1>
+  <p class="sub">WhatsApp conversations. Rania answers day and night from listings and confirmed knowledge; take a chat and she only suggests.</p>
+  <div class="inbox">
+    <section class="panel col">
+      <h2>Conversations</h2>
+      <div class="chats list" id="chats"></div>
+      <div class="phone">
+        <h2>Sandbox phone</h2>
+        <p class="small muted" id="phonehint">Until the WhatsApp test number is connected, message the office from here. It takes the same path a real WhatsApp message does.</p>
+        <div class="row"><input id="pname" placeholder="Name" value="Karim Haddad"><input id="pnum" placeholder="Phone" value="971501234567"></div>
+        <div class="row" style="margin-top:8px"><input id="ptext" placeholder="Type as the customer…"><button class="primary" id="psend">Send</button></div>
+      </div>
+    </section>
+    <section class="panel col">
+      <div class="modebar"><h2 id="title" style="margin:0;flex:1">Pick a conversation</h2><span id="mode"></span><button id="toggle" hidden></button></div>
+      <div class="thread" id="thread"></div>
+      <div class="row" style="margin-top:10px"><input id="reply" placeholder="Reply as Omar (this takes the chat)"><button id="send" class="primary">Send</button></div>
+    </section>
+    <section class="panel col" style="overflow:auto">
+      <h2>What the office learned</h2>
+      <p class="small muted">Facts the Scribe heard in this chat, in the customer's exact words. The same facts a meeting would produce.</p>
+      <div id="facts"></div>
+      <h2 style="margin-top:16px">Viewings</h2>
+      <div id="viewings" class="small"></div>
+    </section>
+  </div>
+</main>
+<script type="module">
+import { h, api, post, follow, header, time, toast } from "./app.js";
+header("inbox.html");
+let chats = [], current = null;
+const $ = (id) => document.getElementById(id);
+
+async function load() {
+  chats = await api("/api/chats");
+  if (!current && chats.length) current = chats[0].props.phone;
+  render();
+}
+
+function render() {
+  $("chats").replaceChildren(...(chats.length ? chats.map((c) => {
+    const last = c.messages.at(-1);
+    return h("div", { class: `item click ${c.props.phone === current ? "on" : ""}`, onclick: () => { current = c.props.phone; render(); } },
+      h("div", { class: "row" }, h("strong", {}, c.label), h("span", { style: "flex:0" },
+        h("span", { class: `chip ${c.props.mode === "ai" ? "ok" : "warn"}` }, c.props.mode === "ai" ? "Rania" : "Omar"))),
+      h("div", { class: "small muted" }, last ? last.text.slice(0, 60) : ""));
+  }) : [h("p", { class: "muted small" }, "No conversations yet. Send one from the sandbox phone.")]));
+  const c = chats.find((x) => x.props.phone === current);
+  if (!c) return;
+  $("title").textContent = `${c.label} · +${c.props.phone}`;
+  $("mode").replaceChildren(h("span", { class: `chip ${c.props.mode === "ai" ? "ok" : "warn"}` },
+    c.props.mode === "ai" ? "Rania is replying" : `${c.props.handled_by ? c.props.handled_by[0].toUpperCase() + c.props.handled_by.slice(1) : "A person"} has this chat`));
+  $("toggle").hidden = false;
+  $("toggle").textContent = c.props.mode === "ai" ? "Take over" : "Hand back to Rania";
+  $("thread").replaceChildren(...c.messages.map((m) => {
+    const person = m.type === "sent" && m.by !== "rania";
+    const b = h("div", { class: `bubble ${m.type} ${person ? "person" : ""}` }, m.text,
+      h("div", { class: "meta" }, `${m.type === "received" ? c.label : m.by === "rania" ? "Rania · AI" : m.by} · ${time(m.at)}`,
+        m.refs?.length ? " · from " : "", ...(m.refs || []).map((r) => h("span", { class: "chip" }, r.replace("listing:", "")))));
+    if (m.type === "suggested") b.append(h("div", {}, h("button", { class: "small", onclick: () => $("reply").value = m.text }, "Use this reply")));
+    return b;
+  }));
+  $("thread").scrollTop = 1e9;
+  $("facts").replaceChildren(...(c.facts.length ? c.facts.map((f) => h("div", { class: "fact" }, f)) : [h("p", { class: "muted small" }, "Nothing yet.")]));
+  $("viewings").replaceChildren(...(c.viewings.length ? c.viewings.map((v) => h("div", { class: "fact" }, v)) : [h("span", { class: "muted" }, "None booked.")]));
+}
+
+$("toggle").onclick = async () => {
+  const c = chats.find((x) => x.props.phone === current);
+  await post(`/api/chats/${current}/${c.props.mode === "ai" ? "take" : "release"}?by=omar`);
+  load();
+};
+$("send").onclick = async () => {
+  const t = $("reply").value.trim();
+  if (!t || !current) return;
+  await post(`/api/chats/${current}/send`, { text: t, by: "omar" });
+  $("reply").value = "";
+  load();
+};
+const psend = async () => {
+  const t = $("ptext").value.trim();
+  if (!t) return;
+  current = $("pnum").value.trim();
+  $("ptext").value = "";
+  try { await post("/api/chats/incoming", { phone: current, name: $("pname").value.trim() || null, text: t }); } catch (e) { toast(e.message); }
+  load();
+};
+$("psend").onclick = psend;
+$("ptext").onkeydown = (e) => e.key === "Enter" && psend();
+$("reply").onkeydown = (e) => e.key === "Enter" && $("send").onclick();
+api("/api/health").then((s) => { if (s.whatsapp) $("phonehint").textContent = "WhatsApp is connected: real messages arrive here too."; });
+load();
+follow((evs) => { if (evs.some((e) => e.type.startsWith("chat.") || e.type.startsWith("fact.") || e.type.startsWith("appointment."))) load(); });
+</script>
+</body>
+</html>

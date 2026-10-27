@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Knowledge</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main>
+  <h1>Knowledge</h1>
+  <p class="sub">Tell the office once. Rania and Nova answer only from what is confirmed here, and always say which item they used.</p>
+  <div class="grid cols-2">
+    <section class="panel">
+      <h2>Company knowledge</h2>
+      <div class="list" id="knowledge"></div>
+      <h2 style="margin-top:18px">Add an item</h2>
+      <div class="row"><input id="ktitle" placeholder="Title, e.g. Parking"><select id="kkind" style="max-width:140px">
+        <option value="faq">FAQ</option><option value="policy">Policy</option><option value="fees">Fees</option><option value="hours">Hours</option><option value="company">Company</option></select></div>
+      <textarea id="ktext" placeholder="What customers should be told, in your words" style="margin-top:8px"></textarea>
+      <div class="row" style="margin-top:8px"><span class="small muted">Typed by a person, so it is confirmed at once.</span><button class="primary" id="kadd">Add</button></div>
+      <h2 style="margin-top:18px">Paste a document</h2>
+      <textarea id="doc" placeholder="Paste a brochure, price list or FAQ. Each line becomes an item, word for word, waiting for you to confirm it."></textarea>
+      <div class="row" style="margin-top:8px"><span class="small muted">Nothing reaches a customer until a person confirms it.</span><button id="docadd">Propose items</button></div>
+    </section>
+    <section class="panel">
+      <h2>Listings</h2>
+      <table><thead><tr><th>Ref</th><th>Listing</th><th>Price</th><th>Permit</th><th></th></tr></thead><tbody id="listings"></tbody></table>
+      <h2 style="margin-top:18px">Add a listing</h2>
+      <div class="row"><input id="lref" placeholder="Ref, e.g. PJ-901"><input id="ltitle" placeholder="Title"></div>
+      <div class="row" style="margin-top:8px"><input id="lcomm" placeholder="Community"><select id="ltype"><option>apartment</option><option>villa</option><option>townhouse</option></select></div>
+      <div class="row" style="margin-top:8px"><input id="lbeds" type="number" min="0" placeholder="Beds"><input id="lprice" type="number" min="0" placeholder="Price (AED)"><input id="lpermit" placeholder="Permit number"></div>
+      <div class="row" style="margin-top:8px"><span class="small muted">Without a permit number a listing is kept but never advertised.</span><button class="primary" id="ladd">Add listing</button></div>
+    </section>
+  </div>
+</main>
+<script type="module">
+import { h, api, post, header, toast } from "./app.js";
+header("knowledge.html");
+const $ = (id) => document.getElementById(id);
+
+async function load() {
+  const ks = await api("/api/knowledge");
+  $("knowledge").replaceChildren(...ks.map((k) => h("div", { class: "item" },
+    h("div", { class: "row" }, h("strong", {}, `${k.id} · ${k.props.title}`), h("span", { style: "flex:0" },
+      k.status === "confirmed" ? h("span", { class: "chip ok" }, "confirmed") :
+        h("button", { onclick: async () => { await post(`/api/knowledge/${k.id}/confirm?by=layla`); load(); } }, "Confirm"))),
+    h("div", {}, k.props.text),
+    h("div", { class: "small muted" }, k.props.source ? `from ${k.props.source}` : `${k.props.kind}`))));
+  const ls = await api("/api/listings");
+  $("listings").replaceChildren(...ls.map((l) => h("tr", {},
+    h("td", {}, l.props.ref), h("td", {}, `${l.props.title}, ${l.props.community}`, h("div", { class: "small muted" }, `${l.props.beds} bed ${l.props.type}`)),
+    h("td", {}, `AED ${l.props.price_aed.toLocaleString()}`), h("td", {}, l.props.permit || "—"),
+    h("td", {}, h("span", { class: `chip ${l.advertised ? "ok" : "bad"}` }, l.advertised ? "advertised" : "not advertised")))));
+}
+
+$("kadd").onclick = async () => {
+  if (!$("ktitle").value.trim() || !$("ktext").value.trim()) return toast("Add a title and the text");
+  await post("/api/knowledge", { kind: $("kkind").value, title: $("ktitle").value.trim(), text: $("ktext").value.trim(), by: "layla" });
+  $("ktitle").value = $("ktext").value = "";
+  load();
+};
+$("docadd").onclick = async () => {
+  const r = await post("/api/knowledge/document", { text: $("doc").value, by: "layla" });
+  toast(`${r.proposed.length} item(s) waiting for confirmation`);
+  $("doc").value = "";
+  load();
+};
+$("ladd").onclick = async () => {
+  try {
+    await post("/api/listings", { ref: $("lref").value.trim(), title: $("ltitle").value.trim(), community: $("lcomm").value.trim(), type: $("ltype").value,
+      beds: +$("lbeds").value, price_aed: +$("lprice").value, permit: $("lpermit").value.trim() || null });
+    ["lref", "ltitle", "lcomm", "lbeds", "lprice", "lpermit"].forEach((i) => $(i).value = "");
+    load();
+  } catch (e) { toast("Fill in ref, title, community, beds and price"); }
+};
+load();
+</script>
+</body>
+</html>

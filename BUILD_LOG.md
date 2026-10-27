@@ -49,3 +49,14 @@ Everything in this repository was written during the Meta Global AI Developer Ha
 - Inbox semantics: a person replying takes the chat; Rania then only suggests replies; handing back resumes her. A
   model reply naming an amount not on any listing is not sent.
 - WhatsApp Cloud API adapter: webhook verification, signature check, message parsing, sending.
+
+## 27 Oct 2026 (night): screens
+
+- Office: one box for Nova (questions and instructions), per-person briefings that can be read aloud, a live feed of
+  every agent's work, and a one-click demo of Karim's correction.
+- Inbox: WhatsApp-style conversations with Rania's replies and the records she used, take over / hand back, Rania's
+  suggested replies while a person has the chat, the facts the Scribe heard, booked viewings, and a sandbox phone.
+- Knowledge: company items (confirmed or waiting), paste-a-document, listings with advertised / not advertised.
+- Memory graph: the deal's graph from the log, click any node for its record and links, rewind slider.
+- Team: the org chart from the charters, each agent's charter and latest work.
+- Meeting: consent first, typed turns or the microphone through Muse Voice Transcribe.

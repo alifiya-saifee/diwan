@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Memory</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .wrap { display: grid; grid-template-columns: 1fr 320px; gap: 16px; }
+  @media (max-width: 1000px) { .wrap { grid-template-columns: 1fr; } }
+  svg { width: 100%; height: 640px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; touch-action: none; }
+  .node text { font-size: 11px; fill: var(--ink); pointer-events: none; }
+  .edge { stroke: var(--line); stroke-width: 1.4; }
+  .edge.replaces { stroke: var(--bad); stroke-dasharray: 4 3; }
+  .edge.rests_on, .edge.uses { stroke: var(--warn); }
+  .legend span { margin-right: 10px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Memory graph</h1>
+  <p class="sub">The office's memory, rebuilt from the event log. Drag the slider to rewind and watch a correction rewire the office.</p>
+  <div class="row" style="margin-bottom:12px">
+    <select id="deal" style="max-width:260px"></select>
+    <input type="range" id="upto" min="1" value="1">
+    <span id="at" class="small muted" style="flex:0 0 150px"></span>
+  </div>
+  <div class="wrap">
+    <svg id="svg"></svg>
+    <aside class="panel">
+      <h2>Record</h2>
+      <p id="record" class="muted">Click any node.</p>
+      <h2 style="margin-top:16px">Links</h2>
+      <div id="links" class="small"></div>
+      <div class="legend small muted" id="legend" style="margin-top:16px"></div>
+    </aside>
+  </div>
+</main>
+<script type="module">
+import { h, api, header, follow } from "./app.js";
+header("graph.html");
+const $ = (id) => document.getElementById(id);
+const COLORS = { person: "#5b7bd5", deal: "#1d1c1a", property: "#8a7f6a", fact: "#0f8a6f", task: "#c27c1a", approval: "#7a4fc4",
+  slide: "#b5527e", draft: "#b5527e", decision: "#a4262c", check: "#a4262c", question: "#d18b2a", request: "#7a4fc4",
+  chat: "#25a35a", viewing: "#2d8fb5", listing: "#8a7f6a", knowledge: "#6b6860" };
+const SHOW = new Set(["person", "deal", "fact", "task", "approval", "slide", "decision", "check", "question", "request", "chat", "viewing", "listing"]);
+let data = { nodes: [], edges: [] }, pos = {}, selected = null, live = true;
+
+$("legend").append(...Object.entries(COLORS).filter(([k]) => SHOW.has(k)).map(([k, c]) => h("span", {}, h("span", { class: "sw", style: `background:${c}` }), k)));
+
+async function deals() {
+  const ds = await api("/api/deals"), keep = $("deal").value;
+  $("deal").replaceChildren(...ds.map((d) => h("option", { value: d.deal }, `${d.label} · ${d.props.customer}`)));
+  if (keep && ds.some((d) => d.deal === keep)) $("deal").value = keep;
+}
+
+async function load(upto) {
+  const q = new URLSearchParams({ deal: $("deal").value });
+  if (upto) q.set("upto", upto);
+  data = await api(`/api/graph?${q}`);
+  const keep = new Set(data.nodes.filter((n) => SHOW.has(n.type) && (n.deal === $("deal").value || n.type === "person" || n.type === "listing")).map((n) => n.id));
+  data.edges = data.edges.filter((e) => keep.has(e.src) && keep.has(e.dst));
+  const linked = new Set(data.edges.flatMap((e) => [e.src, e.dst]));
+  data.nodes = data.nodes.filter((n) => keep.has(n.id) && (linked.has(n.id) || n.type === "deal"));
+  if (!upto) { $("upto").max = data.last_event; $("upto").value = data.last_event; }
+  $("at").textContent = `event ${upto || data.last_event} of ${$("upto").max}`;
+  layout();
+}
+
+function layout() {
+  const W = $("svg").clientWidth, H = 640;
+  for (const n of data.nodes) pos[n.id] ||= { x: W / 2 + (Math.random() - .5) * 300, y: H / 2 + (Math.random() - .5) * 300, vx: 0, vy: 0 };
+  for (let it = 0; it < 220; it++) {
+    for (const a of data.nodes) for (const b of data.nodes) {
+      if (a === b) continue;
+      const p = pos[a.id], q = pos[b.id], dx = p.x - q.x, dy = p.y - q.y, d2 = dx * dx + dy * dy + 0.01;
+      const f = 2200 / d2; p.vx += dx * f / Math.sqrt(d2); p.vy += dy * f / Math.sqrt(d2);
+    }
+    for (const e of data.edges) {
+      const p = pos[e.src], q = pos[e.dst], dx = q.x - p.x, dy = q.y - p.y, d = Math.sqrt(dx * dx + dy * dy) + 0.01, f = (d - 110) * 0.02;
+      p.vx += dx / d * f; p.vy += dy / d * f; q.vx -= dx / d * f; q.vy -= dy / d * f;
+    }
+    for (const n of data.nodes) {
+      const p = pos[n.id]; p.vx += (W / 2 - p.x) * 0.004; p.vy += (H / 2 - p.y) * 0.004;
+      p.x = Math.max(30, Math.min(W - 30, p.x + p.vx * 0.5)); p.y = Math.max(20, Math.min(H - 20, p.y + p.vy * 0.5)); p.vx *= 0.6; p.vy *= 0.6;
+    }
+  }
+  draw();
+}
+
+function draw() {
+  const NS = "http://www.w3.org/2000/svg", svg = $("svg");
+  const el = (t, a) => { const x = document.createElementNS(NS, t); for (const k in a) x.setAttribute(k, a[k]); return x; };
+  svg.replaceChildren();
+  for (const e of data.edges) svg.append(el("line", { class: `edge ${e.rel}`, x1: pos[e.src].x, y1: pos[e.src].y, x2: pos[e.dst].x, y2: pos[e.dst].y }));
+  for (const n of data.nodes) {
+    const g = el("g", { class: "node", transform: `translate(${pos[n.id].x},${pos[n.id].y})`, style: "cursor:pointer" });
+    const dead = ["superseded", "withdrawn", "refused", "sent_back", "cancelled"].includes(n.status);
+    g.append(el("circle", { r: n.type === "deal" ? 13 : 9, fill: COLORS[n.type] || "#999", opacity: dead ? 0.3 : 1,
+      stroke: n.id === selected ? "var(--ink)" : "none", "stroke-width": 2 }));
+    const t = el("text", { x: 13, y: 4 });
+    t.textContent = `${n.id.replace(/^(person|deal|listing|chat):/, "")}${dead ? " ✕" : ""}`;
+    g.append(t);
+    g.addEventListener("click", () => pick(n));
+    svg.append(g);
+  }
+}
+
+function pick(n) {
+  selected = n.id;
+  $("record").textContent = n.record;
+  $("record").className = "";
+  const rel = data.edges.filter((e) => e.src === n.id || e.dst === n.id);
+  $("links").replaceChildren(...rel.map((e) => h("div", { style: "padding:3px 0" }, `${e.src.replace(/^\w+:/, "")} — ${e.rel.replace("_", " ")} → ${e.dst.replace(/^\w+:/, "")}`)));
+  draw();
+}
+
+$("deal").onchange = () => { pos = {}; load(); };
+$("upto").oninput = () => { live = +$("upto").value === +$("upto").max; load(+$("upto").value); };
+await deals();
+await load();
+follow(() => { if (live) { deals(); load(); } });
+</script>
+</body>
+</html>

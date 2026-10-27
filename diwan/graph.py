@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from diwan.people import PEOPLE, name, pid
 
@@ -137,7 +138,8 @@ class Graph:
             return (f"{p['ref']} · {p['title']}, {p['community']} · {p['beds']} bed {p['type']} · AED {p['price_aed']:,} · "
                     f"permit {p.get('permit') or 'MISSING'} · {n.status}")
         if n.type == "viewing":
-            return f"{n.id} · viewing of {p['listing']} with {name(p['broker'])} at {p['at']} for {p.get('customer')}{tag if n.status != 'booked' else ''}"
+            when = datetime.fromisoformat(p["at"]).strftime("%a %d %b, %I:%M %p").replace(" 0", " ")
+            return f"{n.id} · viewing of {p['listing']} with {name(p['broker'])}, {when}, for {p.get('customer')}{tag if n.status != 'booked' else ''}"
         if n.type == "deal":
             return f"{n.id.split(':', 1)[1]} · {p.get('property')} · customer {p.get('customer')} · broker {name(p.get('broker'))}"
         return f"{n.id} · {n.label}"

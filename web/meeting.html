@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Meeting</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .turn { padding: 8px 0; border-bottom: 1px dashed var(--line); }
+  .partial { color: var(--muted); font-style: italic; min-height: 20px; }
+  .rec { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--bad); margin-right: 6px; animation: p 1s infinite; }
+  @keyframes p { 50% { opacity: .3; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Meeting</h1>
+  <p class="sub">The table phone. Nothing is heard until the customer agrees. Each finished sentence goes to the Scribe.</p>
+  <div class="grid cols-2">
+    <section class="panel">
+      <div class="row"><select id="deal"></select><input id="title" value="Viewing follow-up"><button class="primary" id="start">Start</button></div>
+      <div id="consentbox" hidden style="margin-top:12px" class="item">
+        <p><strong>Ask the customer:</strong> "This meeting is recorded so nothing you say gets lost. Is that OK?"<br>
+        <span dir="rtl">"يتم تسجيل هذا الاجتماع حتى لا يضيع أي شيء تقوله. هل توافق؟"</span></p>
+        <button class="primary" id="consent">The customer agrees</button>
+      </div>
+      <div id="live" hidden style="margin-top:12px">
+        <div class="row"><button id="mic">Use the microphone</button><span id="micstate" class="small muted"></span></div>
+        <p class="small muted">Or type what was said:</p>
+        <div class="row"><select id="speaker" style="max-width:130px"><option value="customer">Customer</option><option value="broker">Broker</option></select>
+          <input id="text" placeholder='e.g. "Actually, forget my brother. I&#39;ll pay it all myself."'><button id="say" class="primary">Add</button></div>
+        <div class="partial" id="partial"></div>
+        <div id="turns"></div>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>What the Scribe heard</h2>
+      <div class="feed" id="heard"></div>
+    </section>
+  </div>
+</main>
+<script type="module">
+import { h, api, post, follow, header, describe, who, loadAgents, toast } from "./app.js";
+header("meeting.html");
+await loadAgents();
+const $ = (id) => document.getElementById(id);
+let mid = null, deal = null, ws = null, ctx = null;
+const ds = await api("/api/deals");
+$("deal").replaceChildren(...ds.map((d) => h("option", { value: d.deal }, `${d.label} · ${d.props.customer}`)));
+$("start").onclick = async () => {
+  deal = $("deal").value;
+  const m = await post("/api/meetings", { deal, title: $("title").value });
+  mid = m.id;
+  $("consentbox").hidden = false;
+};
+$("consent").onclick = async () => { await post(`/api/meetings/${mid}/consent?by=customer`); $("consentbox").hidden = true; $("live").hidden = false; };
+const say = async () => {
+  const t = $("text").value.trim();
+  if (!t) return;
+  $("text").value = "";
+  $("turns").prepend(h("div", { class: "turn" }, h("strong", {}, $("speaker").value === "customer" ? "Customer: " : "Broker: "), t));
+  await post(`/api/meetings/${mid}/turn`, { speaker: $("speaker").value, text: t });
+};
+$("say").onclick = say;
+$("text").onkeydown = (e) => e.key === "Enter" && say();
+
+$("mic").onclick = async () => {
+  if (ws) { ws.send("end"); ws.close(); ctx?.close(); ws = null; $("mic").textContent = "Use the microphone"; $("micstate").textContent = ""; return; }
+  const health = await api("/api/health");
+  if (!health.voice) return toast("Live listening needs the Meta key in .env. Type the sentences for now.");
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true } });
+  ctx = new AudioContext({ sampleRate: 16000 });
+  const src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1);
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/meetings/${mid}/audio`);
+  ws.binaryType = "arraybuffer";
+  ws.onmessage = (m) => {
+    const d = JSON.parse(m.data);
+    if (d.partial) $("partial").textContent = d.partial;
+    if (d.final) { $("partial").textContent = ""; $("turns").prepend(h("div", { class: "turn" }, h("strong", {}, `${d.speaker}: `), d.final)); }
+  };
+  ws.onclose = (e) => { if (e.code === 4001 || e.code === 4009) toast(e.reason); };
+  proc.onaudioprocess = (ev) => {
+    if (ws?.readyState !== 1) return;
+    const f = ev.inputBuffer.getChannelData(0), pcm = new Int16Array(f.length);
+    for (let i = 0; i < f.length; i++) pcm[i] = Math.max(-1, Math.min(1, f[i])) * 0x7fff;
+    ws.send(pcm.buffer);
+  };
+  src.connect(proc); proc.connect(ctx.destination);
+  $("mic").textContent = "Stop";
+  $("micstate").replaceChildren(h("span", { class: "rec" }), "Listening with Muse Voice Transcribe");
+};
+follow((evs) => {
+  for (const e of evs) if (e.deal === deal && ["fact.created", "fact.superseded", "check.raised", "task.withdrawn", "task.created", "decision.needed", "review.returned", "question.asked"].includes(e.type))
+    $("heard").prepend(h("div", { class: "ev" }, h("span", { class: "who" }, who(e)), describe(e)));
+});
+</script>
+</body>
+</html>
