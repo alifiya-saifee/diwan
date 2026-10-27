@@ -87,15 +87,24 @@ export function describe(e) {
   }
 }
 
+export const LOGO = `<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0" stop-color="#f6e2ae"/><stop offset="1" stop-color="#c99a45"/></linearGradient></defs>
+  <g fill="none" stroke="url(#lg)" stroke-width="2"><rect x="8" y="8" width="16" height="16" rx="1.5"/>
+  <rect x="8" y="8" width="16" height="16" rx="1.5" transform="rotate(45 16 16)"/></g><circle cx="16" cy="16" r="3" fill="url(#lg)"/></svg>`;
+
 export function header(active) {
-  const pages = [["office3d.html", "3D office"], ["index.html", "Office"], ["inbox.html", "Inbox"], ["meeting.html", "Meeting"], ["knowledge.html", "Knowledge"],
-                 ["graph.html", "Memory graph"], ["team.html", "Team"]];
+  const pages = [["office3d.html", "Office"], ["index.html", "Nova"], ["inbox.html", "Inbox"], ["meeting.html", "Meeting"], ["knowledge.html", "Knowledge"],
+                 ["graph.html", "Memory"], ["team.html", "Team"]];
   const status = h("div", { class: "status" });
   api("/api/health").then((s) => {
-    const p = (on, label) => h("span", {}, h("span", { class: `dot ${on ? "on" : ""}` }), label);
+    const p = (on, label) => h("span", { class: "pill" }, h("span", { class: `dot ${on ? "on" : ""}` }), label);
     status.append(p(s.providers.meta, "Muse Spark"), p(s.voice, "Voice"), p(s.whatsapp, "WhatsApp"),
-                  p(s.providers.baseten || s.providers.fireworks || s.providers.modal, "Open weights"));
+                  p(s.providers.baseten || s.providers.fireworks || s.providers.modal, "Open weights"),
+                  h("span", { class: "pill meta-badge" }, "Built with Meta Muse"));
   }).catch(() => {});
-  document.body.prepend(h("header", { class: "top" }, h("span", { class: "brand" }, "Diwan"),
+  const brand = h("a", { class: "brand", href: "office3d.html" });
+  brand.innerHTML = LOGO;
+  brand.append(h("span", { class: "word" }, "Diwan"), h("span", { class: "tag" }, "The office you can correct"));
+  document.body.prepend(h("header", { class: "top" }, brand,
     h("nav", {}, pages.map(([href, label]) => h("a", { href, class: href === active ? "on" : "" }, label))), status));
 }
