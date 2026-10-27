@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Office 3D</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #11141b; color: #e9e6dd; }
+  #stage { position: fixed; inset: 49px 400px 0 0; }
+  #side { position: fixed; top: 49px; right: 0; bottom: 0; width: 400px; background: #171b24; border-left: 1px solid #2a3040;
+          display: flex; flex-direction: column; }
+  #side .head { padding: 14px 16px 10px; border-bottom: 1px solid #2a3040; }
+  #side h2 { color: #f2e2b3; letter-spacing: .5px; margin: 0; }
+  #side .body { flex: 1; overflow: auto; padding: 12px 16px; }
+  #side .foot { padding: 10px 16px; border-top: 1px solid #2a3040; display: flex; gap: 8px; }
+  #side input { background: #11141b; border-color: #2a3040; color: #e9e6dd; }
+  #side button { background: #222838; border-color: #2a3040; color: #e9e6dd; }
+  #side button.primary, .talk { background: #e8c77a !important; color: #1a1a1a !important; border-color: #e8c77a !important; font-weight: 600; }
+  .msg { margin: 10px 0; line-height: 1.5; }
+  .msg .from { font-size: 11px; letter-spacing: .6px; text-transform: uppercase; color: #9aa3b5; display: block; margin-bottom: 2px; }
+  .msg.nova .from { color: #e8c77a; }
+  .msg.you { text-align: right; }
+  .msg.you span.t { background: #26324a; padding: 7px 10px; border-radius: 10px; display: inline-block; }
+  .msg .refs .chip { background: #222838; color: #9aa3b5; }
+  .ev3 { font-size: 13px; padding: 5px 0; border-bottom: 1px dashed #2a3040; }
+  .ev3 b { color: #f2e2b3; font-weight: 600; margin-right: 4px; }
+  .zones { position: fixed; left: 12px; bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; max-width: calc(100vw - 440px); }
+  .zones button { background: rgba(23,27,36,.9); color: #cfd6e4; border-color: #2a3040; }
+  .zones button.on { background: #e8c77a; color: #1a1a1a; }
+  .hud { position: fixed; left: 12px; top: 61px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .hud span, .hud button { background: rgba(23,27,36,.9); color: #e9e6dd; border: 1px solid #2a3040; border-radius: 99px; padding: 6px 12px; font-size: 13px; }
+  .listening { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #e05d5d; margin-right: 6px; animation: p 1s infinite; }
+  @keyframes p { 50% { opacity: .3; } }
+  header.top { background: #171b24; border-color: #2a3040; } header.top nav a { color: #9aa3b5; } header.top nav a.on, header.top nav a:hover { background: #222838; color: #fff; }
+  header.top .brand { color: #f2e2b3; }
+  @media (max-width: 900px) { #stage { inset: 49px 0 45% 0; } #side { top: 55%; width: 100%; } .zones { display: none; } }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div class="hud" id="hud"></div>
+<div class="zones" id="zones"></div>
+<aside id="side">
+  <div class="head"><div class="row"><h2 id="ztitle">Front desk</h2><button id="back" style="flex:0" hidden>Floor</button></div>
+    <div class="small" id="zsub" style="color:#9aa3b5"></div></div>
+  <div class="body" id="zbody"></div>
+  <div class="foot"><input id="say" placeholder="Talk to Nova…"><button class="primary" id="send" style="flex:0">Send</button></div>
+</aside>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script type="module">
+import { h, api, post, follow, header, describe, loadAgents, NAMES, toast } from "./app.js";
+header("office3d.html");
+const AG = await loadAgents();
+const $ = (id) => document.getElementById(id);
+
+// ---------- the floor plan: each team has a room; each agent its own desk ----------
+const ZONES = {
+  front:   { name: "Front desk", x: 0,   z: 11,  w: 14, d: 7,  color: 0xe8c77a, agents: ["nova", "rania"], about: "Nova talks to the staff; Rania answers customers on WhatsApp." },
+  sales:   { name: "Sales",      x: -15, z: 3,   w: 12, d: 9,  color: 0x5b8def, agents: ["sales", "scribe", "deck"], about: "Meetings become quoted facts; decks are built from live facts only." },
+  ops:     { name: "Operations", x: -15, z: -9,  w: 12, d: 8,  color: 0x48b0a0, agents: ["ops", "formf"], about: "Form F is filled from live facts and stops before Submit." },
+  fin:     { name: "Finance",    x: 0,   z: -11, w: 12, d: 7,  color: 0x7fc46a, agents: ["fin", "pay"], about: "Every expected payment rests on the exact words it came from." },
+  comp:    { name: "Compliance", x: 15,  z: -9,  w: 12, d: 8,  color: 0xe05d5d, agents: ["comp", "screen", "sof", "report"], about: "Hears every payment change first. Never decides suspicion: Priya does." },
+  review:  { name: "Review",     x: 15,  z: 3,   w: 12, d: 9,  color: 0xb07be0, agents: ["review", "factcheck", "devil"], about: "Independent. Sends back anything built on a replaced statement." },
+  records: { name: "Records",    x: 0,   z: 0,   w: 12, d: 8,  color: 0xc9a46a, agents: ["records", "archivist", "analyst"], about: "The archive and the numbers. Every figure is counted from records." },
+};
+const ZONE_OF = {};
+for (const [k, z] of Object.entries(ZONES)) for (const a of z.agents) ZONE_OF[a] = k;
+
+// ---------- scene ----------
+const stage = $("stage");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+stage.append(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x11141b);
+scene.fog = new THREE.Fog(0x11141b, 60, 120);
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
+const HOME = { pos: new THREE.Vector3(0, 30, 31), look: new THREE.Vector3(0, 0, 1) };
+camera.position.copy(HOME.pos);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.copy(HOME.look); controls.maxPolarAngle = 1.35; controls.minDistance = 10; controls.maxDistance = 90; controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xdfe6ff, 0x1a1d26, 0.75));
+const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(20, 40, 18); sun.castShadow = true;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -40; sun.shadow.camera.right = sun.shadow.camera.top = 40; sun.shadow.mapSize.set(2048, 2048);
+scene.add(sun);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(90, 70), new THREE.MeshStandardMaterial({ color: 0x1a1f2a }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+scene.add(new THREE.GridHelper(90, 45, 0x232a38, 0x1d2330));
+
+function label(text, { size = 46, color = "#f2e2b3", bg = "rgba(17,20,27,.85)", border = null, maxW = 900 } = {}) {
+  const c = document.createElement("canvas"), x = c.getContext("2d");
+  x.font = `600 ${size}px Inter, system-ui, sans-serif`;
+  const lines = [], words = String(text).split(" ");
+  let line = "";
+  for (const w of words) { const t = line ? `${line} ${w}` : w; if (x.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t; }
+  lines.push(line);
+  const W = Math.min(maxW, Math.max(...lines.map((l) => x.measureText(l).width))) + 48, H = lines.length * size * 1.3 + 30;
+  c.width = W; c.height = H;
+  x.font = `600 ${size}px Inter, system-ui, sans-serif`;
+  x.fillStyle = bg; x.beginPath(); x.roundRect(0, 0, W, H, 24); x.fill();
+  if (border) { x.strokeStyle = border; x.lineWidth = 6; x.stroke(); }
+  x.fillStyle = color; x.textBaseline = "top";
+  lines.forEach((l, i) => x.fillText(l, 24, 15 + i * size * 1.3));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false }));
+  s.scale.set(W / 110, H / 110, 1);
+  s.renderOrder = 10;
+  return s;
+}
+
+const rooms = {};
+for (const [k, z] of Object.entries(ZONES)) {
+  const g = new THREE.Group(); g.position.set(z.x, 0, z.z);
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(z.w, 0.15, z.d), new THREE.MeshStandardMaterial({ color: 0x222838, emissive: z.color, emissiveIntensity: 0.04 }));
+  pad.position.y = 0.075; pad.receiveShadow = true; pad.userData.zone = k; g.add(pad);
+  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(z.w, 0.16, z.d)), new THREE.LineBasicMaterial({ color: z.color }));
+  edge.position.y = 0.08; g.add(edge);
+  const sign = label(z.name.toUpperCase(), { size: 54, color: "#" + z.color.toString(16).padStart(6, "0") });
+  sign.position.set(-z.w / 2 + 2.2, 0.9, z.d / 2 - 0.4); g.add(sign);
+  scene.add(g);
+  rooms[k] = { group: g, pad, edge, flash: 0 };
+}
+
+// records room: filing cabinets that fill up as documents are filed
+const cabinets = [];
+for (let i = 0; i < 3; i++) {
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.6, 0.9), new THREE.MeshStandardMaterial({ color: 0x3a3428 }));
+  cab.position.set(ZONES.records.x - 4 + i * 1.8, 1.3, ZONES.records.z - 2.8); cab.castShadow = true; scene.add(cab);
+  cabinets.push(cab);
+}
+let filed = 0;
+function fileBox(kind) {
+  const colors = { invoice: 0xe8c77a, bill: 0xe0905d, contract: 0x5b8def, receipt: 0x7fc46a, form: 0x48b0a0 };
+  const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.12, 0.6), new THREE.MeshStandardMaterial({ color: colors[kind] || 0xcccccc, emissive: colors[kind] || 0xcccccc, emissiveIntensity: .25 }));
+  const cab = cabinets[filed % 3], level = Math.floor(filed / 3);
+  b.position.set(cab.position.x + ((filed % 2) ? 0.3 : -0.3), 2.7 + level * 0.14, cab.position.z);
+  scene.add(b); filed++;
+}
+
+// whatsapp wall at the front desk
+const wall = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 0.15), new THREE.MeshStandardMaterial({ color: 0x1f3a2a, emissive: 0x25a35a, emissiveIntensity: 0.15 }));
+wall.position.set(ZONES.front.x + 5, 1.6, ZONES.front.z + 2.6); scene.add(wall);
+const wallLabel = label("WhatsApp", { size: 40, color: "#7fe0a0" }); wallLabel.position.set(wall.position.x, 3.1, wall.position.z); scene.add(wallLabel);
+let wallGlow = 0;
+
+// ---------- robots ----------
+const robots = {};
+function robot(id) {
+  const a = AG[id], z = ZONES[ZONE_OF[id]], i = z.agents.indexOf(id), n = z.agents.length;
+  const x = z.x + (i - (n - 1) / 2) * Math.min(3.2, (z.w - 2) / Math.max(1, n - 1 || 1)), zz = z.z + 0.6;
+  const g = new THREE.Group(); g.position.set(x, 0, zz);
+  const desk = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.9, 1.1), new THREE.MeshStandardMaterial({ color: 0x2b3142 }));
+  desk.position.set(0, 0.45, 1.1); desk.castShadow = true; g.add(desk);
+  const screen = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.7, 0.06), new THREE.MeshStandardMaterial({ color: 0x0d1016, emissive: z.color, emissiveIntensity: 0.25 }));
+  screen.position.set(0, 1.35, 1.0); g.add(screen);
+  const bot = new THREE.Group(); g.add(bot);
+  const lead = a.level === "lead" || a.level === "chief";
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.7), new THREE.MeshStandardMaterial({ color: lead ? 0xe9e6dd : 0xbfc6d4, metalness: .2, roughness: .5 }));
+  body.position.y = 0.95; body.castShadow = true; bot.add(body);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.65, 0.7), new THREE.MeshStandardMaterial({ color: 0xd9dee8 }));
+  head.position.y = 1.85; head.castShadow = true; bot.add(head);
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.18, 0.05), new THREE.MeshStandardMaterial({ color: z.color, emissive: z.color, emissiveIntensity: 0.6 }));
+  visor.position.set(0, 1.88, 0.36); bot.add(visor);
+  const ant = new THREE.Mesh(new THREE.SphereGeometry(0.08), new THREE.MeshStandardMaterial({ color: z.color, emissive: z.color, emissiveIntensity: 1 }));
+  ant.position.y = 2.35; bot.add(ant);
+  const name = label(a.name, { size: 40, color: "#e9e6dd", bg: "rgba(17,20,27,.7)" });
+  name.position.set(0, 2.9, 0); g.add(name);
+  body.userData.agent = head.userData.agent = id;
+  scene.add(g);
+  robots[id] = { g, bot, visor, screen, home: g.position.clone(), glow: 0, bubble: null, bubbleT: 0, walk: null, zone: ZONE_OF[id] };
+}
+for (const id of Object.keys(ZONE_OF)) if (AG[id]) robot(id);
+
+function say(id, text, secs = 5) {
+  const r = robots[id]; if (!r) return;
+  if (r.bubble) r.g.remove(r.bubble);
+  r.bubble = label(text.length > 110 ? text.slice(0, 107) + "…" : text, { size: 34, color: "#1a1a1a", bg: "rgba(242,226,179,.96)", maxW: 760 });
+  r.bubble.position.set(0, 4.1, 0); r.g.add(r.bubble); r.bubbleT = secs; r.glow = 1;
+}
+
+// a glowing orb carries work from one agent to the next
+const orbs = [];
+function send(from, to, color = 0xe8c77a) {
+  const a = robots[from], b = robots[to]; if (!a || !b || from === to) return;
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 16), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.2 }));
+  scene.add(m);
+  const p0 = a.g.position.clone().add(new THREE.Vector3(0, 2.2, 0)), p2 = b.g.position.clone().add(new THREE.Vector3(0, 2.2, 0));
+  const p1 = p0.clone().add(p2).multiplyScalar(.5).add(new THREE.Vector3(0, 5, 0));
+  orbs.push({ m, p0, p1, p2, t: 0 });
+}
+function walkTo(id, target, back = true) {
+  const r = robots[id]; if (!r) return;
+  r.walk = { from: r.g.position.clone(), to: target.clone(), t: 0, back };
+}
+
+// ---------- events drive the floor ----------
+const byId = new Map();
+const AGENT_IDS = new Set(Object.keys(AG));
+const agentOf = (e) => e.agent && robots[e.agent] ? e.agent : AGENT_IDS.has(e.actor) && robots[e.actor] ? e.actor :
+  e.type.startsWith("chat.") ? "rania" : e.type === "utterance" ? "scribe" : null;
+const COLOR = { check: 0xe05d5d, withdrawn: 0x9aa3b5, returned: 0xb07be0 };
+let feedEvents = [];
+
+function play(e, quiet = false) {
+  byId.set(e.id, e);
+  const who = agentOf(e);
+  const cause = e.caused_by && byId.get(e.caused_by);
+  const from = cause && agentOf(cause);
+  if (who) {
+    if (from && from !== who) send(from, who, e.type === "check.raised" ? COLOR.check : e.type === "review.returned" ? COLOR.returned : 0xe8c77a);
+    if (!quiet && !["agent.started", "chat.received", "fact.superseded"].includes(e.type)) say(who, describe(e));
+  }
+  if (e.type === "check.raised") rooms.comp.flash = 1;
+  if (e.type === "task.withdrawn" || e.type === "review.returned" || e.type === "approval.refused") rooms[ZONE_OF[who] || "review"].flash = 0.6;
+  if (e.type === "document.filed") fileBox(e.content.kind);
+  if (e.type === "chat.received") { wallGlow = 1; if (!quiet) say("rania", `Message: "${e.content.text}"`, 3); }
+  if (e.type === "agent.started" && (who === "archivist" || who === "analyst")) walkTo(who, new THREE.Vector3(cabinets[1].position.x, 0, cabinets[1].position.z + 1.4));
+  if (e.type === "agent.started" && who === "formf") walkTo(who, robots.formf.home.clone().add(new THREE.Vector3(0, 0, -2)));
+  if (!quiet) { feedEvents.unshift(e); feedEvents = feedEvents.slice(0, 60); if (zone !== "front") renderZone(); }
+  updateHud();
+}
+
+// ---------- the side panel: Nova conversation, or a team's room ----------
+let zone = "front";
+const convo = [];
+let listening = false, recog = null, talking = false;
+const session = Math.random().toString(36).slice(2);
+let person = "layla";
+
+function renderZone() {
+  const z = ZONES[zone];
+  $("ztitle").textContent = z.name;
+  $("back").hidden = zone === "front";
+  $("zsub").textContent = z.about;
+  document.querySelectorAll("#zones button").forEach((b) => b.classList.toggle("on", b.dataset.z === zone));
+  if (zone === "front") return renderNova();
+  const evs = feedEvents.filter((e) => z.agents.includes(agentOf(e)));
+  $("zbody").replaceChildren(
+    h("div", {}, ...z.agents.map((id) => h("div", { class: "item", style: "background:#1d2230;border-color:#2a3040;margin-bottom:8px" },
+      h("strong", {}, AG[id].name), h("span", { class: "small", style: "color:#9aa3b5" }, ` · ${AG[id].role}`),
+      h("div", { class: "small", style: "color:#cfd6e4;margin-top:4px" }, AG[id].job),
+      h("div", { class: "small", style: "color:#e08a8a;margin-top:4px" }, `Never: ${AG[id].never}`)))),
+    h("h2", { style: "margin:14px 0 6px;font-size:13px;color:#9aa3b5" }, "HAPPENING HERE"),
+    evs.length ? h("div", {}, evs.slice(0, 20).map((e) => h("div", { class: "ev3" }, h("b", {}, AG[agentOf(e)]?.name || ""), describe(e))))
+      : h("p", { class: "small", style: "color:#9aa3b5" }, "Nothing yet. Ask Nova something that needs this team, or replay the deal."));
+}
+
+function renderNova() {
+  const kids = [
+    h("div", { class: "row", style: "margin-bottom:10px" }, h("span", { class: "small", style: "color:#9aa3b5;flex:0 0 auto" }, "I am"),
+      h("select", { onchange: (e) => person = e.target.value, style: "background:#11141b;color:#e9e6dd;border-color:#2a3040" },
+        Object.entries(NAMES).map(([k, v]) => h("option", { value: k, selected: k === person }, v)))),
+    h("button", { class: "talk", style: "width:100%;padding:12px", onclick: () => talking ? stopTalk() : startTalk() },
+      talking ? (listening ? h("span", {}, h("span", { class: "listening" }), "Listening… (tap to stop)") : "Nova is talking… (tap to stop)") : "Talk to Nova"),
+    h("p", { class: "small", style: "color:#9aa3b5" }, "She starts with your briefing, then just talk. Ask follow-ups; she remembers what you were discussing."),
+    ...convo.map((m) => h("div", { class: `msg ${m.from}` }, h("span", { class: "from" }, m.from === "nova" ? "Nova" : NAMES[person]),
+      m.from === "you" ? h("span", { class: "t" }, m.text) : h("span", {}, m.text),
+      m.options ? h("div", {}, m.options.map((o) => h("button", { class: "small", style: "margin:6px 6px 0 0", onclick: () => ask(o) }, o))) : null,
+      m.cites?.length ? h("div", { class: "refs" }, ...m.cites.map((c) => h("span", { class: "chip" }, c))) : null)),
+  ];
+  $("zbody").replaceChildren(...kids);
+  $("zbody").scrollTop = 1e9;
+}
+
+// speaking: the clearest available voice, sentence by sentence, record ids left out of the speech
+let voice = null;
+function pickVoice() {
+  const vs = speechSynthesis.getVoices();
+  voice = ["Samantha", "Google UK English Female", "Microsoft Aria Online (Natural) - English (United States)", "Karen", "Moira", "Serena"]
+    .map((n) => vs.find((v) => v.name === n)).find(Boolean) || vs.find((v) => v.lang.startsWith("en") && /female/i.test(v.name)) || vs.find((v) => v.lang.startsWith("en")) || null;
+}
+speechSynthesis.onvoiceschanged = pickVoice; pickVoice();
+function speak(text) {
+  return new Promise((done) => {
+    speechSynthesis.cancel();
+    const clean = text.replace(/\s*\((?:[A-Z]+\d+[^)]*|ref [^)]*|permit [^)]*)\)/g, "").replace(/\[[A-Z]\d+\]/g, "").replace(/AED/g, "dirhams ");
+    const parts = clean.match(/[^.!?]+[.!?]*/g) || [clean];
+    let i = 0;
+    const next = () => {
+      if (i >= parts.length || !talking && i > 0 && !speakingOnce) return done();
+      const u = new SpeechSynthesisUtterance(parts[i++].trim());
+      if (voice) u.voice = voice;
+      u.rate = 0.98; u.pitch = 1.02;
+      u.onend = next; u.onerror = next;
+      speechSynthesis.speak(u);
+    };
+    next();
+  });
+}
+let speakingOnce = false;
+
+async function ask(text) {
+  convo.push({ from: "you", text });
+  renderNova();
+  say("nova", "Let me check…", 2);
+  const r = await post("/api/nova/say", { text, person, session });
+  convo.push({ from: "nova", text: r.text, cites: r.cites, options: r.options });
+  renderNova();
+  say("nova", r.text, 7);
+  if (r.delegated_to) { zoomTo("records", false); }
+  speakingOnce = !talking;
+  await speak(r.text);
+  if (talking) listen();
+}
+
+function listen() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast("This browser can't listen. Type to Nova below."); return; }
+  recog = new SR(); recog.lang = "en-US"; recog.interimResults = false; recog.maxAlternatives = 1;
+  listening = true; renderNova();
+  recog.onresult = (ev) => { listening = false; const t = ev.results[0][0].transcript; if (/^(thanks|thank you|bye|stop|that's all)/i.test(t)) { convo.push({ from: "you", text: t }); stopTalk("Any time. I'll keep an eye on things."); } else ask(t); };
+  recog.onerror = () => { listening = false; renderNova(); };
+  recog.onend = () => { if (listening) { listening = false; renderNova(); } };
+  recog.start();
+}
+
+async function startTalk() {
+  talking = true; renderNova();
+  const b = await api(`/api/nova/brief/${person}`);
+  convo.push({ from: "nova", text: b.text, cites: [...new Set(b.lines.flatMap((l) => l.refs))] });
+  renderNova();
+  say("nova", b.text, 8);
+  await speak(b.text + " What would you like to know?");
+  if (talking) listen();
+}
+function stopTalk(bye) {
+  talking = false; listening = false; recog?.abort(); speechSynthesis.cancel();
+  if (bye) { convo.push({ from: "nova", text: bye }); speakingOnce = true; speak(bye); }
+  renderNova();
+}
+
+$("send").onclick = () => { const t = $("say").value.trim(); if (t) { $("say").value = ""; zone = "front"; renderZone(); ask(t); } };
+$("say").onkeydown = (e) => e.key === "Enter" && $("send").onclick();
+$("back").onclick = () => { zone = "front"; renderZone(); flyHome(); };
+
+// ---------- camera ----------
+let fly = null;
+function zoomTo(k, open = true) {
+  const z = ZONES[k];
+  fly = { from: camera.position.clone(), to: new THREE.Vector3(z.x, 14, z.z + 16), lookFrom: controls.target.clone(), lookTo: new THREE.Vector3(z.x, 1, z.z), t: 0 };
+  if (open) { zone = k; renderZone(); }
+}
+function flyHome() { fly = { from: camera.position.clone(), to: HOME.pos.clone(), lookFrom: controls.target.clone(), lookTo: HOME.look.clone(), t: 0 }; }
+$("zones").append(h("button", { "data-z": "floor", onclick: () => { zone = "front"; renderZone(); flyHome(); } }, "Whole floor"),
+  ...Object.entries(ZONES).map(([k, z]) => h("button", { "data-z": k, onclick: () => zoomTo(k) }, z.name)));
+
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+renderer.domElement.addEventListener("click", (ev) => {
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObjects(scene.children, true).find((i) => i.object.userData.agent || i.object.userData.zone);
+  if (hit) zoomTo(hit.object.userData.zone || ZONE_OF[hit.object.userData.agent]);
+});
+
+// ---------- HUD ----------
+async function updateHud() {
+  clearTimeout(updateHud.t);
+  updateHud.t = setTimeout(async () => {
+    const gr = await api("/api/graph");
+    const open = gr.nodes.filter((n) => n.type === "task" && n.status === "queued").length;
+    const needs = gr.nodes.filter((n) => ["decision", "check", "question", "request"].includes(n.type) && n.status === "open").length;
+    $("hud").replaceChildren(h("span", {}, `● ${open} tasks with agents`), h("span", {}, `● ${needs} waiting for people`),
+      h("button", { onclick: correction }, "Karim corrects himself"), h("button", { onclick: replay }, "Replay everything"),
+      h("button", { onclick: async () => { await post("/api/demo/reset"); location.reload(); } }, "Reset"));
+  }, 300);
+}
+async function correction() {
+  const m = await post("/api/meetings", { deal: "marina-1204", title: "Second meeting" });
+  await post(`/api/meetings/${m.id}/consent?by=Karim%20Haddad`);
+  say("scribe", 'Karim: "Actually, forget my brother. I\'ll pay it all myself."', 4);
+  await post(`/api/meetings/${m.id}/turn`, { speaker: "customer", text: "Actually, forget my brother. I'll pay it all myself." });
+}
+let replaying = false;
+async function replay() {
+  if (replaying) return;
+  replaying = true;
+  const evs = await api("/api/events");
+  for (const r of Object.values(robots)) { if (r.bubble) r.g.remove(r.bubble); r.bubble = null; }
+  for (const e of evs) {
+    if (["knowledge.added", "listing.added", "document.filed", "sale.closed"].includes(e.type)) { byId.set(e.id, e); continue; }
+    play(e);
+    await new Promise((ok) => setTimeout(ok, 650));
+  }
+  replaying = false;
+}
+
+// ---------- loop ----------
+function resize() { const w = stage.clientWidth, hh = stage.clientHeight; renderer.setSize(w, hh); camera.aspect = w / hh; camera.updateProjectionMatrix(); }
+addEventListener("resize", resize); resize();
+const clock = new THREE.Clock();
+(function tick() {
+  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+  for (const [id, r] of Object.entries(robots)) {
+    r.bot.position.y = Math.sin(t * 2 + id.length) * 0.04 + (r.glow > 0 ? Math.abs(Math.sin(t * 10)) * 0.15 * r.glow : 0);
+    r.visor.material.emissiveIntensity = 0.6 + r.glow * 1.6;
+    r.screen.material.emissiveIntensity = 0.25 + r.glow * 0.8;
+    r.glow = Math.max(0, r.glow - dt * 0.5);
+    if (r.bubble && (r.bubbleT -= dt) <= 0) { r.g.remove(r.bubble); r.bubble = null; }
+    if (r.walk) {
+      r.walk.t += dt / 1.4;
+      const k = Math.min(1, r.walk.t), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+      r.g.position.lerpVectors(r.walk.from, r.walk.to, e);
+      r.bot.rotation.z = Math.sin(t * 14) * 0.08;
+      if (k >= 1) { r.bot.rotation.z = 0; r.walk = r.walk.back ? { from: r.walk.to.clone(), to: r.home.clone(), t: -0.6, back: false } : null; }
+    }
+  }
+  for (const [k, room] of Object.entries(rooms)) {
+    room.pad.material.emissiveIntensity = 0.04 + room.flash * (0.35 + Math.sin(t * 12) * 0.15);
+    room.flash = Math.max(0, room.flash - dt * 0.25);
+  }
+  wall.material.emissiveIntensity = 0.15 + wallGlow; wallGlow = Math.max(0, wallGlow - dt * 0.6);
+  for (let i = orbs.length - 1; i >= 0; i--) {
+    const o = orbs[i]; o.t += dt / 1.1;
+    const k = Math.min(1, o.t), a = o.p0.clone().lerp(o.p1, k), b = o.p1.clone().lerp(o.p2, k);
+    o.m.position.copy(a.lerp(b, k));
+    if (k >= 1) { scene.remove(o.m); orbs.splice(i, 1); }
+  }
+  if (fly) {
+    fly.t += dt / 1.2;
+    const k = Math.min(1, fly.t), e = 1 - (1 - k) ** 3;
+    camera.position.lerpVectors(fly.from, fly.to, e); controls.target.lerpVectors(fly.lookFrom, fly.lookTo, e);
+    if (k >= 1) fly = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+})();
+
+// ---------- start: the archive fills the cabinets, then live events animate the floor ----------
+const past = await api("/api/events");
+for (const e of past) { byId.set(e.id, e); if (e.type === "document.filed") fileBox(e.content.kind); }
+renderZone(); updateHud();
+follow((evs) => evs.forEach((e) => play(e)), past.at(-1)?.id || 0);
+window.__diwan = { robots, zoomTo, ask, play };
+</script>
+</body>
+</html>

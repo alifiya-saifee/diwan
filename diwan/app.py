@@ -425,7 +425,7 @@ async def no_store(request: Request, call_next):
 
 @app.get("/")
 def root():
-    return RedirectResponse("/web/index.html")
+    return RedirectResponse("/web/office3d.html")
 
 
 if WEB.exists():

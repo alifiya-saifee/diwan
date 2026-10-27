@@ -88,7 +88,7 @@ export function describe(e) {
 }
 
 export function header(active) {
-  const pages = [["index.html", "Office"], ["inbox.html", "Inbox"], ["meeting.html", "Meeting"], ["knowledge.html", "Knowledge"],
+  const pages = [["office3d.html", "3D office"], ["index.html", "Office"], ["inbox.html", "Inbox"], ["meeting.html", "Meeting"], ["knowledge.html", "Knowledge"],
                  ["graph.html", "Memory graph"], ["team.html", "Team"]];
   const status = h("div", { class: "status" });
   api("/api/health").then((s) => {

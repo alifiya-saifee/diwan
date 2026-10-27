@@ -60,3 +60,14 @@ Everything in this repository was written during the Meta Global AI Developer Ha
 - Memory graph: the deal's graph from the log, click any node for its record and links, rewind slider.
 - Team: the org chart from the charters, each agent's charter and latest work.
 - Meeting: consent first, typed turns or the microphone through Muse Voice Transcribe.
+
+## 27 Oct 2026 (late): the Records team and the 3D office
+
+- Records team: the Archivist files and finds contracts, invoices, bills and receipts; the Data analyst answers about
+  sales, commission, spending and pipeline by counting records in code (a model never produces a number), listing every
+  record it counted. No period named: it asks which. Nova hands these questions over visibly.
+- Nova keeps a conversation's subject, so follow-ups ("and what changed?") stay on the deal just discussed.
+- 3D office: a room per team and a named robot per agent, driven by the live event log. Work travels between agents as
+  glowing orbs along the causal chain; each agent says what it did; Compliance flashes when a payment changes; filed
+  documents fill the Records cabinets; the analyst walks to the archive to answer. Talk to Nova: she reads your
+  briefing aloud, listens, answers by voice and keeps listening until you say thanks.
