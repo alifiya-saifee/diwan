@@ -26,44 +26,97 @@ class Office:
         return self.log.append("deal.opened", actor=by, deal=deal, key=f"deal:{deal}",
                                content={"property": property, "customer": customer, "broker": broker})
 
-    def record_fact(self, deal: str, kind: str, quote: str, speaker: str, *, replaces: str | None = None,
-                    actor: str = "scribe", caused_by: int | None = None, **props) -> str:
+    # meetings: nothing is heard before the customer agrees to the recording
+    def meeting(self, mid: str) -> dict:
+        m = None
+        for e in self.log.list():
+            c = e["content"]
+            if e["type"] == "meeting.started" and c["meeting"] == mid:
+                m = {"id": mid, "deal": e["deal"], "title": c.get("title"), "speakers": c.get("speakers", {}), "consent": False,
+                     "ended": False, "turns": []}
+            elif m and c.get("meeting") == mid:
+                if e["type"] == "consent.given":
+                    m["consent"] = True
+                elif e["type"] == "meeting.ended":
+                    m["ended"] = True
+                elif e["type"] == "utterance":
+                    m["turns"].append(c)
+        if m is None:
+            raise KeyError(f"no meeting {mid!r}")
+        return m
+
+    def start_meeting(self, deal: str, mid: str, *, title: str, speakers: dict[str, str] | None = None, by: str = "omar") -> dict:
+        """`speakers` maps the labels transcription gives (speaker_0, customer...) to people."""
+        g = self.graph()
+        d = g.nodes[f"deal:{deal}"].props
+        speakers = speakers or {"customer": d["customer"], "broker": d["broker"], "speaker_0": d["broker"], "speaker_1": d["customer"]}
+        return self.log.append("meeting.started", actor=by, deal=deal, key=f"meeting:{mid}",
+                               content={"meeting": mid, "title": title, "speakers": speakers})
+
+    def give_consent(self, mid: str, *, by: str) -> dict:
+        m = self.meeting(mid)
+        return self.log.append("consent.given", actor=by, deal=m["deal"], key=f"consent:{mid}", content={"meeting": mid, "by": by})
+
+    def utterance(self, mid: str, label: str, text: str, *, turn: str | None = None) -> dict:
+        m = self.meeting(mid)
+        if not m["consent"]:
+            raise PermissionError("The customer has not agreed to the recording; nothing is kept.")
+        if m["ended"]:
+            raise PermissionError("The meeting has ended.")
+        speaker = m["speakers"].get(label, label)
+        return self.log.append("utterance", actor="voice", agent="scribe", deal=m["deal"], key=f"turn:{mid}:{turn}" if turn else None,
+                               content={"meeting": mid, "label": label, "speaker": speaker, "text": text})
+
+    def end_meeting(self, mid: str, *, by: str = "omar") -> dict:
+        m = self.meeting(mid)
+        return self.log.append("meeting.ended", actor=by, deal=m["deal"], key=f"end:{mid}", content={"meeting": mid, "turns": len(m["turns"])})
+
+    def record_fact(self, deal: str, kind: str, quote: str, speaker: str, *, replaces: str | list[str] | None = None,
+                    stance: str = "asserted", actor: str = "scribe", caused_by: int | None = None, **props) -> str:
+        """`stance`: asserted, negated or hypothetical. Only asserted statements create or change work."""
         g = self.graph()
         fid = self._next(g, "fact", "F")
+        olds = [replaces] if isinstance(replaces, str) else list(replaces or [])
         ev = self.log.append("fact.created", actor=actor, agent="scribe", deal=deal, caused_by=caused_by,
-                             content={"id": fid, "kind": kind, "quote": quote, "speaker": speaker, "replaces": replaces, **props})
-        if replaces:
-            self._replace(deal, replaces, fid, ev["id"])
+                             content={"id": fid, "kind": kind, "quote": quote, "speaker": speaker, "stance": stance,
+                                      "replaces": olds, **props})
+        if stance != "asserted":
+            return fid
+        if olds:
+            self._replace(deal, olds, fid, ev["id"])
         else:
             self._contradictions(deal, fid, ev["id"])
         self._payment_rules(deal, ev["id"])
         return fid
 
-    def _replace(self, deal: str, old: str, new: str, cause: int) -> None:
+    def _replace(self, deal: str, olds: list[str], new: str, cause: int) -> None:
         g = self.graph()
-        o, n = g.nodes[old], g.nodes[new]
-        if o.props["kind"] in MONEY_KINDS or n.props["kind"] in MONEY_KINDS:
+        n = g.nodes[new]
+        os_ = [g.nodes[o] for o in olds]
+        if n.props["kind"] in MONEY_KINDS or any(o.props["kind"] in MONEY_KINDS for o in os_):
+            before = " / ".join(f'"{o.props["quote"]}"' for o in os_)
             self.log.append("check.raised", actor="comp", agent="comp", deal=deal, caused_by=cause,
-                            content={"who": "priya", "title": "Payment arrangement changed", "refs": [old, new],
-                                     "text": f'Payment arrangement changed: "{o.props["quote"]}" became "{n.props["quote"]}". Review before any money moves.'})
-        sup = self.log.append("fact.superseded", actor="scribe", agent="scribe", deal=deal, caused_by=cause, content={"id": old, "by": new})
-        g = self.graph()
+                            content={"who": "priya", "title": "Payment arrangement changed", "refs": olds + [new],
+                                     "text": f'Payment arrangement changed: {before} became "{n.props["quote"]}". Review before any money moves.'})
         sent_back = set()
-        for x in g.impact(old):
-            if x.type == "task" and x.status in OPEN:
-                self.log.append("task.withdrawn", actor=x.props["agent"], agent=x.props["agent"], deal=deal, caused_by=sup["id"],
-                                content={"id": x.id, "reason": f'{old} was replaced by {new}: "{n.props["quote"]}"'})
-            elif x.type == "approval" and x.status == "given":
-                self.log.append("decision.needed", actor="factcheck", agent="factcheck", deal=deal, caused_by=sup["id"],
-                                content={"who": x.props["approver"], "refs": [x.id, old, new], "options": ["Re-approve on the new facts", "Cancel"],
-                                         "question": f'Your approval "{x.props["action"]}" rests on "{o.props["quote"]}", which the customer replaced with "{n.props["quote"]}".'})
-            elif x.type == "slide":
-                draft = g.out(x.id, "part_of")[0]
-                if draft.id not in sent_back and draft.status != "sent_back":
-                    sent_back.add(draft.id)
-                    self.log.append("review.returned", actor="factcheck", agent="factcheck", deal=deal, caused_by=sup["id"],
-                                    content={"draft": draft.id, "slide": x.props["n"], "old": o.props["quote"], "new": n.props["quote"],
-                                             "reason": f"Slide {x.props['n']} still says what {old} said; the customer replaced it ({new})."})
+        for o in os_:
+            sup = self.log.append("fact.superseded", actor="scribe", agent="scribe", deal=deal, caused_by=cause, content={"id": o.id, "by": new})
+            g = self.graph()
+            for x in g.impact(o.id):
+                if x.type == "task" and x.status in OPEN:
+                    self.log.append("task.withdrawn", actor=x.props["agent"], agent=x.props["agent"], deal=deal, caused_by=sup["id"],
+                                    content={"id": x.id, "reason": f'{o.id} was replaced by {new}: "{n.props["quote"]}"'})
+                elif x.type == "approval" and x.status == "given":
+                    self.log.append("decision.needed", actor="factcheck", agent="factcheck", deal=deal, caused_by=sup["id"],
+                                    content={"who": x.props["approver"], "refs": [x.id, o.id, new], "options": ["Re-approve on the new facts", "Cancel"],
+                                             "question": f'Your approval "{x.props["action"]}" rests on "{o.props["quote"]}", which the customer replaced with "{n.props["quote"]}".'})
+                elif x.type == "slide":
+                    draft = g.out(x.id, "part_of")[0]
+                    if draft.id not in sent_back and draft.status != "sent_back":
+                        sent_back.add(draft.id)
+                        self.log.append("review.returned", actor="factcheck", agent="factcheck", deal=deal, caused_by=sup["id"],
+                                        content={"draft": draft.id, "slide": x.props["n"], "old": o.props["quote"], "new": n.props["quote"],
+                                                 "reason": f"Slide {x.props['n']} still says what {o.id} said; the customer replaced it ({new})."})
 
     def _contradictions(self, deal: str, fid: str, cause: int) -> None:
         """Two live statements that cannot both be true, and nothing said which replaces which: never pick one.

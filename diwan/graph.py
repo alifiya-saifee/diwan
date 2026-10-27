@@ -83,7 +83,9 @@ class Graph:
         return [n for n in self.nodes.values() if n.type == type and (deal is None or n.deal == deal) and (st is None or n.status in st)]
 
     def facts(self, deal: str, kind: str | None = None, live: bool = True) -> list[Node]:
-        return [n for n in self.of("fact", deal) if (kind is None or n.props.get("kind") == kind) and (not live or n.status == "live")]
+        """Live facts are asserted and not replaced; hypothetical and negated statements are kept but never live."""
+        return [n for n in self.of("fact", deal) if (kind is None or n.props.get("kind") == kind)
+                and (not live or (n.status == "live" and n.props.get("stance", "asserted") == "asserted"))]
 
     def deals(self) -> list[Node]:
         return self.of("deal")
@@ -115,7 +117,7 @@ class Graph:
         if n.type == "fact":
             extra = f" (replaced by {p['superseded_by']})" if n.status == "superseded" else ""
             if p.get("replaces"):
-                extra += f" (replaces {p['replaces']})"
+                extra += f" (replaces {', '.join(p['replaces']) if isinstance(p['replaces'], list) else p['replaces']})"
             return f'{n.id} · {name(p.get("speaker"))} said: "{p["quote"]}" · {KIND.get(p["kind"], p["kind"])}{extra}'
         if n.type == "task":
             who = f", waits for {name(p['needs_person'])}" if p.get("needs_person") else ""

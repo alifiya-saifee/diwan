@@ -27,3 +27,12 @@ Everything in this repository was written during the Meta Global AI Developer Ha
   an answer no record supports is not shown. Routes instructions through the right lead to a specialist (Form F clerk
   returns a field plan; Submit waits for Joseph). Refuses what only people do. Asks back when the deal or team is unclear.
   Briefs each person at 07:00 Dubai with what needs them, each line citing its records.
+
+## 27 Oct 2026 (evening): the Scribe and live voice
+
+- Meetings with a consent gate: nothing is heard or kept before the customer agrees.
+- Scribe: each finished turn becomes facts with exact quotes (Muse Spark with a strict schema when plugged in; a rules
+  reader for plain English otherwise: amounts in words or digits, who pays, family, income, deposits).
+- One correction can replace several statements ("forget my brother" takes back both the brother's part and his
+  paying). Hypothetical statements are kept but change nothing. An unclear correction asks the broker.
+- Muse Voice Transcribe realtime client (diarization, partial and finished turns).
