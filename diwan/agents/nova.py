@@ -176,7 +176,19 @@ def converse(office: Office, text: str, person: str = "layla", *, session: str =
     now = now or datetime.now(DUBAI)
     person = pid(person) or "layla"
     t = text.strip()
+    from diwan.agents import lessons
+    if out := lessons.follow_up(office.log, t, session, person):
+        return out
     if out := lobby.follow_up(office, t, person, session, now):
+        return out
+    if m := re.match(r"(?i)^\s*(?:set\s+)?(\w[\w' -]*?)\s+(?:to|on)\s+(autopilot|review everything|review all|review key actions|review key|review)\s*$", t):
+        from diwan.agents.charters import ROSTER
+        agent = next((c.id for c in ROSTER if c.name.lower() == m.group(1).lower()), None)
+        if agent:
+            lvl = {"autopilot": "autopilot", "review everything": "review_all", "review all": "review_all"}.get(m.group(2).lower(), "review_key")
+            lessons.set_level(office.log, agent, lvl, by=person)
+            return {"kind": "done", "text": f"{get(agent).name} is now on {lessons.LEVELS[lvl].lower()}."}
+    if out := lessons.draft(t, session):
         return out
     if m := re.match(r"(?i)^(?:brief me|set (?:my )?briefing)(?: at| for| to)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", t):
         h = int(m.group(1)) + (12 if m.group(3) == "pm" and int(m.group(1)) < 12 else 0)
@@ -220,7 +232,7 @@ def ask(office: Office, question: str, person: str = "layla", *, session: str | 
         pack = Pack(req, NOVA, "I don't have that in the office's records.", missing=[question], next=[_who_knows(g, deal)])
         runner.submit(office.log, c, pack, sources=sources, deal=deal)
         return {"kind": "unknown", "text": f"I don't have that in the office's records. {_who_knows(g, deal)}.", "cites": [], "request": req}
-    system = runner.instructions(c)
+    system = runner.instructions(c, office.log)
     task = f"{name(person)} asks: {question}\nAnswer in at most three sentences from these records only, citing record ids in brackets."
     if runner.has_model(c, system, runner.user_message(task, sources), tape_root=tape_root):
         res = runner.run(office.log, NOVA, request=req, task=task, sources=sources, deal=deal, tape_root=tape_root)

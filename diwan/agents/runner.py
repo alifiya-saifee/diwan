@@ -28,7 +28,13 @@ class Result:
     usage: dict = field(default_factory=dict)
 
 
-def instructions(c: Charter) -> str:
+def instructions(c: Charter, log: EventLog | None = None) -> str:
+    """The charter as the model's instructions, plus any lessons the team has taught this agent."""
+    from diwan.agents import lessons
+    return _instructions(c) + lessons.instructions(log, c.id)
+
+
+def _instructions(c: Charter) -> str:
     alone = "; ".join(ACTIONS[a] for a in c.alone) or "nothing"
     person = "; ".join(ACTIONS[a] for a in c.person) or "nothing"
     return f"""You are {c.name}, {c.role.lower()}, an agent in Diwan, the back office of a Dubai real-estate brokerage.
@@ -104,17 +110,21 @@ def needs(c: Charter) -> str:
 def submit(log: EventLog, c: Charter, pack: Pack, *, sources: dict[str, str], deal: str | None = None,
            caused_by: int | None = None, usage: dict | None = None) -> Result:
     """Check the quotes, apply the charter's authority to every proposed action, and log the pack."""
+    from diwan.agents import lessons
     check_evidence(pack, sources)
+    lvl = lessons.level(log, c.id)
     allowed, approvals, refused = [], [], []
     for a in pack.actions:
-        if a.kind in c.alone:
+        if a.kind in c.alone and not lessons.needs_person(lvl, a.kind):
             allowed.append(a)
+        elif a.kind in c.alone:
+            approvals.append(a)  # its charter allows it, but this agent is set to have a person review it
         elif a.kind in c.person:
             approvals.append(a)
         else:
             refused.append(a)
     ev = log.append("agent.pack", actor=c.id, agent=c.id, request=pack.request, deal=deal, caused_by=caused_by,
-                    content={"pack": pack.to_dict(), "usage": usage or {}, "allowed": [a.kind for a in allowed]})
+                    content={"pack": pack.to_dict(), "usage": usage or {}, "allowed": [a.kind for a in allowed], "autonomy": lvl})
     res = Result(pack, ev, usage=usage or {})
     for a in approvals:
         res.approvals.append(log.append("approval.requested", actor=c.id, agent=c.id, request=pack.request, deal=deal,
@@ -131,7 +141,7 @@ def run(log: EventLog, agent_id: str, *, request: str, task: str, sources: dict[
     c = get(agent_id)
     start = log.append("agent.started", actor=c.id, agent=c.id, request=request, deal=deal, caused_by=caused_by,
                        content={"task": task, "sources": sorted(sources)})
-    system, user = instructions(c), user_message(task, sources)
+    system, user = instructions(c, log), user_message(task, sources)
     try:
         reply = call(c, system, user, tape_root=tape_root)
         pack = from_model(request, c.id, reply.data)

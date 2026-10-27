@@ -83,6 +83,16 @@ export function describe(e) {
     case "consent.given": return "the customer agreed to the recording";
     case "utterance": return `${c.speaker}: "${c.text}"`;
     case "draft.made": return `${c.kind} v${c.version} drafted`;
+    case "lesson.added": return `new lesson: ${c.rule}`;
+    case "lesson.removed": return `lesson ${c.id} removed`;
+    case "autonomy.changed": return `set to ${c.level.replace("_", " ")}`;
+    case "stage.changed": return `stage → ${c.stage}`;
+    case "lobby.posted": return `posted ${c.id} for ${NAMES[c.to] || c.to}: ${c.text}`;
+    case "lobby.done": return `${c.id} done`;
+    case "lobby.late": return `${c.id} is late`;
+    case "lobby.reminded": return `reminded about ${c.id}`;
+    case "rounds.started": return "started the morning rounds";
+    case "briefing.ready": return "briefing ready";
     default: return e.type;
   }
 }

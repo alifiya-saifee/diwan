@@ -46,6 +46,7 @@ class Graph:
         self.edges: list[Edge] = []
         self.last_event = 0
         self.settings: dict[str, dict] = {}
+        self.autonomy: dict[str, str] = {}
         self.rounds: dict | None = None  # the latest round: {"event", "at", "reports": {lead: pack}}
 
     # building
@@ -264,6 +265,12 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
         elif t == "stage.changed" and f"deal:{deal}" in g.nodes:
             g.nodes[f"deal:{deal}"].props["stage"] = c["stage"]
             g.nodes[f"deal:{deal}"].props.setdefault("stages", []).append({"stage": c["stage"], "at": e["at"], "by": e["actor"]})
+        elif t == "autonomy.changed":
+            g.autonomy[c["agent"]] = c["level"]
+        elif t == "lesson.added":
+            g.add(c["id"], "lesson", c["rule"], e, status="active", props=dict(c) | {"by": e["actor"]})
+        elif t == "lesson.removed" and c.get("id") in g.nodes:
+            g.nodes[c["id"]].status = "removed"
         elif t == "setting.changed":
             g.settings.setdefault(c["person"], {})[c["key"]] = c["value"]
         elif t == "rounds.started":

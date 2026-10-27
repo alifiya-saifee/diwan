@@ -170,7 +170,7 @@ def hear(office: Office, deal: str, speaker: str, text: str, cause: int, *, tape
     g = office.graph()
     src = f"said:{cause}"
     sources = {src: f"{speaker}: {text}"} | {f.id: g.record(f.id) for f in g.facts(deal)}
-    system = runner.instructions(c) + RULES
+    system = runner.instructions(c, office.log) + RULES
     user = runner.user_message(f"New turn from {speaker}. Earlier facts of this deal are also given.", sources)
     if runner.has_model(c, system, user, schema=FACTS_SCHEMA, tape_root=tape_root):
         reply = runner.call(c, system, user, schema=FACTS_SCHEMA, tape_root=tape_root)

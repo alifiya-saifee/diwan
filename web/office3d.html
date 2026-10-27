@@ -124,6 +124,10 @@ const ZONES = {
   comp:    { name: "Compliance", x: 16,  z: -9,  w: 12, d: 8,  color: 0xf27d7d, agents: ["comp", "screen", "sof", "report"], about: "Hears every payment change first · never decides suspicion" },
   review:  { name: "Review",     x: 16,  z: 3,   w: 12, d: 9,  color: 0xb591f3, agents: ["review", "factcheck", "devil"], about: "Independent · sends back anything built on a replaced statement" },
   records: { name: "Records",    x: 0,   z: 0,   w: 12, d: 8,  color: 0xd9b26f, agents: ["records", "archivist", "analyst"], about: "The archive and the numbers · every figure counted from records" },
+  studio:  { name: "Content studio", x: 0, z: -25, w: 48, d: 12, color: 0xf08fc0,
+             agents: ["mkt", "research", "mtrend", "mrival", "mtrans", "plan", "midea", "mlane", "mfilm", "mcopy", "mcheck", "mscript",
+                      "mplay", "mart", "mremix", "mcap", "mwriter", "mpub", "mcross", "msched", "mthumb", "mpermit", "mlib", "mplaybook", "mpos", "mbrand"],
+             about: "Research → planning → copy → art → publishing, with the brand library · planned" },
 };
 const ZONE_OF = {};
 for (const [k, z] of Object.entries(ZONES)) for (const a of z.agents) ZONE_OF[a] = k;
@@ -314,7 +318,10 @@ scene.add(dust);
 const robots = {};
 function robot(id) {
   const a = AG[id], z = ZONES[ZONE_OF[id]], i = z.agents.indexOf(id), n = z.agents.length;
-  const x = z.x + (i - (n - 1) / 2) * Math.min(3.2, (z.w - 2) / Math.max(1, n - 1 || 1)), zz = z.z + .4;
+  const rows = n > 8 ? 2 : 1, cols = Math.ceil(n / rows), row = Math.floor(i / cols), col = i % cols;
+  const inRow = row < rows - 1 ? cols : n - cols * (rows - 1);
+  const x = z.x + (col - (inRow - 1) / 2) * Math.min(3.2, (z.w - 2) / Math.max(1, cols - 1));
+  const zz = z.z + .4 + (rows > 1 ? (row - (rows - 1) / 2) * 4.8 : 0);
   const g = new THREE.Group(); g.position.set(x, .18, zz);
   // desk with a glowing screen
   const desk = new THREE.Mesh(new THREE.BoxGeometry(2.1, .07, 1.0), new THREE.MeshStandardMaterial({ color: 0x1e2534, roughness: .35, metalness: .4 }));
@@ -567,7 +574,8 @@ $("back").onclick = () => { zone = "front"; renderZone(); flyHome(); };
 let fly = { from: camera.position.clone(), to: HOME.pos.clone(), lookFrom: HOME.look.clone(), lookTo: HOME.look.clone(), t: 0, dur: 2.6 };
 function zoomTo(k, open = true) {
   const z = ZONES[k];
-  fly = { from: camera.position.clone(), to: new THREE.Vector3(z.x + 3, 13, z.z + 15), lookFrom: controls.target.clone(), lookTo: new THREE.Vector3(z.x, 1, z.z), t: 0 };
+  const far = Math.max(1, z.w / 14);
+  fly = { from: camera.position.clone(), to: new THREE.Vector3(z.x + 3, 11 + far * 4, z.z + 12 + far * 6), lookFrom: controls.target.clone(), lookTo: new THREE.Vector3(z.x, 1, z.z), t: 0 };
   if (open) { zone = k; renderZone(); }
 }
 function flyHome() { fly = { from: camera.position.clone(), to: HOME.pos.clone(), lookFrom: controls.target.clone(), lookTo: HOME.look.clone(), t: 0 }; }

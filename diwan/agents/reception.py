@@ -12,7 +12,7 @@ import re
 from datetime import datetime
 
 from diwan import slots
-from diwan.agents import runner, scribe
+from diwan.agents import lessons, runner, scribe
 from diwan.agents.charters import get
 from diwan.graph import Graph, Node
 from diwan.office import Office
@@ -168,7 +168,9 @@ def matches(g: Graph, deal: str, text: str) -> list[Node]:
     return out[:3]
 
 
-def book(office: Office, phone: str, deal: str, listing: Node, when: datetime | None, now: datetime, cause: int) -> tuple[str, list[str]]:
+def book(office: Office, phone: str, deal: str, listing: Node, when: datetime | None, now: datetime, cause: int,
+         dry: bool = False) -> tuple[str, list[str]]:
+    """Book a free slot. `dry` (Rania is on review) proposes the booking without making it."""
     g = office.graph()
     broker = g.nodes[f"deal:{deal}"].props["broker"]
     who = g.nodes[f"chat:{phone}"].label
@@ -178,6 +180,8 @@ def book(office: Office, phone: str, deal: str, listing: Node, when: datetime | 
         opts = ", ".join(slots.say(t) for t in options)
         lead = "That time isn't available. " if when else ""
         return f"{lead}I can book {listing.props['title']} ({ref}) with {name(broker)} on {opts}. Which suits you?", [listing.id]
+    if dry:
+        return f"I can book {listing.props['title']} ({ref}) with {name(broker)}, {slots.say(when)}. Shall I confirm it?", [listing.id]
     vid = f"V{len(g.of('viewing')) + 1}"
     office.log.append("appointment.booked", actor=RANIA, agent=RANIA, deal=deal, caused_by=cause,
                       content={"id": vid, "listing": ref, "broker": broker, "at": when.isoformat(), "customer": who, "chat": phone})
@@ -193,7 +197,7 @@ def _listing_line(n: Node) -> str:
 
 
 def answer_rules(office: Office, phone: str, deal: str, text: str, now: datetime, cause: int,
-                 heard: list[str] = ()) -> tuple[str, list[str], list[Action], str | None]:
+                 heard: list[str] = (), dry: bool = False) -> tuple[str, list[str], list[Action], str | None]:
     """Reply, refs, actions, and a handover reason if the chat should go to a person."""
     g = office.graph()
     low = text.lower()
@@ -215,7 +219,7 @@ def answer_rules(office: Office, phone: str, deal: str, text: str, now: datetime
         if not listing:
             opts = "; ".join(_listing_line(n) for n in advertisable(g)[:3])
             return f"Happy to arrange a viewing. Which property would you like to see? {opts}", [n.id for n in advertisable(g)[:3]], [Action("reply", "Ask which listing")], None
-        reply, refs = book(office, phone, deal, listing, slots.parse(text, now), now, cause)
+        reply, refs = book(office, phone, deal, listing, slots.parse(text, now), now, cause, dry)
         kind = "book_viewing" if any(r.startswith("V") for r in refs) else "reply"
         return reply, refs, [Action(kind, reply)], None
     communities = {w for n in g.of("listing") for w in re.findall(r"[a-z]{4,}", n.props["community"].lower())} - {"dubai"}
@@ -253,8 +257,10 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
     c = get(RANIA)
     sources = ({n.id: g.record(n.id) for n in advertisable(g)} | {k.id: g.record(k.id) for k in g.of("knowledge", status="confirmed")}
                | {f"msg:{m['event']}": f"{m['by']}: {m['text']}" for m in chat.props["messages"][-6:]})
-    system, user = runner.instructions(c) + GUIDE, runner.user_message(f"New message from {chat.label}: {text}", sources)
+    system, user = runner.instructions(c, office.log) + GUIDE, runner.user_message(f"New message from {chat.label}: {text}", sources)
     reason = None
+    lvl = lessons.level(office.log, RANIA)
+    dry = lvl != "autopilot"
     if runner.has_model(c, system, user, schema=RECEPTION_SCHEMA, tape_root=tape_root):
         out = runner.call(c, system, user, schema=RECEPTION_SCHEMA, tape_root=tape_root).data
         reply, refs = out["reply"], [r if r.startswith(("listing:", "K")) else f"listing:{r}" for r in out["listing_refs"]] + out["knowledge_refs"]
@@ -264,16 +270,26 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
             reply = f"I've asked {name(g.nodes[f'deal:{deal}'].props['broker'])} to reply to you here personally."
             actions = [Action("assign", "Hand to broker")]
         elif out["book_listing"] and f"listing:{out['book_listing']}" in g.nodes:
-            reply, refs = book(office, phone, deal, g.nodes[f"listing:{out['book_listing']}"], slots.parse(out["book_when"] or "", now), now, got["id"])
+            reply, refs = book(office, phone, deal, g.nodes[f"listing:{out['book_listing']}"], slots.parse(out["book_when"] or "", now), now, got["id"], dry)
             actions = [Action("book_viewing", reply)]
         by = "model"
     else:
-        reply, refs, actions, reason = answer_rules(office, phone, deal, text, now, got["id"], heard["facts"])
+        reply, refs, actions, reason = answer_rules(office, phone, deal, text, now, got["id"], heard["facts"], dry)
         by = "rules"
+    if ls := lessons.broken(office.log, RANIA, reply):
+        reason = f"held by lesson {ls['id']} ({ls['rule']})"
+        reply = f"I've asked {name(g.nodes[f'deal:{deal}'].props['broker'])} to reply to you here personally."
+        refs, actions = [ls["id"]], [Action("assign", "Hand to broker")]
     if chat.props["mode"] == "human":
         office.log.append("chat.suggested", actor=RANIA, agent=RANIA, deal=deal, caused_by=got["id"], content={"chat": phone, "text": reply, "refs": refs})
         return {"mode": "human", "suggestion": reply, "refs": refs, "facts": heard["facts"], "by": by}
-    runner.submit(office.log, c, Pack(f"chat-{got['id']}", RANIA, reply, actions=actions), sources={}, deal=deal, caused_by=got["id"])
+    res = runner.submit(office.log, c, Pack(f"chat-{got['id']}", RANIA, reply, actions=actions), sources={}, deal=deal, caused_by=got["id"])
+    if res.approvals:  # Rania is on review: her reply waits for the broker as a suggestion
+        office.log.append("chat.suggested", actor=RANIA, agent=RANIA, deal=deal, caused_by=got["id"],
+                          content={"chat": phone, "text": reply, "refs": refs, "review": lvl})
+        if reason:
+            hand_over(office, phone, reason=reason, cause=got["id"])
+        return {"mode": "review", "suggestion": reply, "refs": refs, "facts": heard["facts"], "by": by, "autonomy": lvl}
     _send(office, phone, deal, reply, refs, cause=got["id"])
     if reason:
         hand_over(office, phone, reason=reason, cause=got["id"])

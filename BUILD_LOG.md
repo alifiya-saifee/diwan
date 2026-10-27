@@ -95,3 +95,13 @@ Everything in this repository was written during the Meta Global AI Developer Ha
   delivery failures shown on the message. Free text after 24 hours is refused; a template is offered instead.
 - Settings: choose the WhatsApp line (AiSensy, Meta Cloud API, sandbox), enter keys (stored in the local .env, never
   shown again), test the AiSensy connection, copy the webhook address.
+
+## 28 Oct 2026: autonomy, lessons and the content studio
+
+- Autonomy per agent: autopilot, review key actions (anything a customer, portal or the public would see waits for a
+  person), or review everything. It only ever takes authority away; the charter's "never" list holds at every level.
+  Rania on review writes suggestions for the broker and books nothing. Set it on the Team page or by telling Nova.
+- Lessons: "Rania, never mention the transfer fee" is read back, saved as a dated rule, added to the agent's
+  instructions, and for "never" lessons enforced in code: a reply containing the phrase is not sent.
+- Content studio: 26 chartered agents in five rooms and a library (research, planning, copy, art, publishing, script
+  library), shown on the Team page and as a room in the 3D office. Chartered and visible; not yet working.

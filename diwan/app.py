@@ -96,6 +96,63 @@ def roster():
     return [asdict(c) for c in ROSTER]
 
 
+@app.get("/api/agents/{aid}")
+def agent_detail(aid: str):
+    from dataclasses import asdict
+
+    from diwan.agents import lessons
+    from diwan.agents.charters import BY_ID
+    if aid not in BY_ID:
+        raise HTTPException(404, "no such agent")
+    return asdict(BY_ID[aid]) | {"autonomy": lessons.level(S.office.log, aid), "levels": lessons.LEVELS,
+                                 "lessons": lessons.active_from_log(S.office.log, aid)}
+
+
+@app.get("/api/autonomy")
+def autonomy():
+    from diwan.agents import lessons
+    return {"levels": lessons.LEVELS, "agents": lessons.levels(S.office.log)}
+
+
+class LevelIn(BaseModel):
+    level: str
+    by: str = "layla"
+
+
+@app.post("/api/agents/{aid}/autonomy")
+def set_autonomy(aid: str, body: LevelIn):
+    from diwan.agents import lessons
+    try:
+        lessons.set_level(S.office.log, aid, body.level, by=body.by)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"ok": True}
+
+
+class LessonIn(BaseModel):
+    text: str
+    agent: str | None = None
+    by: str = "layla"
+
+
+@app.post("/api/lessons")
+def add_lesson(body: LessonIn):
+    """"Never mention service charges" for an agent, or a full sentence naming the agent."""
+    from diwan.agents import lessons
+    text = f"{body.agent}, {body.text}" if body.agent and not lessons.parse(body.text) else body.text
+    ls = lessons.parse(text) or lessons.parse(f"{lessons.who(body.agent) if body.agent else 'everyone'}, {body.text}")
+    if not ls:
+        raise HTTPException(422, 'Start with "never" or "always", for example "never mention service charges".')
+    return {"id": lessons.add(S.office.log, ls, by=body.by), "lesson": ls}
+
+
+@app.post("/api/lessons/{lid}/remove")
+def remove_lesson(lid: str, by: str = "layla"):
+    from diwan.agents import lessons
+    lessons.remove(S.office.log, lid, by=by)
+    return {"ok": True}
+
+
 @app.get("/api/people")
 def people():
     return PEOPLE
