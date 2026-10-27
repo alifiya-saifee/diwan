@@ -15,3 +15,15 @@ Everything in this repository was written during the Meta Global AI Developer Ha
   and never move to a hosted API unless that is switched on on purpose.
 - Tapes: live replies can be recorded and replayed offline, always marked as recordings.
 - Append-only event log; every event names its agent.
+
+## 27 Oct 2026 (afternoon): Nova and the office graph
+
+- Office graph rebuilt from the event log: people, deals, facts with exact quotes, tasks, approvals, deck slides and open
+  cards, linked by who said what, who pays, what rests on which fact, and which fact replaced which. Rewinds to any event.
+- Correction engine on the graph: compliance hears first, then only what rested on the old statement is withdrawn,
+  sent back, or returned to the person who approved it. The execution guard refuses approvals resting on replaced facts.
+- Two live statements that contradict each other go to the broker side by side; money work on that point waits.
+- Nova answers from graph records (Muse Spark when plugged in, plain sentences otherwise), always citing record ids;
+  an answer no record supports is not shown. Routes instructions through the right lead to a specialist (Form F clerk
+  returns a field plan; Submit waits for Joseph). Refuses what only people do. Asks back when the deal or team is unclear.
+  Briefs each person at 07:00 Dubai with what needs them, each line citing its records.

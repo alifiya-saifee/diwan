@@ -1,6 +1,7 @@
 """python -m diwan check        what is plugged in, what is missing, where each agent will run (no secrets shown)
 python -m diwan check --ping one tiny live call per configured provider
 python -m diwan roster       the agents as JSON, for screens
+python -m diwan nova         talk to Nova in the fictional demo office (ask, instruct, or "brief <person>")
 """
 from __future__ import annotations
 
@@ -42,10 +43,43 @@ def check(ping: bool) -> None:
         print(f"  {c.name:24} {c.runs_on:8} -> {where}{f' · {n} tapes' if n else ''}{flag}")
 
 
+def talk() -> None:
+    from diwan import demo
+    from diwan.agents import nova
+    from diwan.events import EventLog
+    from diwan.office import Office
+    o = Office(EventLog())
+    demo.seed(o)
+    demo.correction(o)
+    print("Demo office: Karim just said \"Actually, forget my brother. I'll pay it all myself.\"")
+    print('Ask a question, give an instruction ("prepare Form F for Karim"), or type "brief ahmed". Ctrl-D to stop.\n')
+    while True:
+        try:
+            line = input("you> ").strip()
+        except EOFError:
+            break
+        if not line:
+            continue
+        if line.lower().startswith("brief"):
+            r = nova.brief(o, (line.split()[1:] or ["layla"])[0])
+        elif line.endswith("?"):
+            r = nova.ask(o, line)
+        else:
+            r = nova.route(o, line)
+        print(f"nova> {r['text']}")
+        if r.get("options"):
+            print("      options: " + " | ".join(r["options"]))
+        if r.get("cites"):
+            print("      records: " + ", ".join(r["cites"]))
+        print()
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "check"
     if cmd == "check":
         check("--ping" in sys.argv)
+    elif cmd == "nova":
+        talk()
     elif cmd == "roster":
         print(json.dumps([asdict(c) for c in ROSTER], ensure_ascii=False, indent=1))
     else:

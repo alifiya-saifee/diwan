@@ -14,10 +14,11 @@ TYPES = {
     # people and authority
     "approval.requested", "approval.given", "approval.refused", "execution.done", "decision.needed", "instruction.given",
     # meetings and facts (filled in as the Scribe lands)
-    "meeting.started", "consent.given", "utterance", "meeting.ended",
+    "deal.opened", "meeting.started", "consent.given", "utterance", "meeting.ended",
     "fact.created", "fact.superseded", "fact.confirmed",
     # work between agents
     "task.created", "task.withdrawn", "task.done", "check.raised", "review.returned", "review.passed",
+    "draft.made", "question.asked", "question.answered", "decision.made",
 }
 
 

@@ -1,0 +1,30 @@
+import json
+
+import httpx
+import pytest
+
+from diwan.providers.chat import PROVIDERS
+
+KEYS = ["META_API_KEY", "MODEL_API_KEY", "BASETEN_API_KEY", "FIREWORKS_API_KEY", "FIREWORKS_MODEL", "MODAL_ENDPOINT_URL",
+        "MODAL_MODEL", "MODAL_API_KEY", "DIWAN_OFFLINE", "DIWAN_TAPE", "DIWAN_OPEN_ORDER", "DIWAN_OPEN_FALLBACK"]
+
+
+@pytest.fixture(autouse=True)
+def clean_env(monkeypatch, tmp_path):
+    """Tests never see the developer's .env or real keys."""
+    monkeypatch.setattr("diwan.config.ROOT", tmp_path)
+    for k in KEYS:
+        monkeypatch.delenv(k, raising=False)
+    for p in PROVIDERS.values():
+        monkeypatch.setattr(p, "transport", None)
+
+
+def fake(reply: dict, seen: list | None = None):
+    def handle(req: httpx.Request) -> httpx.Response:
+        if seen is not None:
+            seen.append(json.loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(reply)}}],
+                                         "usage": {"prompt_tokens": 10, "completion_tokens": 5}})
+    return httpx.MockTransport(handle)
+
+

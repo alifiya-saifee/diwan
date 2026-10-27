@@ -65,8 +65,15 @@ def provider_for(c: Charter) -> ChatProvider | None:
     return p
 
 
-def call(c: Charter, system: str, user: str, *, tape_root=None) -> Reply:
-    k, mode = tape.key(c.id, system, user, PACK_SCHEMA), tape_mode()
+def has_model(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape_root=None) -> bool:
+    """Whether a turn can run at all: a live provider, or a recording of this exact request."""
+    if not offline() and provider_for(c) is not None:
+        return True
+    return tape_mode() != "off" and tape.load(c.id, tape.key(c.id, system, user, schema), tape_root) is not None
+
+
+def call(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape_root=None) -> Reply:
+    k, mode = tape.key(c.id, system, user, schema), tape_mode()
     recorded = tape.load(c.id, k, tape_root) if mode != "off" else None
     p = None if offline() else provider_for(c)
     if p is None:
@@ -74,7 +81,7 @@ def call(c: Charter, system: str, user: str, *, tape_root=None) -> Reply:
             return recorded
         raise NotSetUp(f"{c.name} has no live model ({needs(c)}) and no recording of this request")
     try:
-        reply = p.complete_json(system, user, PACK_SCHEMA)
+        reply = p.complete_json(system, user, schema)
     except ProviderError as e:
         if recorded:
             recorded.usage["live_failed"] = str(e)[:200]
