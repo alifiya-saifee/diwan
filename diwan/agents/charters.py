@@ -209,7 +209,7 @@ ROSTER: list[Charter] = [
       "Captions per platform", "A cut is ready", "Art director", "No permit: holds the text", ("draft",), (), "Leave out the permit number", "planned", hack=False),
 
     C("mpub", "Publisher", "Ships it", "mkt", "room", "rules", "Gets approved posts out on time, on every platform.",
-      "Approved posts", "The schedule", "What went out where", "A post is approved", "Marketing lead", "—", ("assign",), ("publish",),
+      "Approved posts", "The schedule", "What went out where", "A post is approved", "The owner", "—", ("assign",), ("publish",),
       "Publish without approval", "planned", hack=False),
     C("mcross", "Cross-publisher", "One video, every platform", "mpub", None, "rules",
       "Formats one approved video for Instagram, TikTok, YouTube Shorts and Property Finder.", "Approved post", "The post",

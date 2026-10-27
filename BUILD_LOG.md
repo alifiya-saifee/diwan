@@ -105,3 +105,16 @@ Everything in this repository was written during the Meta Global AI Developer Ha
   instructions, and for "never" lessons enforced in code: a reply containing the phrase is not sent.
 - Content studio: 26 chartered agents in five rooms and a library (research, planning, copy, art, publishing, script
   library), shown on the Team page and as a room in the 3D office. Chartered and visible; not yet working.
+
+## 28 Oct 2026 (evening): departments you can walk into
+
+- HQ floor shows departments only: each room has its lead, a wall screen with live numbers (agents, tasks in hand,
+  waiting for people, latest work) and "N agents · enter". Work between departments flies between their leads.
+- Enter a department and it becomes its own floor: the lead on a dais, the department's memory in front of it (the
+  brand brain for Marketing, the rule book for Compliance…), its teams on pads clockwise in the order work moves, each
+  agent at a desk whose screen shows its latest real work, team tags with what they are doing or how many things need
+  a person, walls with live records, and a guided tour (arrow keys, Tour button).
+- Marketing walkthrough: one listing goes research → planning → scripting → editing → publishing → owner approval,
+  and the reel comment comes back to Rania in the Inbox room. Steps that need the Meta key (web research, other
+  people's transcripts, covers) are sample work and marked so on every screen; the permit check, lanes, schedule
+  rule, copy with the permit number, and Rania's reply are real.

@@ -96,6 +96,16 @@ def roster():
     return [asdict(c) for c in ROSTER]
 
 
+@app.post("/api/marketing/demo")
+async def marketing_demo(ref: str = "MC-1204"):
+    """Walk one listing through the studio, a step a second, so the floor can be watched."""
+    from diwan.agents import studio
+    if f"listing:{ref}" not in g().nodes:
+        raise HTTPException(404, "no such listing")
+    asyncio.create_task(studio.run(S.office, ref))
+    return {"started": ref}
+
+
 @app.get("/api/agents/{aid}")
 def agent_detail(aid: str):
     from dataclasses import asdict

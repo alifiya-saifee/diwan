@@ -149,7 +149,10 @@ def matches(g: Graph, deal: str, text: str) -> list[Node]:
         want_beds = int(m.group(1)) if m.group(1).isdigit() else ["one", "two", "three", "four", "five"].index(m.group(1)) + 1
     elif "studio" in low:
         want_beds = 0
-    budgets = scribe.amounts(text) or [f.props["amount_aed"] for f in g.facts(deal, "deal_term")]
+    named = [n for n in advertisable(g) if n.props["ref"].lower() in low]
+    if named:
+        return named
+    budgets = [a for a in scribe.amounts(text) if a >= 50_000] or [f.props["amount_aed"] for f in g.facts(deal, "deal_term")]
     budget = max(budgets) if budgets else None
     kind = next((k for k in ("villa", "apartment", "townhouse") if k in low or (k == "apartment" and "flat" in low)), None)
     every = {w for n in g.of("listing") for w in re.findall(r"[a-z]{4,}", n.props["community"].lower())} - {"dubai"}

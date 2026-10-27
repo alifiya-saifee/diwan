@@ -9,54 +9,54 @@
   body { background: #080b11; }
   #stage { position: fixed; inset: 56px 420px 0 0; }
   #stage canvas { display: block; }
-
-  /* overlays on the floor */
-  .glass { background: rgba(12, 16, 24, .72); backdrop-filter: blur(14px) saturate(140%); border: 1px solid var(--line); }
-  .title { position: fixed; left: 22px; top: 74px; pointer-events: none; }
+  .glass { background: rgba(12, 16, 24, .74); backdrop-filter: blur(14px) saturate(140%); border: 1px solid var(--line); }
+  .title { position: fixed; left: 22px; top: 72px; pointer-events: none; max-width: 520px; }
   .title .k { font: 600 11px var(--font); letter-spacing: 2.4px; color: var(--gold); text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
-  .title .k .live { width: 7px; height: 7px; border-radius: 50%; background: #ff6b6b; box-shadow: 0 0 0 0 rgba(255, 107, 107, .6); animation: live 1.6s infinite; }
-  @keyframes live { 70% { box-shadow: 0 0 0 8px rgba(255, 107, 107, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0); } }
+  .title .k .live { width: 7px; height: 7px; border-radius: 50%; background: #ff6b6b; animation: live 1.6s infinite; }
+  @keyframes live { 0% { box-shadow: 0 0 0 0 rgba(255, 107, 107, .6); } 70% { box-shadow: 0 0 0 8px rgba(255, 107, 107, 0); } 100% { box-shadow: none; } }
   .title h1 { font-size: 34px; margin: 6px 0 2px; }
   .title p { margin: 0; color: var(--muted); font-size: 13px; }
-  .hud { position: fixed; left: 22px; top: 162px; display: flex; border-radius: 12px; overflow: hidden; }
+  .hud { position: fixed; left: 22px; top: 166px; display: flex; border-radius: 12px; overflow: hidden; }
   .stat { padding: 8px 16px; border-right: 1px solid var(--line); }
   .stat:last-child { border-right: 0; }
-  .stat b { font: 600 18px var(--font); display: block; color: var(--ink); line-height: 1.2; }
+  .stat b { font: 600 18px var(--font); display: block; line-height: 1.2; }
   .stat span { font-size: 10px; color: var(--muted); letter-spacing: .9px; text-transform: uppercase; }
-  .demo { position: fixed; right: 436px; top: 72px; display: flex; gap: 0; border-radius: 12px; overflow: hidden; }
-  .demo button { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 9px 14px; font-size: 12px; color: var(--ink); }
+  .demo { position: fixed; right: 436px; top: 72px; display: flex; border-radius: 12px; overflow: hidden; }
+  .demo button { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 9px 14px; font-size: 12px; }
   .demo button:last-child { border-right: 0; }
   .demo button:hover { background: rgba(232, 199, 122, .1); }
   .demo .lbl { padding: 9px 12px; font: 600 10px var(--font); letter-spacing: 1.6px; color: var(--gold); text-transform: uppercase; border-right: 1px solid var(--line); display: flex; align-items: center; }
-  .zones { position: fixed; left: 50%; transform: translateX(calc(-50% - 210px)); bottom: 18px; display: flex; padding: 4px; border-radius: 14px; gap: 2px; }
-  .zones button { background: transparent; border: 0; color: var(--muted); padding: 8px 13px; border-radius: 10px; font-size: 12.5px; display: flex; align-items: center; gap: 7px; }
-  .zones button i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-  .zones button:hover { color: var(--ink); background: rgba(255, 255, 255, .05); }
-  .zones button.on { color: #1b1608; background: var(--gold); }
-  .ticker { position: fixed; left: 50%; transform: translateX(calc(-50% - 210px)); bottom: 74px; max-width: 760px; padding: 9px 16px; border-radius: 12px;
-            font-size: 13px; display: flex; gap: 10px; align-items: center; transition: opacity .4s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ticker b { color: var(--gold-2); font-weight: 600; }
-  .ticker .t { color: var(--faint); font: 500 11px var(--mono); }
-
-  /* the side panel */
+  .bar { position: fixed; left: calc((100vw - 420px) / 2); transform: translateX(-50%); bottom: 18px; display: flex; padding: 4px; border-radius: 14px; gap: 2px; max-width: calc(100vw - 460px); overflow-x: auto; scrollbar-width: none; }
+  .bar button { background: transparent; border: 0; color: var(--muted); padding: 8px 12px; border-radius: 10px; font-size: 12.5px; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .bar button i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .bar button:hover { color: var(--ink); background: rgba(255, 255, 255, .05); }
+  .bar button.on { color: #1b1608; background: var(--gold); }
+  .bar .sep { width: 1px; background: var(--line-2); margin: 6px 4px; }
+  .caption { position: fixed; left: calc((100vw - 420px) / 2); transform: translateX(-50%); bottom: 74px; max-width: 760px; padding: 9px 16px; border-radius: 12px;
+             font-size: 13px; display: flex; gap: 10px; align-items: center; transition: opacity .4s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .caption b { color: var(--gold-2); font-weight: 600; }
+  .caption .t { color: var(--faint); font: 500 11px var(--mono); }
+  .enter { position: fixed; left: calc((100vw - 420px) / 2); transform: translateX(-50%); top: 50%; pointer-events: none; font-family: var(--display); font-size: 54px;
+           color: var(--gold-2); opacity: 0; transition: opacity .35s; text-shadow: 0 10px 40px rgba(0, 0, 0, .8); }
+  .enter.on { opacity: 1; }
+  .fade { position: fixed; inset: 56px 420px 0 0; background: #080b11; opacity: 0; pointer-events: none; transition: opacity .45s; }
+  .fade.on { opacity: 1; }
   #side { position: fixed; top: 56px; right: 0; bottom: 0; width: 420px; display: flex; flex-direction: column; border-left: 1px solid var(--line);
-          background: linear-gradient(180deg, rgba(15, 19, 28, .94), rgba(10, 13, 19, .96)); }
+          background: linear-gradient(180deg, rgba(15, 19, 28, .95), rgba(10, 13, 19, .97)); }
   #side .head { padding: 18px 20px 14px; border-bottom: 1px solid var(--line); display: flex; gap: 14px; align-items: center; }
-  .orb { width: 46px; height: 46px; border-radius: 50%; flex: 0 0 46px; position: relative;
-         background: conic-gradient(from 0deg, #f6e2ae, #c99a45, #5ccfb5, #7ea6f8, #f6e2ae); animation: spin 9s linear infinite; }
+  .orb { width: 46px; height: 46px; border-radius: 50%; flex: 0 0 46px; position: relative; background: conic-gradient(from 0deg, #f6e2ae, #c99a45, #5ccfb5, #7ea6f8, #f6e2ae); animation: spin 9s linear infinite; }
   .orb::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #2a2f3d, #0d1018 70%); }
   .orb.zone { background: var(--zc, #e8c77a); animation: none; }
-  .orb.speaking { box-shadow: 0 0 0 0 rgba(232, 199, 122, .55); animation: spin 3s linear infinite, ring 1.2s infinite; }
-  .orb.listening { box-shadow: 0 0 0 0 rgba(255, 107, 107, .55); animation: spin 3s linear infinite, ringr 1.2s infinite; }
+  .orb.speaking { animation: spin 3s linear infinite, ring 1.2s infinite; }
+  .orb.listening { animation: spin 3s linear infinite, ringr 1.2s infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes ring { 70% { box-shadow: 0 0 0 12px rgba(232, 199, 122, 0); } 100% { box-shadow: 0 0 0 0 rgba(232, 199, 122, 0); } }
-  @keyframes ringr { 70% { box-shadow: 0 0 0 12px rgba(255, 107, 107, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0); } }
+  @keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(232, 199, 122, .55); } 70% { box-shadow: 0 0 0 12px rgba(232, 199, 122, 0); } 100% { box-shadow: none; } }
+  @keyframes ringr { 0% { box-shadow: 0 0 0 0 rgba(255, 107, 107, .55); } 70% { box-shadow: 0 0 0 12px rgba(255, 107, 107, 0); } 100% { box-shadow: none; } }
   #side .who { flex: 1; min-width: 0; }
   #side .who .n { font-family: var(--display); font-size: 26px; line-height: 1; }
   #side .who .r { font-size: 12px; color: var(--muted); margin-top: 3px; }
   #side .body { flex: 1; overflow: auto; padding: 16px 20px; }
   #side .foot { padding: 12px 16px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; }
-  #side .foot input { border-radius: 12px; }
   .ctl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
   .ctl label { margin: 0 0 4px; font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; }
   .ctl .full { grid-column: 1 / -1; display: flex; gap: 8px; }
@@ -75,27 +75,34 @@
   .msg.you { text-align: right; }
   .msg.you .card { display: inline-block; background: rgba(126, 166, 248, .14); border: 1px solid rgba(126, 166, 248, .22); padding: 9px 13px; border-radius: 14px 14px 4px 14px; text-align: left; }
   .opts button { font-size: 12px; padding: 6px 11px; margin: 8px 6px 0 0; border-radius: 99px; }
-  .agentcard { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; background: rgba(255, 255, 255, .02); }
-  .agentcard .nm { font-weight: 600; } .agentcard .rl { color: var(--muted); font-size: 12px; }
-  .agentcard .jb { font-size: 12.5px; color: #c9cfdb; margin-top: 6px; }
-  .agentcard .nv { font-size: 12px; color: var(--bad); margin-top: 6px; }
-  .ev3 { font-size: 12.5px; padding: 8px 0; border-bottom: 1px solid var(--line); }
-  .ev3 b { color: var(--gold-2); font-weight: 600; margin-right: 5px; }
+  .bigbtn { width: 100%; padding: 14px; font-size: 14px; border-radius: 12px; margin: 4px 0 14px; }
+  .team { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; background: rgba(255, 255, 255, .02); }
+  .team .tn { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .team .tn i { width: 8px; height: 8px; border-radius: 50%; }
+  .team .st { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .team .ag { font-size: 12.5px; padding: 7px 0 0; border-top: 1px solid var(--line); margin-top: 8px; }
+  .team .ag b { font-weight: 600; color: var(--gold-2); }
+  .team .ag .w { color: #c9cfdb; display: block; margin-top: 2px; }
+  .state { font: 600 10px var(--font); padding: 2px 7px; border-radius: 99px; letter-spacing: .4px; margin-left: auto; }
+  .state.working { background: rgba(92, 207, 181, .14); color: var(--teal); } .state.waiting { background: var(--warn-soft); color: var(--warn); }
+  .state.idle { background: var(--chip); color: var(--muted); }
   .boardcard { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; background: rgba(255, 255, 255, .02); }
   @media (max-width: 1100px) { .hud, .demo { display: none; } }
-  @media (max-width: 900px) { #stage { inset: 56px 0 48% 0; } #side { top: 52%; width: 100%; } .zones, .ticker, .title { display: none; } }
+  @media (max-width: 900px) { #stage, .fade { inset: 56px 0 48% 0; } #side { top: 52%; width: 100%; } .bar, .caption, .title { display: none; } }
 </style>
 </head>
 <body>
 <div id="stage"></div>
-<div class="title"><div class="k"><span class="live"></span>Live · Diwan Realty HQ</div><h1>The <em>office</em></h1><p>Every robot is a chartered agent. Every move is an event in the log.</p></div>
-<div class="hud" id="hud"></div>
+<div class="fade" id="fade"></div>
+<div class="enter" id="entering"></div>
+<div class="title" id="title"></div>
+<div class="hud glass" id="hud"></div>
 <div class="demo glass" id="demo"></div>
-<div class="ticker glass" id="ticker" style="opacity:0"></div>
-<div class="zones glass" id="zones"></div>
+<div class="caption glass" id="caption" style="opacity:0"></div>
+<div class="bar glass" id="bar"></div>
 <aside id="side">
   <div class="head"><div class="orb" id="orb"></div><div class="who"><div class="n" id="ztitle">Nova</div><div class="r" id="zsub">Chief of staff · the front desk</div></div>
-    <button id="back" hidden>Floor</button></div>
+    <button id="back" hidden>← HQ</button></div>
   <div class="body" id="zbody"></div>
   <div class="foot"><input id="say" placeholder="Ask Nova, or tell her who needs to do what…"><button id="mic" title="Speak">🎙</button><button class="primary" id="send">Send</button></div>
 </aside>
@@ -107,30 +114,51 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/GammaCorrectionShader.js"></script>
 <script type="module">
 import { h, api, post, follow, header, describe, loadAgents, NAMES, toast } from "./app.js";
 header("office3d.html");
 const AG = await loadAgents();
+const ROSTER = Object.values(AG);
 const $ = (id) => document.getElementById(id);
 const hex = (c) => "#" + c.toString(16).padStart(6, "0");
+const kids = (id) => ROSTER.filter((a) => a.parent === id);
 
-// ---------- the floor plan: each team has a room; each agent its own desk ----------
-const ZONES = {
-  front:   { name: "Front desk", x: 0,   z: 11,  w: 15, d: 7.5, color: 0xe8c77a, agents: ["nova", "rania"], about: "Nova talks to the staff · Rania answers customers on WhatsApp" },
-  sales:   { name: "Sales",      x: -16, z: 3,   w: 12, d: 9,  color: 0x7ea6f8, agents: ["sales", "scribe", "deck"], about: "Meetings become quoted facts; decks use live facts only" },
-  ops:     { name: "Operations", x: -16, z: -9,  w: 12, d: 8,  color: 0x5ccfb5, agents: ["ops", "formf"], about: "Form F is filled from live facts and stops before Submit" },
-  fin:     { name: "Finance",    x: 0,   z: -11, w: 12, d: 7,  color: 0x82d99f, agents: ["fin", "pay"], about: "Every expected payment rests on the exact words it came from" },
-  comp:    { name: "Compliance", x: 16,  z: -9,  w: 12, d: 8,  color: 0xf27d7d, agents: ["comp", "screen", "sof", "report"], about: "Hears every payment change first · never decides suspicion" },
-  review:  { name: "Review",     x: 16,  z: 3,   w: 12, d: 9,  color: 0xb591f3, agents: ["review", "factcheck", "devil"], about: "Independent · sends back anything built on a replaced statement" },
-  records: { name: "Records",    x: 0,   z: 0,   w: 12, d: 8,  color: 0xd9b26f, agents: ["records", "archivist", "analyst"], about: "The archive and the numbers · every figure counted from records" },
-  studio:  { name: "Content studio", x: 0, z: -25, w: 48, d: 12, color: 0xf08fc0,
-             agents: ["mkt", "research", "mtrend", "mrival", "mtrans", "plan", "midea", "mlane", "mfilm", "mcopy", "mcheck", "mscript",
-                      "mplay", "mart", "mremix", "mcap", "mwriter", "mpub", "mcross", "msched", "mthumb", "mpermit", "mlib", "mplaybook", "mpos", "mbrand"],
-             about: "Research → planning → copy → art → publishing, with the brand library · planned" },
+// ---------- departments: one room each on the HQ floor; enter one to see its whole team ----------
+const DEPTS = {
+  front:   { name: "Front desk", lead: "nova", color: 0xe8c77a, x: 0, z: 11, w: 15, d: 7.5, core: "Lobby board", about: "Nova talks to the staff · Rania answers customers" },
+  mkt:     { name: "Marketing", lead: "mkt", color: 0xf08fc0, x: -16, z: 11, w: 12, d: 7.5, core: "Brand brain", about: "The content studio: research → planning → scripting → editing → publishing" },
+  meet:    { name: "Meeting room", lead: null, color: 0x7ea6f8, x: 16, z: 11, w: 12, d: 7.5, about: "Where the Scribe listens. Opens the meeting table." },
+  sales:   { name: "Sales", lead: "sales", color: 0x7ea6f8, x: -16, z: 0, w: 12, d: 8, core: "Deal memory", about: "Meetings become quoted facts; decks use live facts only" },
+  records: { name: "Records", lead: "records", color: 0xd9b26f, x: 0, z: 0, w: 12, d: 8, core: "Archive", about: "The archive and the numbers · every figure counted from records" },
+  review:  { name: "Review", lead: "review", color: 0xb591f3, x: 16, z: 0, w: 12, d: 8, core: "Live facts", about: "Independent · sends back anything built on a replaced statement" },
+  ops:     { name: "Operations", lead: "ops", color: 0x5ccfb5, x: -16, z: -11, w: 12, d: 8, core: "Portal", about: "Form F is filled from live facts and stops before Submit" },
+  fin:     { name: "Finance", lead: "fin", color: 0x82d99f, x: 0, z: -11, w: 12, d: 8, core: "Ledger", about: "Every expected payment rests on the exact words it came from" },
+  comp:    { name: "Compliance", lead: "comp", color: 0xf27d7d, x: 16, z: -11, w: 12, d: 8, core: "Rule book", about: "Hears every payment change first · never decides suspicion" },
 };
-const ZONE_OF = {};
-for (const [k, z] of Object.entries(ZONES)) for (const a of z.agents) ZONE_OF[a] = k;
+const DEPT_OF = {};
+for (const [k, d] of Object.entries(DEPTS)) if (d.lead) DEPT_OF[d.lead] = k;
+DEPT_OF.rania = "front";
+function deptOf(agent) {
+  for (let a = AG[agent]; a; a = AG[a.parent]) if (DEPT_OF[a.id]) return DEPT_OF[a.id];
+  return "front";
+}
+const TEAM_LINE = { research: "Research finds what is working.", plan: "Planning picks what to film and when.", mcopy: "Scripting writes it in our voice.",
+  mart: "Editing cuts the takes into reels.", mpub: "Publishing checks the permit and posts it everywhere.", inbox: "The inbox answers every comment and enquiry." };
+const TEAM_NAME = { research: "Research", plan: "Planning", mcopy: "Scripting", mart: "Editing", mpub: "Publishing", inbox: "Inbox" };
+const TICKET = { research: "Research", plan: "Plan", mcopy: "Script", mart: "Edit", mpub: "Post", inbox: "Reply" };
+
+// the teams on a department's own floor
+function teamsOf(dept) {
+  const d = DEPTS[dept];
+  if (dept === "front") return [{ id: "rania", name: "Rania", agents: ["rania"], line: "Rania answers customers on WhatsApp." }];
+  const ks = kids(d.lead);
+  if (ks.some((k) => k.level === "room")) {
+    const rooms = ks.filter((k) => k.id !== "mlib").map((r) => ({ id: r.id, name: TEAM_NAME[r.id] || r.role, agents: [r.id, ...kids(r.id).map((c) => c.id)], line: TEAM_LINE[r.id] || r.job }));
+    if (dept === "mkt") rooms.push({ id: "inbox", name: "Inbox", agents: ["rania"], line: TEAM_LINE.inbox });
+    return rooms;
+  }
+  return ks.map((k) => ({ id: k.id, name: k.name, agents: [k.id], line: k.job }));
+}
 
 // ---------- scene ----------
 const stage = $("stage");
@@ -142,356 +170,555 @@ renderer.outputEncoding = THREE.sRGBEncoding;
 stage.append(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x080b11);
-scene.fog = new THREE.FogExp2(0x080b11, 0.0125);
-const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 400);
-const HOME = { pos: new THREE.Vector3(1.5, 29, 31), look: new THREE.Vector3(0, 0, -0.5) };
+scene.fog = new THREE.FogExp2(0x080b11, 0.011);
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 500);
+const HQ_HOME = { pos: new THREE.Vector3(1.5, 30, 33), look: new THREE.Vector3(0, 0, 0) };
+let FLOOR_HOME = { pos: new THREE.Vector3(27, 26, 27), look: new THREE.Vector3(-1, 0, -1) };
 camera.position.set(0, 80, 95);
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
-controls.target.copy(HOME.look); controls.maxPolarAngle = 1.3; controls.minDistance = 10; controls.maxDistance = 95; controls.enableDamping = true; controls.dampingFactor = 0.08;
-
+controls.target.copy(HQ_HOME.look); controls.maxPolarAngle = 1.3; controls.minDistance = 8; controls.maxDistance = 100; controls.enableDamping = true; controls.dampingFactor = .08;
 scene.add(new THREE.HemisphereLight(0xc9d6ff, 0x05070b, 0.32));
 const key = new THREE.DirectionalLight(0xfff2dd, 0.7); key.position.set(18, 42, 22); key.castShadow = true;
-Object.assign(key.shadow.camera, { left: -42, right: 42, top: 42, bottom: -42 }); key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0004;
+Object.assign(key.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45 }); key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0004;
 scene.add(key);
-const rim = new THREE.DirectionalLight(0x7ea6f8, 0.25); rim.position.set(-30, 18, -30); scene.add(rim);
-
-// floor: dark stone with a warm pool of light under the office
-const glow = document.createElement("canvas"); glow.width = glow.height = 512;
-{ const x = glow.getContext("2d"), g = x.createRadialGradient(256, 256, 20, 256, 256, 256);
-  g.addColorStop(0, "#0e121b"); g.addColorStop(.6, "#080a10"); g.addColorStop(1, "#040508"); x.fillStyle = g; x.fillRect(0, 0, 512, 512); }
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(160, 130), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(glow), roughness: 0.85, metalness: 0.1 }));
-floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
-const grid = new THREE.GridHelper(120, 60, 0x161b27, 0x10141d); grid.material.transparent = true; grid.material.opacity = 0.35; grid.position.y = 0.01; scene.add(grid);
-
-// bloom gives screens, rims and orbs their glow
 let composer = null;
-if (THREE.EffectComposer && THREE.UnrealBloomPass && new URLSearchParams(location.search).get("fx") !== "0") {
+if (THREE.EffectComposer && THREE.UnrealBloomPass) {
   composer = new THREE.EffectComposer(renderer);
   composer.addPass(new THREE.RenderPass(scene, camera));
-  const q = new URLSearchParams(location.search);
-  composer.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(1024, 1024), +(q.get("bloom") ?? .45), .4, +(q.get("th") ?? .88)));
-  if (THREE.GammaCorrectionShader && q.get("gamma") === "1") composer.addPass(new THREE.ShaderPass(THREE.GammaCorrectionShader));
+  composer.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(1024, 1024), .45, .4, .88));
 }
+const emissive = (color, i = 1.6) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: i, toneMapped: false });
 
-function label(text, { size = 40, color = "#ece8df", bg = "rgba(10,13,19,.78)", accent = null, maxW = 820, pill = true, dark = false } = {}) {
+function label(text, { size = 40, color = "#ece8df", bg = "rgba(10,13,19,.8)", accent = null, maxW = 820, pill = true, dark = false, border = null } = {}) {
   const c = document.createElement("canvas"), x = c.getContext("2d");
   const font = `600 ${size}px Inter, system-ui, sans-serif`;
   x.font = font;
-  const words = String(text).split(" "), lines = [];
-  let line = "";
-  for (const w of words) { const t = line ? `${line} ${w}` : w; if (x.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t; }
+  const lines = []; let line = "";
+  for (const w of String(text).split(" ")) { const t = line ? `${line} ${w}` : w; if (x.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t; }
   lines.push(line);
   const padL = accent ? 54 : 30, W = Math.min(maxW, Math.max(...lines.map((l) => x.measureText(l).width))) + padL + 30, H = lines.length * size * 1.32 + 30;
   c.width = W; c.height = H; x.font = font;
   x.fillStyle = bg; x.beginPath(); x.roundRect(0, 0, W, H, pill && lines.length === 1 ? H / 2 : 22); x.fill();
-  x.strokeStyle = dark ? "rgba(0,0,0,.08)" : "rgba(255,255,255,.12)"; x.lineWidth = 3; x.stroke();
+  x.strokeStyle = border || (dark ? "rgba(0,0,0,.08)" : "rgba(255,255,255,.14)"); x.lineWidth = border ? 5 : 3; x.stroke();
   if (accent) { x.fillStyle = accent; x.beginPath(); x.arc(30, H / 2, 9, 0, Math.PI * 2); x.fill(); }
   x.fillStyle = color; x.textBaseline = "top";
   lines.forEach((l, i) => x.fillText(l, padL, 15 + i * size * 1.32));
-  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 4;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, toneMapped: false }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false, toneMapped: false }));
   s.scale.set(W / 125, H / 125, 1); s.renderOrder = 10;
   return s;
 }
-const emissive = (color, i = 1.6) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: i, toneMapped: false });
 
-// rooms: a platform, a carpet, glass walls with lit edges, a light of the team's colour
-const rooms = {};
-for (const [k, z] of Object.entries(ZONES)) {
-  const g = new THREE.Group(); g.position.set(z.x, 0, z.z);
-  const base = new THREE.Mesh(new THREE.BoxGeometry(z.w, 0.16, z.d), new THREE.MeshStandardMaterial({ color: 0x0b0e15, roughness: .8 }));
-  base.position.y = 0.08; base.receiveShadow = true; base.userData.zone = k; g.add(base);
-  const tint = new THREE.Color(0x0c1018).lerp(new THREE.Color(z.color), 0.05);
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(z.w - 0.5, 0.02, z.d - 0.5), new THREE.MeshStandardMaterial({ color: tint, roughness: .9, emissive: z.color, emissiveIntensity: 0.0 }));
-  pad.position.y = 0.17; pad.receiveShadow = true; pad.userData.zone = k; g.add(pad);
-  const rimMat = emissive(z.color, 0.9);
-  for (const [w, d, x, zz] of [[z.w, .05, 0, z.d / 2], [z.w, .05, 0, -z.d / 2], [.05, z.d, z.w / 2, 0], [.05, z.d, -z.w / 2, 0]]) {
-    const r = new THREE.Mesh(new THREE.BoxGeometry(w, .05, d), rimMat); r.position.set(x, .17, zz); g.add(r);
+function floorPlane(group, size, inner) {
+  const glow = document.createElement("canvas"); glow.width = glow.height = 512;
+  const x = glow.getContext("2d"), g = x.createRadialGradient(256, 256, 20, 256, 256, 256);
+  g.addColorStop(0, inner); g.addColorStop(.6, "#080a10"); g.addColorStop(1, "#040508"); x.fillStyle = g; x.fillRect(0, 0, 512, 512);
+  const f = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(glow), roughness: .85, metalness: .1 }));
+  f.rotation.x = -Math.PI / 2; f.receiveShadow = true; group.add(f);
+  const grid = new THREE.GridHelper(size * .8, size * .4, 0x161b27, 0x10141d); grid.material.transparent = true; grid.material.opacity = .35; grid.position.y = .01; group.add(grid);
+}
+
+function pad(group, x, z, w, d, color, name) {
+  const g = new THREE.Group(); g.position.set(x, 0, z);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(w, .16, d), new THREE.MeshStandardMaterial({ color: 0x0b0e15, roughness: .8 }));
+  base.position.y = .08; base.receiveShadow = true; g.add(base);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(w - .5, .02, d - .5), new THREE.MeshStandardMaterial({ color: new THREE.Color(0x0c1018).lerp(new THREE.Color(color), .05), roughness: .9, emissive: color, emissiveIntensity: 0 }));
+  top.position.y = .17; top.receiveShadow = true; g.add(top);
+  const rimMat = emissive(color, .9);
+  for (const [rw, rd, rx, rz] of [[w, .05, 0, d / 2], [w, .05, 0, -d / 2], [.05, d, w / 2, 0], [.05, d, -w / 2, 0]]) {
+    const r = new THREE.Mesh(new THREE.BoxGeometry(rw, .05, rd), rimMat); r.position.set(rx, .17, rz); g.add(r);
   }
-  const glassMat = new THREE.MeshStandardMaterial({ color: z.color, transparent: true, opacity: 0.04, roughness: .1, metalness: .1, depthWrite: false, side: THREE.DoubleSide });
-  const edgeMat = emissive(z.color, 0.55);
-  for (const [w, x, zz, ry] of [[z.w, 0, -z.d / 2, 0], [z.d, -z.w / 2, 0, Math.PI / 2], [z.d, z.w / 2, 0, Math.PI / 2]]) {
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(w, 2.2), glassMat); wall.position.set(x, 1.27, zz); wall.rotation.y = ry; g.add(wall);
-    const top = new THREE.Mesh(new THREE.BoxGeometry(w, .035, .035), edgeMat); top.position.set(x, 2.37, zz); top.rotation.y = ry; g.add(top);
-  }
-  const light = new THREE.PointLight(z.color, 0.4, 14, 2); light.position.set(0, 5, 0); g.add(light);
-  const sign = label(z.name, { size: 44, accent: hex(z.color) });
-  sign.position.set(-z.w / 2 + 2.1, 1.0, z.d / 2 - 0.3); g.add(sign);
-  scene.add(g);
-  rooms[k] = { group: g, pad, rimMat, light, flash: 0 };
+  if (name) { const s = label(name, { size: 40, accent: hex(color) }); s.position.set(-w / 2 + 2, .9, d / 2 - .2); g.add(s); }
+  group.add(g);
+  return { g, top, rimMat, flash: 0 };
 }
 
-// the reception: an eight-point star inlaid in the floor
-{ const f = ZONES.front, mat = emissive(0xe8c77a, 0.75);
-  for (const rot of [0, Math.PI / 4]) {
-    const s = 2.2;
-    for (let i = 0; i < 4; i++) {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(s * 2, .03, .05), mat);
-      const a = rot + i * Math.PI / 2;
-      bar.position.set(f.x + Math.cos(a) * s, .2, f.z + 1.6 + Math.sin(a) * s); bar.rotation.y = -a + Math.PI / 2; scene.add(bar);
-    }
-  }
-}
-
-// plants make it an office
-function plant(x, z) {
-  const pot = new THREE.Mesh(new THREE.CylinderGeometry(.32, .26, .55, 20), new THREE.MeshStandardMaterial({ color: 0x232a38, roughness: .6 }));
-  pot.position.set(x, .44, z); pot.castShadow = true; scene.add(pot);
-  const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(.55, 1), new THREE.MeshStandardMaterial({ color: 0x2f6b4f, roughness: .8, flatShading: true }));
-  leaves.position.set(x, 1.15, z); leaves.scale.set(1, 1.25, 1); leaves.castShadow = true; scene.add(leaves);
-}
-for (const [k, z] of Object.entries(ZONES)) { plant(z.x + z.w / 2 - .8, z.z - z.d / 2 + .8); if (k === "front") plant(z.x - z.w / 2 + .8, z.z - z.d / 2 + .8); }
-
-// records: filing cabinets that fill as documents are filed
-const cabinets = [];
-for (let i = 0; i < 3; i++) {
-  const cab = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.4, .85), new THREE.MeshStandardMaterial({ color: 0x232838, roughness: .5, metalness: .3 }));
-  cab.position.set(ZONES.records.x - 3.6 + i * 1.75, 1.37, ZONES.records.z - 2.9); cab.castShadow = true; scene.add(cab);
-  for (let d = 0; d < 3; d++) { const hd = new THREE.Mesh(new THREE.BoxGeometry(.4, .05, .05), emissive(0xd9b26f, .5)); hd.position.set(cab.position.x, .6 + d * .75, cab.position.z + .45); scene.add(hd); }
-  cabinets.push(cab);
-}
-let filed = 0;
-function fileBox(kind) {
-  const colors = { invoice: 0xe8c77a, bill: 0xf0b35e, contract: 0x7ea6f8, receipt: 0x82d99f, form: 0x5ccfb5 };
-  const b = new THREE.Mesh(new THREE.BoxGeometry(.4, .1, .58), emissive(colors[kind] || 0xcccccc, .45));
-  const cab = cabinets[filed % 3], level = Math.floor(filed / 3);
-  b.position.set(cab.position.x + ((filed % 2) ? .28 : -.28), 2.62 + level * .12, cab.position.z); scene.add(b); filed++;
-}
-
-// the WhatsApp screen at the front desk
-const waCanvas = document.createElement("canvas"); waCanvas.width = 512; waCanvas.height = 340;
-const waTex = new THREE.CanvasTexture(waCanvas);
-const wall = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 2.25), new THREE.MeshBasicMaterial({ map: waTex, toneMapped: false }));
-wall.position.set(ZONES.front.x + 5.2, 2.1, ZONES.front.z - 3.3); scene.add(wall);
-let waLines = [];
-function drawWA() {
-  const x = waCanvas.getContext("2d");
-  x.fillStyle = "#0b1a14"; x.fillRect(0, 0, 512, 340);
-  x.fillStyle = "#25d366"; x.font = "700 30px Inter, system-ui"; x.fillText("WhatsApp · Rania", 24, 46);
-  waLines.slice(-4).forEach((l, i) => {
-    const y = 76 + i * 64, me = l.me;
-    x.fillStyle = me ? "#1f5c3d" : "#1b2621"; x.beginPath(); x.roundRect(me ? 120 : 20, y, 372, 52, 14); x.fill();
-    x.fillStyle = "#e8f5ec"; x.font = "500 21px Inter, system-ui"; x.fillText(l.text.slice(0, 32), me ? 136 : 36, y + 33);
-  });
-  waTex.needsUpdate = true;
-}
-drawWA();
-let wallGlow = 0;
-
-// the Lobby board: every request people made, with who, due and status
-const boardCanvas = document.createElement("canvas"); boardCanvas.width = 1024; boardCanvas.height = 640;
-const boardTex = new THREE.CanvasTexture(boardCanvas);
-const boardMesh = new THREE.Mesh(new THREE.PlaneGeometry(6.6, 4.1), new THREE.MeshBasicMaterial({ map: boardTex, toneMapped: false }));
-boardMesh.position.set(ZONES.front.x - 3.6, 2.6, ZONES.front.z - 3.3); boardMesh.userData.zone = "front"; scene.add(boardMesh);
-const frame = new THREE.Mesh(new THREE.BoxGeometry(6.8, 4.3, .12), new THREE.MeshStandardMaterial({ color: 0x1a2030, metalness: .5, roughness: .4 }));
-frame.position.set(boardMesh.position.x, 2.6, boardMesh.position.z - .08); scene.add(frame);
-let boardCards = [];
-async function drawBoard() {
-  boardCards = await api("/api/lobby");
-  const x = boardCanvas.getContext("2d");
-  const g = x.createLinearGradient(0, 0, 0, 640); g.addColorStop(0, "#121826"); g.addColorStop(1, "#0b0f18"); x.fillStyle = g; x.fillRect(0, 0, 1024, 640);
-  x.fillStyle = "#e8c77a"; x.font = "600 22px Inter, system-ui"; x.fillText("L O B B Y   B O A R D", 40, 56);
-  const open = boardCards.filter((c) => !["done", "cancelled"].includes(c.status)).length;
-  x.fillStyle = "#8b92a3"; x.font = "500 22px Inter, system-ui"; x.fillText(`${open} open · ${boardCards.length - open} closed`, 760, 56);
-  const COL = { late: "#f27d7d", open: "#e8c77a", seen: "#7ea6f8", done: "#82d99f", cancelled: "#5d6476" };
-  boardCards.slice(0, 6).forEach((c, i) => {
-    const y = 88 + i * 88;
-    x.fillStyle = "rgba(255,255,255,.035)"; x.beginPath(); x.roundRect(36, y, 952, 74, 14); x.fill();
-    x.fillStyle = COL[c.status] || "#999"; x.beginPath(); x.roundRect(36, y, 8, 74, 4); x.fill();
-    x.fillStyle = "#ece8df"; x.font = "600 27px Inter, system-ui"; x.fillText(`${NAMES[c.to] || c.to} · ${c.text}`.slice(0, 50), 64, y + 33);
-    const due = c.due ? new Date(c.due).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "no deadline";
-    x.fillStyle = "#8b92a3"; x.font = "500 20px Inter, system-ui"; x.fillText(`${c.id} · asked by ${NAMES[c.by] || c.by} · due ${due}`, 64, y + 60);
-    x.fillStyle = COL[c.status] || "#999"; x.font = "600 18px Inter, system-ui"; x.fillText(c.status.toUpperCase(), 890, y + 44);
-  });
-  if (!boardCards.length) { x.fillStyle = "#5d6476"; x.font = "italic 400 30px Georgia, serif"; x.fillText("“Tell Priya I need the Karim review by this evening.”", 40, 150);
-    x.font = "500 22px Inter, system-ui"; x.fillText("Say it to Nova; she reads it back, then posts it here.", 40, 196); }
-  boardTex.needsUpdate = true;
-}
-
-// floating dust catches the light
-const dust = new THREE.Points(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(
-  Array.from({ length: 900 }, (_, i) => i % 3 === 1 ? Math.random() * 12 : (Math.random() - .5) * 70), 3)),
-  new THREE.PointsMaterial({ color: 0xe8c77a, size: .06, transparent: true, opacity: .45, depthWrite: false }));
-scene.add(dust);
-
-// ---------- robots ----------
-const robots = {};
-function robot(id) {
-  const a = AG[id], z = ZONES[ZONE_OF[id]], i = z.agents.indexOf(id), n = z.agents.length;
-  const rows = n > 8 ? 2 : 1, cols = Math.ceil(n / rows), row = Math.floor(i / cols), col = i % cols;
-  const inRow = row < rows - 1 ? cols : n - cols * (rows - 1);
-  const x = z.x + (col - (inRow - 1) / 2) * Math.min(3.2, (z.w - 2) / Math.max(1, cols - 1));
-  const zz = z.z + .4 + (rows > 1 ? (row - (rows - 1) / 2) * 4.8 : 0);
-  const g = new THREE.Group(); g.position.set(x, .18, zz);
-  // desk with a glowing screen
-  const desk = new THREE.Mesh(new THREE.BoxGeometry(2.1, .07, 1.0), new THREE.MeshStandardMaterial({ color: 0x1e2534, roughness: .35, metalness: .4 }));
-  desk.position.set(0, .82, 1.15); desk.castShadow = true; desk.receiveShadow = true; g.add(desk);
-  const modesty = new THREE.Mesh(new THREE.BoxGeometry(2.0, .75, .05), new THREE.MeshStandardMaterial({ color: 0x161b27 }));
-  modesty.position.set(0, .42, 1.62); g.add(modesty);
-  const screen = new THREE.Mesh(new THREE.BoxGeometry(1.05, .62, .04), new THREE.MeshStandardMaterial({ color: 0x05070b, emissive: z.color, emissiveIntensity: .35, toneMapped: false }));
-  screen.position.set(0, 1.3, 1.45); screen.rotation.x = -.12; g.add(screen);
-  // the robot
-  const bot = new THREE.Group(); g.add(bot);
+// a desk with a screen that shows the agent's work, and the robot at it
+function makeRobot(color, lead, chief) {
+  const bot = new THREE.Group();
   const shell = new THREE.MeshStandardMaterial({ color: 0xe9ebf1, roughness: .32, metalness: .15 });
-  const baseRing = new THREE.Mesh(new THREE.TorusGeometry(.5, .025, 8, 40), emissive(z.color, 1.4)); baseRing.rotation.x = Math.PI / 2; baseRing.position.y = .05; g.add(baseRing);
   const body = new THREE.Mesh(new THREE.CylinderGeometry(.36, .46, .95, 28), shell); body.position.y = .72; body.castShadow = true; bot.add(body);
   const collar = new THREE.Mesh(new THREE.CylinderGeometry(.3, .36, .08, 28), new THREE.MeshStandardMaterial({ color: 0x2a3142 })); collar.position.y = 1.22; bot.add(collar);
   const head = new THREE.Mesh(new THREE.SphereGeometry(.42, 32, 20), shell); head.scale.set(1.05, .86, .95); head.position.y = 1.62; head.castShadow = true; bot.add(head);
-  const face = new THREE.Mesh(new THREE.BoxGeometry(.6, .26, .1), new THREE.MeshStandardMaterial({ color: 0x07090e, roughness: .2, metalness: .6 }));
-  face.position.set(0, 1.63, .34); bot.add(face);
-  const eyeMat = emissive(z.color, 2.2);
-  const eyes = [-.13, .13].map((ex) => { const e = new THREE.Mesh(new THREE.SphereGeometry(.05, 16, 12), eyeMat); e.position.set(ex, 1.64, .4); bot.add(e); return e; });
-  const lead = a.level === "lead" || a.level === "chief";
-  if (lead) { const halo = new THREE.Mesh(new THREE.TorusGeometry(id === "nova" ? .38 : .28, .022, 8, 40), emissive(0xe8c77a, id === "nova" ? 2.2 : 1.2));
-    halo.rotation.x = Math.PI / 2; halo.position.y = 2.2; bot.add(halo); }
-  const nameTag = label(a.name, { size: 34, accent: hex(z.color) });
-  nameTag.position.set(0, 2.75, 0); g.add(nameTag);
-  body.userData.agent = head.userData.agent = id;
-  scene.add(g);
-  robots[id] = { g, bot, eyeMat, screen, home: g.position.clone(), glow: 0, bubble: null, bubbleT: 0, walk: null, zone: ZONE_OF[id], color: z.color };
-}
-for (const id of Object.keys(ZONE_OF)) if (AG[id]) robot(id);
-
-function say(id, text, secs = 5) {
-  const r = robots[id]; if (!r) return;
-  if (r.bubble) r.g.remove(r.bubble);
-  r.bubble = label(text.length > 120 ? text.slice(0, 117) + "…" : text, { size: 30, color: "#141821", bg: "rgba(246,242,233,.97)", maxW: 700, pill: false, dark: true, accent: hex(r.color) });
-  r.bubble.position.set(0, 3.9, 0); r.g.add(r.bubble); r.bubbleT = secs; r.glow = 1;
+  const face = new THREE.Mesh(new THREE.BoxGeometry(.6, .26, .1), new THREE.MeshStandardMaterial({ color: 0x07090e, roughness: .2, metalness: .6 })); face.position.set(0, 1.63, .34); bot.add(face);
+  const eyeMat = emissive(color, 2.2);
+  for (const ex of [-.13, .13]) { const e = new THREE.Mesh(new THREE.SphereGeometry(.05, 16, 12), eyeMat); e.position.set(ex, 1.64, .4); bot.add(e); }
+  if (lead) { const halo = new THREE.Mesh(new THREE.TorusGeometry(chief ? .38 : .28, .022, 8, 40), emissive(0xe8c77a, chief ? 2.2 : 1.2)); halo.rotation.x = Math.PI / 2; halo.position.y = 2.2; bot.add(halo); }
+  return { bot, eyeMat, body, head };
 }
 
-// a glowing orb carries work from one agent to the next, leaving a short trail
+const SCREEN_W = 320, SCREEN_H = 200;
+function station(group, id, x, z, color, { scale = 1, screen = true, rotY = 0 } = {}) {
+  const a = AG[id];
+  const g = new THREE.Group(); g.position.set(x, .18, z); g.rotation.y = rotY; g.scale.setScalar(scale);
+  const desk = new THREE.Mesh(new THREE.BoxGeometry(2.1, .07, 1.0), new THREE.MeshStandardMaterial({ color: 0x1e2534, roughness: .35, metalness: .4 }));
+  desk.position.set(0, .82, 1.15); desk.castShadow = true; g.add(desk);
+  const modesty = new THREE.Mesh(new THREE.BoxGeometry(2.0, .75, .05), new THREE.MeshStandardMaterial({ color: 0x161b27 })); modesty.position.set(0, .42, 1.62); g.add(modesty);
+  let canvas = null, tex = null;
+  if (screen) {
+    canvas = document.createElement("canvas"); canvas.width = SCREEN_W; canvas.height = SCREEN_H;
+    tex = new THREE.CanvasTexture(canvas);
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.0), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+    scr.position.set(0, 2.85, -.85); g.add(scr);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.1, .05), new THREE.MeshStandardMaterial({ color: 0x0b0e15, metalness: .5 })); back.position.set(0, 2.85, -.89); g.add(back);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(.07, 2.3, .07), new THREE.MeshStandardMaterial({ color: 0x2a3142 })); post.position.set(0, 1.15, -.9); g.add(post);
+  }
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(.5, .025, 8, 40), emissive(color, 1.4)); ring.rotation.x = Math.PI / 2; ring.position.y = .05; g.add(ring);
+  const lead = a && (a.level === "lead" || a.level === "chief" || a.level === "room");
+  const r = makeRobot(color, lead, a?.level === "chief");
+  g.add(r.bot);
+  const tag = label(a ? a.name : id, { size: screen ? 26 : 32, accent: hex(color) }); tag.position.set(0, screen ? 3.75 : 2.85, screen ? -.85 : -.2); g.add(tag);
+  r.body.userData.agent = r.head.userData.agent = id;
+  group.add(g);
+  const st = { id, g, bot: r.bot, eyeMat: r.eyeMat, home: g.position.clone(), color, glow: 0, bubble: null, bubbleT: 0, walk: null, canvas, tex };
+  if (canvas) drawScreen(st);
+  return st;
+}
+
+// what each kind of agent's screen looks like: its latest work plus a picture of the kind of work it does
+const KIND = { mtrend: "tiles", mrival: "tiles", research: "tiles", mtrans: "wave", mcap: "wave", mcheck: "wave", midea: "list", mlane: "bars", mfilm: "list", plan: "list",
+  mscript: "text", mcopy: "text", mplay: "list", mremix: "timeline", mwriter: "text", mart: "timeline", mthumb: "tiles", msched: "calendar", mcross: "tiles",
+  mpermit: "check", mpub: "calendar", rania: "chat", scribe: "wave", deck: "tiles", pay: "bars", analyst: "bars", archivist: "list", screen: "check", sof: "bars",
+  report: "text", formf: "list", factcheck: "check", devil: "text" };
+const lastWork = {};
+function drawScreen(st) {
+  const x = st.canvas.getContext("2d"), W = SCREEN_W, H = SCREEN_H, col = hex(st.color);
+  const w = lastWork[st.id];
+  const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#0f1420"); g.addColorStop(1, "#090c13");
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  x.fillStyle = col; x.fillRect(0, 0, W, 4);
+  x.fillStyle = "#8b92a3"; x.font = "600 13px Inter, system-ui"; x.fillText((AG[st.id]?.name || st.id).toUpperCase(), 12, 24);
+  const state = agentState(st.id);
+  x.fillStyle = state === "waiting" ? "#f0b35e" : state === "working" ? "#5ccfb5" : "#5d6476";
+  x.beginPath(); x.arc(W - 16, 19, 5, 0, Math.PI * 2); x.fill();
+  const kind = KIND[st.id] || "text", t = performance.now() / 1000;
+  x.globalAlpha = w ? 1 : .35;
+  if (kind === "tiles") for (let i = 0; i < 4; i++) { x.fillStyle = i === 1 && w ? col : "#1e2534"; x.fillRect(12 + i * 75, 36, 66, 52); }
+  else if (kind === "wave") { x.fillStyle = col; for (let i = 0; i < 46; i++) { const hh = 6 + Math.abs(Math.sin(i * .7 + (w ? t * 3 : 0))) * 30; x.fillRect(12 + i * 6.4, 62 - hh / 2, 3.5, hh); } }
+  else if (kind === "bars") for (let i = 0; i < 6; i++) { x.fillStyle = i === 5 ? col : "#2a3142"; const hh = 14 + ((i * 37) % 40); x.fillRect(14 + i * 48, 88 - hh, 30, hh); }
+  else if (kind === "calendar") for (let r = 0; r < 2; r++) for (let c = 0; c < 7; c++) { x.fillStyle = r === 0 && c === 3 && w ? col : "#1e2534"; x.fillRect(12 + c * 42, 36 + r * 27, 36, 22); }
+  else if (kind === "timeline") for (let i = 0; i < 3; i++) { x.fillStyle = ["#2a3142", col, "#3a3f55"][i]; x.fillRect(12 + i * 20, 40 + i * 16, 180 + i * 30, 10); }
+  else if (kind === "check") { x.strokeStyle = w ? "#82d99f" : "#2a3142"; x.lineWidth = 7; x.beginPath(); x.moveTo(40, 62); x.lineTo(62, 82); x.lineTo(104, 40); x.stroke(); }
+  else if (kind === "chat") { x.fillStyle = "#1b2621"; x.beginPath(); x.roundRect(12, 36, 170, 24, 10); x.fill(); x.fillStyle = "#1f5c3d"; x.beginPath(); x.roundRect(120, 66, 186, 24, 10); x.fill(); }
+  else for (let i = 0; i < 3; i++) { x.fillStyle = "#2a3142"; x.fillRect(12, 40 + i * 16, 220 - i * 50, 8); }
+  x.globalAlpha = 1;
+  x.fillStyle = w ? "#ece8df" : "#5d6476"; x.font = "500 14px Inter, system-ui";
+  const words = (w ? w.text : (AG[st.id]?.status === "planned" ? "Planned · waiting for work" : "Idle")).split(" ");
+  let line = "", y = 118, lines = 0;
+  for (const word of words) {
+    const tt = line ? `${line} ${word}` : word;
+    if (x.measureText(tt).width > W - 24) { x.fillText(line, 12, y); y += 18; line = word; if (++lines >= 3) { line += "…"; break; } } else line = tt;
+  }
+  if (lines < 4) x.fillText(line, 12, y);
+  if (w?.sample) { x.fillStyle = "#f0b35e"; x.font = "600 11px Inter, system-ui"; x.fillText("SAMPLE", W - 64, H - 10); }
+  st.tex.needsUpdate = true;
+}
+
+// ---------- HQ: the departments ----------
+const hq = new THREE.Group(); scene.add(hq);
+floorPlane(hq, 160, "#0e121b");
+const hqRooms = {}, hqBots = {};
+for (const [k, d] of Object.entries(DEPTS)) {
+  const p = pad(hq, d.x, d.z, d.w, d.d, d.color, d.name);
+  p.top.userData.dept = k;
+  const glass = new THREE.MeshStandardMaterial({ color: d.color, transparent: true, opacity: .04, depthWrite: false, side: THREE.DoubleSide });
+  const edge = emissive(d.color, .55);
+  for (const [w, x, z, ry] of [[d.w, 0, -d.d / 2, 0], [d.d, -d.w / 2, 0, Math.PI / 2], [d.d, d.w / 2, 0, Math.PI / 2]]) {
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(w, 2.2), glass); wall.position.set(x, 1.27, z); wall.rotation.y = ry; p.g.add(wall);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(w, .035, .035), edge); top.position.set(x, 2.37, z); top.rotation.y = ry; p.g.add(top);
+  }
+  // the room's wall screen: live numbers for the department
+  const c = document.createElement("canvas"); c.width = 640; c.height = 300;
+  const tex = new THREE.CanvasTexture(c);
+  const scr = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 2.15), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+  scr.position.set(d.w / 2 - 3.1, 2.1, -d.d / 2 + .05); scr.userData.dept = k; p.g.add(scr);
+  hqRooms[k] = { ...p, canvas: c, tex, light: null };
+  const light = new THREE.PointLight(d.color, .4, 14, 2); light.position.set(0, 5, 0); p.g.add(light); hqRooms[k].light = light;
+  if (k === "front") {
+    hqBots.nova = station(hq, "nova", d.x - 2.2, d.z + .2, d.color, { screen: false });
+    hqBots.rania = station(hq, "rania", d.x + 1.6, d.z + .2, d.color, { screen: false });
+  } else if (d.lead) {
+    hqBots[d.lead] = station(hq, d.lead, d.x - 2.4, d.z + .4, d.color, { screen: false });
+    const n = d.lead === "mkt" ? ROSTER.filter((a) => deptOf(a.id) === "mkt").length : ROSTER.filter((a) => deptOf(a.id) === k).length;
+    const badge = label(`${n} agents · enter →`, { size: 30, color: "#f6e2ae", bg: "rgba(232,199,122,.12)", border: "rgba(232,199,122,.5)" });
+    badge.position.set(d.x - 2.4, 3.6, d.z + .4); badge.userData.dept = k; hq.add(badge);
+  } else {
+    const table = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, .1, 40), new THREE.MeshStandardMaterial({ color: 0x1e2534, metalness: .4, roughness: .3 }));
+    table.position.set(d.x - 1.5, .95, d.z + .3); table.userData.dept = k; hq.add(table);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.15, .3, .8, 16), new THREE.MeshStandardMaterial({ color: 0x161b27 })); leg.position.set(d.x - 1.5, .5, d.z + .3); hq.add(leg);
+    for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; const ch = new THREE.Mesh(new THREE.BoxGeometry(.6, .6, .6), new THREE.MeshStandardMaterial({ color: 0x2a3142 }));
+      ch.position.set(d.x - 1.5 + Math.cos(a) * 2.5, .5, d.z + .3 + Math.sin(a) * 2.5); hq.add(ch); }
+  }
+}
+
+// ---------- department floors: built when entered ----------
+let floor = null;      // { dept, group, stations: {id: st}, teams: [{...,pad,tag}], stops }
+let where = "hq";
+function buildFloor(dept) {
+  const d = DEPTS[dept];
+  const group = new THREE.Group(); group.visible = false; scene.add(group);
+  floorPlane(group, 120, new THREE.Color(0x0e121b).lerp(new THREE.Color(d.color), .06).getStyle());
+  const L = teamsOf(dept).length > 4 ? 21 : 15, S = L / 15;
+  // two walls meeting at the back corner, each showing live work
+  const walls = [];
+  for (const [x, z, ry] of [[-L, 0, Math.PI / 2], [0, -L, 0]]) {
+    const c = document.createElement("canvas"); c.width = 2048; c.height = 600;
+    const tex = new THREE.CanvasTexture(c);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(2 * L, 8.8), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+    m.position.set(x, 4.4, z); m.rotation.y = ry; group.add(m);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(2 * L, .06, .06), emissive(d.color, 1)); top.position.set(x, 8.85, z); top.rotation.y = ry; group.add(top);
+    walls.push({ c, tex });
+  }
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(.06, 8.8, .06), emissive(d.color, 1)); edge.position.set(-L, 4.4, -L); group.add(edge);
+  // the lead on a dais, and the department's brain in front of it
+  const dais = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.9, .5, 6), new THREE.MeshStandardMaterial({ color: 0x121722, metalness: .4, roughness: .4 }));
+  dais.position.set(0, .25, 0); group.add(dais);
+  const daisRim = new THREE.Mesh(new THREE.TorusGeometry(2.75, .04, 8, 6), emissive(0xe8c77a, 1.4)); daisRim.rotation.x = Math.PI / 2; daisRim.position.y = .52; group.add(daisRim);
+  const stations = {};
+  const leadId = d.lead;
+  stations[leadId] = station(group, leadId, 0, -.8, d.color, { scale: 1.15 });
+  stations[leadId].g.position.y = .5; stations[leadId].home.y = .5;
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.1, 1), new THREE.MeshStandardMaterial({ color: d.color, emissive: d.color, emissiveIntensity: .9, wireframe: true, toneMapped: false }));
+  core.position.set(3.6, 1.6, 3.6); group.add(core);
+  const coreIn = new THREE.Mesh(new THREE.IcosahedronGeometry(.6, 2), emissive(d.color, 1.4)); coreIn.position.copy(core.position); group.add(coreIn);
+  const coreTag = label(d.core || "Memory", { size: 36, accent: hex(d.color) }); coreTag.position.set(3.6, 3.3, 3.6); group.add(coreTag);
+  if (dept === "mkt") {
+    kids("mlib").forEach((a, i) => { const st = station(group, a.id, 6.4 + i * 1.6, 6.8, d.color, { scale: .7, rotY: -Math.PI / 4 }); stations[a.id] = st; });
+  }
+  // the teams, clockwise in the order work moves
+  const SLOTS = [[-8.6, 6.5], [-9.6, -2.6], [-5.5, -9.6], [3.5, -9.8], [10.2, -3.2], [9.6, 6.2], [0, 10.5]];
+  const teams = teamsOf(dept).map((t, i) => {
+    const [x, z] = SLOTS[i % SLOTS.length].map((v) => v * S);
+    const n = t.agents.length, w = Math.max(4.6, n * 2.5 + 1.2);
+    const p = pad(group, x, z, w, 4.8, d.color, t.name);
+    t.agents.forEach((aid, j) => { stations[aid] = station(group, aid, x + (j - (n - 1) / 2) * 2.5, z - .3, d.color, { scale: .92 }); });
+    const tag = label(t.name, { size: 34, accent: hex(d.color) }); tag.position.set(x, 5.4, z - 1.6); group.add(tag);
+    return { ...t, x, z, pad: p, tag };
+  });
+  FLOOR_HOME = { pos: new THREE.Vector3(27 * S, 26 * S, 27 * S), look: new THREE.Vector3(-1, 0, -1) };
+  const stops = [{ id: "room", name: "Room", line: d.about, pos: FLOOR_HOME.pos, look: FLOOR_HOME.look },
+    { id: "lead", name: AG[leadId].name, line: AG[leadId].job, pos: new THREE.Vector3(8, 8, 9), look: new THREE.Vector3(0, 1.5, 0) },
+    { id: "core", name: d.core || "Memory", line: dept === "mkt" ? "The brand brain: playbook, positioning, voice, and every lesson the team has taught." : `${d.core}: what this department remembers.`,
+      pos: new THREE.Vector3(10, 7, 11), look: new THREE.Vector3(3.6, 1.5, 3.6) },
+    ...teams.map((t) => ({ id: t.id, name: t.name, line: t.line, team: t, pos: new THREE.Vector3(t.x + 8.5, 10, t.z + 10.5), look: new THREE.Vector3(t.x, 1.5, t.z) })),
+    { id: "walls", name: "Walls", line: dept === "mkt" ? "Our listings on the left. What competitors post on the right." : "What the office knows on the left. Open work on the right.",
+      pos: new THREE.Vector3(6 * S, 7 * S, 6 * S), look: new THREE.Vector3(-8 * S, 4 * S, -8 * S) }];
+  return { dept, group, stations, teams, stops, walls, core, coreIn };
+}
+
+// the walls of a department floor: real records, or marked samples where we have none yet
+async function drawWalls(f) {
+  const gr = await api("/api/graph");
+  const nodes = gr.nodes;
+  const card = (x, i, title, sub, accent, flag) => {
+    const X = 40 + i * 330, Y = 120;
+    x.fillStyle = "rgba(255,255,255,.04)"; x.beginPath(); x.roundRect(X, Y, 300, 420, 22); x.fill();
+    const g = x.createLinearGradient(X, Y, X + 300, Y + 260); g.addColorStop(0, accent + "55"); g.addColorStop(1, "#0b0f18");
+    x.fillStyle = g; x.beginPath(); x.roundRect(X + 12, Y + 12, 276, 250, 16); x.fill();
+    x.fillStyle = "#ece8df"; x.font = "600 26px Inter, system-ui";
+    wrap(x, title, X + 20, Y + 300, 260, 30, 2);
+    x.fillStyle = "#8b92a3"; x.font = "500 21px Inter, system-ui"; wrap(x, sub, X + 20, Y + 370, 260, 26, 2);
+    if (flag) { x.strokeStyle = "#f27d7d"; x.lineWidth = 6; x.beginPath(); x.arc(X + 150, Y + 137, 110, 0, Math.PI * 2); x.stroke(); }
+  };
+  const head = (x, text, color) => { x.fillStyle = "#0b0f18"; x.fillRect(0, 0, 2048, 600); x.fillStyle = color; x.font = "600 30px Inter, system-ui"; x.fillText(text, 40, 70); };
+  const [L, R] = f.walls.map((w) => w.c.getContext("2d"));
+  const col = hex(DEPTS[f.dept].color);
+  if (f.dept === "mkt") {
+    const ls = nodes.filter((n) => n.type === "listing");
+    head(L, `D I W A N   R E A L T Y   ·   ${ls.length} LISTINGS   ·   ${ls.filter((n) => n.props.permit).length} PERMITTED`, col);
+    ls.slice(0, 6).forEach((n, i) => card(L, i, n.props.title, `AED ${n.props.price_aed.toLocaleString()} · ${n.props.permit ? "permit " + n.props.permit : "NO PERMIT: not advertised"}`, n.props.permit ? col : "#f27d7d"));
+    head(R, "S T U D Y I N G   5   C O M P E T I T O R S   ·   S A M P L E", "#f0b35e");
+    [["Marina sunset tour", "4.2× their usual · sample", 1], ["What 2M buys in JVC", "1.8× · sample"], ["Off-plan explained", "1.1× · sample"],
+     ["Downtown at night", "2.6× · sample"], ["Villa walkthrough", "0.9× · sample"], ["Area guide: Bay", "1.4× · sample"]].forEach(([t, s, flag], i) => card(R, i, t, s, "#f0b35e", flag));
+  } else {
+    const facts = nodes.filter((n) => n.type === "fact" && n.status === "live");
+    const replaced = nodes.filter((n) => n.type === "fact" && n.status === "superseded");
+    const cards = nodes.filter((n) => ["check", "decision", "request", "question"].includes(n.type) && n.status === "open");
+    const tasks = nodes.filter((n) => n.type === "task" && n.status === "queued");
+    head(L, `W H A T   T H E   O F F I C E   K N O W S   ·   ${facts.length} QUOTED FACTS`, col);
+    facts.slice(-6).forEach((n, i) => card(L, i, `"${n.props.quote}"`, `${n.id} · ${n.label}`, col));
+    head(R, `O P E N   W O R K   ·   ${tasks.length} TASKS   ·   ${cards.length} WAITING FOR PEOPLE`, "#f0b35e");
+    [...cards.map((n) => [n.props.text, `${n.id} · for ${NAMES[n.props.who] || n.props.who || ""}`, "#f0b35e"]),
+     ...replaced.map((n) => [`"${n.props.quote}"`, `${n.id} · replaced by ${n.props.superseded_by}`, "#f27d7d"]),
+     ...tasks.map((n) => [n.props.action, `${n.id} · ${n.props.agent_name}`, col])].slice(0, 6).forEach(([t, s, c], i) => card(R, i, t, s, c));
+  }
+  f.walls.forEach((w) => w.tex.needsUpdate = true);
+}
+function wrap(x, text, X, Y, maxW, lh, maxLines) {
+  let line = "", n = 0;
+  for (const w of String(text).split(" ")) { const t = line ? `${line} ${w}` : w; if (x.measureText(t).width > maxW && line) { x.fillText(line, X, Y + n * lh); line = w; if (++n >= maxLines) return; } else line = t; }
+  x.fillText(n === maxLines - 1 && line.length > 28 ? line.slice(0, 26) + "…" : line, X, Y + n * lh);
+}
+
+// ---------- state from the graph: who is working, who waits for a person ----------
+let gstate = { waiting: {}, working: {} };
+function agentState(id) {
+  if (gstate.working[id] && performance.now() - gstate.working[id] < 9000) return "working";
+  if (gstate.waiting[id]) return "waiting";
+  return "idle";
+}
+async function refreshState() {
+  const gr = await api("/api/graph");
+  const waiting = {};
+  for (const n of gr.nodes) {
+    if (["request", "check", "decision", "question"].includes(n.type) && n.status === "open" && n.props.agent) waiting[n.props.agent] = (waiting[n.props.agent] || 0) + 1;
+  }
+  gstate.waiting = waiting;
+  const open = gr.nodes.filter((n) => n.type === "task" && n.status === "queued").length;
+  const needs = gr.nodes.filter((n) => ["decision", "check", "question", "request"].includes(n.type) && n.status === "open").length;
+  const facts = gr.nodes.filter((n) => n.type === "fact").length;
+  const stat = (v, l) => h("div", { class: "stat" }, h("b", {}, v), h("span", {}, l));
+  $("hud").replaceChildren(stat(ROSTER.length, "Agents"), stat(open, "Tasks in hand"), stat(needs, "Need people"), stat(facts, "Quoted facts"));
+  for (const [k, room] of Object.entries(hqRooms)) drawRoomScreen(k, room, gr);
+  if (floor) { for (const st of Object.values(floor.stations)) if (st.canvas) drawScreen(st); drawWalls(floor); refreshTags(); }
+  if (where !== "hq" || zone !== "front") renderSide();
+}
+function deptAgents(k) { return ROSTER.filter((a) => deptOf(a.id) === k).map((a) => a.id); }
+function drawRoomScreen(k, room, gr) {
+  const x = room.canvas.getContext("2d"), d = DEPTS[k], col = hex(d.color);
+  x.fillStyle = "#0b0f18"; x.fillRect(0, 0, 640, 300); x.fillStyle = col; x.fillRect(0, 0, 640, 6);
+  x.fillStyle = "#ece8df"; x.font = "600 34px Inter, system-ui"; x.fillText(d.name, 26, 56);
+  if (!d.lead) { x.fillStyle = "#8b92a3"; x.font = "500 24px Inter, system-ui"; x.fillText("Click to open the meeting table", 26, 110); room.tex.needsUpdate = true; return; }
+  const ids = new Set(deptAgents(k));
+  const waiting = [...ids].reduce((s, a) => s + (gstate.waiting[a] || 0), 0);
+  const working = [...ids].filter((a) => agentState(a) === "working").length;
+  const tasks = gr.nodes.filter((n) => n.type === "task" && n.status === "queued" && ids.has(n.props.agent)).length;
+  const rows = [[`${ids.size}`, "agents"], [`${tasks}`, "tasks in hand"], [`${waiting}`, "need people"]];
+  rows.forEach(([v, l], i) => { x.fillStyle = i === 2 && waiting ? "#f0b35e" : "#ece8df"; x.font = "600 48px Inter, system-ui"; x.fillText(v, 26 + i * 205, 150);
+    x.fillStyle = "#8b92a3"; x.font = "500 20px Inter, system-ui"; x.fillText(l, 26 + i * 205, 182); });
+  x.fillStyle = working ? "#5ccfb5" : "#5d6476"; x.font = "500 22px Inter, system-ui";
+  const last = [...ids].map((a) => lastWork[a]).filter(Boolean).sort((a, b) => b.at - a.at)[0];
+  wrap(x, last ? `${AG[last.agent].name}: ${last.text}` : "All quiet.", 26, 236, 590, 28, 2);
+  room.tex.needsUpdate = true;
+}
+function refreshTags() {
+  for (const t of floor.teams) {
+    const states = t.agents.map(agentState);
+    const st = states.includes("working") ? "working" : states.includes("waiting") ? "waiting" : "idle";
+    const w = t.agents.map((a) => lastWork[a]).filter(Boolean).sort((a, b) => b.at - a.at)[0];
+    const text = st === "waiting" ? `${t.agents.reduce((s, a) => s + (gstate.waiting[a] || 0), 0)} need you` : st === "working" && w ? w.text.slice(0, 34) + (w.text.length > 34 ? "…" : "") : "";
+    floor.group.remove(t.tag);
+    t.tag = label(text ? `${t.name} · ${text}` : t.name, { size: 34, accent: st === "waiting" ? "#f0b35e" : st === "working" ? "#5ccfb5" : hex(DEPTS[floor.dept].color),
+      border: st === "waiting" ? "#f0b35e" : null });
+    t.tag.position.set(t.x, 5.4, t.z - 1.6); floor.group.add(t.tag);
+  }
+}
+
+// ---------- events drive both views ----------
+const byId = new Map();
+const agentOf = (e) => e.agent && AG[e.agent] ? e.agent : AG[e.actor] ? e.actor : e.type.startsWith("chat.") ? "rania" : e.type === "utterance" ? "scribe" : null;
+function remember(e) {
+  const a = agentOf(e);
+  if (!a || ["agent.started", "chat.received", "fact.superseded"].includes(e.type)) return;
+  lastWork[a] = { agent: a, text: e.type === "agent.pack" ? e.content.pack.verdict : describe(e), at: e.id, sample: !!e.content?.usage?.sample };
+}
+function botFor(agent) {
+  if (where === "hq") return hqBots[agent] || hqBots[DEPTS[deptOf(agent)]?.lead] || null;
+  return floor?.stations[agent] || null;
+}
+let capT = null;
+function caption(parts) {
+  $("caption").replaceChildren(...parts); $("caption").style.opacity = 1;
+  clearTimeout(capT); capT = setTimeout(() => $("caption").style.opacity = 0, 6500);
+}
+function play(e, quiet = false) {
+  byId.set(e.id, e);
+  remember(e);
+  const who = agentOf(e);
+  if (who) gstate.working[who] = performance.now();
+  const cause = e.caused_by && byId.get(e.caused_by), from = cause && agentOf(cause);
+  const tb = who && botFor(who), fb = from && botFor(from);
+  if (tb && !quiet) {
+    if (fb && fb !== tb) send(fb, tb, e.type === "check.raised" ? 0xf27d7d : e.type === "review.returned" ? 0xb591f3 : fb.color, floor && TICKET[teamOfAgent(who)]);
+    if (!["agent.started", "chat.received", "fact.superseded"].includes(e.type)) {
+      const txt = (where === "hq" && tb.id !== who ? `${AG[who].name}: ` : "") + (lastWork[who]?.text || describe(e));
+      say(tb, txt);
+    }
+    if (tb.canvas) drawScreen(tb);
+  }
+  if (e.type === "check.raised") { if (hqRooms.comp) hqRooms.comp.flash = 1; }
+  if (e.type === "rounds.started" && where === "hq") roundsWalk();
+  if (!quiet) {
+    caption([h("span", { class: "t" }, new Date(e.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })),
+      h("b", {}, AG[who]?.name || NAMES[e.actor] || "Office"), h("span", {}, (e.type === "agent.pack" ? e.content.pack.verdict : describe(e)) + (e.content?.usage?.sample ? " (sample)" : ""))]);
+    clearTimeout(play.t); play.t = setTimeout(refreshState, 400);
+  }
+}
+function teamOfAgent(a) { return floor?.teams.find((t) => t.agents.includes(a))?.id; }
+
+function say(st, text, secs = 5) {
+  if (st.bubble) st.g.remove(st.bubble);
+  st.bubble = label(text.length > 110 ? text.slice(0, 107) + "…" : text, { size: 30, color: "#141821", bg: "rgba(246,242,233,.97)", maxW: 680, pill: false, dark: true, accent: hex(st.color) });
+  st.bubble.position.set(0, st.canvas ? 4.6 : 3.9, 0); st.bubble.scale.multiplyScalar(1 / st.g.scale.x); st.g.add(st.bubble); st.bubbleT = secs; st.glow = 1;
+}
 const orbs = [];
-function send(from, to, color = 0xe8c77a) {
-  const a = robots[from], b = robots[to]; if (!a || !b || from === to) return;
-  const m = new THREE.Mesh(new THREE.SphereGeometry(.24, 20, 16), emissive(color, 3));
+function send(a, b, color, ticket) {
+  const group = where === "hq" ? hq : floor.group;
+  const wp = (st) => st.g.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 2.1, 0));
+  const m = new THREE.Mesh(new THREE.SphereGeometry(.24, 20, 16), emissive(color, 3)); scene.add(m);
   const trail = Array.from({ length: 8 }, (_, i) => { const t = new THREE.Mesh(new THREE.SphereGeometry(.16 - i * .016, 10, 8), emissive(color, 2)); t.material.transparent = true; t.material.opacity = .5 - i * .05; scene.add(t); return t; });
-  scene.add(m);
-  const p0 = a.g.position.clone().add(new THREE.Vector3(0, 2.1, 0)), p2 = b.g.position.clone().add(new THREE.Vector3(0, 2.1, 0));
-  const p1 = p0.clone().add(p2).multiplyScalar(.5).add(new THREE.Vector3(0, 5.5, 0));
-  orbs.push({ m, trail, hist: [], p0, p1, p2, t: 0 });
-}
-function walkTo(id, target, back = true) {
-  const r = robots[id]; if (!r) return;
-  r.walk = { from: r.g.position.clone(), to: target.clone().setY(.18), t: 0, back };
+  let tag = null;
+  if (ticket) { tag = label(ticket, { size: 28, accent: hex(color) }); scene.add(tag); }
+  const p0 = wp(a), p2 = wp(b), p1 = p0.clone().add(p2).multiplyScalar(.5).add(new THREE.Vector3(0, 5, 0));
+  orbs.push({ m, trail, tag, hist: [], p0, p1, p2, t: 0, group });
 }
 const LEADS = ["sales", "ops", "fin", "comp", "review", "records"];
 async function roundsWalk() {
-  const n = robots.nova; if (!n) return;
+  const n = hqBots.nova; if (!n) return;
   for (const l of LEADS) {
-    const r = robots[l]; if (!r) continue;
+    const r = hqBots[l]; if (!r || where !== "hq") continue;
     n.walk = { from: n.g.position.clone(), to: r.g.position.clone().add(new THREE.Vector3(1.4, 0, 1.7)), t: 0, back: false };
-    say("nova", `Rounds · ${AG[l].name}`, 1.6);
+    say(n, `Rounds · ${AG[l].name}`, 1.6);
     await new Promise((ok) => setTimeout(ok, 1700));
   }
   n.walk = { from: n.g.position.clone(), to: n.home.clone(), t: 0, back: false };
-  say("nova", "Briefing ready.", 3);
+  say(n, "Briefing ready.", 3);
 }
 
-// ---------- events drive the floor ----------
-const byId = new Map();
-const AGENT_IDS = new Set(Object.keys(AG));
-const agentOf = (e) => e.agent && robots[e.agent] ? e.agent : AGENT_IDS.has(e.actor) && robots[e.actor] ? e.actor :
-  e.type.startsWith("chat.") ? "rania" : e.type === "utterance" ? "scribe" : null;
-let feedEvents = [];
-let tickT = null;
-function ticker(e) {
-  const who = AG[agentOf(e)]?.name || NAMES[e.actor] || "Office";
-  $("ticker").replaceChildren(h("span", { class: "t" }, new Date(e.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })),
-    h("b", {}, who), h("span", {}, describe(e)));
-  $("ticker").style.opacity = 1;
-  clearTimeout(tickT); tickT = setTimeout(() => $("ticker").style.opacity = 0, 6000);
+// ---------- entering and leaving a department ----------
+let fly = { from: camera.position.clone(), to: HQ_HOME.pos.clone(), lookFrom: HQ_HOME.look.clone(), lookTo: HQ_HOME.look.clone(), t: 0, dur: 2.6 };
+function flyTo(pos, look, dur = 1.3) { fly = { from: camera.position.clone(), to: pos.clone(), lookFrom: controls.target.clone(), lookTo: look.clone(), t: 0, dur }; }
+async function enter(dept) {
+  const d = DEPTS[dept];
+  if (!d.lead) { location.href = "meeting.html"; return; }
+  flyTo(new THREE.Vector3(d.x + 2, 8, d.z + 7), new THREE.Vector3(d.x, 1, d.z), .9);
+  $("entering").textContent = `Entering ${d.name}`; $("entering").classList.add("on");
+  await new Promise((ok) => setTimeout(ok, 750));
+  $("fade").classList.add("on");
+  await new Promise((ok) => setTimeout(ok, 450));
+  if (floor) { scene.remove(floor.group); floor = null; }
+  floor = buildFloor(dept);
+  hq.visible = false; floor.group.visible = true; where = dept; zone = dept; stopIdx = 0;
+  camera.position.set(45, 40, 45); controls.target.copy(FLOOR_HOME.look);
+  flyTo(FLOOR_HOME.pos, FLOOR_HOME.look, 1.6);
+  $("fade").classList.remove("on"); $("entering").classList.remove("on");
+  drawWalls(floor); refreshTags(); renderBar(); renderTitle(); renderSide(); renderDemo();
+}
+function leave() {
+  if (floor) { scene.remove(floor.group); floor = null; }
+  hq.visible = true; where = "hq"; zone = "front";
+  camera.position.set(0, 60, 70); flyTo(HQ_HOME.pos, HQ_HOME.look, 1.4);
+  renderBar(); renderTitle(); renderSide(); renderDemo();
 }
 
-function play(e, quiet = false) {
-  byId.set(e.id, e);
-  const who = agentOf(e);
-  const cause = e.caused_by && byId.get(e.caused_by);
-  const from = cause && agentOf(cause);
-  if (who) {
-    if (from && from !== who) send(from, who, e.type === "check.raised" ? 0xf27d7d : e.type === "review.returned" ? 0xb591f3 : robots[from]?.color || 0xe8c77a);
-    if (!quiet && !["agent.started", "chat.received", "fact.superseded"].includes(e.type)) say(who, describe(e));
+// ---------- the guided tour on a department floor ----------
+let stopIdx = 0, touring = null;
+function goStop(i) {
+  if (!floor) return;
+  stopIdx = (i + floor.stops.length) % floor.stops.length;
+  const s = floor.stops[stopIdx];
+  flyTo(s.pos, s.look, 1.2);
+  caption([h("b", {}, s.name), h("span", {}, s.line)]);
+  renderBar();
+}
+function tour() {
+  if (touring) { clearInterval(touring); touring = null; renderBar(); return; }
+  goStop(stopIdx + 1); touring = setInterval(() => goStop(stopIdx + 1), 4200); renderBar();
+}
+addEventListener("keydown", (e) => {
+  if (where === "hq" || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+  if (e.key === "ArrowRight") goStop(stopIdx + 1); else if (e.key === "ArrowLeft") goStop(stopIdx - 1); else if (e.key === "Escape") leave();
+});
+
+// ---------- bars, title, demo controls ----------
+function renderTitle() {
+  const d = DEPTS[where];
+  $("title").replaceChildren(h("div", { class: "k" }, h("span", { class: "live" }), where === "hq" ? "Live · Diwan Realty HQ" : `Live · ${d.name}`),
+    h("h1", {}, ...(where === "hq" ? ["The ", h("em", {}, "office")] : [h("em", {}, d.name)])),
+    h("p", {}, where === "hq" ? "Each room is a department. Click one to enter and watch its whole team at work." : d.about));
+}
+function renderBar() {
+  if (where === "hq") {
+    $("bar").replaceChildren(h("button", { class: "on", onclick: () => flyTo(HQ_HOME.pos, HQ_HOME.look) }, "Whole office"), h("span", { class: "sep" }),
+      ...Object.entries(DEPTS).filter(([, d]) => d.lead).map(([k, d]) => h("button", { onclick: () => enter(k) }, h("i", { style: `background:${hex(d.color)}` }), d.name)));
+  } else {
+    $("bar").replaceChildren(h("button", { onclick: leave }, "← HQ"), h("span", { class: "sep" }),
+      ...floor.stops.map((s, i) => h("button", { class: i === stopIdx ? "on" : "", onclick: () => goStop(i) }, s.name)), h("span", { class: "sep" }),
+      h("button", { onclick: tour }, touring ? "■ Stop tour" : "▶ Tour"));
   }
-  if (e.type === "check.raised") rooms.comp.flash = 1;
-  if (e.type === "task.withdrawn" || e.type === "review.returned" || e.type === "approval.refused") rooms[ZONE_OF[who] || "review"].flash = .6;
-  if (e.type === "document.filed") fileBox(e.content.kind);
-  if (e.type === "rounds.started") roundsWalk();
-  if (e.type.startsWith("lobby.") || e.type === "task.done") drawBoard();
-  if (e.type === "chat.received") { wallGlow = 1; waLines.push({ text: e.content.text, me: false }); drawWA(); if (!quiet) say("rania", `“${e.content.text}”`, 3); }
-  if (e.type === "chat.sent") { waLines.push({ text: e.content.text, me: true }); drawWA(); }
-  if (e.type === "agent.started" && (who === "archivist" || who === "analyst")) walkTo(who, new THREE.Vector3(cabinets[1].position.x, 0, cabinets[1].position.z + 1.4));
-  if (e.type === "agent.started" && who === "formf") walkTo(who, robots.formf.home.clone().add(new THREE.Vector3(0, 0, -2)));
-  if (!quiet) { feedEvents.unshift(e); feedEvents = feedEvents.slice(0, 60); ticker(e); if (zone !== "front") renderZone(); }
-  updateHud();
+}
+function renderDemo() {
+  const btns = [h("span", { class: "lbl" }, "Demo")];
+  if (where === "mkt" || where === "hq") btns.push(h("button", { onclick: async () => { if (where === "hq") await enter("mkt"); await post("/api/marketing/demo?ref=MC-1204"); toast("A listing is going through the studio"); } }, "Run a listing through marketing"));
+  if (where !== "mkt") btns.push(h("button", { onclick: correction }, "Karim corrects himself"));
+  btns.push(h("button", { onclick: async () => { await post("/api/demo/reset"); location.reload(); } }, "Reset"));
+  $("demo").replaceChildren(...btns);
+}
+async function correction() {
+  const m = await post("/api/meetings", { deal: "marina-1204", title: "Second meeting" });
+  await post(`/api/meetings/${m.id}/consent?by=Karim%20Haddad`);
+  await post(`/api/meetings/${m.id}/turn`, { speaker: "customer", text: "Actually, forget my brother. I'll pay it all myself." });
 }
 
-// ---------- the side panel: Nova, or a team's room ----------
+// ---------- the side panel: Nova on HQ, the department on its floor ----------
 let zone = "front";
 const convo = [];
-let listening = false, recog = null, talking = false, speaking = false;
+let listening = false, recog = null, talking = false, speaking = false, tab = "talk", briefAt = "09:00";
 const session = Math.random().toString(36).slice(2);
 let person = "layla";
-
 function setOrb() {
   const o = $("orb");
-  o.className = "orb" + (zone !== "front" ? " zone" : "") + (speaking ? " speaking" : "") + (listening ? " listening" : "");
-  o.style.setProperty("--zc", hex(ZONES[zone].color));
+  o.className = "orb" + (where !== "hq" ? " zone" : "") + (speaking ? " speaking" : "") + (listening ? " listening" : "");
+  o.style.setProperty("--zc", hex(DEPTS[where]?.color || 0xe8c77a));
 }
-
-function renderZone() {
-  const z = ZONES[zone];
-  $("ztitle").textContent = zone === "front" ? "Nova" : z.name;
-  $("zsub").textContent = zone === "front" ? "Chief of staff · the front desk" : z.about;
-  $("back").hidden = zone === "front";
+function renderSide() {
   setOrb();
-  document.querySelectorAll("#zones button").forEach((b) => b.classList.toggle("on", b.dataset.z === zone));
-  if (zone === "front") return renderNova();
-  const evs = feedEvents.filter((e) => z.agents.includes(agentOf(e)));
-  $("zbody").replaceChildren(
-    h("h2", {}, "The team"),
-    ...z.agents.map((id) => h("div", { class: "agentcard" }, h("div", { class: "nm" }, AG[id].name, h("span", { class: "rl" }, ` · ${AG[id].role}`)),
-      h("div", { class: "jb" }, AG[id].job), h("div", { class: "nv" }, `Never: ${AG[id].never}`))),
-    h("h2", { style: "margin-top:18px" }, "Happening here"),
-    evs.length ? h("div", {}, evs.slice(0, 20).map((e) => h("div", { class: "ev3" }, h("b", {}, AG[agentOf(e)]?.name || ""), describe(e))))
-      : h("p", { class: "hint" }, "Nothing yet. Ask Nova for something this team does, or replay the deal."));
+  $("back").hidden = where === "hq";
+  if (where === "hq" && zone !== "front" && DEPTS[zone]) return renderDeptCard(zone);
+  if (where === "hq" || tab === "talk" && zone === "nova") { $("ztitle").textContent = "Nova"; $("zsub").textContent = "Chief of staff · the front desk"; return renderNova(); }
+  const d = DEPTS[where];
+  $("ztitle").textContent = d.name; $("zsub").textContent = `${deptAgents(where).length} agents · ${d.about}`;
+  $("zbody").replaceChildren(h("button", { class: "bigbtn", onclick: () => { zone = "nova"; tab = "talk"; renderSide(); } }, "Talk to Nova"),
+    ...floor.teams.map((t) => {
+      const states = t.agents.map(agentState), st = states.includes("working") ? "working" : states.includes("waiting") ? "waiting" : "idle";
+      return h("div", { class: "team" }, h("div", { class: "tn" }, h("i", { style: `background:${hex(d.color)}` }), t.name, h("span", { class: `state ${st}` }, st === "waiting" ? "needs you" : st)),
+        h("div", { class: "st" }, t.line),
+        ...t.agents.map((a) => h("div", { class: "ag" }, h("b", {}, AG[a].name), " · ", AG[a].role,
+          h("span", { class: "w" }, lastWork[a] ? lastWork[a].text + (lastWork[a].sample ? " (sample)" : "") : AG[a].status === "planned" ? "Planned: no work yet" : "Idle"))));
+    }));
 }
-
-let tab = "talk", briefAt = "09:00";
-api(`/api/settings/${person}`).then((x) => { briefAt = x.briefing_time; if (zone === "front") renderNova(); });
+function renderDeptCard(k) {
+  const d = DEPTS[k];
+  $("ztitle").textContent = d.name; $("zsub").textContent = d.about;
+  const ids = deptAgents(k);
+  $("zbody").replaceChildren(h("button", { class: "primary bigbtn", onclick: () => enter(k) }, `Enter ${d.name} →`),
+    h("h2", {}, `${ids.length} agents`),
+    ...ids.slice(0, 12).map((a) => h("div", { class: "team" }, h("div", { class: "tn" }, AG[a].name, h("span", { class: `state ${agentState(a)}` }, agentState(a) === "waiting" ? "needs you" : agentState(a))),
+      h("div", { class: "st" }, lastWork[a]?.text || AG[a].role))),
+    ids.length > 12 ? h("p", { class: "hint" }, `…and ${ids.length - 12} more inside.`) : null,
+    h("button", { style: "margin-top:8px", onclick: () => { zone = "front"; renderSide(); } }, "← Back to Nova"));
+}
 function renderLobby() {
-  $("zbody").replaceChildren(
+  api("/api/lobby").then((cards) => $("zbody").replaceChildren(
     h("div", { class: "row", style: "margin-bottom:12px" }, h("button", { onclick: () => { tab = "talk"; renderNova(); } }, "← Back to Nova"), h("span", {})),
     h("h2", {}, "Lobby board"),
-    ...(boardCards.length ? boardCards.map((c) => h("div", { class: "boardcard" },
-      h("div", { class: "row" }, h("strong", {}, `${NAMES[c.to] || c.to} · ${c.text}`),
-        h("span", { style: "flex:0" }, h("span", { class: `chip ${c.status === "late" ? "bad" : c.status === "done" ? "ok" : "warn"}` }, c.status))),
+    ...(cards.length ? cards.map((c) => h("div", { class: "boardcard" },
+      h("div", { class: "row" }, h("strong", {}, `${NAMES[c.to] || c.to} · ${c.text}`), h("span", { style: "flex:0" }, h("span", { class: `chip ${c.status === "late" ? "bad" : c.status === "done" ? "ok" : "warn"}` }, c.status))),
       h("div", { class: "small muted", style: "margin-top:4px" }, `${c.id} · asked by ${NAMES[c.by] || c.by} · due ${c.due ? new Date(c.due).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "none"}`),
-      ...(c.history || []).map((st) => h("div", { class: "small muted" }, `· ${st.step}${st.note ? ` · ${st.note}` : ""}`)),
-      !["done", "cancelled"].includes(c.status) ? h("button", { style: "margin-top:8px;font-size:12px", onclick: async () => { await post(`/api/lobby/${c.id}/done`, { by: c.to }); } }, `Mark done as ${NAMES[c.to] || c.to}`) : null))
-      : [h("p", { class: "hint" }, "Nothing on the board yet. Tell Nova: “Tell Priya I need the Karim review ready by this evening.”")]));
+      !["done", "cancelled"].includes(c.status) ? h("button", { style: "margin-top:8px;font-size:12px", onclick: async () => { await post(`/api/lobby/${c.id}/done`, { by: c.to }); renderLobby(); } }, `Mark done as ${NAMES[c.to] || c.to}`) : null))
+      : [h("p", { class: "hint" }, "Nothing on the board yet. Tell Nova: “Tell Priya I need the Karim review ready by this evening.”")])));
 }
+api(`/api/settings/${person}`).then((x) => { briefAt = x.briefing_time; });
 function renderNova() {
   if (tab === "lobby") return renderLobby();
   setOrb();
   const wave = h("span", { class: "wave" }, h("i"), h("i"), h("i"), h("i"));
-  $("zbody").replaceChildren(
+  $("zbody").replaceChildren(...[
+    where !== "hq" ? h("button", { style: "margin-bottom:12px", onclick: () => { zone = where; renderSide(); } }, `← ${DEPTS[where].name} team`) : null,
     h("div", { class: "ctl" },
       h("div", {}, h("label", {}, "I am"), h("select", { onchange: (e) => { person = e.target.value; api(`/api/settings/${person}`).then((x) => { briefAt = x.briefing_time; renderNova(); }); } },
         Object.entries(NAMES).map(([k, v]) => h("option", { value: k, selected: k === person }, v)))),
       h("div", {}, h("label", {}, "Brief me at"), h("input", { type: "time", value: briefAt,
         onchange: async (e) => { briefAt = e.target.value; await post(`/api/settings/${person}`, { briefing_time: briefAt }); toast(`Nova will do her rounds before ${briefAt}`); } })),
-      h("div", { class: "full" }, h("button", { onclick: () => post("/api/nova/rounds") }, "Do rounds now"),
-        h("button", { onclick: () => { tab = "lobby"; drawBoard().then(renderLobby); } }, "Lobby board"))),
+      h("div", { class: "full" }, h("button", { onclick: () => post("/api/nova/rounds") }, "Do rounds now"), h("button", { onclick: () => { tab = "lobby"; renderLobby(); } }, "Lobby board"))),
     h("button", { class: `primary talk ${talking ? "on" : ""}`, onclick: () => talking ? stopTalk() : startTalk() }, wave,
       talking ? (listening ? "Listening… tap to stop" : "Nova is speaking… tap to stop") : "Play briefing"),
-    ...(convo.length ? [] : [h("p", { class: "hint" }, "Nova greets you, gives every department's update, then listens. Ask anything, or give work: “Tell Priya I need the Karim review by this evening.” She reads it back before sending.")]),
-    ...convo.map((m) => h("div", { class: `msg ${m.from}` }, h("span", { class: "from" }, m.from === "nova" ? "Nova" : NAMES[person]),
-      h("div", { class: "card" }, m.text),
+    ...(convo.length ? [] : [h("p", { class: "hint" }, "Nova greets you, gives every department's update, then listens. Ask anything, or give work: “Tell Priya I need the Karim review by this evening.”")]),
+    ...convo.map((m) => h("div", { class: `msg ${m.from}` }, h("span", { class: "from" }, m.from === "nova" ? "Nova" : NAMES[person]), h("div", { class: "card" }, m.text),
       m.options ? h("div", { class: "opts" }, m.options.map((o) => h("button", { onclick: () => ask(o) }, o))) : null,
-      m.cites?.length ? h("div", {}, ...m.cites.map((c) => h("span", { class: "chip" }, c))) : null)));
+      m.cites?.length ? h("div", {}, ...m.cites.map((c) => h("span", { class: "chip" }, c))) : null))].filter(Boolean));
   $("zbody").scrollTop = 1e9;
 }
 
-// speaking: the clearest voice available, sentence by sentence, record ids left out of the speech
 let voice = null;
 function pickVoice() {
   const vs = speechSynthesis.getVoices();
@@ -505,57 +732,43 @@ function speak(text) {
     speechSynthesis.cancel();
     const clean = text.replace(/\s*\((?:[A-Z]+\d+[^)]*|ref [^)]*|permit [^)]*)\)/g, "").replace(/\[[A-Z]\d+\]/g, "").replace(/AED/g, "dirhams ");
     const parts = clean.match(/[^.!?]+[.!?]*/g) || [clean];
-    let i = 0;
-    speaking = true; setOrb();
+    let i = 0; speaking = true; setOrb();
     const finish = () => { speaking = false; setOrb(); done(); };
     const next = () => {
       if (i >= parts.length || (!talking && i > 0 && !speakingOnce)) return finish();
-      const u = new SpeechSynthesisUtterance(parts[i++].trim());
-      if (voice) u.voice = voice;
-      u.rate = .98; u.pitch = 1.02; u.onend = next; u.onerror = next;
-      speechSynthesis.speak(u);
+      const u = new SpeechSynthesisUtterance(parts[i++].trim()); if (voice) u.voice = voice;
+      u.rate = .98; u.pitch = 1.02; u.onend = next; u.onerror = next; speechSynthesis.speak(u);
     };
     next();
   });
 }
-
 async function ask(text) {
-  zone = "front"; tab = "talk"; renderZone();
-  convo.push({ from: "you", text });
-  renderNova();
-  say("nova", "Let me check…", 2);
+  zone = where === "hq" ? "front" : "nova"; tab = "talk"; renderSide();
+  convo.push({ from: "you", text }); renderNova();
+  if (hqBots.nova && where === "hq") say(hqBots.nova, "Let me check…", 2);
   const r = await post("/api/nova/say", { text, person, session });
-  convo.push({ from: "nova", text: r.text, cites: r.cites, options: r.options });
-  renderNova();
-  say("nova", r.text, 7);
-  if (r.delegated_to) zoomTo("records", false);
+  convo.push({ from: "nova", text: r.text, cites: r.cites, options: r.options }); renderNova();
+  if (hqBots.nova && where === "hq") say(hqBots.nova, r.text, 7);
   speakingOnce = !talking;
   await speak(r.text);
   if (talking) listen();
 }
-
 function listen(once = false) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { toast("This browser can't listen. Type to Nova instead."); return; }
-  recog = new SR(); recog.lang = "en-US"; recog.interimResults = false; recog.maxAlternatives = 1;
+  recog = new SR(); recog.lang = "en-US"; recog.interimResults = false;
   listening = true; setOrb(); renderNova();
-  recog.onresult = (ev) => {
-    listening = false; setOrb();
-    const t = ev.results[0][0].transcript;
-    if (!once && /^(thanks|thank you|bye|stop|that's all)/i.test(t)) { convo.push({ from: "you", text: t }); stopTalk("Any time. I'll keep an eye on things."); }
-    else ask(t);
-  };
+  recog.onresult = (ev) => { listening = false; setOrb(); const t = ev.results[0][0].transcript;
+    if (!once && /^(thanks|thank you|bye|stop|that's all)/i.test(t)) { convo.push({ from: "you", text: t }); stopTalk("Any time. I'll keep an eye on things."); } else ask(t); };
   recog.onerror = () => { listening = false; setOrb(); renderNova(); };
   recog.onend = () => { if (listening) { listening = false; setOrb(); renderNova(); } };
   recog.start();
 }
-
 async function startTalk() {
   talking = true; tab = "talk"; renderNova();
   const b = await api(`/api/nova/brief/${person}`);
-  convo.push({ from: "nova", text: b.text, cites: [...new Set([...b.lines.flatMap((l) => l.refs), ...(b.departments || []).flatMap((d) => d.refs)])] });
-  renderNova();
-  say("nova", b.text, 8);
+  convo.push({ from: "nova", text: b.text, cites: [...new Set([...b.lines.flatMap((l) => l.refs), ...(b.departments || []).flatMap((d) => d.refs)])] }); renderNova();
+  if (hqBots.nova && where === "hq") say(hqBots.nova, b.text, 8);
   await speak(b.text + " What would you like to do?");
   if (talking) listen();
 }
@@ -564,106 +777,67 @@ function stopTalk(bye) {
   if (bye) { convo.push({ from: "nova", text: bye }); speakingOnce = true; speak(bye); }
   renderNova();
 }
-
 $("send").onclick = () => { const t = $("say").value.trim(); if (t) { $("say").value = ""; ask(t); } };
 $("say").onkeydown = (e) => e.key === "Enter" && $("send").onclick();
 $("mic").onclick = () => listen(true);
-$("back").onclick = () => { zone = "front"; renderZone(); flyHome(); };
+$("back").onclick = leave;
 
-// ---------- camera ----------
-let fly = { from: camera.position.clone(), to: HOME.pos.clone(), lookFrom: HOME.look.clone(), lookTo: HOME.look.clone(), t: 0, dur: 2.6 };
-function zoomTo(k, open = true) {
-  const z = ZONES[k];
-  const far = Math.max(1, z.w / 14);
-  fly = { from: camera.position.clone(), to: new THREE.Vector3(z.x + 3, 11 + far * 4, z.z + 12 + far * 6), lookFrom: controls.target.clone(), lookTo: new THREE.Vector3(z.x, 1, z.z), t: 0 };
-  if (open) { zone = k; renderZone(); }
-}
-function flyHome() { fly = { from: camera.position.clone(), to: HOME.pos.clone(), lookFrom: controls.target.clone(), lookTo: HOME.look.clone(), t: 0 }; }
-$("zones").append(h("button", { "data-z": "floor", onclick: () => { zone = "front"; renderZone(); flyHome(); } }, "Whole floor"),
-  ...Object.entries(ZONES).map(([k, z]) => h("button", { "data-z": k, onclick: () => zoomTo(k) }, h("i", { style: `background:${hex(z.color)}` }), z.name)));
-
+// clicking: a room on HQ opens its card (double click enters); on a floor, a team flies the camera there
 const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
-renderer.domElement.addEventListener("click", (ev) => {
+function hit(ev) {
   const r = renderer.domElement.getBoundingClientRect();
   mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(mouse, camera);
-  const hit = ray.intersectObjects(scene.children, true).find((i) => i.object.userData.agent || i.object.userData.zone);
-  if (hit) zoomTo(hit.object.userData.zone || ZONE_OF[hit.object.userData.agent]);
-});
-
-// ---------- HUD ----------
-async function updateHud() {
-  clearTimeout(updateHud.t);
-  updateHud.t = setTimeout(async () => {
-    const gr = await api("/api/graph");
-    const open = gr.nodes.filter((n) => n.type === "task" && n.status === "queued").length;
-    const needs = gr.nodes.filter((n) => ["decision", "check", "question", "request"].includes(n.type) && n.status === "open").length;
-    const facts = gr.nodes.filter((n) => n.type === "fact").length;
-    const stat = (v, l) => h("div", { class: "stat" }, h("b", {}, v), h("span", {}, l));
-    $("hud").classList.add("glass");
-    $("hud").replaceChildren(stat(Object.keys(robots).length, "Agents"), stat(open, "Tasks in hand"), stat(needs, "Need people"), stat(facts, "Quoted facts"));
-  }, 300);
+  return ray.intersectObjects((where === "hq" ? hq : floor.group).children, true).find((i) => i.object.userData.dept || i.object.userData.agent);
 }
-$("demo").append(h("span", { class: "lbl" }, "Demo"), h("button", { onclick: correction }, "Karim corrects himself"),
-  h("button", { onclick: replay }, "Replay"), h("button", { onclick: async () => { await post("/api/demo/reset"); location.reload(); } }, "Reset"));
-async function correction() {
-  const m = await post("/api/meetings", { deal: "marina-1204", title: "Second meeting" });
-  await post(`/api/meetings/${m.id}/consent?by=Karim%20Haddad`);
-  say("scribe", "Karim: “Actually, forget my brother. I'll pay it all myself.”", 4);
-  await post(`/api/meetings/${m.id}/turn`, { speaker: "customer", text: "Actually, forget my brother. I'll pay it all myself." });
-}
-let replaying = false;
-async function replay() {
-  if (replaying) return;
-  replaying = true;
-  const evs = await api("/api/events");
-  for (const r of Object.values(robots)) { if (r.bubble) r.g.remove(r.bubble); r.bubble = null; }
-  for (const e of evs) {
-    if (["knowledge.added", "listing.added", "document.filed", "sale.closed"].includes(e.type)) { byId.set(e.id, e); continue; }
-    play(e);
-    await new Promise((ok) => setTimeout(ok, 650));
+renderer.domElement.addEventListener("click", (ev) => {
+  const x = hit(ev); if (!x) return;
+  if (where === "hq") {
+    const k = x.object.userData.dept || deptOf(x.object.userData.agent);
+    if (k === "meet") return enter("meet");
+    zone = k === "front" ? "front" : k; renderSide();
+    const d = DEPTS[k]; flyTo(new THREE.Vector3(d.x + 3, 13, d.z + 15), new THREE.Vector3(d.x, 1, d.z));
+  } else if (x.object.userData.agent) {
+    const t = floor.stops.findIndex((s) => s.team?.agents.includes(x.object.userData.agent));
+    goStop(t >= 0 ? t : 1);
   }
-  replaying = false;
-}
+});
+renderer.domElement.addEventListener("dblclick", (ev) => { const x = hit(ev); if (where === "hq" && x) enter(x.object.userData.dept || deptOf(x.object.userData.agent)); });
 
 // ---------- loop ----------
-function resize() {
-  const w = stage.clientWidth, hh = stage.clientHeight;
-  renderer.setSize(w, hh); composer?.setSize(w, hh); camera.aspect = w / hh; camera.updateProjectionMatrix();
-}
+function resize() { const w = stage.clientWidth, hh = stage.clientHeight; renderer.setSize(w, hh); composer?.setSize(w, hh); camera.aspect = w / hh; camera.updateProjectionMatrix(); }
 addEventListener("resize", resize); resize();
 const clock = new THREE.Clock();
+let screenTick = 0;
 (function tick() {
   const dt = Math.min(clock.getDelta(), .05), t = clock.elapsedTime;
-  for (const [id, r] of Object.entries(robots)) {
-    r.bot.position.y = Math.sin(t * 1.8 + id.length) * .035 + (r.glow > 0 ? Math.abs(Math.sin(t * 9)) * .12 * r.glow : 0);
-    r.eyeMat.emissiveIntensity = 2.2 + r.glow * 3 + (Math.sin(t * 3 + id.length * 2) > .97 ? -2 : 0);
-    r.screen.material.emissiveIntensity = .35 + r.glow * .9;
+  const bots = [...Object.values(hqBots), ...Object.values(floor?.stations || {})];
+  for (const r of bots) {
+    r.bot.position.y = Math.sin(t * 1.8 + r.id.length) * .035 + (r.glow > 0 ? Math.abs(Math.sin(t * 9)) * .12 * r.glow : 0);
+    r.eyeMat.emissiveIntensity = 2.2 + r.glow * 3;
     r.glow = Math.max(0, r.glow - dt * .5);
     if (r.bubble && (r.bubbleT -= dt) <= 0) { r.g.remove(r.bubble); r.bubble = null; }
     if (r.walk) {
       r.walk.t += dt / 1.4;
       const k = Math.min(1, Math.max(0, r.walk.t)), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
-      r.g.position.lerpVectors(r.walk.from, r.walk.to, e);
-      r.bot.rotation.z = Math.sin(t * 14) * .07;
-      if (r.walk.t >= 1) { r.bot.rotation.z = 0; r.walk = r.walk.back ? { from: r.walk.to.clone(), to: r.home.clone(), t: -.6, back: false } : null; }
+      r.g.position.lerpVectors(r.walk.from, r.walk.to, e); r.bot.rotation.z = Math.sin(t * 14) * .07;
+      if (r.walk.t >= 1) { r.bot.rotation.z = 0; r.walk = null; }
     }
   }
-  for (const room of Object.values(rooms)) {
-    room.pad.material.emissiveIntensity = room.flash * (.28 + Math.sin(t * 12) * .1);
-    room.rimMat.emissiveIntensity = .9 + room.flash * 2.5;
-    room.light.intensity = .4 + room.flash * 2.5;
-    room.flash = Math.max(0, room.flash - dt * .25);
+  for (const room of Object.values(hqRooms)) {
+    room.top.material.emissiveIntensity = room.flash * (.28 + Math.sin(t * 12) * .1);
+    room.rimMat.emissiveIntensity = .9 + room.flash * 2.5; room.flash = Math.max(0, room.flash - dt * .25);
   }
-  wall.scale.setScalar(1 + wallGlow * .04); wallGlow = Math.max(0, wallGlow - dt * .6);
-  dust.rotation.y += dt * .01;
+  if (floor) { floor.core.rotation.y += dt * .4; floor.core.rotation.x += dt * .15; floor.coreIn.scale.setScalar(1 + Math.sin(t * 2) * .08); }
+  if ((screenTick += dt) > .25 && floor) { screenTick = 0; for (const st of Object.values(floor.stations)) if (st.canvas && agentState(st.id) === "working" && ["wave"].includes(KIND[st.id])) drawScreen(st); }
   for (let i = orbs.length - 1; i >= 0; i--) {
     const o = orbs[i]; o.t += dt / 1.15;
     const k = Math.min(1, o.t), a = o.p0.clone().lerp(o.p1, k), b = o.p1.clone().lerp(o.p2, k);
     o.m.position.copy(a.lerp(b, k));
+    if (o.tag) o.tag.position.copy(o.m.position).add(new THREE.Vector3(0, .8, 0));
     o.hist.unshift(o.m.position.clone()); o.hist.length = Math.min(o.hist.length, 16);
     o.trail.forEach((s, j) => { const p = o.hist[j * 2]; if (p) s.position.copy(p); });
-    if (k >= 1) { scene.remove(o.m); o.trail.forEach((s) => scene.remove(s)); orbs.splice(i, 1); }
+    if (k >= 1) { scene.remove(o.m); o.trail.forEach((s) => scene.remove(s)); if (o.tag) scene.remove(o.tag); orbs.splice(i, 1); }
   }
   if (fly) {
     fly.t += dt / (fly.dur || 1.2);
@@ -676,17 +850,14 @@ const clock = new THREE.Clock();
   requestAnimationFrame(tick);
 })();
 
-// ---------- start: the archive fills the cabinets, then live events animate the floor ----------
+// ---------- start ----------
 const past = await api("/api/events");
-for (const e of past) {
-  byId.set(e.id, e);
-  if (e.type === "document.filed") fileBox(e.content.kind);
-  if (e.type === "chat.received" || e.type === "chat.sent") waLines.push({ text: e.content.text, me: e.type === "chat.sent" });
-}
-drawWA();
-renderZone(); updateHud(); drawBoard();
+for (const e of past) { byId.set(e.id, e); remember(e); }
+renderTitle(); renderBar(); renderDemo(); renderSide(); refreshState();
 follow((evs) => evs.forEach((e) => play(e)), past.at(-1)?.id || 0);
-window.__diwan = { robots, zoomTo, ask, play };
+const q = new URLSearchParams(location.search).get("enter");
+if (q && DEPTS[q]) setTimeout(() => enter(q), 1200);
+window.__diwan = { enter, leave, goStop, play, hqBots, get floor() { return floor; } };
 </script>
 </body>
 </html>
