@@ -23,8 +23,33 @@ def company(office: Office) -> None:
     office.add_knowledge("company", "About us", "Diwan Realty is a Dubai brokerage for Marina, JVC, Business Bay and Downtown.", by="layla")
 
 
+def archive(office: Office) -> None:
+    """Four months of a small brokerage's records, all fictional: closed sales and the paperwork around them."""
+    for listing, price, comm, broker, day in [
+            ("Villa 12, Arabian Ranches", 4_200_000, 84_000, "omar", "2026-07-14"),
+            ("Apartment 1702, Marina Promenade", 2_150_000, 43_000, "omar", "2026-08-05"),
+            ("Townhouse 7, Town Square", 1_650_000, 33_000, "omar", "2026-08-26"),
+            ("Apartment 904, Bay Central", 1_380_000, 27_600, "omar", "2026-09-03"),
+            ("Villa 31, JVC District 12", 2_900_000, 58_000, "omar", "2026-09-17"),
+            ("Apartment 3105, Burj Crown", 3_570_000, 71_400, "omar", "2026-09-29"),
+            ("Apartment 408, Bay Square", 1_120_000, 22_400, "omar", "2026-10-09")]:
+        office.close_sale(listing=listing, price_aed=price, commission_aed=comm, broker=broker, date=day)
+    for kind, title, day, amount, party in [
+            ("invoice", "Office rent, September", "2026-09-01", 25_000, "Bay Square Offices LLC"),
+            ("invoice", "Property Finder listings, September", "2026-09-02", 12_000, "Property Finder"),
+            ("invoice", "Listing photography, 3 units", "2026-09-11", 3_500, "Lens & Light Studio"),
+            ("bill", "DEWA electricity and water, September", "2026-09-20", 2_180, "DEWA"),
+            ("contract", "MOU (Form F), Villa 31, JVC District 12", "2026-09-10", 2_900_000, "Buyer and seller"),
+            ("receipt", "Deposit received, Apartment 3105, Burj Crown", "2026-09-22", 357_000, "Buyer"),
+            ("invoice", "Office rent, October", "2026-10-01", 25_000, "Bay Square Offices LLC"),
+            ("invoice", "Property Finder listings, October", "2026-10-02", 12_000, "Property Finder"),
+            ("bill", "du internet and phones, October", "2026-10-15", 1_450, "du")]:
+        office.file_document(kind=kind, title=title, date=day, amount_aed=amount, party=party)
+
+
 def seed(office: Office) -> None:
     company(office)
+    archive(office)
     office.open_deal("marina-1204", property="Unit 1204, Marina Crest", customer="Karim Haddad", broker="omar")
     office.open_deal("jvc-88", property="Villa 88, JVC", customer="Sara Malik", broker="omar")
     m = "marina-1204"

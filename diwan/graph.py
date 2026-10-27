@@ -137,6 +137,12 @@ class Graph:
         if n.type == "listing":
             return (f"{p['ref']} · {p['title']}, {p['community']} · {p['beds']} bed {p['type']} · AED {p['price_aed']:,} · "
                     f"permit {p.get('permit') or 'MISSING'} · {n.status}")
+        if n.type == "document":
+            amt = f" · AED {p['amount_aed']:,}" if p.get("amount_aed") else ""
+            return f"{n.id} · {p['kind']}: {p['title']} · {p['date']}{amt}{' · ' + p['party'] if p.get('party') else ''}"
+        if n.type == "sale":
+            return (f"{n.id} · sold {p['listing']} on {p['date']} for AED {p['price_aed']:,} · commission AED {p['commission_aed']:,} · "
+                    f"broker {name(p['broker'])}")
         if n.type == "viewing":
             when = datetime.fromisoformat(p["at"]).strftime("%a %d %b, %I:%M %p").replace(" 0", " ")
             return f"{n.id} · viewing of {p['listing']} with {name(p['broker'])}, {when}, for {p.get('customer')}{tag if n.status != 'booked' else ''}"
@@ -247,6 +253,12 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                 ch.props["messages"].append({"event": e["id"], "at": e["at"], "type": t.split(".")[1], "by": e["actor"],
                                              "text": c["text"], "refs": c.get("refs", [])})
                 ch.props["last_at"] = e["at"]
+        elif t == "document.filed":
+            d = g.add(c["id"], "document", c["title"], e, deal=c.get("deal"), status="filed", props=dict(c))
+            if c.get("deal"):
+                g.link(d.id, "filed_under", f"deal:{c['deal']}", e)
+        elif t == "sale.closed":
+            g.add(c["id"], "sale", c["listing"], e, status="closed", props=dict(c))
         elif t == "appointment.booked":
             v = g.add(c["id"], "viewing", f"Viewing {c['listing']}", e, deal=deal, status="booked", props=dict(c))
             g.link(v.id, "of", f"listing:{c['listing']}", e)

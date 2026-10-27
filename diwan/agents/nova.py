@@ -163,14 +163,25 @@ def evidence_from(g: Graph, ids: list[str]) -> list[Evidence]:
 
 # ---------- ask ----------
 
-def ask(office: Office, question: str, person: str = "layla", *, tape_root=None) -> dict:
+# what each conversation was last about, so "and who pays?" follows on from the deal just discussed
+SESSIONS: dict[str, str] = {}
+
+
+def ask(office: Office, question: str, person: str = "layla", *, session: str | None = None, tape_root=None, today=None) -> dict:
     g, req, person = office.graph(), _req(office, "ask"), pid(person) or "layla"
     c = get(NOVA)
     intents = {k for k, rx in INTENTS.items() if re.search(rx, question.lower())}
     if intents <= {"needs"} and "needs" in intents:
         b = brief(office, person, log=False)
         return {"kind": "answer", "text": b["text"], "cites": sorted({r for ln in b["lines"] for r in ln["refs"]}), "by": "rules", "request": req}
+    from diwan.agents import records
+    if out := records.delegate(office, question, person, req, today=today):
+        return out
     deal, pool = resolve_deal(g, question, person)
+    if deal is None and session and SESSIONS.get(session) in {d.deal for d in g.deals()}:
+        deal = SESSIONS[session]
+    if deal and session:
+        SESSIONS[session] = deal
     if deal is None:
         opts = [_label(g, d) for d in pool]
         return _ask_back(office, req, person, f"Which deal do you mean: {' or '.join(opts)}?", opts,

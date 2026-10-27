@@ -146,6 +146,7 @@ async def ws_events(ws: WebSocket, after: int = 0):
 class Ask(BaseModel):
     text: str
     person: str = "layla"
+    session: str | None = None
 
 
 @app.post("/api/nova/ask")
@@ -165,7 +166,7 @@ def say(body: Ask):
     if t.lower().startswith("brief"):
         return nova.brief(S.office, (t.split()[1:] or [body.person])[0], log=False)
     q = t.endswith("?") or re.match(r"(?i)(who|what|when|where|why|how|is|are|does|did|can|which)\b", t)
-    return nova.ask(S.office, t, body.person) if q else nova.route(S.office, t, body.person)
+    return nova.ask(S.office, t, body.person, session=body.session) if q else nova.route(S.office, t, body.person)
 
 
 @app.get("/api/nova/brief/{person}")
@@ -327,6 +328,13 @@ def add_document(body: DocIn):
 def confirm(kid: str, by: str = "layla"):
     S.office.confirm_knowledge(kid, by=by)
     return {"ok": True}
+
+
+@app.get("/api/records")
+def records_view():
+    gr = g()
+    from diwan.agents.records import ledger
+    return {"sales": ledger(gr), "documents": sorted((node_json(gr, d) for d in gr.of("document")), key=lambda d: d["props"]["date"], reverse=True)}
 
 
 @app.get("/api/listings")

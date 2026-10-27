@@ -218,3 +218,19 @@ class Office:
                                                             "beds": beds, "price_aed": price_aed, "permit": permit,
                                                             "status": status, "features": features or []})
         return f"listing:{ref}"
+
+    # the archive
+    def file_document(self, *, kind: str, title: str, date: str, by: str = "archivist", deal: str | None = None,
+                      amount_aed: int | None = None, party: str | None = None, text: str = "") -> str:
+        did = f"DOC{len(self.graph().of('document')) + 1}"
+        self.log.append("document.filed", actor=by, agent="archivist", deal=deal,
+                        content={"id": did, "kind": kind, "title": title, "date": date, "deal": deal, "amount_aed": amount_aed,
+                                 "party": party, "text": text})
+        return did
+
+    def close_sale(self, *, listing: str, price_aed: int, commission_aed: int, broker: str, date: str, deal: str | None = None) -> str:
+        sid = f"S{len(self.graph().of('sale')) + 1}"
+        self.log.append("sale.closed", actor=broker, agent="records", deal=deal,
+                        content={"id": sid, "listing": listing, "price_aed": price_aed, "commission_aed": commission_aed,
+                                 "broker": broker, "date": date, "deal": deal})
+        return sid
