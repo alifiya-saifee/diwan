@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Settings</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .lines { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
+  .lineopt { border: 1px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; background: rgba(255, 255, 255, .02); }
+  .lineopt.on { border-color: rgba(232, 199, 122, .55); background: var(--gold-soft); }
+  .lineopt b { display: block; margin-bottom: 4px; }
+  .card h3 { font-family: var(--display); font-weight: 400; font-size: 24px; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; margin-top: 12px; }
+  .fields .full { grid-column: 1 / -1; }
+  .set { font-size: 11px; color: var(--green); margin-left: 6px; }
+  .url { font: 12px var(--mono); background: rgba(0, 0, 0, .3); border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px; word-break: break-all; }
+  ol { margin: 8px 0 0 18px; padding: 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
+  .result { font-size: 13px; margin-top: 10px; }
+  @media (max-width: 900px) { .lines, .fields { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main style="max-width:1100px">
+  <h1>Settings · <em>connections</em></h1>
+  <p class="sub">Keys are stored only on this machine, in the local .env file. Nothing here ever shows a saved key again, only whether it is set.</p>
+
+  <section class="panel">
+    <h2>WhatsApp line</h2>
+    <div class="lines" id="lines"></div>
+  </section>
+
+  <div class="grid cols-2" style="margin-top:18px">
+    <section class="panel card">
+      <h3>AiSensy <span class="chip" id="aisensy-state"></span></h3>
+      <p class="small muted">Connect the AiSensy project your WhatsApp number lives on. Rania and your team then send and receive through it, and your approved templates appear in the Inbox.</p>
+      <div class="fields">
+        <div class="full"><label>Project ID <span class="set" id="s-AISENSY_PROJECT_ID"></span></label><input id="AISENSY_PROJECT_ID" placeholder="From AiSensy → Manage → API Key"></div>
+        <div><label>Project API password <span class="set" id="s-AISENSY_PROJECT_API_PWD"></span></label><input id="AISENSY_PROJECT_API_PWD" type="password" autocomplete="off"></div>
+        <div><label>Campaign API key (optional) <span class="set" id="s-AISENSY_API_KEY"></span></label><input id="AISENSY_API_KEY" type="password" autocomplete="off"></div>
+      </div>
+      <div class="row" style="margin-top:12px"><span></span><button id="aisensy-test">Test connection</button><button class="primary" id="aisensy-save">Save</button></div>
+      <div class="result" id="aisensy-result"></div>
+      <h2 style="margin-top:20px">Webhook for incoming messages</h2>
+      <div id="aisensy-hook" class="small muted">Save the project first; a private webhook address is created for you.</div>
+      <ol><li>In AiSensy, open <b>Manage → Webhooks</b> and add a webhook.</li><li>Paste the address above and choose the <b>message.created</b> topic.</li>
+        <li>Send a WhatsApp message to your number: it appears in the Inbox and Rania answers.</li></ol>
+    </section>
+
+    <section class="panel card">
+      <h3>Meta WhatsApp Cloud API <span class="chip" id="cloud-state"></span></h3>
+      <p class="small muted">Or connect a number directly on Meta, for example the free test number in your Meta developer app.</p>
+      <div class="fields">
+        <div class="full"><label>Access token <span class="set" id="s-WHATSAPP_TOKEN"></span></label><input id="WHATSAPP_TOKEN" type="password" autocomplete="off"></div>
+        <div><label>Phone number ID <span class="set" id="s-WHATSAPP_PHONE_ID"></span></label><input id="WHATSAPP_PHONE_ID"></div>
+        <div><label>Verify token <span class="set" id="s-WHATSAPP_VERIFY_TOKEN"></span></label><input id="WHATSAPP_VERIFY_TOKEN" placeholder="Any word you choose"></div>
+        <div class="full"><label>App secret (signs webhooks) <span class="set" id="s-WHATSAPP_APP_SECRET"></span></label><input id="WHATSAPP_APP_SECRET" type="password" autocomplete="off"></div>
+      </div>
+      <div class="row" style="margin-top:12px"><span></span><button class="primary" id="cloud-save">Save</button></div>
+      <h2 style="margin-top:20px">Webhook</h2>
+      <div class="url" id="cloud-hook"></div>
+      <ol><li>In your Meta app, open <b>WhatsApp → Configuration</b>.</li><li>Paste this callback URL and the verify token above, then subscribe to <b>messages</b>.</li></ol>
+    </section>
+  </div>
+
+  <section class="panel" style="margin-top:18px">
+    <h2>Meta models</h2>
+    <p class="small muted" style="margin-top:-4px">These keys go in the .env file directly (see .env.example), never into a web form.</p>
+    <div id="models" class="row" style="flex-wrap:wrap;justify-content:flex-start"></div>
+  </section>
+</main>
+<script type="module">
+import { h, api, post, header, toast } from "./app.js";
+header("settings.html");
+const $ = (id) => document.getElementById(id);
+let info;
+
+async function load() {
+  info = await api("/api/integrations");
+  const opt = (k, title, text) => h("div", { class: `lineopt ${info.provider === k ? "on" : ""}`, onclick: () => choose(k) }, h("b", {}, title), h("span", { class: "small muted" }, text));
+  $("lines").replaceChildren(opt("aisensy", "AiSensy", info.aisensy.connected ? "Connected" : "Not connected yet"),
+    opt("cloud", "Meta Cloud API", info.cloud.connected ? "Connected" : "Not connected yet"),
+    opt("sandbox", "Sandbox", "Messages stay on this machine, for demos and testing"));
+  for (const [k, v] of Object.entries({ ...info.aisensy.fields, ...info.cloud.fields })) { const s = $(`s-${k}`); if (s) s.textContent = v ? "✓ saved" : ""; if ($(k)) $(k).placeholder = v ? "•••••••• saved, type to replace" : $(k).placeholder; }
+  const st = (el, on) => { el.textContent = on ? "connected" : "not connected"; el.className = `chip ${on ? "ok" : ""}`; };
+  st($("aisensy-state"), info.aisensy.connected); st($("cloud-state"), info.cloud.connected);
+  $("cloud-hook").textContent = info.cloud.webhook;
+  if (info.aisensy.webhook) {
+    $("aisensy-hook").replaceChildren(h("div", { class: "row" }, h("div", { class: "url", id: "hookurl" }, "Hidden: it contains a private token"),
+      h("button", { onclick: async () => { const r = await api("/api/integrations/aisensy/webhook-url"); $("hookurl").textContent = r.url;
+        navigator.clipboard?.writeText(r.url).then(() => toast("Webhook address copied")).catch(() => {}); } }, "Show & copy")));
+  }
+  $("models").replaceChildren(...Object.entries(info.meta).map(([k, on]) => h("span", { class: "pill" }, h("span", { class: `dot ${on ? "on" : ""}` }),
+    { meta: "Muse Spark (Meta Model API)", baseten: "Muse Spark Open · Baseten", fireworks: "Muse Spark Open · Fireworks", modal: "Muse Spark Open · Modal", voice: "Muse Voice Transcribe" }[k] || k)));
+}
+
+async function save(keys) {
+  const values = {};
+  for (const k of keys) { const v = $(k).value.trim(); if (v) values[k] = v; }
+  if (!Object.keys(values).length) return toast("Nothing new to save");
+  await post("/api/integrations", { values });
+  keys.forEach((k) => $(k).value = "");
+  toast("Saved on this machine");
+  load();
+}
+async function choose(k) { await post("/api/integrations", { values: { WHATSAPP_PROVIDER: k === "sandbox" ? "sandbox" : k } }); load(); }
+
+$("aisensy-save").onclick = () => save(["AISENSY_PROJECT_ID", "AISENSY_PROJECT_API_PWD", "AISENSY_API_KEY"]);
+$("cloud-save").onclick = () => save(["WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_VERIFY_TOKEN", "WHATSAPP_APP_SECRET"]);
+$("aisensy-test").onclick = async () => {
+  $("aisensy-result").textContent = "Testing…";
+  const r = await post("/api/integrations/aisensy/test");
+  $("aisensy-result").replaceChildren(r.ok ? h("span", { style: "color:var(--green)" }, `Connected. ${r.templates} templates, ${r.approved} approved.`)
+    : h("span", { style: "color:var(--bad)" }, r.error));
+};
+load();
+</script>
+</body>
+</html>

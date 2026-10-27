@@ -5,117 +5,290 @@
 <title>Diwan Inbox</title>
 <link rel="stylesheet" href="app.css">
 <style>
-  .inbox { display: grid; grid-template-columns: 280px 1fr 320px; gap: 16px; height: calc(100vh - 200px); }
-  @media (max-width: 1000px) { .inbox { grid-template-columns: 1fr; height: auto; } }
-  .col { display: flex; flex-direction: column; min-height: 0; }
-  .chats { overflow: auto; flex: 1; }
-  .thread { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--bg); border-radius: 10px; }
-  .bubble { max-width: 75%; padding: 8px 11px; border-radius: 12px; white-space: pre-wrap; border: 1px solid var(--line); }
-  .bubble.received { align-self: flex-start; background: var(--customer); }
-  .bubble.sent { align-self: flex-end; background: var(--ai); }
-  .bubble.sent.person { background: var(--person); }
-  .bubble.suggested { align-self: flex-end; background: transparent; border-style: dashed; }
-  .bubble .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
-  .modebar { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
-  .phone { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
-  .fact { font-size: 13px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+  html, body { height: 100%; overflow: hidden; }
+  .wrap { height: calc(100vh - 56px); display: flex; flex-direction: column; }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--line); background: rgba(10, 13, 19, .6); }
+  .bar .ttl { font-family: var(--display); font-size: 24px; margin-right: 6px; }
+  .stages { display: flex; gap: 4px; overflow-x: auto; flex: 1; scrollbar-width: none; }
+  .stages button { font-size: 12px; padding: 6px 11px; border-radius: 99px; background: transparent; border-color: var(--line); color: var(--muted); white-space: nowrap; }
+  .stages button b { font-weight: 600; color: var(--ink); margin-left: 5px; }
+  .stages button.on { background: var(--gold-soft); border-color: rgba(232, 199, 122, .45); color: var(--gold-2); }
+  .line { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+  .cols { flex: 1; display: grid; grid-template-columns: 330px 1fr 340px; min-height: 0; }
+  .col { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+  .col:last-child { border-right: 0; }
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 10px 12px 8px; }
+  .tabs button { font-size: 11.5px; padding: 7px 4px; border-radius: 9px; background: transparent; border-color: transparent; color: var(--muted); }
+  .tabs button b { display: block; font-size: 15px; color: var(--ink); font-weight: 600; }
+  .tabs button.on { background: var(--raise); border-color: var(--line-2); color: var(--ink); }
+  .search { padding: 0 12px 10px; }
+  .rows { overflow: auto; flex: 1; }
+  .conv { display: grid; grid-template-columns: 40px 1fr auto; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; transition: .12s; position: relative; }
+  .conv:hover { background: rgba(255, 255, 255, .025); }
+  .conv.on { background: var(--gold-soft); }
+  .conv.on::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--gold); }
+  .av { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 14px; color: #0b0d12; flex: 0 0 auto; }
+  .conv .nm { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv .pv { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .conv .pv i { font-style: normal; color: var(--teal); }
+  .conv .meta { text-align: right; font-size: 11px; color: var(--faint); display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+  .ichips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; }
+  .ic { font-size: 10.5px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .ic.intent { color: var(--blue); border-color: rgba(126, 166, 248, .3); background: rgba(126, 166, 248, .08); }
+  .ic.area { color: var(--teal); border-color: rgba(92, 207, 181, .3); background: rgba(92, 207, 181, .07); }
+  .ic.budget { color: var(--gold-2); border-color: rgba(232, 199, 122, .3); background: var(--gold-soft); }
+  .ic.size { color: var(--violet); border-color: rgba(181, 145, 243, .3); background: rgba(181, 145, 243, .07); }
+  .wait { font: 600 10.5px var(--font); padding: 2px 7px; border-radius: 99px; background: var(--warn-soft); color: var(--warn); }
+  .wait.hot { background: var(--bad-soft); color: var(--bad); }
+  .mode { font: 600 10px var(--font); padding: 2px 7px; border-radius: 99px; letter-spacing: .4px; }
+  .mode.ai { background: rgba(92, 207, 181, .12); color: var(--teal); }
+  .mode.human { background: rgba(126, 166, 248, .14); color: var(--blue); }
+  .vbanner { grid-column: 2 / -1; font-size: 11px; color: var(--blue); background: rgba(126, 166, 248, .08); border: 1px solid rgba(126, 166, 248, .18); padding: 3px 8px; border-radius: 8px; margin-top: 2px; }
+  .empty { padding: 30px 20px; text-align: center; color: var(--muted); font-size: 13px; }
+  .chead { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+  .chead .nm { font-weight: 600; font-size: 15px; } .chead .ph { font-size: 12px; color: var(--muted); }
+  .chead select { width: auto; padding: 6px 10px; font-size: 12px; }
+  .switch { display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 6px; border-radius: 99px; border: 1px solid var(--line-2); cursor: pointer; font-size: 12px; user-select: none; white-space: nowrap; }
+  .switch .knob { width: 30px; height: 18px; border-radius: 99px; background: var(--faint); position: relative; transition: .2s; }
+  .switch .knob::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: .2s; }
+  .switch.on .knob { background: var(--teal); } .switch.on .knob::after { left: 14px; }
+  .chan { display: flex; gap: 2px; padding: 0 18px; border-bottom: 1px solid var(--line); }
+  .chan span { font-size: 12px; padding: 9px 12px; color: var(--muted); border-bottom: 2px solid transparent; }
+  .chan span.on { color: var(--ink); border-color: #25d366; }
+  .banner { margin: 10px 18px 0; padding: 8px 12px; border-radius: 10px; font-size: 12.5px; display: flex; gap: 10px; align-items: center; }
+  .banner.view { background: rgba(126, 166, 248, .1); border: 1px solid rgba(126, 166, 248, .22); color: #c9d7ff; }
+  .banner.warn { background: var(--warn-soft); border: 1px solid rgba(240, 179, 94, .25); color: var(--warn); }
+  .banner.bad { background: var(--bad-soft); border: 1px solid rgba(242, 125, 125, .25); color: var(--bad); }
+  .thread { flex: 1; overflow: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+  .day { align-self: center; font-size: 11px; color: var(--faint); padding: 3px 10px; border-radius: 99px; background: var(--chip); margin: 6px 0; }
+  .b { max-width: 70%; padding: 9px 12px 7px; border-radius: 14px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; border: 1px solid var(--line); }
+  .b.received { align-self: flex-start; background: #161b27; border-top-left-radius: 4px; }
+  .b.sent { align-self: flex-end; background: rgba(92, 207, 181, .12); border-color: rgba(92, 207, 181, .22); border-top-right-radius: 4px; }
+  .b.sent.person { background: rgba(126, 166, 248, .14); border-color: rgba(126, 166, 248, .25); }
+  .b.suggested { align-self: flex-end; background: transparent; border-style: dashed; border-color: rgba(92, 207, 181, .35); }
+  .b.failed { border-color: rgba(242, 125, 125, .6); }
+  .b .m { font-size: 10.5px; color: var(--faint); margin-top: 4px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; white-space: normal; }
+  .b .m .who { color: var(--muted); font-weight: 600; }
+  .b .err { color: var(--bad); font-size: 11px; margin-top: 4px; }
+  .compose { border-top: 1px solid var(--line); padding: 10px 14px 14px; }
+  .compose .tools { display: flex; gap: 6px; margin-bottom: 8px; position: relative; }
+  .compose .tools button { font-size: 12px; padding: 6px 10px; }
+  .compose textarea { min-height: 46px; max-height: 140px; resize: none; }
+  .drop { position: absolute; bottom: 38px; left: 0; width: 360px; max-height: 300px; overflow: auto; background: var(--panel-solid); border: 1px solid var(--line-2); border-radius: 12px; padding: 6px; z-index: 30; box-shadow: 0 20px 40px -12px rgba(0, 0, 0, .7); }
+  .drop .q { padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px; }
+  .drop .q:hover { background: var(--chip); }
+  .drop .q b { display: block; font-size: 12px; color: var(--gold-2); }
+  .prof { overflow: auto; padding: 18px; }
+  .prof .big { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+  .prof .big .av { width: 52px; height: 52px; font-size: 18px; }
+  .prof h3 { font-family: var(--display); font-weight: 400; font-size: 22px; margin: 0; }
+  .sec { margin-top: 18px; }
+  .pipe { display: flex; gap: 3px; margin-top: 12px; }
+  .pipe i { flex: 1; height: 5px; border-radius: 3px; background: var(--chip); }
+  .pipe i.done { background: var(--gold); }
+  .fact { font-size: 12.5px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .fact s { color: var(--faint); }
+  .kv { display: grid; grid-template-columns: 90px 1fr; gap: 6px 10px; font-size: 12.5px; }
+  .kv span:nth-child(odd) { color: var(--muted); }
+  .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: grid; place-items: center; z-index: 60; }
+  .modal .panel { width: 520px; max-width: calc(100vw - 32px); max-height: 80vh; overflow: auto; }
+  .tpl { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+  .tpl.on { border-color: rgba(232, 199, 122, .55); background: var(--gold-soft); }
+  .preview { background: rgba(92, 207, 181, .1); border: 1px solid rgba(92, 207, 181, .22); border-radius: 12px; padding: 10px 12px; font-size: 13px; white-space: pre-wrap; margin: 10px 0; }
+  .phone { position: fixed; left: 18px; bottom: 18px; width: 310px; z-index: 40; }
+  .phone .panel { padding: 14px; }
+  @media (max-width: 1150px) { .cols { grid-template-columns: 300px 1fr; } .col.p { display: none; } }
+  @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } .col.c { display: none; } .cols.open .col.l { display: none; } .cols.open .col.c { display: flex; } }
 </style>
 </head>
 <body>
-<main>
-  <h1>The <em>Inbox</em></h1>
-  <p class="sub">WhatsApp conversations. Rania answers day and night from listings and confirmed knowledge; take a chat and she only suggests.</p>
-  <div class="inbox">
-    <section class="panel col">
-      <h2>Conversations</h2>
-      <div class="chats list" id="chats"></div>
-      <div class="phone">
-        <h2>Sandbox phone</h2>
-        <p class="small muted" id="phonehint">Until the WhatsApp test number is connected, message the office from here. It takes the same path a real WhatsApp message does.</p>
-        <div class="row"><input id="pname" placeholder="Name" value="Karim Haddad"><input id="pnum" placeholder="Phone" value="971501234567"></div>
-        <div class="row" style="margin-top:8px"><input id="ptext" placeholder="Type as the customer…"><button class="primary" id="psend">Send</button></div>
-      </div>
+<div class="wrap">
+  <div class="bar"><span class="ttl">Inbox</span><div class="stages" id="stages"></div>
+    <span class="line" id="line"></span><button id="phonebtn">Sandbox phone</button><a class="btn" href="settings.html">Settings</a></div>
+  <div class="cols" id="cols">
+    <section class="col l">
+      <div class="tabs" id="tabs"></div>
+      <div class="search"><input id="q" placeholder="Search name, phone, area…"></div>
+      <div class="rows" id="rows"></div>
     </section>
-    <section class="panel col">
-      <div class="modebar"><h2 id="title" style="margin:0;flex:1">Pick a conversation</h2><span id="mode"></span><button id="toggle" hidden></button></div>
-      <div class="thread" id="thread"></div>
-      <div class="row" style="margin-top:10px"><input id="reply" placeholder="Reply as Omar (this takes the chat)"><button id="send" class="primary">Send</button></div>
-    </section>
-    <section class="panel col" style="overflow:auto">
-      <h2>What the office learned</h2>
-      <p class="small muted">Facts the Scribe heard in this chat, in the customer's exact words. The same facts a meeting would produce.</p>
-      <div id="facts"></div>
-      <h2 style="margin-top:16px">Viewings</h2>
-      <div id="viewings" class="small"></div>
-    </section>
+    <section class="col c" id="chat"><div class="empty" style="margin:auto">Pick a conversation.</div></section>
+    <section class="col p prof" id="prof"></section>
   </div>
-</main>
+</div>
+<div class="phone" id="phone" hidden><div class="panel glass">
+  <div class="row" style="margin-bottom:8px"><h2 style="margin:0">Sandbox phone</h2><button id="phoneclose" style="flex:0">✕</button></div>
+  <p class="small muted" id="phonehint" style="margin:0 0 8px">Message the office as a customer. It takes the same path as a real WhatsApp message.</p>
+  <div class="row"><input id="pname" value="Ali Rahman"><input id="pnum" value="971501112233"></div>
+  <div class="row" style="margin-top:8px"><input id="ptext" placeholder="Type as the customer…"><button class="primary" id="psend">Send</button></div>
+</div></div>
 <script type="module">
-import { h, api, post, follow, header, time, toast } from "./app.js";
+import { h, api, post, follow, header, toast, NAMES } from "./app.js";
 header("inbox.html");
-let chats = [], current = null;
 const $ = (id) => document.getElementById(id);
+const ME = "omar";
+let view = "all", stage = null, current = null, data = { rows: [], counts: {}, stages: [] }, detail = null, integ = null;
+
+const COLORS = ["#e8c77a", "#5ccfb5", "#7ea6f8", "#b591f3", "#f0b35e", "#82d99f", "#f27d7d"];
+const avatar = (name) => { const n = name || "?"; const c = COLORS[[...n].reduce((a, ch) => a + ch.charCodeAt(0), 0) % COLORS.length];
+  return h("div", { class: "av", style: `background:${c}` }, n.replace(/^\+/, "").split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()); };
+const ago = (iso) => { if (!iso) return ""; const m = (Date.now() - new Date(iso)) / 6e4; return m < 1 ? "now" : m < 60 ? `${m | 0}m` : m < 1440 ? `${(m / 60) | 0}h` : `${(m / 1440) | 0}d`; };
+const clock = (iso) => new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+const day = (iso) => new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+const fill = (body, ps) => body.replace(/\{\{(\d+)\}\}/g, (_, i) => ps[i - 1] || `{{${i}}}`);
 
 async function load() {
-  chats = await api("/api/chats");
-  if (!current && chats.length) current = chats[0].props.phone;
-  render();
+  const qs = new URLSearchParams({ view, person: ME, q: $("q").value.trim() });
+  if (stage) qs.set("stage", stage);
+  data = await api(`/api/chats?${qs}`);
+  if (!current && data.rows.length) current = data.rows[0].phone;
+  renderBar(); renderList();
+  if (current) loadDetail();
 }
 
-function render() {
-  $("chats").replaceChildren(...(chats.length ? chats.map((c) => {
-    const last = c.messages.at(-1);
-    return h("div", { class: `item click ${c.props.phone === current ? "on" : ""}`, onclick: () => { current = c.props.phone; render(); } },
-      h("div", { class: "row" }, h("strong", {}, c.label), h("span", { style: "flex:0" },
-        h("span", { class: `chip ${c.props.mode === "ai" ? "ok" : "warn"}` }, c.props.mode === "ai" ? "Rania" : "Omar"))),
-      h("div", { class: "small muted" }, last ? last.text.slice(0, 60) : ""));
-  }) : [h("p", { class: "muted small" }, "No conversations yet. Send one from the sandbox phone.")]));
-  const c = chats.find((x) => x.props.phone === current);
-  if (!c) return;
-  $("title").textContent = `${c.label} · +${c.props.phone}`;
-  $("mode").replaceChildren(h("span", { class: `chip ${c.props.mode === "ai" ? "ok" : "warn"}` },
-    c.props.mode === "ai" ? "Rania is replying" : `${c.props.handled_by ? c.props.handled_by[0].toUpperCase() + c.props.handled_by.slice(1) : "A person"} has this chat`));
-  $("toggle").hidden = false;
-  $("toggle").textContent = c.props.mode === "ai" ? "Take over" : "Hand back to Rania";
-  $("thread").replaceChildren(...c.messages.map((m) => {
+function renderBar() {
+  const c = data.counts;
+  $("stages").replaceChildren(h("button", { class: stage ? "" : "on", onclick: () => { stage = null; load(); } }, "All stages", h("b", {}, c.all || 0)),
+    ...data.stages.map((s) => h("button", { class: stage === s ? "on" : "", onclick: () => { stage = s; load(); } }, s, h("b", {}, c.stages?.[s] || 0))));
+  $("tabs").replaceChildren(...[["mine", "My inbox"], ["all", "All"], ["new", "New leads"], ["waiting", "Waiting"]].map(([k, l]) =>
+    h("button", { class: view === k ? "on" : "", onclick: () => { view = k; load(); } }, h("b", {}, c[k] ?? 0), l)));
+}
+
+function renderList() {
+  $("rows").replaceChildren(...(data.rows.length ? data.rows.map((r) => {
+    const last = r.last;
+    const who = !last ? "" : last.type === "received" ? "" : last.by === "rania" ? "Rania: " : `${NAMES[last.by] || last.by}: `;
+    return h("div", { class: `conv ${r.phone === current ? "on" : ""}`, onclick: () => { current = r.phone; $("cols").classList.add("open"); renderList(); loadDetail(); } },
+      avatar(r.name),
+      h("div", { style: "min-width:0" }, h("div", { class: "nm" }, r.name),
+        h("div", { class: "pv" }, who ? h("i", {}, who) : null, last ? last.text : ""),
+        r.chips.length ? h("div", { class: "ichips" }, r.chips.slice(0, 4).map((ch) => h("span", { class: `ic ${ch.kind}` }, ch.label))) : null),
+      h("div", { class: "meta" }, ago(r.last_at),
+        r.waiting_min != null ? h("span", { class: `wait ${r.waiting_min > 30 ? "hot" : ""}` }, `waiting ${r.waiting_min < 60 ? r.waiting_min + "m" : ((r.waiting_min / 60) | 0) + "h"}`) : null,
+        h("span", { class: `mode ${r.mode}` }, r.mode === "ai" ? "RANIA" : (NAMES[r.handled_by] || "PERSON").toUpperCase()),
+        r.failed ? h("span", { class: "wait hot" }, `${r.failed} not sent`) : null),
+      r.viewing ? h("div", { class: "vbanner" }, "📅 ", r.viewing.replace(/^viewing of /, "Viewing ")) : null);
+  }) : [h("div", { class: "empty" }, "No conversations here. Open the sandbox phone and message the office.")]));
+}
+
+async function loadDetail() {
+  if (!current) return;
+  try { detail = await api(`/api/chats/${current}`); } catch { detail = null; return; }
+  renderChat(); renderProfile();
+}
+
+function renderChat() {
+  const d = detail, on = d.mode === "ai";
+  const head = h("div", { class: "chead" }, avatar(d.name),
+    h("div", { style: "flex:1;min-width:0" }, h("div", { class: "nm" }, d.name), h("div", { class: "ph" }, `+${d.phone}`, d.linked ? ` · linked to ${d.property}` : "")),
+    h("select", { onchange: async (e) => { await post(`/api/chats/${d.phone}/stage`, { stage: e.target.value, by: ME }); load(); } },
+      d.stages.map((s) => h("option", { value: s, selected: s === d.stage }, s))),
+    h("div", { class: `switch ${on ? "on" : ""}`, title: "AI auto-reply", onclick: async () => { await post(`/api/chats/${d.phone}/${on ? "take" : "release"}?by=${ME}`); load(); } },
+      h("span", { class: "knob" }), on ? "Rania replying" : `${NAMES[d.handled_by] || "You"} has it`));
+  const via = integ?.provider === "aisensy" ? "via AiSensy" : integ?.provider === "cloud" ? "via Meta Cloud API" : "sandbox line";
+  const chan = h("div", { class: "chan" }, h("span", { class: "on" }, "WhatsApp"), h("span", {}, via));
+  const banners = [];
+  if (d.viewing) banners.push(h("div", { class: "banner view" }, "📅 ", d.viewing.replace(/^viewing of /, "Viewing booked: ")));
+  const left = d.window_closes ? (new Date(d.window_closes) - Date.now()) / 36e5 : 0;
+  if (!d.window_open) banners.push(h("div", { class: "banner bad" }, "24-hour window closed. WhatsApp only allows an approved template until the customer replies."));
+  else if (left < 3) banners.push(h("div", { class: "banner warn" }, `24-hour window closes in ${left < 1 ? Math.max(1, (left * 60) | 0) + " min" : left.toFixed(1) + " h"}.`));
+  const thread = h("div", { class: "thread" });
+  let lastDay = "";
+  for (const m of d.messages) {
+    const dd = day(m.at);
+    if (dd !== lastDay) { thread.append(h("div", { class: "day" }, dd)); lastDay = dd; }
     const person = m.type === "sent" && m.by !== "rania";
-    const b = h("div", { class: `bubble ${m.type} ${person ? "person" : ""}` }, m.text,
-      h("div", { class: "meta" }, `${m.type === "received" ? c.label : m.by === "rania" ? "Rania · AI" : m.by} · ${time(m.at)}`,
-        m.refs?.length ? " · from " : "", ...(m.refs || []).map((r) => h("span", { class: "chip" }, r.replace("listing:", "")))));
-    if (m.type === "suggested") b.append(h("div", {}, h("button", { class: "small", onclick: () => $("reply").value = m.text }, "Use this reply")));
-    return b;
-  }));
-  $("thread").scrollTop = 1e9;
-  $("facts").replaceChildren(...(c.facts.length ? c.facts.map((f) => h("div", { class: "fact" }, f)) : [h("p", { class: "muted small" }, "Nothing yet.")]));
-  $("viewings").replaceChildren(...(c.viewings.length ? c.viewings.map((v) => h("div", { class: "fact" }, v)) : [h("span", { class: "muted" }, "None booked.")]));
+    thread.append(h("div", { class: `b ${m.type} ${person ? "person" : ""} ${m.status === "failed" ? "failed" : ""}` }, m.text,
+      h("div", { class: "m" }, h("span", { class: "who" }, m.type === "received" ? d.name : m.by === "rania" ? "Rania · AI" : NAMES[m.by] || m.by),
+        clock(m.at), m.template ? h("span", { class: "chip" }, `template · ${m.template}`) : null,
+        m.type === "sent" && m.via ? h("span", {}, m.via === "sandbox" ? "· sandbox" : `· ${m.via}`) : null,
+        ...(m.refs || []).map((r) => h("span", { class: "chip" }, r.replace("listing:", "")))),
+      m.status === "failed" ? h("div", { class: "err" }, `Not delivered: ${m.error || "the provider refused it"}`) : null,
+      m.type === "suggested" ? h("button", { style: "margin-top:6px;font-size:11.5px;padding:4px 10px", onclick: () => { $("box").value = m.text; $("box").focus(); } }, "Use this reply") : null));
+  }
+  const box = h("textarea", { id: "box", placeholder: d.window_open ? (on ? "Type to take over from Rania…" : "Reply on WhatsApp…") : "Window closed: send a template", disabled: !d.window_open });
+  box.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
+  const tools = h("div", { class: "tools" },
+    h("button", { onclick: (e) => quick(e.currentTarget.parentNode), disabled: !d.window_open }, "⚡ Quick replies"),
+    h("button", { onclick: templates }, "📋 Template"),
+    h("span", { style: "flex:1" }),
+    h("button", { class: "primary", onclick: send, disabled: !d.window_open }, "Send"));
+  $("chat").replaceChildren(head, chan, ...banners, thread, h("div", { class: "compose" }, tools, box));
+  thread.scrollTop = 1e9;
 }
 
-$("toggle").onclick = async () => {
-  const c = chats.find((x) => x.props.phone === current);
-  await post(`/api/chats/${current}/${c.props.mode === "ai" ? "take" : "release"}?by=omar`);
-  load();
-};
-$("send").onclick = async () => {
-  const t = $("reply").value.trim();
-  if (!t || !current) return;
-  await post(`/api/chats/${current}/send`, { text: t, by: "omar" });
-  $("reply").value = "";
-  load();
-};
-const psend = async () => {
-  const t = $("ptext").value.trim();
+async function send() {
+  const t = $("box").value.trim();
   if (!t) return;
-  current = $("pnum").value.trim();
-  $("ptext").value = "";
+  try { await post(`/api/chats/${current}/send`, { text: t, by: ME }); $("box").value = ""; } catch (e) { toast(e.message); }
+  load();
+}
+
+function quick(anchor) {
+  document.querySelector(".drop")?.remove();
+  const dd = h("div", { class: "drop" }, ...detail.quick.map((q) => h("div", { class: "q", onclick: () => { $("box").value = q.text; dd.remove(); $("box").focus(); } }, h("b", {}, q.title), q.text)));
+  anchor.append(dd);
+  setTimeout(() => addEventListener("click", function off(e) { if (!dd.contains(e.target)) { dd.remove(); removeEventListener("click", off); } }), 0);
+}
+
+async function templates() {
+  const r = await api("/api/templates");
+  let pick = r.templates[0], params = [];
+  const m = h("div", { class: "modal", onclick: (e) => e.target === m && m.remove() });
+  const draw = () => {
+    const need = pick ? pick.params : 0;
+    params = params.slice(0, need); while (params.length < need) params.push(params.length === 0 ? detail.name.split(" ")[0] : "");
+    const prev = h("div", { class: "preview" }, pick ? fill(pick.body, params) : "");
+    m.replaceChildren(h("div", { class: "panel" },
+      h("div", { class: "row" }, h("h2", { style: "margin:0" }, "Send a template"), h("button", { style: "flex:0", onclick: () => m.remove() }, "✕")),
+      h("p", { class: "small muted" }, r.source === "aisensy" ? "Approved templates from your AiSensy account." : r.source === "error" ? `AiSensy: ${r.error}` : "Sample templates. Connect AiSensy in Settings to use your approved ones."),
+      ...r.templates.map((t) => h("div", { class: `tpl ${t === pick ? "on" : ""}`, onclick: () => { pick = t; params = []; draw(); } },
+        h("div", { class: "row" }, h("strong", {}, t.name), h("span", { style: "flex:0" }, h("span", { class: "chip" }, t.category || ""))), h("div", { class: "small muted" }, t.body))),
+      ...(pick ? params.map((p, i) => h("div", {}, h("label", {}, `Value for {{${i + 1}}}`), h("input", { value: p, oninput: (e) => { params[i] = e.target.value; prev.textContent = fill(pick.body, params); } }))) : []),
+      pick ? prev : null,
+      h("div", { class: "row" }, h("span", {}), h("button", { class: "primary", disabled: !pick, onclick: async () => {
+        try { await post(`/api/chats/${current}/template`, { name: pick.name, params, by: ME }); m.remove(); load(); } catch (e) { toast(e.message); } } }, "Send template"))));
+  };
+  draw();
+  document.body.append(m);
+}
+
+function renderProfile() {
+  const d = detail;
+  const idx = d.stages.indexOf(d.stage);
+  $("prof").replaceChildren(
+    h("div", { class: "big" }, avatar(d.name), h("div", {}, h("h3", {}, d.name), h("div", { class: "small muted" }, `+${d.phone}`))),
+    h("div", { class: "kv" }, h("span", {}, "Stage"), h("span", {}, d.stage), h("span", {}, "Deal"), h("span", {}, d.property || "—"),
+      h("span", {}, "Broker"), h("span", {}, NAMES[d.broker] || d.broker || "—"), h("span", {}, "Replying"), h("span", {}, d.mode === "ai" ? "Rania (AI)" : NAMES[d.handled_by] || "A person")),
+    h("div", { class: "pipe" }, d.stages.slice(0, 8).map((s, i) => h("i", { class: i <= idx ? "done" : "", title: s }))),
+    d.chips.length ? h("div", { class: "ichips", style: "margin-top:12px" }, d.chips.map((c) => h("span", { class: `ic ${c.kind}` }, c.label))) : null,
+    h("div", { class: "sec" }, h("h2", {}, "What the office learned"),
+      d.facts.length ? h("div", {}, d.facts.map((f) => h("div", { class: "fact" }, h("span", { class: "chip" }, f.id), " ", f.text))) : h("p", { class: "small muted" }, "Nothing yet. Facts appear as the customer states them."),
+      ...d.replaced.map((f) => h("div", { class: "fact" }, h("span", { class: "chip bad" }, f.id), " ", h("s", {}, `"${f.quote}"`), h("span", { class: "small muted" }, ` replaced by ${f.by}`)))),
+    d.cards.length || d.tasks.length ? h("div", { class: "sec" }, h("h2", {}, "Open work"),
+      ...d.cards.map((c) => h("div", { class: "fact" }, h("span", { class: "chip warn" }, c.who), " ", c.text)),
+      ...d.tasks.map((t) => h("div", { class: "fact" }, h("span", { class: "chip" }, t.who), " ", t.text))) : null,
+    h("div", { class: "sec row" }, h("a", { class: "btn", href: "graph.html" }, "Memory graph"), h("a", { class: "btn", href: "office3d.html" }, "Ask Nova")));
+}
+
+$("phonebtn").onclick = () => $("phone").hidden = !$("phone").hidden;
+$("phoneclose").onclick = () => $("phone").hidden = true;
+const psend = async () => {
+  const t = $("ptext").value.trim(); if (!t) return;
+  current = $("pnum").value.trim(); $("ptext").value = "";
   try { await post("/api/chats/incoming", { phone: current, name: $("pname").value.trim() || null, text: t }); } catch (e) { toast(e.message); }
   load();
 };
 $("psend").onclick = psend;
 $("ptext").onkeydown = (e) => e.key === "Enter" && psend();
-$("reply").onkeydown = (e) => e.key === "Enter" && $("send").onclick();
-api("/api/health").then((s) => { if (s.whatsapp) $("phonehint").textContent = "WhatsApp is connected: real messages arrive here too."; });
+let qt; $("q").oninput = () => { clearTimeout(qt); qt = setTimeout(load, 200); };
+
+integ = await api("/api/integrations");
+const p = integ.provider;
+$("line").replaceChildren(h("span", { class: "pill" }, h("span", { class: `dot ${p !== "sandbox" ? "on" : ""}` }),
+  p === "aisensy" ? "WhatsApp via AiSensy" : p === "cloud" ? "WhatsApp via Meta Cloud API" : "Sandbox · no WhatsApp line yet"));
+if (p !== "sandbox") $("phonehint").textContent = "WhatsApp is connected: real messages arrive too. This sandbox still works for testing.";
 load();
-follow((evs) => { if (evs.some((e) => e.type.startsWith("chat.") || e.type.startsWith("fact.") || e.type.startsWith("appointment."))) load(); });
+follow((evs) => { if (evs.some((e) => /^(chat\.|fact\.|appointment\.|stage\.|task\.)/.test(e.type))) load(); });
 </script>
 </body>
 </html>

@@ -29,8 +29,8 @@ def test_inbox_sandbox_takeover_and_listings():
     r = c.post("/api/chats/incoming", json={"phone": "971500000001", "text": "Any villa in JVC?"}).json()
     assert r["refs"] == ["listing:JVC-88"]
     c.post("/api/chats/971500000001/send", json={"text": "Omar here.", "by": "omar"})
-    chat = c.get("/api/chats").json()[0]
-    assert chat["props"]["mode"] == "human" and chat["messages"][-1]["by"] == "omar"
+    chat = c.get("/api/chats/971500000001").json()
+    assert chat["mode"] == "human" and chat["messages"][-1]["by"] == "omar" and chat["messages"][-1]["via"] == "sandbox"
     ls = {x["props"]["ref"]: x["advertised"] for x in c.get("/api/listings").json()}
     assert ls == {"MC-1204": True, "JVC-88": True, "BB-305": True, "DT-2210": False}
 
@@ -52,7 +52,7 @@ def test_whatsapp_webhook_verify_and_receive(monkeypatch):
     payload = {"entry": [{"changes": [{"value": {"contacts": [{"wa_id": "971", "profile": {"name": "Ali"}}],
                                                  "messages": [{"from": "971", "type": "text", "text": {"body": "Hi"}}]}}]}]}
     assert c.post("/api/whatsapp/webhook", json=payload).json() == {"ok": True}
-    assert c.get("/api/chats").json()[0]["label"] == "Ali"
+    assert c.get("/api/chats").json()["rows"][0]["name"] == "Ali"
 
 
 def test_audio_needs_consent_first():

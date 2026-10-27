@@ -258,8 +258,12 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                 ch.props["handled_by"] = c.get("by")
             else:
                 ch.props["messages"].append({"event": e["id"], "at": e["at"], "type": t.split(".")[1], "by": e["actor"],
-                                             "text": c["text"], "refs": c.get("refs", [])})
+                                             "text": c["text"], "refs": c.get("refs", []), "via": c.get("via"),
+                                             "status": c.get("status"), "error": c.get("error"), "template": c.get("template")})
                 ch.props["last_at"] = e["at"]
+        elif t == "stage.changed" and f"deal:{deal}" in g.nodes:
+            g.nodes[f"deal:{deal}"].props["stage"] = c["stage"]
+            g.nodes[f"deal:{deal}"].props.setdefault("stages", []).append({"stage": c["stage"], "at": e["at"], "by": e["actor"]})
         elif t == "setting.changed":
             g.settings.setdefault(c["person"], {})[c["key"]] = c["value"]
         elif t == "rounds.started":

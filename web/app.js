@@ -94,7 +94,7 @@ export const LOGO = `<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGr
 
 export function header(active) {
   const pages = [["office3d.html", "Office"], ["index.html", "Nova"], ["inbox.html", "Inbox"], ["meeting.html", "Meeting"], ["knowledge.html", "Knowledge"],
-                 ["graph.html", "Memory"], ["team.html", "Team"]];
+                 ["graph.html", "Memory"], ["team.html", "Team"], ["settings.html", "Settings"]];
   const status = h("div", { class: "status" });
   api("/api/health").then((s) => {
     const p = (on, label) => h("span", { class: "pill" }, h("span", { class: `dot ${on ? "on" : ""}` }), label);

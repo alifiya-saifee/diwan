@@ -81,3 +81,17 @@ Everything in this repository was written during the Meta Global AI Developer Ha
 - Lobby board: "Tell Priya I need the Karim review ready by this evening" is read back with the person and due time;
   only a yes posts it, through the Compliance lead to Priya. No deadline: she asks by when. Chased an hour before due,
   marked late after (the asker hears), and the asker hears when it is done. Shown on a board in the 3D lobby.
+
+## 28 Oct 2026: the Inbox, AiSensy and Settings
+
+- Inbox rebuilt as a working broker inbox: stage bar with counts; My inbox / All / New leads / Waiting; conversation rows
+  with interest chips (buy or rent, area, size, budget, each from the buyer's own words or a fact), waiting time, who is
+  replying, booked viewing, failed sends; chat with an AI auto-reply switch, stage picker, viewing and 24-hour-window
+  banners, quick replies from confirmed knowledge, approved templates with variables and preview; a lead panel with
+  what the office learned, replaced statements and open work.
+- Stages move by themselves only forward (a stated budget: Qualified; a booked viewing: Viewing booked).
+- WhatsApp from a known customer joins their existing deal instead of opening a new lead.
+- AiSensy: session messages and templates through the Project API, template list, webhook with a private token,
+  delivery failures shown on the message. Free text after 24 hours is refused; a template is offered instead.
+- Settings: choose the WhatsApp line (AiSensy, Meta Cloud API, sandbox), enter keys (stored in the local .env, never
+  shown again), test the AiSensy connection, copy the webhook address.

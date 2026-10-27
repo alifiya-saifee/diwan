@@ -10,6 +10,8 @@ import contextlib
 from datetime import datetime
 from pathlib import Path
 
+import httpx
+
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -409,14 +411,18 @@ class SendIn(BaseModel):
 
 
 @app.get("/api/chats")
-def chats():
-    gr = g()
-    out = []
-    for c in gr.of("chat"):
-        facts = [gr.record(f.id) for f in gr.facts(c.deal)] if c.deal else []
-        viewings = [gr.record(v.id) for v in gr.of("viewing", status="booked") if v.props.get("chat") == c.props["phone"]]
-        out.append(node_json(gr, c) | {"messages": c.props["messages"], "facts": facts, "viewings": viewings})
-    return sorted(out, key=lambda c: c["props"].get("last_at", ""), reverse=True)
+def chats(view: str = "all", person: str = "omar", stage: str | None = None, q: str = ""):
+    from diwan import inbox
+    return {"rows": inbox.listing(S.office, view=view, person=person, stage=stage, q=q), "counts": inbox.counts(S.office, person),
+            "stages": inbox.STAGES}
+
+
+@app.get("/api/chats/{phone}")
+def chat_detail(phone: str):
+    from diwan import inbox
+    if f"chat:{phone}" not in g().nodes:
+        raise HTTPException(404, "no such conversation")
+    return inbox.detail(S.office, phone) | {"quick": inbox.quick_replies(g())}
 
 
 @app.post("/api/chats/incoming")
@@ -427,7 +433,51 @@ def incoming(body: ChatIn):
 
 @app.post("/api/chats/{phone}/send")
 def person_send(phone: str, body: SendIn):
-    return reception.person_sends(S.office, phone, body.text, by=body.by)
+    try:
+        return reception.person_sends(S.office, phone, body.text, by=body.by)
+    except reception.WindowClosed as e:
+        raise HTTPException(409, str(e))
+
+
+class TemplateIn(BaseModel):
+    name: str
+    params: list[str] = []
+    by: str = "omar"
+
+
+@app.get("/api/templates")
+def list_templates():
+    from diwan import inbox
+    from diwan.providers import aisensy
+    if aisensy.available():
+        try:
+            return {"source": "aisensy", "templates": [t for t in aisensy.templates() if t["status"] in ("APPROVED", "")]}
+        except aisensy.AiSensyError as e:
+            return {"source": "error", "error": str(e), "templates": []}
+    return {"source": "sample", "templates": inbox.SAMPLE_TEMPLATES}
+
+
+@app.post("/api/chats/{phone}/template")
+def send_template(phone: str, body: TemplateIn):
+    t = next((x for x in list_templates()["templates"] if x["name"] == body.name), None)
+    if not t:
+        raise HTTPException(404, "no such approved template")
+    return reception.send_template(S.office, phone, t, body.params, by=body.by)
+
+
+class StageIn(BaseModel):
+    stage: str
+    by: str = "omar"
+
+
+@app.post("/api/chats/{phone}/stage")
+def chat_stage(phone: str, body: StageIn):
+    from diwan import inbox
+    try:
+        inbox.set_stage(S.office, phone, body.stage, by=body.by)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"ok": True}
 
 
 @app.post("/api/chats/{phone}/take")
@@ -439,6 +489,73 @@ def take(phone: str, by: str = "omar"):
 @app.post("/api/chats/{phone}/release")
 def release(phone: str, by: str = "omar"):
     reception.give_back(S.office, phone, by=by)
+    return {"ok": True}
+
+
+# ---------- integrations: AiSensy, Meta's WhatsApp Cloud API ----------
+
+@app.get("/api/integrations")
+def integrations(request: Request):
+    from diwan.providers import aisensy
+    is_set = lambda k: bool(env(k))  # noqa: E731
+    base = str(request.base_url).rstrip("/")
+    return {
+        "provider": env("WHATSAPP_PROVIDER") or ("aisensy" if aisensy.available() else "cloud" if whatsapp.available() else "sandbox"),
+        "aisensy": {"connected": aisensy.available(), "fields": {k: is_set(k) for k in ("AISENSY_PROJECT_ID", "AISENSY_PROJECT_API_PWD", "AISENSY_API_KEY")},
+                    "webhook": f"{base}/api/aisensy/webhook?token=…" if is_set("AISENSY_WEBHOOK_TOKEN") else None},
+        "cloud": {"connected": whatsapp.available(), "fields": {k: is_set(k) for k in ("WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_VERIFY_TOKEN", "WHATSAPP_APP_SECRET")},
+                  "webhook": f"{base}/api/whatsapp/webhook"},
+        "meta": {p.id: p.available() for p in PROVIDERS.values()} | {"voice": voice.available()},
+    }
+
+
+class IntegrationIn(BaseModel):
+    values: dict[str, str]
+
+
+@app.post("/api/integrations")
+def save_integrations(body: IntegrationIn):
+    """Keys go into the local .env. They are never echoed back: screens learn only whether each is set."""
+    from diwan.config import set_env
+    vals = {k: v.strip() for k, v in body.values.items() if v is not None}
+    if "AISENSY_PROJECT_ID" in vals and not vals.get("AISENSY_WEBHOOK_TOKEN"):
+        if not env("AISENSY_WEBHOOK_TOKEN"):
+            import secrets
+            vals["AISENSY_WEBHOOK_TOKEN"] = secrets.token_urlsafe(24)
+    try:
+        return {"changed": set_env(vals)}
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/api/integrations/aisensy/webhook-url")
+def aisensy_webhook_url(request: Request):
+    """The one place the full webhook URL (with its secret token) is shown, for pasting into AiSensy."""
+    if not env("AISENSY_WEBHOOK_TOKEN"):
+        raise HTTPException(404, "Save the AiSensy project first")
+    return {"url": f"{str(request.base_url).rstrip('/')}/api/aisensy/webhook?token={env('AISENSY_WEBHOOK_TOKEN')}"}
+
+
+@app.post("/api/integrations/aisensy/test")
+def aisensy_test():
+    from diwan.providers import aisensy
+    try:
+        ts = aisensy.templates()
+        return {"ok": True, "templates": len(ts), "approved": len([t for t in ts if t["status"] == "APPROVED"])}
+    except aisensy.AiSensyError as e:
+        return {"ok": False, "error": str(e)}
+    except httpx.HTTPError as e:
+        return {"ok": False, "error": f"Could not reach AiSensy: {e}"}
+
+
+@app.post("/api/aisensy/webhook")
+async def aisensy_webhook(request: Request, token: str = ""):
+    from diwan.providers import aisensy
+    if not aisensy.token_ok(token):
+        raise HTTPException(401, "bad token")
+    for m in aisensy.parse(await request.json()):
+        if m["text"]:
+            reception.message(S.office, m["phone"], m["text"], name_=m["name"])
     return {"ok": True}
 
 

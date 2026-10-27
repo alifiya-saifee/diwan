@@ -18,6 +18,7 @@ from diwan.graph import Graph, Node
 from diwan.office import Office
 from diwan.pack import Action, Pack
 from diwan.people import name
+from diwan.config import env
 from diwan.providers import whatsapp
 
 RANIA = "rania"
@@ -51,24 +52,40 @@ def advertisable(g: Graph) -> list[Node]:
 
 
 def _lead(office: Office, phone: str, who: str | None) -> str:
+    """The deal this chat belongs to: the chat's own, an open deal for the same customer, or a new WhatsApp lead."""
     g = office.graph()
     ch = g.nodes.get(f"chat:{phone}")
     if ch and ch.deal:
         return ch.deal
-    deal = f"lead-{re.sub(r'\\D', '', phone)[-6:]}"
-    office.open_deal(deal, property="WhatsApp enquiry", customer=who or phone, broker="omar", by=RANIA)
+    if who:
+        same = [d for d in g.deals() if d.props.get("customer", "").lower() == who.strip().lower() and not d.deal.startswith("lead-")]
+        if len(same) == 1:
+            return same[0].deal
+    deal = f"lead-{re.sub(r'\D', '', phone)[-6:]}"
+    office.open_deal(deal, property="WhatsApp enquiry", customer=who or f"+{phone}", broker="omar", by=RANIA)
     return deal
 
 
-def _send(office: Office, phone: str, deal: str, text: str, refs: list[str], by: str = RANIA, cause: int | None = None) -> dict:
-    ev = office.log.append("chat.sent", actor=by, agent=RANIA if by == RANIA else None, deal=deal, caused_by=cause,
-                           content={"chat": phone, "text": text, "refs": refs})
-    if whatsapp.available():
-        try:
+def _send(office: Office, phone: str, deal: str, text: str, refs: list[str], by: str = RANIA, cause: int | None = None,
+          template: dict | None = None) -> dict:
+    """Send through whichever WhatsApp line is connected (AiSensy, Meta's Cloud API) and log what happened.
+    With neither connected the message stays in the sandbox and is marked so."""
+    from diwan.providers import aisensy
+    via, status, err, mid = "sandbox", "sent", None, None
+    choice = env("WHATSAPP_PROVIDER") or ("aisensy" if aisensy.available() else "cloud" if whatsapp.available() else "")
+    try:
+        if choice == "aisensy" and aisensy.available():
+            via = "aisensy"
+            mid = (aisensy.send_template(phone, template["name"], template.get("params"), template.get("language", "en")) if template
+                   else aisensy.send_text(phone, text))["id"]
+        elif choice == "cloud" and whatsapp.available():
+            via = "cloud"
             whatsapp.send(phone, text)
-        except RuntimeError as e:
-            office.log.append("agent.failed", actor=by, agent=RANIA, deal=deal, caused_by=ev["id"], content={"error": str(e)[:300]})
-    return ev
+    except Exception as e:  # the send failed: logged on the message, shown in the Inbox, nothing retried silently
+        status, err = "failed", str(e)[:300]
+    return office.log.append("chat.sent", actor=by, agent=RANIA if by == RANIA else None, deal=deal, caused_by=cause,
+                             content={"chat": phone, "text": text, "refs": refs, "via": via, "status": status, "error": err,
+                                      "provider_id": mid, "template": template["name"] if template else None})
 
 
 def hand_over(office: Office, phone: str, *, to: str = "omar", by: str = RANIA, reason: str = "", cause: int | None = None) -> None:
@@ -84,10 +101,25 @@ def give_back(office: Office, phone: str, *, by: str) -> None:
     office.log.append("chat.handover", actor=by, deal=deal, content={"chat": phone, "mode": "ai", "by": by})
 
 
+class WindowClosed(RuntimeError):
+    """WhatsApp allows free text only within 24 hours of the customer's last message; after that, a template."""
+
+
+def send_template(office: Office, phone: str, template: dict, params: list[str], *, by: str) -> dict:
+    from diwan import inbox
+    ch = office.graph().nodes[f"chat:{phone}"]
+    text = inbox.render(template["body"], params)
+    return _send(office, phone, ch.deal, text, [], by=by, template={"name": template["name"], "params": params,
+                                                                    "language": template.get("language", "en")})
+
+
 def person_sends(office: Office, phone: str, text: str, *, by: str) -> dict:
     """A person replying from the Inbox. Taking the chat is implied: Rania goes quiet."""
+    from diwan import inbox
     g = office.graph()
     ch = g.nodes[f"chat:{phone}"]
+    if not inbox.conversation(g, ch, datetime.now(slots.DUBAI))["window_open"]:
+        raise WindowClosed("More than 24 hours since the customer's last message: send an approved template instead.")
     if ch.props["mode"] != "human":
         office.log.append("chat.handover", actor=by, deal=ch.deal, content={"chat": phone, "mode": "human", "by": by})
     ev = _send(office, phone, ch.deal, text, [], by=by)
@@ -245,4 +277,6 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
     _send(office, phone, deal, reply, refs, cause=got["id"])
     if reason:
         hand_over(office, phone, reason=reason, cause=got["id"])
+    from diwan import inbox
+    inbox.auto_stage(office, deal, got["id"])
     return {"mode": "human" if reason else "ai", "reply": reply, "refs": refs, "facts": heard["facts"], "handover": reason, "by": by}

@@ -23,6 +23,7 @@ TYPES = {
     "knowledge.added", "knowledge.confirmed", "listing.added", "document.filed", "sale.closed",
     # the front desk: settings, Nova's rounds, the Lobby board
     "setting.changed", "rounds.started", "briefing.ready",
+    "stage.changed",
     "lobby.posted", "lobby.seen", "lobby.reminded", "lobby.late", "lobby.done", "lobby.cancelled",
     "chat.received", "chat.sent", "chat.suggested", "chat.handover", "appointment.booked", "appointment.cancelled",
 }
