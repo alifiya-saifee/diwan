@@ -71,3 +71,13 @@ Everything in this repository was written during the Meta Global AI Developer Ha
   glowing orbs along the causal chain; each agent says what it did; Compliance flashes when a payment changes; filed
   documents fill the Records cabinets; the analyst walks to the archive to answer. Talk to Nova: she reads your
   briefing aloud, listens, answers by voice and keeps listening until you say thanks.
+
+## 28 Oct 2026: the front desk as a PA
+
+- Briefing time per person ("brief me at 9:30", or the time box). Thirty minutes before the earliest one, Nova does her
+  rounds: every department lead hands her an update built from its records, and in 3D she walks room to room.
+- Play briefing: a greeting by the clock, what needs you (cards, Lobby requests, late work, finished work), then each
+  department's update (the owner hears all; others hear their own), then she listens.
+- Lobby board: "Tell Priya I need the Karim review ready by this evening" is read back with the person and due time;
+  only a yes posts it, through the Compliance lead to Priya. No deadline: she asks by when. Chased an hour before due,
+  marked late after (the asker hears), and the asker hears when it is done. Shown on a board in the 3D lobby.

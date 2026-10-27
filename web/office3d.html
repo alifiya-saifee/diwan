@@ -139,6 +139,35 @@ function fileBox(kind) {
   scene.add(b); filed++;
 }
 
+// the Lobby board: every request people made, by department, with its due time and status
+const boardCanvas = document.createElement("canvas"); boardCanvas.width = 1024; boardCanvas.height = 640;
+const boardTex = new THREE.CanvasTexture(boardCanvas);
+const boardMesh = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 4.5), new THREE.MeshBasicMaterial({ map: boardTex }));
+boardMesh.position.set(ZONES.front.x - 3.2, 3.3, ZONES.front.z - 3.3); boardMesh.rotation.x = -0.25; boardMesh.userData.zone = "lobby"; scene.add(boardMesh);
+const boardFrame = new THREE.Mesh(new THREE.BoxGeometry(7.5, 4.8, 0.2), new THREE.MeshStandardMaterial({ color: 0x2b3142 }));
+boardFrame.position.set(boardMesh.position.x, 3.3, boardMesh.position.z - 0.12); boardFrame.rotation.x = -0.25; scene.add(boardFrame);
+let boardCards = [];
+async function drawBoard() {
+  boardCards = await api("/api/lobby");
+  const x = boardCanvas.getContext("2d");
+  x.fillStyle = "#0d1016"; x.fillRect(0, 0, 1024, 640);
+  x.fillStyle = "#e8c77a"; x.font = "700 44px Inter, system-ui"; x.fillText("LOBBY BOARD", 36, 64);
+  x.font = "400 26px Inter, system-ui"; x.fillStyle = "#9aa3b5"; x.fillText(`${boardCards.filter((c) => !["done", "cancelled"].includes(c.status)).length} open`, 800, 62);
+  const COL = { late: "#e05d5d", open: "#e8c77a", seen: "#5b8def", done: "#7fc46a", cancelled: "#666" };
+  boardCards.slice(0, 7).forEach((c, i) => {
+    const y = 110 + i * 74;
+    x.fillStyle = "#171b24"; x.fillRect(30, y, 964, 62);
+    x.fillStyle = COL[c.status] || "#999"; x.fillRect(30, y, 10, 62);
+    x.fillStyle = "#e9e6dd"; x.font = "600 26px Inter, system-ui";
+    x.fillText(`${c.id} · ${(NAMES[c.to] || c.to)}: ${c.text}`.slice(0, 52), 56, y + 28);
+    x.fillStyle = "#9aa3b5"; x.font = "400 21px Inter, system-ui";
+    const due = c.due ? new Date(c.due).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "no deadline";
+    x.fillText(`asked by ${NAMES[c.by] || c.by} · due ${due} · ${c.status.toUpperCase()}`, 56, y + 52);
+  });
+  if (!boardCards.length) { x.fillStyle = "#9aa3b5"; x.font = "400 28px Inter, system-ui"; x.fillText('Say "Tell Priya I need … by this evening" to post a card.', 36, 140); }
+  boardTex.needsUpdate = true;
+}
+
 // whatsapp wall at the front desk
 const wall = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 0.15), new THREE.MeshStandardMaterial({ color: 0x1f3a2a, emissive: 0x25a35a, emissiveIntensity: 0.15 }));
 wall.position.set(ZONES.front.x + 5, 1.6, ZONES.front.z + 2.6); scene.add(wall);
@@ -190,6 +219,19 @@ function send(from, to, color = 0xe8c77a) {
   const p1 = p0.clone().add(p2).multiplyScalar(.5).add(new THREE.Vector3(0, 5, 0));
   orbs.push({ m, p0, p1, p2, t: 0 });
 }
+// Nova's rounds: she walks to each department lead in turn, then back to the front desk
+const LEADS = ["sales", "ops", "fin", "comp", "review", "records"];
+async function roundsWalk() {
+  const n = robots.nova; if (!n) return;
+  for (const l of LEADS) {
+    const r = robots[l]; if (!r) continue;
+    n.walk = { from: n.g.position.clone(), to: r.g.position.clone().add(new THREE.Vector3(1.4, 0, 1.6)), t: 0, back: false };
+    say("nova", `Rounds: ${AG[l].name}…`, 1.6);
+    await new Promise((ok) => setTimeout(ok, 1700));
+  }
+  n.walk = { from: n.g.position.clone(), to: n.home.clone(), t: 0, back: false };
+  say("nova", "Briefing ready.", 3);
+}
 function walkTo(id, target, back = true) {
   const r = robots[id]; if (!r) return;
   r.walk = { from: r.g.position.clone(), to: target.clone(), t: 0, back };
@@ -215,6 +257,8 @@ function play(e, quiet = false) {
   if (e.type === "check.raised") rooms.comp.flash = 1;
   if (e.type === "task.withdrawn" || e.type === "review.returned" || e.type === "approval.refused") rooms[ZONE_OF[who] || "review"].flash = 0.6;
   if (e.type === "document.filed") fileBox(e.content.kind);
+  if (e.type === "rounds.started") roundsWalk();
+  if (e.type.startsWith("lobby.") || e.type === "task.done") drawBoard();
   if (e.type === "chat.received") { wallGlow = 1; if (!quiet) say("rania", `Message: "${e.content.text}"`, 3); }
   if (e.type === "agent.started" && (who === "archivist" || who === "analyst")) walkTo(who, new THREE.Vector3(cabinets[1].position.x, 0, cabinets[1].position.z + 1.4));
   if (e.type === "agent.started" && who === "formf") walkTo(who, robots.formf.home.clone().add(new THREE.Vector3(0, 0, -2)));
@@ -247,14 +291,35 @@ function renderZone() {
       : h("p", { class: "small", style: "color:#9aa3b5" }, "Nothing yet. Ask Nova something that needs this team, or replay the deal."));
 }
 
+let tab = "talk", briefAt = "09:00";
+api(`/api/settings/${person}`).then((x) => { briefAt = x.briefing_time; if (zone === "front") renderNova(); });
+function renderLobby() {
+  $("zbody").replaceChildren(
+    h("div", { class: "row", style: "margin-bottom:10px" }, h("button", { onclick: () => { tab = "talk"; renderNova(); } }, "← Nova"), h("span", {}, "")),
+    ...(boardCards.length ? boardCards.map((c) => h("div", { class: "item", style: "background:#1d2230;border-color:#2a3040;margin-bottom:8px" },
+      h("div", { class: "row" }, h("strong", {}, `${c.id} · ${NAMES[c.to] || c.to}`),
+        h("span", { style: "flex:0" }, h("span", { class: `chip ${c.status === "late" ? "bad" : c.status === "done" ? "ok" : "warn"}` }, c.status))),
+      h("div", {}, c.text),
+      h("div", { class: "small", style: "color:#9aa3b5" }, `asked by ${NAMES[c.by] || c.by} · due ${c.due ? new Date(c.due).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "none"}`),
+      ...(c.history || []).map((st) => h("div", { class: "small", style: "color:#9aa3b5" }, `· ${st.step}${st.note ? `: ${st.note}` : ""}`)),
+      !["done", "cancelled"].includes(c.status) ? h("button", { class: "small", style: "margin-top:6px",
+        onclick: async () => { await post(`/api/lobby/${c.id}/done`, { by: c.to }); } }, `Mark done as ${NAMES[c.to] || c.to}`) : null))
+      : [h("p", { class: "small", style: "color:#9aa3b5" }, 'Nothing on the board. Tell Nova: "Tell Priya I need the Karim review ready by this evening."')]));
+}
 function renderNova() {
+  if (tab === "lobby") return renderLobby();
   const kids = [
     h("div", { class: "row", style: "margin-bottom:10px" }, h("span", { class: "small", style: "color:#9aa3b5;flex:0 0 auto" }, "I am"),
-      h("select", { onchange: (e) => person = e.target.value, style: "background:#11141b;color:#e9e6dd;border-color:#2a3040" },
+      h("select", { onchange: (e) => { person = e.target.value; api(`/api/settings/${person}`).then((x) => { briefAt = x.briefing_time; renderNova(); }); }, style: "background:#11141b;color:#e9e6dd;border-color:#2a3040" },
         Object.entries(NAMES).map(([k, v]) => h("option", { value: k, selected: k === person }, v)))),
+    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, h("span", { class: "small", style: "color:#9aa3b5;flex:0 0 auto" }, "Brief me at"),
+      h("input", { type: "time", value: briefAt, style: "background:#11141b;color:#e9e6dd;border-color:#2a3040;max-width:120px",
+        onchange: async (e) => { briefAt = e.target.value; await post(`/api/settings/${person}`, { briefing_time: briefAt }); toast(`Nova will do her rounds before ${briefAt}`); } }),
+      h("button", { onclick: () => post("/api/nova/rounds") }, "Do rounds now"),
+      h("button", { onclick: () => { tab = "lobby"; drawBoard().then(renderLobby); } }, "Lobby board")),
     h("button", { class: "talk", style: "width:100%;padding:12px", onclick: () => talking ? stopTalk() : startTalk() },
-      talking ? (listening ? h("span", {}, h("span", { class: "listening" }), "Listening… (tap to stop)") : "Nova is talking… (tap to stop)") : "Talk to Nova"),
-    h("p", { class: "small", style: "color:#9aa3b5" }, "She starts with your briefing, then just talk. Ask follow-ups; she remembers what you were discussing."),
+      talking ? (listening ? h("span", {}, h("span", { class: "listening" }), "Listening… (tap to stop)") : "Nova is talking… (tap to stop)") : "Play briefing"),
+    h("p", { class: "small", style: "color:#9aa3b5" }, "She greets you, gives each department's update, then listens. Ask questions or give work: \"Tell Priya I need the Karim review by this evening\". She reads it back before sending."),
     ...convo.map((m) => h("div", { class: `msg ${m.from}` }, h("span", { class: "from" }, m.from === "nova" ? "Nova" : NAMES[person]),
       m.from === "you" ? h("span", { class: "t" }, m.text) : h("span", {}, m.text),
       m.options ? h("div", {}, m.options.map((o) => h("button", { class: "small", style: "margin:6px 6px 0 0", onclick: () => ask(o) }, o))) : null,
@@ -319,10 +384,10 @@ function listen() {
 async function startTalk() {
   talking = true; renderNova();
   const b = await api(`/api/nova/brief/${person}`);
-  convo.push({ from: "nova", text: b.text, cites: [...new Set(b.lines.flatMap((l) => l.refs))] });
+  convo.push({ from: "nova", text: b.text, cites: [...new Set([...b.lines.flatMap((l) => l.refs), ...(b.departments || []).flatMap((d) => d.refs)])] });
   renderNova();
   say("nova", b.text, 8);
-  await speak(b.text + " What would you like to know?");
+  await speak(b.text + " What would you like to do?");
   if (talking) listen();
 }
 function stopTalk(bye) {
@@ -432,7 +497,7 @@ const clock = new THREE.Clock();
 // ---------- start: the archive fills the cabinets, then live events animate the floor ----------
 const past = await api("/api/events");
 for (const e of past) { byId.set(e.id, e); if (e.type === "document.filed") fileBox(e.content.kind); }
-renderZone(); updateHud();
+renderZone(); updateHud(); drawBoard();
 follow((evs) => evs.forEach((e) => play(e)), past.at(-1)?.id || 0);
 window.__diwan = { robots, zoomTo, ask, play };
 </script>
