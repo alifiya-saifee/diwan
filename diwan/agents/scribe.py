@@ -159,11 +159,16 @@ def link(g: Graph, deal: str, fact: dict, turn: str) -> tuple[list[str], list[No
 # ---------- one turn ----------
 
 def turn(office: Office, mid: str, label: str, text: str, *, turn_id: str | None = None, tape_root=None) -> dict:
+    """A finished spoken turn in a meeting."""
     ev = office.utterance(mid, label, text, turn=turn_id)
-    m, c = office.meeting(mid), get("scribe")
-    deal, speaker = m["deal"], ev["content"]["speaker"]
+    return hear(office, office.meeting(mid)["deal"], ev["content"]["speaker"], text, ev["id"], tape_root=tape_root)
+
+
+def hear(office: Office, deal: str, speaker: str, text: str, cause: int, *, tape_root=None) -> dict:
+    """Anything a customer said, in a meeting or on WhatsApp: the same facts, quotes and corrections either way."""
+    c = get("scribe")
     g = office.graph()
-    src = f"turn:{ev['id']}"
+    src = f"said:{cause}"
     sources = {src: f"{speaker}: {text}"} | {f.id: g.record(f.id) for f in g.facts(deal)}
     system = runner.instructions(c) + RULES
     user = runner.user_message(f"New turn from {speaker}. Earlier facts of this deal are also given.", sources)
@@ -172,10 +177,11 @@ def turn(office: Office, mid: str, label: str, text: str, *, turn_id: str | None
         found, by = reply.data["facts"], reply.usage.get("provider")
     else:
         found, by = read_rules(text, speaker), "rules"
-    req = f"turn-{ev['id']}"
-    pack = Pack(req, c.id, f"{len(found)} fact(s) heard", evidence=[Evidence(f["quote"], src) for f in found],
+    if not found:
+        return {"facts": [], "rejected": [], "questions": [], "by": by, "turn": cause}
+    pack = Pack(f"heard-{cause}", c.id, f"{len(found)} fact(s) heard", evidence=[Evidence(f["quote"], src) for f in found],
                 actions=[Action("record_fact", f"{f['kind']}: {f['quote']}") for f in found])
-    res = runner.submit(office.log, c, pack, sources={src: text}, deal=deal, caused_by=ev["id"], usage={"provider": by})
+    res = runner.submit(office.log, c, pack, sources={src: text}, deal=deal, caused_by=cause, usage={"provider": by})
     kept = {norm(e.quote) for e in res.pack.evidence}
     recorded, questions = [], []
     for f in found:
@@ -184,12 +190,12 @@ def turn(office: Office, mid: str, label: str, text: str, *, turn_id: str | None
         g = office.graph()
         ids, unclear = link(g, deal, f, text)
         if unclear:
-            q = office.log.append("question.asked", actor=c.id, agent=c.id, deal=deal, caused_by=ev["id"],
+            q = office.log.append("question.asked", actor=c.id, agent=c.id, deal=deal, caused_by=cause,
                                   content={"to": g.nodes[f"deal:{deal}"].props["broker"], "refs": [x.id for x in unclear],
                                            "options": [x.props["quote"] for x in unclear] + ["Neither"],
                                            "text": f'"{f["quote"]}" changes something, but which: ' + " or ".join(f'"{x.props["quote"]}"' for x in unclear) + "?"})
             questions.append(f"Q{q['id']}")
         props = {k: v for k, v in f.items() if k not in ("kind", "quote", "stance", "replaces") and v is not None}
         recorded.append(office.record_fact(deal, f["kind"], f["quote"], speaker, replaces=ids, stance=f["stance"],
-                                           caused_by=ev["id"], **props))
-    return {"facts": recorded, "rejected": [e.quote for e in res.pack.rejected_quotes], "questions": questions, "by": by, "turn": ev["id"]}
+                                           caused_by=cause, **props))
+    return {"facts": recorded, "rejected": [e.quote for e in res.pack.rejected_quotes], "questions": questions, "by": by, "turn": cause}

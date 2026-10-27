@@ -131,6 +131,13 @@ class Graph:
             return f"{n.id} · {p['kind']} v{p.get('version', 1)}{tag}"
         if n.type in ("decision", "question", "check", "request"):
             return f"{n.id} · for {name(p.get('who'))}: {p['text']}{tag}"
+        if n.type == "knowledge":
+            return f"{n.id} · {p['title']}: {p['text']}{'' if n.status == 'confirmed' else ' [not confirmed]'}"
+        if n.type == "listing":
+            return (f"{p['ref']} · {p['title']}, {p['community']} · {p['beds']} bed {p['type']} · AED {p['price_aed']:,} · "
+                    f"permit {p.get('permit') or 'MISSING'} · {n.status}")
+        if n.type == "viewing":
+            return f"{n.id} · viewing of {p['listing']} with {name(p['broker'])} at {p['at']} for {p.get('customer')}{tag if n.status != 'booked' else ''}"
         if n.type == "deal":
             return f"{n.id.split(':', 1)[1]} · {p.get('property')} · customer {p.get('customer')} · broker {name(p.get('broker'))}"
         return f"{n.id} · {n.label}"
@@ -217,6 +224,35 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                       props={**c, "who": pid(who) or who, "text": text, "agent": e.get("agent")})
             for r in c.get("refs", []):
                 g.link(n.id, "about", r, e)
+        elif t == "knowledge.added":
+            g.add(c["id"], "knowledge", c["title"], e, status="confirmed" if c.get("confirmed") else "proposed", props=dict(c))
+        elif t == "knowledge.confirmed" and c.get("id") in g.nodes:
+            g.nodes[c["id"]].status = "confirmed"
+            g.nodes[c["id"]].props["confirmed_by"] = e["actor"]
+        elif t == "listing.added":
+            g.add(f"listing:{c['ref']}", "listing", c["title"], e, status=c.get("status", "available"), props=dict(c))
+        elif t in ("chat.received", "chat.sent", "chat.suggested", "chat.handover"):
+            ch = g.nodes.get(f"chat:{c['chat']}") or g.add(f"chat:{c['chat']}", "chat", c.get("name") or c["chat"], e, deal=deal,
+                                                            props={"phone": c["chat"], "mode": "ai", "messages": []})
+            if deal:
+                ch.deal = deal
+            if c.get("name"):
+                ch.label = c["name"]
+            if t == "chat.handover":
+                ch.props["mode"] = c["mode"]
+                ch.props["handled_by"] = c.get("by")
+            else:
+                ch.props["messages"].append({"event": e["id"], "at": e["at"], "type": t.split(".")[1], "by": e["actor"],
+                                             "text": c["text"], "refs": c.get("refs", [])})
+                ch.props["last_at"] = e["at"]
+        elif t == "appointment.booked":
+            v = g.add(c["id"], "viewing", f"Viewing {c['listing']}", e, deal=deal, status="booked", props=dict(c))
+            g.link(v.id, "of", f"listing:{c['listing']}", e)
+            g.link(v.id, "with", g.person(c["broker"], e), e)
+            if c.get("chat"):
+                g.link(f"chat:{c['chat']}", "booked", v.id, e)
+        elif t == "appointment.cancelled" and c.get("id") in g.nodes:
+            g.nodes[c["id"]].status = "cancelled"
         elif t in ("decision.made", "question.answered") and c.get("card") in g.nodes:
             g.nodes[c["card"]].status = "closed"
             g.nodes[c["card"]].props["answer"] = c.get("answer")

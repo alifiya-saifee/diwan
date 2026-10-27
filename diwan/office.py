@@ -200,3 +200,21 @@ class Office:
         version = 1 + len([d for d in g.of("draft", deal) if d.props["kind"] == kind])
         self.log.append("draft.made", actor=by, agent=by, deal=deal, content={"id": did, "kind": kind, "version": version, "slides": slides})
         return did
+
+    # what the office knows: typed by a person it is confirmed; pulled from a document it waits for a person to confirm
+    def add_knowledge(self, kind: str, title: str, text: str, *, by: str, confirmed: bool = True, source: str | None = None) -> str:
+        kid = self._next(self.graph(), "knowledge", "K")
+        self.log.append("knowledge.added", actor=by, content={"id": kid, "kind": kind, "title": title, "text": text,
+                                                              "confirmed": confirmed, "source": source})
+        return kid
+
+    def confirm_knowledge(self, kid: str, *, by: str) -> dict:
+        return self.log.append("knowledge.confirmed", actor=by, key=f"confirm:{kid}", content={"id": kid})
+
+    def add_listing(self, *, ref: str, title: str, community: str, type: str, beds: int, price_aed: int, permit: str | None,
+                    status: str = "available", features: list[str] | None = None, by: str = "omar") -> str:
+        """A listing without a permit number is kept but never advertised: Dubai requires a permit for every ad."""
+        self.log.append("listing.added", actor=by, content={"ref": ref, "title": title, "community": community, "type": type,
+                                                            "beds": beds, "price_aed": price_aed, "permit": permit,
+                                                            "status": status, "features": features or []})
+        return f"listing:{ref}"

@@ -7,7 +7,24 @@ from __future__ import annotations
 from diwan.office import Office
 
 
+def company(office: Office) -> None:
+    """What a brokerage tells the office once: listings (sample permit numbers) and the few facts customers ask about."""
+    office.add_listing(ref="MC-1204", title="Unit 1204, Marina Crest", community="Dubai Marina", type="apartment", beds=2,
+                       price_aed=2_600_000, permit="SAMPLE-71204", features=["sea view", "balcony", "2 parking"])
+    office.add_listing(ref="JVC-88", title="Villa 88", community="Jumeirah Village Circle", type="villa", beds=4,
+                       price_aed=1_900_000, permit="SAMPLE-60088", features=["garden", "maid's room"])
+    office.add_listing(ref="BB-305", title="Apartment 305, Bay Square", community="Business Bay", type="apartment", beds=1,
+                       price_aed=1_150_000, permit="SAMPLE-30305", features=["canal view"])
+    office.add_listing(ref="DT-2210", title="Apartment 2210, Burj Vista", community="Downtown Dubai", type="apartment", beds=1,
+                       price_aed=1_450_000, permit=None)  # no permit yet: kept, never advertised
+    office.add_knowledge("hours", "Office hours", "We're open Monday to Saturday, 10am to 7pm. Viewings run in the same hours.", by="layla")
+    office.add_knowledge("policy", "Viewings", "Viewings are with one of our brokers. Please bring a photo ID for the building lobby.", by="layla")
+    office.add_knowledge("fees", "Buyer fees", "Our buyer commission is 2% of the price plus VAT. The Dubai Land Department transfer fee is 4%.", by="layla")
+    office.add_knowledge("company", "About us", "Diwan Realty is a Dubai brokerage for Marina, JVC, Business Bay and Downtown.", by="layla")
+
+
 def seed(office: Office) -> None:
+    company(office)
     office.open_deal("marina-1204", property="Unit 1204, Marina Crest", customer="Karim Haddad", broker="omar")
     office.open_deal("jvc-88", property="Villa 88, JVC", customer="Sara Malik", broker="omar")
     m = "marina-1204"

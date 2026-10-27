@@ -19,6 +19,9 @@ TYPES = {
     # work between agents
     "task.created", "task.withdrawn", "task.done", "check.raised", "review.returned", "review.passed",
     "draft.made", "question.asked", "question.answered", "decision.made",
+    # what the office knows, and the front door
+    "knowledge.added", "knowledge.confirmed", "listing.added",
+    "chat.received", "chat.sent", "chat.suggested", "chat.handover", "appointment.booked", "appointment.cancelled",
 }
 
 

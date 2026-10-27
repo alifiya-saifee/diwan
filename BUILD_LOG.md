@@ -36,3 +36,16 @@ Everything in this repository was written during the Meta Global AI Developer Ha
 - One correction can replace several statements ("forget my brother" takes back both the brother's part and his
   paying). Hypothetical statements are kept but change nothing. An unclear correction asks the broker.
 - Muse Voice Transcribe realtime client (diarization, partial and finished turns).
+
+## 27 Oct 2026 (night): the front door
+
+- Company knowledge (typed by a person: confirmed; pulled from a document: waits for confirmation) and listings in the
+  office graph. A listing without a permit number is kept but never advertised.
+- Rania, the receptionist on WhatsApp: greets, learns the buyer's brief, answers from listings and confirmed knowledge
+  with the ref, books viewings in the broker's free slots (or offers the next free ones), hands over for payment
+  methods, discounts, returns or anything outside her charter, without saying why.
+- Every WhatsApp message goes through the same Scribe as meetings: a budget or "my brother will pay" typed at midnight
+  is the same quoted fact, with the same corrections.
+- Inbox semantics: a person replying takes the chat; Rania then only suggests replies; handing back resumes her. A
+  model reply naming an amount not on any listing is not sent.
+- WhatsApp Cloud API adapter: webhook verification, signature check, message parsing, sending.

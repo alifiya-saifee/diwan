@@ -56,6 +56,8 @@ ACTIONS = {
     "expect_payment": "Create or withdraw an expected payment",
     "hold": "Hold an item for a person",
     "send": "Send a message to a customer or third party",
+    "reply": "Reply to a customer's enquiry from listings and company knowledge",
+    "book_viewing": "Book a viewing in a broker's free slot",
     "approve": "Approve work",
     "submit": "Submit a portal form",
     "release_money": "Release or move money",
