@@ -95,7 +95,9 @@ def _label(g: Graph, deal: str) -> str:
 
 
 def _who_knows(g: Graph, deal: str | None) -> str:
-    return f"{name(g.nodes[f'deal:{deal}'].props['broker'])} was in the meeting" if deal else "Layla would know who to ask"
+    if deal and not deal.startswith("lead-"):
+        return f"{name(g.nodes[f'deal:{deal}'].props['broker'])} was in the meeting and would know"
+    return "Ask me about a deal, a person, the numbers, listings or viewings"
 
 
 # ---------- records the graph returns for a question ----------
@@ -137,8 +139,8 @@ def compose(g: Graph, deal: str, intents: set[str], ids: list[str]) -> str:
         f = payers[-1]
         hist = g.history(f.id)
         s = f'{f.props["payer"]} pays: {name(f.props["speaker"])} said "{f.props["quote"]}" ({f.id}).'
-        if len(hist) > 1:
-            s += f' Earlier: "{hist[1].props["quote"]}" ({hist[1].id}), since replaced.'
+        if older := next((x for x in hist[1:] if x.props["kind"] == "payer"), None):
+            s += f' Earlier: "{older.props["quote"]}" ({older.id}), since replaced.'
         out.append(s)
         out += [f"Expected: {t.props['action'].removeprefix('Expect ')} ({t.id})." for t in g.of("task", deal, OPEN) if t.props["agent"] == "pay"]
         out += [f"Priya reviews the change before any money moves ({c.id})." for c in g.of("check", deal, "open")]
@@ -185,7 +187,8 @@ def converse(office: Office, text: str, person: str = "layla", *, session: str =
         return brief(office, person, log=False, now=now) | {"kind": "brief"}
     if out := lobby.draft(t, person, session, now):
         return out
-    q = t.endswith("?") or re.match(r"(?i)(who|what|when|where|why|how|is|are|does|did|can|which|show|find|any)\b", t)
+    q = (t.endswith("?") or re.match(r"(?i)(who|what|when|where|why|how|is|are|does|did|can|which|show|find|any|hi|hello|hey|thanks|summar\w*|tell me|give me)\b", t)
+         or re.search(SMALLTALK, t.lower()))
     return ask(office, t, person, session=session, tape_root=tape_root, today=now.date()) if q else route(office, t, person, tape_root=tape_root)
 
 
@@ -193,6 +196,8 @@ def ask(office: Office, question: str, person: str = "layla", *, session: str | 
     g, req, person = office.graph(), _req(office, "ask"), pid(person) or "layla"
     c = get(NOVA)
     intents = {k for k, rx in INTENTS.items() if re.search(rx, question.lower())}
+    if out := everyday(office, g, question, person, req):
+        return out
     if intents <= {"needs"} and "needs" in intents:
         b = brief(office, person, log=False)
         return {"kind": "answer", "text": b["text"], "cites": sorted({r for ln in b["lines"] for r in ln["refs"]}), "by": "rules", "request": req}
@@ -227,6 +232,126 @@ def ask(office: Office, question: str, person: str = "layla", *, session: str | 
     pack = Pack(req, NOVA, text, evidence=evidence_from(g, ids), next=[])
     runner.submit(office.log, c, pack, sources=sources, deal=deal)
     return {"kind": "answer", "text": text, "cites": ids, "by": "rules", "request": req}
+
+
+# ---------- everyday questions the records answer directly ----------
+
+SMALLTALK = r"^\s*(hi|hello|hey|salam|marhaba|good (morning|afternoon|evening))\b|\bhow are you\b|^\s*(thanks|thank you)\b"
+FOCUS = r"\b(focus|priorit\w*|what should i (do|look at)|my day|on my plate|anything urgent|urgent)\b"
+JUDGE = (r"\b(good|bad|trustworthy|trusted|reliable|honest|risky|dodgy|safe|serious|genuine)\s+(customer|client|buyer|person|guy|lead)\b"
+         r"|\bis \w+ (trustworthy|risky|honest|reliable|suspicious|legit)\b|\bcan (we|i) trust\b")
+SUMMARY = r"\b(summar\w*|overview|status|where are we|tell me about|update on|brief me on|how is .* going)\b"
+
+
+def everyday(office: Office, g: Graph, q: str, person: str, req: str) -> dict | None:
+    low = q.lower().strip()
+    c = get(NOVA)
+
+    def answer(text: str, cites: list[str], kind: str = "answer") -> dict:
+        runner.submit(office.log, c, Pack(req, NOVA, text, evidence=evidence_from(g, [x for x in cites if x in g.nodes])),
+                      sources={x: g.record(x) for x in cites if x in g.nodes})
+        return {"kind": kind, "text": text, "cites": cites, "by": "rules", "request": req}
+
+    if re.search(SMALLTALK, low) and len(low.split()) <= 6:
+        if low.startswith(("thanks", "thank you")):
+            return {"kind": "answer", "text": "Any time.", "cites": [], "by": "rules", "request": req}
+        b = brief(office, person, log=False)
+        n = len([ln for ln in b["lines"] if ln["needs"]])
+        return {"kind": "answer", "cites": [], "by": "rules", "request": req,
+                "text": f"{greeting(datetime.now(DUBAI))}, {name(person)}. All good here. "
+                        + (f"{n} thing{'s' if n != 1 else ''} need{'' if n != 1 else 's'} you; shall I go through them?" if n else "Nothing needs you right now.")}
+    if re.search(FOCUS, low):
+        b = brief(office, person, log=False)
+        needs = [ln for ln in b["lines"] if ln["needs"]]
+        others = []
+        if person == "layla":  # the owner also sees what everyone else is waiting on
+            for who in PEOPLE:
+                if who == person:
+                    continue
+                theirs = [ln for ln in brief(office, who, log=False)["lines"] if ln["needs"]]
+                if theirs:
+                    others.append((who, theirs))
+        tail = (" Waiting on others: " + " ".join(f"{name(w)}: {ls[0]['text']}" + (f" (and {len(ls) - 1} more)" if len(ls) > 1 else "") for w, ls in others)
+                if others else "")
+        if not needs:
+            return answer("Nothing is waiting on you personally." + (tail or " The agents have the rest in hand."),
+                          [r for _, ls in others for ln in ls for r in ln["refs"]])
+        return answer("Here's what needs you, most urgent first: " + " ".join(f"{i}. {ln['text']}" for i, ln in enumerate(needs, 1)) + tail,
+                      [r for ln in needs for r in ln["refs"]])
+    if re.search(JUDGE, low):
+        deal, _ = resolve_deal(g, q, person)
+        facts = [f.id for f in g.facts(deal)] if deal else []
+        return answer("I don't judge people, and nobody here decides that from a feeling. Here is what's on record"
+                      + (f": {compose(g, deal, {'status'}, facts)}" if facts else ".") + " Anything about risk is Priya's call.", facts)
+    if re.search(r"\b(lobby|board|requests?|what did i ask|asked for|chas\w*|late|overdue)\b", low):
+        cards = [c for c in g.of("lobby") if c.status not in ("cancelled",)]
+        live = [c for c in cards if c.status != "done"]
+        if not cards:
+            return answer("The Lobby board is empty. Tell me who needs to do what, and by when.", [])
+        line = lambda c: f"{c.id}: {name(c.props['to'])}, \"{c.props['text']}\", due {lobby_due(c)}, {c.status}"  # noqa: E731
+        late = [c for c in live if c.status == "late"]
+        return answer(f"{len(live)} open on the Lobby board" + (f", {len(late)} late" if late else "") + ". "
+                      + "; ".join(line(c) for c in live) + "." + (f" Done: {len(cards) - len(live)}." if len(cards) > len(live) else ""),
+                      [c.id for c in cards])
+    if re.search(r"\bviewings?\b", low):
+        vs = g.of("viewing", status="booked")
+        if not vs:
+            return answer("No viewings are booked yet. Rania books them from WhatsApp.", [])
+        return answer(f"{len(vs)} viewing{'s' if len(vs) != 1 else ''} booked: " + "; ".join(g.record(v.id).split(" · ", 1)[1] for v in vs) + ".", [v.id for v in vs])
+    if re.search(r"\b(listings?|propert(y|ies)|most expensive|cheapest|for sale|on the market|inventory)\b", low):
+        ls = g.of("listing")
+        if not ls:
+            return answer("There are no listings yet. Add them on the Knowledge page.", [])
+        ad = [x for x in ls if x.props.get("permit") and x.status == "available"]
+        if "expensive" in low or "highest" in low:
+            x = max(ls, key=lambda n: n.props["price_aed"])
+            return answer(f"The most expensive is {x.props['title']}, {x.props['community']}, at AED {x.props['price_aed']:,}.", [x.id])
+        if "cheap" in low or "lowest" in low:
+            x = min(ls, key=lambda n: n.props["price_aed"])
+            return answer(f"The cheapest is {x.props['title']}, {x.props['community']}, at AED {x.props['price_aed']:,}.", [x.id])
+        no_permit = [x for x in ls if x not in ad]
+        return answer(f"{len(ls)} listings, {len(ad)} advertised: " + "; ".join(f"{x.props['title']} (AED {x.props['price_aed']:,})" for x in ad)
+                      + (f". Not advertised until a permit is added: {', '.join(x.props['title'] for x in no_permit)}." if no_permit else "."), [x.id for x in ls])
+    if m := re.match(r"^\s*who(?:'s| is)\s+([a-z]+)", low):
+        who = m.group(1)
+        if who in ("paying", "pays", "handling", "the", "on", "in"):
+            return None
+        ppl = [n for n in g.of("person") if n.label.lower().split()[0] == who or n.label.lower() == who]
+        if not ppl and pid(who):
+            p = PEOPLE[pid(who)]
+            team = f", working with the {get(p['team']).name}" if p.get("team") else ""
+            waiting = [ln for ln in brief(office, pid(who), log=False)["lines"] if ln["needs"]]
+            return answer(f"{p['name']} is our {p['role'].lower()}{team}. "
+                          + (f"{len(waiting)} thing{'s' if len(waiting) != 1 else ''} waiting for {p['name']} now." if waiting else "Nothing is waiting for them now."),
+                          [r for ln in waiting for r in ln["refs"]])
+        if not ppl:
+            return answer(f"I don't have anyone called {m.group(1).capitalize()} in the records.", [])
+        n = ppl[0]
+        bits = [f"{n.label}" + (f" is the {n.props['role'].lower()}" if n.props.get("role") else "")]
+        for e in g.edges:
+            if e.dst == n.id and e.rel not in ("said", "customer_of", "broker_on", "pays_for", "with"):
+                bits.append(f"{g.nodes[e.src].label}'s {e.rel}" + (f" ({e.via})" if e.via else ""))
+            if e.src == n.id and e.rel == "customer_of":
+                bits.append(f"customer on {g.nodes[e.dst].label}")
+            if e.src == n.id and e.rel == "pays_for" and g.nodes.get(e.via) and g.nodes[e.via].status == "superseded":
+                bits.append(f"was going to pay, but that was taken back ({e.via})")
+            elif e.src == n.id and e.rel == "pays_for":
+                bits.append(f"pays for {g.nodes[e.dst].label} ({e.via})")
+        return answer(", ".join(bits) + ".", [e.via for e in g.edges if (e.src == n.id or e.dst == n.id) and e.via])
+    if re.search(SUMMARY, low):
+        deal, pool = resolve_deal(g, q, person)
+        if deal:
+            ids = records_for(g, deal, {"status", "changed"}, q)
+            d = g.nodes[f"deal:{deal}"].props
+            facts = g.facts(deal)
+            open_t = g.of("task", deal, OPEN)
+            cards = [n for t in ("decision", "check", "question", "request") for n in g.of(t, deal, "open")]
+            head = f"{d['property']}, customer {d['customer']}, broker {name(d['broker'])}. "
+            body = " ".join(f'{name(f.props["speaker"])} said "{f.props["quote"]}" ({f.id}).' for f in facts[:4])
+            changed = compose(g, deal, {"changed"}, ids)
+            tail = f" {len(open_t)} task{'s' if len(open_t) != 1 else ''} open; {len(cards)} waiting for people." if open_t or cards else ""
+            return answer(head + body + (" Changes: " + changed if changed else "") + tail, ids)
+    return None
 
 
 # ---------- route ----------

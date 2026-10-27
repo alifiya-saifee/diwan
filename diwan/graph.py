@@ -107,10 +107,12 @@ class Graph:
 
     def history(self, fact_id: str) -> list[Node]:
         """The chain of statements this one replaced, newest first."""
-        chain, cur = [self.nodes[fact_id]], fact_id
-        while (older := self.out(cur, "replaces")):
-            cur = older[0].id
-            chain.append(older[0])
+        chain, todo = [self.nodes[fact_id]], [fact_id]
+        while todo:
+            for older in self.out(todo.pop(0), "replaces"):
+                if older not in chain:
+                    chain.append(older)
+                    todo.append(older.id)
         return chain
 
     def record(self, nid: str) -> str:

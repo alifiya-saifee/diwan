@@ -41,13 +41,13 @@ def test_graph_links_who_said_what_and_who_pays(office):
 def test_correction_tells_compliance_first_and_touches_only_what_rested_on_it(office):
     n = office.log.list()[-1]["id"]
     demo.correction(office)
-    assert types(office, n) == ["fact.created", "check.raised", "fact.superseded", "task.withdrawn", "task.withdrawn",
-                                "decision.needed", "review.returned", "task.created"]
+    assert types(office, n) == ["fact.created", "check.raised", "fact.superseded", "fact.superseded", "task.withdrawn",
+                                "task.withdrawn", "decision.needed", "review.returned", "task.created"]
     g = office.graph()
     assert g.nodes["T1"].status == g.nodes["T2"].status == "withdrawn"
     assert g.nodes["T3"].props["action"] == "Expect AED 260,000 by bank transfer from Karim Haddad"
     assert g.nodes["D1"].status == "sent_back" and not g.stale("D1/1")
-    assert g.history("F7") == [g.nodes["F7"], g.nodes["F3"]]
+    assert g.history("F7") == [g.nodes["F7"], g.nodes["F2"], g.nodes["F3"]]
 
 
 def test_graph_rewinds_to_any_event(corrected):
@@ -81,7 +81,7 @@ def test_answer_cites_the_exact_words_and_the_history(corrected):
     assert '"Actually, forget my brother. I\'ll pay it all myself." (F7)' in r["text"] and "(F3), since replaced" in r["text"]
     assert {"F7", "F3", "T3"} <= set(r["cites"])
     pack = [e for e in corrected.log.list() if e["type"] == "agent.pack"][-1]["content"]["pack"]
-    assert [e["source"] for e in pack["evidence"]] == ["F7", "F3", "F4"] and not pack["rejected_quotes"]
+    assert [e["source"] for e in pack["evidence"]] == ["F7", "F2", "F3", "F4"] and not pack["rejected_quotes"]
 
 
 def test_what_changed_follows_the_graph_to_everything_it_touched(corrected):
@@ -174,3 +174,19 @@ def test_briefing_runs_at_seven_dubai_once_a_day():
     assert not nova.briefing_due(datetime(2026, 10, 28, 2, 59, tzinfo=timezone.utc), None)
     assert nova.briefing_due(datetime(2026, 10, 28, 3, 0, tzinfo=timezone.utc), "2026-10-27")
     assert not nova.briefing_due(datetime(2026, 10, 28, 5, 0, tzinfo=timezone.utc), "2026-10-28")
+
+
+@pytest.mark.parametrize("q, expect", [
+    ("Hi Nova, how are you?", "All good here"),
+    ("What should I focus on today?", "Waiting on others: Priya"),
+    ("Is Karim a good customer?", "I don't judge people"),
+    ("Which listing is the most expensive?", "Unit 1204, Marina Crest"),
+    ("How many listings do we have?", "4 listings, 3 advertised"),
+    ("Who is Tariq?", "Karim Haddad's brother"),
+    ("Who is Priya?", "compliance officer"),
+    ("Summarise the Marina deal for me", "Unit 1204, Marina Crest, customer Karim Haddad"),
+    ("How many viewings do we have this week?", "No viewings are booked yet"),
+    ("What's on the lobby board?", "The Lobby board is empty"),
+])
+def test_everyday_questions(corrected, q, expect):
+    assert expect in nova.converse(corrected, q, "layla", session="e")["text"]

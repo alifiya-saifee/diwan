@@ -70,6 +70,6 @@ def seed(office: Office) -> None:
 
 def correction(office: Office) -> str:
     g = office.graph()
-    old = next(f.id for f in g.facts("marina-1204", "payer"))
+    old = [f.id for f in g.facts("marina-1204", "party") + g.facts("marina-1204", "payer")]  # what "forget my brother" takes back
     return office.record_fact("marina-1204", "payer", "Actually, forget my brother. I'll pay it all myself.", "Karim Haddad",
                               payer="Karim Haddad", replaces=old)
