@@ -83,6 +83,11 @@ export function describe(e) {
     case "consent.given": return "the customer agreed to the recording";
     case "utterance": return `${c.speaker}: "${c.text}"`;
     case "draft.made": return `${c.kind} v${c.version} drafted`;
+    case "step.blocked": return `waiting: ${c.needs}`;
+    case "post.seen": return `saw @${c.account}'s post: ${c.likes} likes, ${c.comments} comments${c.score ? ` (${c.score}x their usual)` : ""}`;
+    case "board.pinned": return `pinned: ${c.title}`;
+    case "content.made": return `made the ${c.kind} for ${c.ref}`;
+    case "footage.added": return `footage uploaded for ${c.ref}`;
     case "lesson.added": return `new lesson: ${c.rule}`;
     case "lesson.removed": return `lesson ${c.id} removed`;
     case "autonomy.changed": return `set to ${c.level.replace("_", " ")}`;
@@ -103,7 +108,7 @@ export const LOGO = `<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGr
   <rect x="8" y="8" width="16" height="16" rx="1.5" transform="rotate(45 16 16)"/></g><circle cx="16" cy="16" r="3" fill="url(#lg)"/></svg>`;
 
 export function header(active) {
-  const pages = [["office3d.html", "Office"], ["index.html", "Nova"], ["inbox.html", "Inbox"], ["meeting.html", "Meeting"], ["knowledge.html", "Knowledge"],
+  const pages = [["office3d.html", "Office"], ["index.html", "Nova"], ["inbox.html", "Inbox"], ["studio.html", "Studio"], ["meeting.html", "Meeting"], ["knowledge.html", "Knowledge"],
                  ["graph.html", "Memory"], ["team.html", "Team"], ["settings.html", "Settings"]];
   const status = h("div", { class: "status" });
   api("/api/health").then((s) => {

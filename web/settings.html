@@ -62,6 +62,18 @@
     </section>
   </div>
 
+  <section class="panel card" style="margin-top:18px">
+    <h3>Instagram <span class="chip" id="ig-state"></span></h3>
+    <p class="small muted">An Instagram professional account connected to your Meta app. The studio reads your posts and their insights, studies competitors' public posts (business discovery), publishes approved reels, and passes comments to Rania.</p>
+    <div class="fields">
+      <div class="full"><label>Access token (instagram_basic, instagram_manage_insights, instagram_content_publish, instagram_manage_comments) <span class="set" id="s-IG_ACCESS_TOKEN"></span></label><input id="IG_ACCESS_TOKEN" type="password" autocomplete="off"></div>
+      <div><label>Instagram account ID <span class="set" id="s-IG_USER_ID"></span></label><input id="IG_USER_ID"></div>
+      <div><label>Webhook verify token <span class="set" id="s-IG_VERIFY_TOKEN"></span></label><input id="IG_VERIFY_TOKEN" placeholder="Any word you choose"></div>
+      <div class="full"><label>Public address of this app, for publishing videos (https://…) <span class="set" id="s-PUBLIC_BASE_URL"></span></label><input id="PUBLIC_BASE_URL"></div>
+    </div>
+    <div class="row" style="margin-top:12px"><span class="small muted" id="ig-hook"></span><button class="primary" id="ig-save">Save</button></div>
+  </section>
+
   <section class="panel" style="margin-top:18px">
     <h2>Meta models</h2>
     <p class="small muted" style="margin-top:-4px">These keys go in the .env file directly (see .env.example), never into a web form.</p>
@@ -82,7 +94,9 @@ async function load() {
     opt("sandbox", "Sandbox", "Messages stay on this machine, for demos and testing"));
   for (const [k, v] of Object.entries({ ...info.aisensy.fields, ...info.cloud.fields })) { const s = $(`s-${k}`); if (s) s.textContent = v ? "✓ saved" : ""; if ($(k)) $(k).placeholder = v ? "•••••••• saved, type to replace" : $(k).placeholder; }
   const st = (el, on) => { el.textContent = on ? "connected" : "not connected"; el.className = `chip ${on ? "ok" : ""}`; };
-  st($("aisensy-state"), info.aisensy.connected); st($("cloud-state"), info.cloud.connected);
+  st($("aisensy-state"), info.aisensy.connected); st($("cloud-state"), info.cloud.connected); st($("ig-state"), info.instagram.connected);
+  for (const [k, v] of Object.entries(info.instagram.fields)) { const s = $(`s-${k}`); if (s) s.textContent = v ? "✓ saved" : ""; }
+  $("ig-hook").textContent = `Comments webhook: ${info.instagram.webhook}`;
   $("cloud-hook").textContent = info.cloud.webhook;
   if (info.aisensy.webhook) {
     $("aisensy-hook").replaceChildren(h("div", { class: "row" }, h("div", { class: "url", id: "hookurl" }, "Hidden: it contains a private token"),
@@ -104,6 +118,7 @@ async function save(keys) {
 }
 async function choose(k) { await post("/api/integrations", { values: { WHATSAPP_PROVIDER: k === "sandbox" ? "sandbox" : k } }); load(); }
 
+$("ig-save").onclick = () => save(["IG_ACCESS_TOKEN", "IG_USER_ID", "IG_VERIFY_TOKEN", "PUBLIC_BASE_URL"]);
 $("aisensy-save").onclick = () => save(["AISENSY_PROJECT_ID", "AISENSY_PROJECT_API_PWD", "AISENSY_API_KEY"]);
 $("cloud-save").onclick = () => save(["WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_VERIFY_TOKEN", "WHATSAPP_APP_SECRET"]);
 $("aisensy-test").onclick = async () => {

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import httpx
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -96,14 +96,108 @@ def roster():
     return [asdict(c) for c in ROSTER]
 
 
+@app.post("/api/marketing/run")
 @app.post("/api/marketing/demo")
-async def marketing_demo(ref: str = "MC-1204"):
-    """Walk one listing through the studio, a step a second, so the floor can be watched."""
+async def marketing_run(ref: str = "MC-1204"):
+    """Run a listing through the studio for real; steps that lack a connection say what they need."""
     from diwan.agents import studio
     if f"listing:{ref}" not in g().nodes:
         raise HTTPException(404, "no such listing")
     asyncio.create_task(studio.run(S.office, ref))
     return {"started": ref}
+
+
+@app.get("/api/studio")
+def studio_view(ref: str = "MC-1204"):
+    from diwan.agents import analysis, studio
+    from diwan.providers import instagram, meta
+    blocked = {}
+    for e in S.office.log.list():
+        if e["type"] == "step.blocked":
+            blocked[e["agent"]] = e["content"]["needs"]
+        elif e["type"] in ("agent.pack", "content.made") and e["agent"] in blocked:
+            blocked.pop(e["agent"])
+    made = {k: studio.made(S.office, k, ref if k not in ("lanes", "slot", "playbook") else None)
+            for k in ("ideas", "lanes", "film list", "script", "take check", "playbook", "cut", "remix plan", "post text", "cover", "slot", "versions", "transcript", "published")}
+    reqs = [n for n in g().of("request", status="open") if n.props.get("agent") == "mpub"]
+    return {"ref": ref, "connected": {"instagram": instagram.ready(), "meta": meta.ready(), "public_url": bool(env("PUBLIC_BASE_URL"))},
+            "analysis": analysis.report(S.office), "board": studio.board(S.office), "made": made, "blocked": blocked,
+            "footage": studio.footage(S.office, ref), "approvals": [{"id": n.id, "text": n.props["text"]} for n in reqs],
+            "listings": [{"ref": n.props["ref"], "title": n.props["title"], "permit": n.props.get("permit")} for n in g().of("listing")]}
+
+
+class NamesIn(BaseModel):
+    usernames: str
+    by: str = "layla"
+
+
+@app.post("/api/studio/competitors")
+def set_competitors(body: NamesIn):
+    S.office.log.append("setting.changed", actor=body.by, content={"person": "studio", "key": "competitors", "value": body.usernames})
+    return {"ok": True}
+
+
+@app.post("/api/studio/competitors/suggest")
+def suggest_competitors():
+    from diwan.agents import analysis
+    try:
+        return analysis.suggest(S.office)
+    except Exception as e:  # the search failed: say so
+        return {"ok": False, "needs": f"Search failed: {str(e)[:160]}"}
+
+
+@app.post("/api/studio/footage")
+async def upload_footage(ref: str = Form(...), file: UploadFile = File(...), by: str = Form("omar")):
+    from diwan.agents import studio
+    from diwan.providers import meta
+    meta.MEDIA.mkdir(exist_ok=True)
+    n = 1 + sum(1 for e in S.office.log.list() if e["type"] == "footage.added")
+    path = meta.MEDIA / f"footage-{ref}-{n}{Path(file.filename or 'clip.mp4').suffix or '.mp4'}"
+    with path.open("wb") as f:
+        while chunk := await file.read(1 << 20):
+            f.write(chunk)
+    S.office.log.append("footage.added", actor=by, content={"id": f"F{n}", "ref": ref, "path": str(path), "served": f"/media/{path.name}"})
+    asyncio.create_task(studio.after_footage(S.office, ref))
+    return {"id": f"F{n}"}
+
+
+class DecideIn(BaseModel):
+    decision: str  # approve | reject
+    by: str = "layla"
+
+
+@app.post("/api/requests/{rid}/decide")
+def decide(rid: str, body: DecideIn):
+    """A person answers an agent's request. Approving a publish request publishes, or says what is still missing."""
+    from diwan.agents import studio
+    n = g().nodes.get(rid)
+    if not n or n.type != "request":
+        raise HTTPException(404, "no such request")
+    S.office.log.append("decision.made", actor=body.by, content={"card": rid, "answer": body.decision})
+    if body.decision == "approve" and n.props.get("kind") == "publish":
+        ref = next((x.props["ref"] for x in g().of("listing") if x.props["ref"] in n.props["text"]), None)
+        return studio.publish(S.office, ref, by=body.by) if ref else {"ok": False, "needs": ["a listing reference"]}
+    return {"ok": True}
+
+
+@app.get("/api/instagram/webhook")
+def ig_verify(request: Request):
+    p = dict(request.query_params)
+    if p.get("hub.mode") == "subscribe" and env("IG_VERIFY_TOKEN") and p.get("hub.verify_token") == env("IG_VERIFY_TOKEN"):
+        return PlainTextResponse(p.get("hub.challenge", ""))
+    raise HTTPException(403, "verify token does not match")
+
+
+@app.post("/api/instagram/webhook")
+async def ig_receive(request: Request):
+    from diwan.providers import instagram
+    body = await request.body()
+    if not whatsapp.signed(body, request.headers.get("x-hub-signature-256")):
+        raise HTTPException(401, "bad signature")
+    for c in instagram.parse_comments(await request.json()):
+        if c["username"] and c["text"]:
+            reception.message(S.office, f"ig:{c['username']}", c["text"], name_=f"@{c['username']}", comment_id=c["comment_id"])
+    return {"ok": True}
 
 
 @app.get("/api/agents/{aid}")
@@ -572,6 +666,9 @@ def integrations(request: Request):
                     "webhook": f"{base}/api/aisensy/webhook?token=…" if is_set("AISENSY_WEBHOOK_TOKEN") else None},
         "cloud": {"connected": whatsapp.available(), "fields": {k: is_set(k) for k in ("WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_VERIFY_TOKEN", "WHATSAPP_APP_SECRET")},
                   "webhook": f"{base}/api/whatsapp/webhook"},
+        "instagram": {"connected": all(is_set(k) for k in ("IG_ACCESS_TOKEN", "IG_USER_ID")),
+                      "fields": {k: is_set(k) for k in ("IG_ACCESS_TOKEN", "IG_USER_ID", "IG_VERIFY_TOKEN", "PUBLIC_BASE_URL")},
+                      "webhook": f"{base}/api/instagram/webhook"},
         "meta": {p.id: p.available() for p in PROVIDERS.values()} | {"voice": voice.available()},
     }
 
@@ -661,3 +758,5 @@ def root():
 
 if WEB.exists():
     app.mount("/web", StaticFiles(directory=WEB), name="web")
+(Path(__file__).resolve().parents[1] / "media").mkdir(exist_ok=True)
+app.mount("/media", StaticFiles(directory=Path(__file__).resolve().parents[1] / "media"), name="media")

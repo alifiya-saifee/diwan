@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Studio</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+  .top select { width: auto; }
+  .grid2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
+  @media (max-width: 1100px) { .grid2 { grid-template-columns: 1fr; } }
+  .kpi td, .kpi th { font-size: 12.5px; white-space: nowrap; }
+  .kpi tr.ours td { color: var(--gold-2); }
+  .finding { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .bars { display: flex; gap: 6px; align-items: center; margin-top: 6px; font-size: 11px; color: var(--muted); }
+  .bars i { height: 6px; border-radius: 3px; display: inline-block; }
+  .room { margin-bottom: 14px; }
+  .room h3 { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
+  .stepline { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .stepline .nm { width: 140px; flex: 0 0 140px; font-weight: 600; }
+  .stepline .tx { flex: 1; color: #c9cfdb; }
+  .dotc { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: 0 0 8px; }
+  .made pre { white-space: pre-wrap; font: 13px var(--font); margin: 6px 0 0; color: #dcd8cf; }
+  .made img, .made video { max-width: 100%; border-radius: 10px; margin-top: 8px; border: 1px solid var(--line); }
+  .covers { display: flex; gap: 10px; }
+  .covers img { width: 48%; }
+  .pin { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>The <em>studio</em></h1>
+  <p class="sub">Who we compete with, what works for them and why, and one listing going through research, planning, scripting, editing and publishing. Every number is counted from real posts; a step that lacks a connection says what it needs.</p>
+  <div class="top" id="top"></div>
+  <div class="grid2">
+    <div>
+      <section class="panel"><h2>Competitors</h2>
+        <div class="row"><input id="names" placeholder="@brokerage.one, @brokerage.two"><button id="save">Save</button><button id="suggest">Suggest</button></div>
+        <div id="sugg" class="small muted" style="margin-top:8px"></div>
+        <div style="overflow:auto;margin-top:12px"><table class="kpi" id="kpi"></table></div>
+        <div id="notes" class="small muted" style="margin-top:8px"></div>
+      </section>
+      <section class="panel" style="margin-top:18px"><h2>Why their best posts win</h2><div id="why"></div></section>
+      <section class="panel" style="margin-top:18px"><h2>Their best posts</h2><div id="tops"></div></section>
+    </div>
+    <div>
+      <section class="panel"><h2>The line, step by step</h2><div id="steps"></div></section>
+      <section class="panel made" style="margin-top:18px"><h2>What it made</h2><div id="made"></div></section>
+      <section class="panel" style="margin-top:18px"><h2>Footage</h2>
+        <p class="small muted">After filming, upload the take here. The studio checks it against the script, puts captions on it and makes covers.</p>
+        <div class="row"><input type="file" id="file" accept="video/*"><button class="primary" id="up">Upload</button></div><div id="upres" class="small" style="margin-top:6px"></div>
+      </section>
+    </div>
+  </div>
+</main>
+<script type="module">
+import { h, api, post, header, follow, toast, NAMES } from "./app.js";
+header("studio.html");
+const $ = (id) => document.getElementById(id);
+let ref = new URLSearchParams(location.search).get("ref") || "MC-1204", data;
+const ROOMS = [["Research", ["mrival", "mtrend", "mtrans", "research"]], ["Planning", ["midea", "mlane", "mfilm"]], ["Scripting", ["mscript", "mcheck", "mplay"]],
+  ["Editing", ["mcap", "mremix", "mwriter"]], ["Publishing", ["mthumb", "mpermit", "msched", "mcross", "mpub"]]];
+const NAME = { mrival: "Competitor watch", mtrend: "Trend scout", mtrans: "Transcript reader", research: "Researcher", midea: "Idea generator", mlane: "Lane balancer",
+  mfilm: "Film list", mscript: "Script writer", mcheck: "Video check", mplay: "Playbook writer", mcap: "Captions", mremix: "Remix", mwriter: "Content writer",
+  mthumb: "Thumbnail", mpermit: "Permit checker", msched: "Scheduler", mcross: "Cross-publisher", mpub: "Publisher" };
+let last = {};
+
+async function load() {
+  data = await api(`/api/studio?ref=${ref}`);
+  const evs = await api("/api/events");
+  last = {};
+  for (const e of evs) if (e.type === "agent.pack" && NAME[e.agent]) last[e.agent] = e.content.pack.verdict;
+  render();
+}
+
+function pill(on, text, href) { return h("a", { class: "pill", href: href || "settings.html" }, h("span", { class: `dot ${on ? "on" : ""}` }), text); }
+function render() {
+  const c = data.connected;
+  $("top").replaceChildren(h("select", { onchange: (e) => { ref = e.target.value; load(); } }, data.listings.map((l) => h("option", { value: l.ref, selected: l.ref === ref }, `${l.ref} · ${l.title}${l.permit ? "" : " (no permit)"}`))),
+    h("button", { class: "primary", onclick: async () => { await post(`/api/marketing/run?ref=${ref}`); toast("Running: watch it on the Marketing floor or here"); } }, "Run this listing"),
+    h("a", { class: "btn", href: "office3d.html?enter=mkt" }, "Watch on the floor"),
+    pill(c.instagram, c.instagram ? "Instagram connected" : "Connect Instagram"), pill(c.meta, c.meta ? "Meta models on" : "Meta key missing"),
+    pill(c.public_url, c.public_url ? "Public video address set" : "No public address (publishing)"));
+  const a = data.analysis;
+  if (!$("names").value) $("names").value = a.names.map((n) => "@" + n).join(", ");
+  const K = (k) => k ?? "—";
+  const head = h("tr", {}, ...["Account", "Followers", "Posts/wk", "Avg likes", "Avg comments", "Eng. rate", "Formats", "Best day", "Best hour", "Outliers"].map((x) => h("th", {}, x)));
+  const row = (name, k, cls) => h("tr", { class: cls || "" }, h("td", {}, name), h("td", {}, K(k.followers?.toLocaleString())), h("td", {}, K(k.per_week)), h("td", {}, K(k.avg_likes)),
+    h("td", {}, K(k.avg_comments)), h("td", {}, k.engagement_rate != null ? `${k.engagement_rate}%` : k.engagement_rate_by_reach != null ? `${k.engagement_rate_by_reach}% of reach` : "—"),
+    h("td", {}, k.formats ? Object.entries(k.formats).map(([f, n]) => `${n} ${f.toLowerCase()}`).join(", ") : "—"), h("td", {}, K(k.best_day)),
+    h("td", {}, k.best_hour != null ? `${k.best_hour}:00` : "—"), h("td", {}, K(k.outliers)));
+  $("kpi").replaceChildren(head, ...(a.competitors.length ? a.competitors.map((r) => row("@" + r.account, r.kpis)) : [h("tr", {}, h("td", { colspan: 10, class: "muted" },
+    c.instagram ? "Save competitor accounts and run a listing to fetch their posts." : "Connect Instagram in Settings, add competitors, then run a listing."))]),
+    ...(a.ours.posts ? [row("Us", a.ours.kpis, "ours")] : []));
+  $("notes").replaceChildren(...a.notes.map((n) => h("div", {}, "· " + n)));
+  $("why").replaceChildren(...(a.why.length ? a.why.map((w) => h("div", { class: "finding" }, w.finding,
+    h("div", { class: "bars" }, h("i", { style: `width:${w.outliers}px;background:var(--gold)` }), `outliers ${w.outliers}%`, h("i", { style: `width:${w.others}px;background:var(--faint)` }), `others ${w.others}%`),
+    h("div", { class: "small" }, ...w.examples.map((u, i) => h("a", { href: u, target: "_blank", style: "margin-right:10px" }, `example ${i + 1}`)))))
+    : [h("p", { class: "small muted" }, "Needs at least two outliers among competitors with 5 or more posts. Every finding will be a measured difference, with the posts behind it.")]));
+  $("tops").replaceChildren(...(a.competitors.length ? a.competitors.flatMap((r) => r.top.map((p) => h("div", { class: "pin" },
+    h("b", {}, `@${r.account} · ${p.x != null ? p.x + "x" : ""} `), `${p.likes} likes, ${p.comments} comments · ${(p.type || "").toLowerCase()} · `, h("a", { href: p.permalink, target: "_blank" }, "open"),
+    h("div", { class: "muted" }, p.hook || "(no caption)")))) : [h("p", { class: "small muted" }, "Nothing fetched yet.")]));
+  $("steps").replaceChildren(...ROOMS.map(([room, ids]) => h("div", { class: "room" }, h("h3", {}, room), ...ids.map((id) => {
+    const b = data.blocked[id], t = last[id];
+    return h("div", { class: "stepline" }, h("span", { class: "dotc", style: `background:${b ? "var(--warn)" : t ? "var(--green)" : "var(--faint)"}` }),
+      h("span", { class: "nm" }, NAME[id]), h("span", { class: "tx" }, b ? `Waiting: ${b}` : t || "Not run yet"));
+  }))), ...data.approvals.map((r) => h("div", { class: "item", style: "margin-top:10px" }, h("div", {}, h("b", {}, "Needs your approval: "), r.text),
+    h("div", { class: "row", style: "margin-top:8px" }, h("span", {}), h("button", { onclick: () => decide(r.id, "reject") }, "Reject"), h("button", { class: "primary", onclick: () => decide(r.id, "approve") }, "Approve & publish")))));
+  const m = data.made, out = [];
+  if (m.ideas) out.push(h("div", {}, h("b", {}, "Idea"), h("pre", {}, `${m.ideas.pick.title}\n(${m.ideas.via})`)));
+  if (m["film list"]) out.push(h("div", {}, h("b", {}, `Film list for ${NAMES[m["film list"].who] || m["film list"].who}, ${m["film list"].when}`), h("pre", {}, m["film list"].shots.map((s, i) => `${i + 1}. ${s}`).join("\n"))));
+  if (m.script) out.push(h("div", {}, h("b", {}, `Script (${m.script.via})`), h("pre", {}, [m.script.hook_en, m.script.hook_ar, "", ...m.script.lines_en].join("\n"))));
+  if (m["post text"]) out.push(h("div", {}, h("b", {}, "Post text"), h("pre", {}, m["post text"].text)));
+  if (m.slot) out.push(h("div", {}, h("b", {}, "Slot"), h("pre", {}, `${new Date(m.slot.at).toLocaleString("en-GB", { weekday: "long", hour: "2-digit", minute: "2-digit" })}: ${m.slot.why}`)));
+  if (m.cover) out.push(h("div", {}, h("b", {}, "Covers"), h("div", { class: "covers" }, ...["frame", "generated"].filter((k) => m.cover[k]).map((k) => h("img", { src: m.cover[k], title: k === "frame" ? "A frame of the footage" : "Muse Image" })))));
+  if (m.cut) out.push(h("div", {}, h("b", {}, `Cut with captions (${m.cut.lines} lines)`), h("video", { src: m.cut.served, controls: true })));
+  if (m.transcript) out.push(h("div", {}, h("b", {}, `Outlier transcript · @${m.transcript.account}`), h("pre", {}, m.transcript.text)));
+  if (m.published) out.push(h("div", {}, h("b", {}, "Published"), h("pre", {}, `Instagram id ${m.published.instagram_id}`)));
+  $("made").replaceChildren(...(out.length ? out : [h("p", { class: "small muted" }, "Run a listing to see what each step makes.")]));
+}
+async function decide(id, decision) {
+  const r = await post(`/api/requests/${id}/decide`, { decision, by: "layla" });
+  toast(r.ok ? (r.id ? `Published: ${r.id}` : "Done") : `Not published yet: ${(r.needs || [r.error]).join("; ")}`);
+  load();
+}
+$("save").onclick = async () => { await post("/api/studio/competitors", { usernames: $("names").value }); toast("Competitors saved"); load(); };
+$("suggest").onclick = async () => {
+  $("sugg").textContent = "Searching…";
+  const r = await post("/api/studio/competitors/suggest");
+  $("sugg").replaceChildren(...(r.ok ? [h("span", {}, "Suggested (check before saving): "), ...r.suggestions.map((s) => h("a", { href: "#", style: "margin-right:8px",
+    onclick: (e) => { e.preventDefault(); $("names").value = [$("names").value, "@" + s].filter(Boolean).join(", "); } }, "@" + s))] : [h("span", {}, r.needs)]));
+};
+$("up").onclick = async () => {
+  const f = $("file").files[0]; if (!f) return toast("Pick a video file");
+  const fd = new FormData(); fd.append("ref", ref); fd.append("file", f);
+  $("upres").textContent = "Uploading…";
+  const r = await fetch("/api/studio/footage", { method: "POST", body: fd });
+  $("upres").textContent = r.ok ? "Uploaded. The studio is checking and captioning it." : "Upload failed";
+};
+load();
+follow((evs) => { if (evs.some((e) => ["agent.pack", "content.made", "step.blocked", "post.seen", "decision.made"].includes(e.type))) { clearTimeout(load.t); load.t = setTimeout(load, 400); } });
+</script>
+</body>
+</html>

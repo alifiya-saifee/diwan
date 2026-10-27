@@ -61,7 +61,7 @@ def _lead(office: Office, phone: str, who: str | None) -> str:
         same = [d for d in g.deals() if d.props.get("customer", "").lower() == who.strip().lower() and not d.deal.startswith("lead-")]
         if len(same) == 1:
             return same[0].deal
-    deal = f"lead-{re.sub(r'\D', '', phone)[-6:]}"
+    deal = f"lead-{re.sub(r'[^a-z0-9]', '', phone.lower())[-8:]}"
     office.open_deal(deal, property="WhatsApp enquiry", customer=who or f"+{phone}", broker="omar", by=RANIA)
     return deal
 
@@ -73,6 +73,18 @@ def _send(office: Office, phone: str, deal: str, text: str, refs: list[str], by:
     from diwan.providers import aisensy
     via, status, err, mid = "sandbox", "sent", None, None
     choice = env("WHATSAPP_PROVIDER") or ("aisensy" if aisensy.available() else "cloud" if whatsapp.available() else "")
+    if phone.startswith("ig:"):
+        from diwan.providers import instagram
+        g = office.graph()
+        cid = next((m.get("comment_id") for m in reversed(g.nodes[f"chat:{phone}"].props["messages"]) if m["type"] == "received" and m.get("comment_id")), None)
+        via = "instagram" if instagram.ready() and cid else "sandbox"
+        try:
+            mid = instagram.reply_comment(cid, text) if via == "instagram" else None
+        except Exception as e:
+            status, err = "failed", str(e)[:300]
+        return office.log.append("chat.sent", actor=by, agent=RANIA if by == RANIA else None, deal=deal, caused_by=cause,
+                                 content={"chat": phone, "text": text, "refs": refs, "via": via, "status": status, "error": err,
+                                          "provider_id": mid, "channel": "instagram"})
     try:
         if choice == "aisensy" and aisensy.available():
             via = "aisensy"
@@ -250,10 +262,14 @@ def _amounts_ok(reply: str, sources: dict[str, str]) -> bool:
     return all(a in known for a in scribe.amounts(reply))
 
 
-def message(office: Office, phone: str, text: str, *, name_: str | None = None, now: datetime | None = None, tape_root=None) -> dict:
+def message(office: Office, phone: str, text: str, *, name_: str | None = None, now: datetime | None = None, tape_root=None,
+            comment_id: str | None = None) -> dict:
+    """A customer message. `phone` is the chat id: a WhatsApp number, or "ig:<username>" for an Instagram comment."""
     now = now or datetime.now(slots.DUBAI)
     deal = _lead(office, phone, name_)
-    got = office.log.append("chat.received", actor=f"customer:{phone}", deal=deal, content={"chat": phone, "name": name_, "text": text})
+    got = office.log.append("chat.received", actor=f"customer:{phone}", deal=deal,
+                            content={"chat": phone, "name": name_, "text": text, "comment_id": comment_id,
+                                     "channel": "instagram" if phone.startswith("ig:") else "whatsapp"})
     heard = scribe.hear(office, deal, office.graph().nodes[f"deal:{deal}"].props["customer"], text, got["id"], tape_root=tape_root)
     g = office.graph()
     chat = g.nodes[f"chat:{phone}"]

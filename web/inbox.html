@@ -275,6 +275,7 @@ $("phoneclose").onclick = () => $("phone").hidden = true;
 const psend = async () => {
   const t = $("ptext").value.trim(); if (!t) return;
   current = $("pnum").value.trim(); $("ptext").value = "";
+  stage = null; view = "all"; $("q").value = "";  // show the conversation you just sent from, whatever was filtered
   try { await post("/api/chats/incoming", { phone: current, name: $("pname").value.trim() || null, text: t }); } catch (e) { toast(e.message); }
   load();
 };

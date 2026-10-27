@@ -260,7 +260,8 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
             else:
                 ch.props["messages"].append({"event": e["id"], "at": e["at"], "type": t.split(".")[1], "by": e["actor"],
                                              "text": c["text"], "refs": c.get("refs", []), "via": c.get("via"),
-                                             "status": c.get("status"), "error": c.get("error"), "template": c.get("template")})
+                                             "status": c.get("status"), "error": c.get("error"), "template": c.get("template"),
+                                             "comment_id": c.get("comment_id"), "channel": c.get("channel")})
                 ch.props["last_at"] = e["at"]
         elif t == "stage.changed" and f"deal:{deal}" in g.nodes:
             g.nodes[f"deal:{deal}"].props["stage"] = c["stage"]

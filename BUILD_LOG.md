@@ -118,3 +118,20 @@ Everything in this repository was written during the Meta Global AI Developer Ha
   and the reel comment comes back to Rania in the Inbox room. Steps that need the Meta key (web research, other
   people's transcripts, covers) are sample work and marked so on every screen; the permit check, lanes, schedule
   rule, copy with the permit number, and Rania's reply are real.
+
+## 28 Oct 2026 (night): the studio, for real
+
+- Every marketing step now does real work or stops with a `step.blocked` saying exactly what it needs. The sample
+  walkthrough is gone.
+- Instagram Graph API: our posts and insights; competitors' public posts through business discovery; reel publishing
+  after the owner approves (needs a public video address); comments by webhook to Rania, replies posted back.
+- Analysis: KPIs per account (followers, posts a week, average likes and comments, engagement rate, formats, best day
+  and hour, outliers at 2x the account's median) and "why their best posts win" as measured differences between
+  outliers and other posts, each with example links. What Instagram does not give (others' views, reach, stories) is
+  stated, not guessed. Competitor suggestions come from Muse Spark web search and wait for a person to confirm.
+- Meta models: Muse Spark web search for trends (cited sources only), Voice Transcribe for outlier videos and our own
+  takes, Muse Image for covers, Muse Spark for ideas and scripts (invented card ids and amounts not on the listing are
+  rejected; a template is used instead and labelled).
+- Footage upload: the take is checked against the script, captions are drawn and overlaid with ffmpeg, a cover frame
+  is cut. Permit check counts only money as prices (unit and permit numbers are not prices).
+- Studio page: competitors, KPI table, findings, top posts, the line step by step, what it made, footage, approval.
