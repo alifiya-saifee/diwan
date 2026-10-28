@@ -93,6 +93,9 @@ export function describe(e) {
     case "post.seen": return `saw @${c.account}'s post: ${c.likes} likes, ${c.comments} comments${c.score ? ` (${c.score}x their usual)` : ""}`;
     case "board.pinned": return `pinned: ${c.title}`;
     case "content.made": return `made the ${c.kind} for ${c.ref}`;
+    case "qa.passed": return `checked the ${c.kind} for ${c.ref}: passed${c.attempt > 1 ? ` on try ${c.attempt}` : ""}`;
+    case "qa.failed": return `sent the ${c.kind} back to ${(c.returned_to || []).join(", ")}: ${(c.fails || [])[0]?.rule || "failed a check"}`;
+    case "qa.escalated": return `the ${c.kind} for ${c.ref} failed review 3 times: raised to a person`;
     case "footage.added": return `footage uploaded for ${c.ref}`;
     case "lesson.added": return `new lesson: ${c.rule}`;
     case "lesson.removed": return `lesson ${c.id} removed`;

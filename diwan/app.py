@@ -259,6 +259,14 @@ async def ig_receive(request: Request):
     return {"ok": True}
 
 
+@app.get("/api/brain/{dept}")
+def dept_brain(dept: str):
+    from diwan import brain
+    if dept not in brain.DEPTS:
+        raise HTTPException(404, "no such department")
+    return brain.brain(S.office, dept)
+
+
 @app.get("/api/costs")
 def model_costs():
     from diwan import costs

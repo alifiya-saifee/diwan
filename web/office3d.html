@@ -381,6 +381,7 @@ function buildFloor(dept) {
   core.position.set(3.6, 1.6, 3.6); group.add(core);
   const coreIn = new THREE.Mesh(new THREE.IcosahedronGeometry(.6, 2), emissive(d.color, 1.4)); coreIn.position.copy(core.position); group.add(coreIn);
   const coreTag = label(d.core || "Memory", { size: 36, accent: hex(d.color) }); coreTag.position.set(3.6, 3.3, 3.6); group.add(coreTag);
+  core.userData.core = coreIn.userData.core = coreTag.userData.core = dept;  // click it to see what it remembers
   if (dept === "mkt") {
     kids("mlib").forEach((a, i) => { const st = station(group, a.id, 6.4 + i * 1.6, 6.8, d.color, { scale: .7, rotY: -Math.PI / 4 }); stations[a.id] = st; });
   }
@@ -412,13 +413,13 @@ function buildFloor(dept) {
     { id: "lead", name: AG[leadId].name, line: AG[leadId].job, pos: new THREE.Vector3(8, 8, 9), look: new THREE.Vector3(0, 1.5, 0) },
     { id: "core", name: d.core || "Memory", line: dept === "mkt" ? "The brand brain: playbook, positioning, voice, and every lesson the team has taught." : `${d.core}: what this department remembers.`,
       pos: new THREE.Vector3(10, 7, 11), look: new THREE.Vector3(3.6, 1.5, 3.6) },
-    ...teams.map((t) => ({ id: t.id, name: t.name, line: t.line, team: t, pos: new THREE.Vector3(t.x + 8.5, 10, t.z + 10.5), look: new THREE.Vector3(t.x, 1.5, t.z) })),
+    ...teams.map((t) => ({ id: t.id, name: t.name, line: t.line, team: t, pos: new THREE.Vector3(t.x + 11 * S, 12 * S, t.z + 13 * S), look: new THREE.Vector3(t.x, 1.5, t.z) })),
     { id: "walls", name: "Walls", line: dept === "mkt" ? "Our listings on the left. What competitors post on the right." : "What the office knows on the left. Open work on the right.",
       pos: new THREE.Vector3(6 * S, 7 * S, 6 * S), look: new THREE.Vector3(-8 * S, 4 * S, -8 * S) }];
   return { dept, group, stations, teams, stops, walls, core, coreIn };
 }
 
-// the walls of a department floor: real records, or marked samples where we have none yet
+// the walls of a department floor: real records only; where there are none, the wall says what is missing
 async function drawWalls(f) {
   const gr = await api("/api/graph");
   const nodes = gr.nodes;
@@ -439,9 +440,19 @@ async function drawWalls(f) {
     const ls = nodes.filter((n) => n.type === "listing");
     head(L, `D I W A N   R E A L T Y   ·   ${ls.length} LISTINGS   ·   ${ls.filter((n) => n.props.permit).length} PERMITTED`, col);
     ls.slice(0, 6).forEach((n, i) => card(L, i, n.props.title, `AED ${n.props.price_aed.toLocaleString()} · ${n.props.permit ? "permit " + n.props.permit : "NO PERMIT: not advertised"}`, n.props.permit ? col : "#f27d7d"));
-    head(R, "S T U D Y I N G   5   C O M P E T I T O R S   ·   S A M P L E", "#f0b35e");
-    [["Marina sunset tour", "4.2× their usual · sample", 1], ["What 2M buys in JVC", "1.8× · sample"], ["Off-plan explained", "1.1× · sample"],
-     ["Downtown at night", "2.6× · sample"], ["Villa walkthrough", "0.9× · sample"], ["Area guide: Bay", "1.4× · sample"]].forEach(([t, s, flag], i) => card(R, i, t, s, "#f0b35e", flag));
+    const st = await api("/api/studio?ref=MC-1204");
+    const tops = st.analysis.competitors.flatMap((r) => r.top.map((p) => ({ ...p, account: r.account }))).sort((a, b) => (b.x || 0) - (a.x || 0));
+    const opts = st.approvals.find((r) => r.kind === "use_script")?.options || [];
+    if (tops.length) {
+      head(R, `S T U D Y I N G   ${st.analysis.competitors.length}   C O M P E T I T O R S   ·   T H E I R   B E S T   P O S T S`, "#f0b35e");
+      tops.slice(0, 6).forEach((p, i) => card(R, i, p.hook || "(no caption)", `@${p.account} · ${p.x != null ? p.x + "x their usual · " : ""}${p.likes} likes`, "#f0b35e", p.x >= 2));
+    } else if (opts.length) {
+      head(R, "N O   C O M P E T I T O R   P O S T S   Y E T   ·   S C R I P T S   W A I T I N G   F O R   T H E   M A R K E T I N G   M A N A G E R", "#f0b35e");
+      opts.forEach((o, i) => card(R, i, o.hook_en, `${o.id} · ${o.angle}${o.revises ? " · revised" : ""}`, "#f0b35e"));
+    } else {
+      head(R, "N O   C O M P E T I T O R   P O S T S   Y E T   ·   C O N N E C T   I N S T A G R A M   O R   I M P O R T   I N   T H E   S T U D I O", "#f0b35e");
+      st.strategy.angles.forEach((a, i) => card(R, i, a.angle, `${a.status} · ${a.why}`, "#8b92a3"));
+    }
   } else {
     const facts = nodes.filter((n) => n.type === "fact" && n.status === "live");
     const replaced = nodes.filter((n) => n.type === "fact" && n.status === "superseded");
@@ -541,6 +552,11 @@ function play(e, quiet = false) {
   const cause = e.caused_by && byId.get(e.caused_by), from = cause && agentOf(cause);
   const tb = who && botFor(who), fb = from && botFor(from);
   if (tb && !quiet) {
+    if (fb && fb !== tb && floor) walkTo(fb, tb);
+    if (floor && ["qa.passed", "qa.failed"].includes(e.type)) {  // the room lead walks to the desk whose work it is checking
+      const owner = QA_OWNER[e.content.kind] || (e.content.returned_to || [])[0], ob = owner && botFor(owner);
+      if (ob && ob !== tb) walkTo(tb, ob);
+    }
     if (fb && fb !== tb) send(fb, tb, e.type === "check.raised" ? 0xf27d7d : e.type === "review.returned" ? 0xb591f3 : fb.color, floor && TICKET[teamOfAgent(who)]);
     if (!["agent.started", "chat.received", "fact.superseded"].includes(e.type)) {
       const txt = (where === "hq" && tb.id !== who ? `${AG[who].name}: ` : "") + (lastWork[who]?.text || describe(e));
@@ -554,6 +570,7 @@ function play(e, quiet = false) {
     caption([h("span", { class: "t" }, new Date(e.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })),
       h("b", {}, AG[who]?.name || NAMES[e.actor] || "Office"), h("span", {}, (e.type === "agent.pack" ? e.content.pack.verdict : describe(e)) + (e.content?.usage?.sample ? " (sample)" : ""))]);
     clearTimeout(play.t); play.t = setTimeout(refreshState, 400);
+    if (floor && ["content.made", "post.seen", "approval.requested", "decision.made", "board.pinned"].includes(e.type)) { clearTimeout(play.w); play.w = setTimeout(() => floor && drawWalls(floor), 800); }
   }
 }
 function teamOfAgent(a) { return floor?.teams.find((t) => t.agents.includes(a))?.id; }
@@ -562,6 +579,17 @@ function say(st, text, secs = 5) {
   if (st.bubble) st.g.remove(st.bubble);
   st.bubble = label(text.length > 110 ? text.slice(0, 107) + "…" : text, { size: 30, color: "#141821", bg: "rgba(246,242,233,.97)", maxW: 680, pill: false, dark: true, accent: hex(st.color) });
   st.bubble.position.set(0, st.canvas ? 4.6 : 3.9, 0); st.bubble.scale.multiplyScalar(1 / st.g.scale.x); st.g.add(st.bubble); st.bubbleT = secs; st.glow = 1;
+}
+const QA_OWNER = { ideas: "midea", "film list": "mfilm", script: "mscript", "post text": "mwriter", cut: "mcap", slot: "msched", versions: "mcross" };
+window.__diwan = { walks: 0 };  // read by the browser test
+function walkTo(a, b) {
+  // on a floor, the agent who finished the work carries it to the next one, then goes back to its desk
+  if (a.walk || a.away || !a.home || !b.home) return;
+  const dir = a.home.clone().sub(b.home).setY(0);
+  if (dir.length() < .1 || dir.length() > 30) return;
+  a.away = true; window.__diwan.walks++;
+  a.walk = { from: a.g.position.clone(), to: b.home.clone().add(dir.normalize().multiplyScalar(1.4)).setY(b.home.y), t: 0 };
+  setTimeout(() => { a.walk = { from: a.g.position.clone(), to: a.home.clone(), t: 0 }; setTimeout(() => { a.away = false; }, 1500); }, 2300);
 }
 const orbs = [];
 function send(a, b, color, ticket) {
@@ -607,6 +635,7 @@ async function enter(dept) {
   drawWalls(floor); refreshTags(); renderBar(); renderTitle(); renderSide(); renderDemo();
 }
 function leave() {
+  brainOpen = null;
   if (floor) { scene.remove(floor.group); floor = null; }
   hq.visible = true; where = "hq"; zone = "front";
   camera.position.set(0, 60, 70); flyTo(HQ_HOME.pos, HQ_HOME.look, 1.4);
@@ -621,6 +650,7 @@ function goStop(i) {
   const s = floor.stops[stopIdx];
   flyTo(s.pos, s.look, 1.2);
   caption([h("b", {}, s.name), h("span", {}, s.line)]);
+  if (s.id === "core") openBrain(floor.dept); else if (brainOpen) { brainOpen = null; renderSide(); }
   renderBar();
 }
 function tour() {
@@ -673,9 +703,25 @@ function setOrb() {
   o.className = "orb" + (where !== "hq" ? " zone" : "") + (speaking ? " speaking" : "") + (listening ? " listening" : "");
   o.style.setProperty("--zc", hex(DEPTS[where]?.color || 0xe8c77a));
 }
+let brainOpen = null;
+function openBrain(dept) { brainOpen = dept; zone = where; renderSide(); }
+async function renderBrain() {
+  const b = await api(`/api/brain/${brainOpen}`);
+  if (!brainOpen) return;
+  $("ztitle").textContent = b.title; $("zsub").textContent = b.about;
+  $("zbody").replaceChildren(
+    h("div", { class: "row", style: "margin-bottom:12px" }, h("button", { onclick: () => { brainOpen = null; renderSide(); } }, `← ${DEPTS[where].name} team`),
+      h("a", { class: "btn", href: "graph.html" }, "Open the memory graph")),
+    ...b.sections.map((sec) => h("div", { class: "team brain" },
+      h("div", { class: "tn" }, sec.title, h("span", { class: "state idle" }, String(sec.items.length))),
+      h("div", { class: "st" }, sec.note),
+      ...(sec.items.length ? sec.items.map((it) => h("div", { class: "ag" }, it.ref ? h("b", {}, it.ref + " ") : "", it.text, it.sub ? h("span", { class: "w" }, it.sub) : ""))
+        : [h("div", { class: "ag muted" }, sec.empty)]))));
+}
 function renderSide() {
   setOrb();
   $("back").hidden = where === "hq";
+  if (brainOpen && where !== "hq") return renderBrain();
   if (where === "hq" && zone !== "front" && DEPTS[zone]) return renderDeptCard(zone);
   if (where === "hq" || tab === "talk" && zone === "nova") { $("ztitle").textContent = "Nova"; $("zsub").textContent = "Chief of staff · the front desk"; return renderNova(); }
   const d = DEPTS[where];
@@ -801,7 +847,7 @@ function hit(ev) {
   const r = renderer.domElement.getBoundingClientRect();
   mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(mouse, camera);
-  return ray.intersectObjects((where === "hq" ? hq : floor.group).children, true).find((i) => i.object.userData.dept || i.object.userData.agent);
+  return ray.intersectObjects((where === "hq" ? hq : floor.group).children, true).find((i) => i.object.userData.dept || i.object.userData.agent || i.object.userData.core);
 }
 renderer.domElement.addEventListener("click", (ev) => {
   const x = hit(ev); if (!x) return;
@@ -810,6 +856,8 @@ renderer.domElement.addEventListener("click", (ev) => {
     if (k === "meet") return enter("meet");
     zone = k === "front" ? "front" : k; renderSide();
     const d = DEPTS[k]; flyTo(new THREE.Vector3(d.x + 3, 13, d.z + 15), new THREE.Vector3(d.x, 1, d.z));
+  } else if (x.object.userData.core) {
+    openBrain(x.object.userData.core);
   } else if (x.object.userData.agent) {
     const t = floor.stops.findIndex((s) => s.team?.agents.includes(x.object.userData.agent));
     goStop(t >= 0 ? t : 1);
@@ -871,7 +919,8 @@ renderTitle(); renderBar(); renderDemo(); renderSide(); refreshState();
 follow((evs) => evs.forEach((e) => play(e)), past.at(-1)?.id || 0);
 const q = new URLSearchParams(location.search).get("enter");
 if (q && DEPTS[q]) setTimeout(() => enter(q), 1200);
-window.__diwan = { enter, leave, goStop, play, hqBots, get floor() { return floor; } };
+Object.assign(window.__diwan, { enter, leave, goStop, play, hqBots });
+Object.defineProperty(window.__diwan, "floor", { get: () => floor });
 </script>
 </body>
 </html>
