@@ -313,6 +313,7 @@ def ideas(office: Office, ref: str, cards: list[dict], cause: int | None, feedba
                                {f"listing:{ref}": office.graph().record(f"listing:{ref}"), **{x["id"]: f"{x['title']} ({x['why']})" for x in cards}})
     out, by = [], "rules"
     if runner.has_model(c, system, user, schema=IDEAS_SCHEMA):
+        office.log.append("agent.started", actor="midea", agent="midea", caused_by=cause, content={"task": f"Writing ideas for {ref} with the model"})
         try:
             out = runner.call(c, system, user, schema=IDEAS_SCHEMA).data["ideas"]
             out = [i | {"cards": [x for x in i["cards"] if x in ids]} for i in out]  # a card the model invented is dropped
@@ -389,6 +390,7 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
                                {f"listing:{ref}": rec, **({"hook": hook_card["hook"]} if hook_card else {})})
     data, by = None, "template"
     if runner.has_model(c, system, user, schema=SCRIPT_SCHEMA):
+        office.log.append("agent.started", actor="mscript", agent="mscript", caused_by=cause, content={"task": f"Writing the script for {ref} with the model"})
         try:
             data = runner.call(c, system, user, schema=SCRIPT_SCHEMA).data
             by = "muse-spark"
@@ -759,7 +761,8 @@ async def after_script(office: Office, ref: str, pause: float = .6) -> None:
     start = _pack(office, "mkt", f"Script {sc['id']} for {ref} approved: filming can start.", kind="assign")
     film = await step(reviewed, office, "film list", ref, lambda fb: film_list(office, ref, idea, start, fb), start); await asyncio.sleep(pause)
     if film:
-        office.add_task(None, "mfilm", f"Film {ref}: " + "; ".join(film["shots"]) + f" ({film['when']})", needs_person=film["who"], by="mfilm", caused_by=start)
+        office.add_task(None, "mshoot", f"Film {ref}: " + "; ".join(film["shots"]) + f" ({film['when']})", needs_person=film["who"], by="mshoot", caused_by=start)
+        _pack(office, "mshoot", f"Film list sent to {name(film['who'])} {film['when']}. Or make an AI presenter video from the studio.", cause=start)
     await step(reviewed, office, "post text", ref, lambda fb: post_text(office, ref, sc, start, fb), start)
 
 
@@ -792,6 +795,46 @@ async def after_footage(office: Office, ref: str, pause: float = .6) -> None:
         await step(reviewed, office, "versions", ref, lambda fb: cross(office, ref, text, start), start)
         slot = made(office, "slot", "next") or await step(schedule, office, start)
         await step(ask_to_publish, office, ref, cut, text, slot, start)
+
+
+async def ai_video(office: Office, ref: str, *, by: str, consent: bool, poll: float = 10, wait: float = 900) -> dict:
+    """An AI presenter reads the approved script (HeyGen). Started by a person, who confirms the avatar's consent."""
+    from diwan.providers import heygen
+    sc = approved_script(office, ref)
+    if not sc:
+        return {"ok": False, "needs": "an approved script (the Marketing manager approves it first)"}
+    if not consent:
+        return {"ok": False, "needs": "confirmation that the person in the avatar agreed to it"}
+    if not heygen.ready():
+        _blocked(office, "mvideo", "AI presenter video needs HeyGen in Settings: " + ", ".join(heygen.missing()))
+        return {"ok": False, "needs": ", ".join(heygen.missing())}
+    words = " ".join([sc["hook_en"], *sc["lines_en"]])
+    start = _pack(office, "mvideo", f"Recording an AI presenter for {ref} ({len(words.split())} words); {name(by)} confirmed the avatar's consent.")
+    try:
+        vid = await asyncio.to_thread(heygen.generate, words, title=f"{ref} reel")
+        t0, url = 0.0, None
+        while t0 < wait:
+            st, url = await asyncio.to_thread(heygen.status, vid)
+            if st == "completed" and url:
+                break
+            if st == "failed":
+                raise heygen.HeyGenError("HeyGen could not make the video")
+            await asyncio.sleep(poll)
+            t0 += poll
+        if not url:
+            raise heygen.HeyGenError("HeyGen is still rendering; try again later")
+        meta.MEDIA.mkdir(parents=True, exist_ok=True)
+        n = 1 + sum(1 for e in office.log.list() if e["type"] == "footage.added")
+        path = meta.MEDIA / f"footage-{ref}-{n}-ai.mp4"
+        path.write_bytes(await asyncio.to_thread(heygen.download, url))
+    except Exception as e:
+        _blocked(office, "mvideo", f"AI video failed: {str(e)[:160]}", cause=start)
+        return {"ok": False, "error": str(e)[:200]}
+    office.log.append("footage.added", actor="mvideo", agent="mvideo", caused_by=start,
+                      content={"id": f"F{n}", "ref": ref, "path": str(path), "served": f"/media/{path.name}", "source": "AI presenter (HeyGen)", "consent_by": by})
+    _pack(office, "mvideo", f"AI presenter video ready for {ref}: handed to editing.", cause=start)
+    await after_footage(office, ref)
+    return {"ok": True, "footage": f"F{n}"}
 
 
 def run_now(office: Office, ref: str) -> None:

@@ -178,3 +178,61 @@ def test_captions_come_from_the_script_when_nothing_can_transcribe(office, tmp_p
     asyncio.run(studio.after_footage(office, "MC-1204", pause=0))
     cut = studio.made(office, "cut", "MC-1204")
     assert Path(cut["path"]).exists() and cut["from"].startswith("the script")
+
+
+def test_ai_presenter_needs_an_approved_script_and_consent_then_feeds_editing(office, monkeypatch, tmp_path):
+    from diwan.providers import heygen
+    clip = tmp_path / "ai.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x568:rate=10", "-f", "lavfi", "-i", "sine=frequency=440",
+                    "-t", "2", "-shortest", "-pix_fmt", "yuv420p", str(clip)], check=True)
+    seen = []
+
+    def handle(req):
+        seen.append(req)
+        if req.url.path == "/v2/video/generate":
+            return httpx.Response(200, json={"data": {"video_id": "v1"}})
+        if req.url.path == "/v1/video_status.get":
+            return httpx.Response(200, json={"data": {"status": "completed", "video_url": "https://files.example/v1.mp4"}})
+        return httpx.Response(200, content=clip.read_bytes())
+    monkeypatch.setattr(heygen, "TRANSPORT", httpx.MockTransport(handle))
+    for k, v in (("HEYGEN_API_KEY", "h"), ("HEYGEN_AVATAR_ID", "av"), ("HEYGEN_VOICE_ID", "vo")):
+        monkeypatch.setenv(k, v)
+    studio.run_now(office, "MC-1204")
+    assert asyncio.run(studio.ai_video(office, "MC-1204", by="maya", consent=True))["ok"] is False  # script not approved yet
+    studio.approve_script_now(office, "MC-1204")
+    assert "agreed" in asyncio.run(studio.ai_video(office, "MC-1204", by="maya", consent=False))["needs"]
+    r = asyncio.run(studio.ai_video(office, "MC-1204", by="maya", consent=True, poll=0))
+    assert r["ok"] and json.loads(seen[0].content)["video_inputs"][0]["character"]["avatar_id"] == "av"
+    f = studio.footage(office, "MC-1204")
+    assert f["source"] == "AI presenter (HeyGen)" and f["consent_by"] == "maya"
+    assert Path(studio.made(office, "cut", "MC-1204")["path"]).exists()
+
+
+def test_supervisor_accepts_the_building_name_and_returns_work_that_misses_the_listing(office):
+    from diwan.agents import qa
+    ok = {"id": "C1", "ideas": [{"title": "x", "angle": "", "cards": []}], "pick": {"title": "Marina Crest 2-bed at AED 2.6M - quick tour hook", "cards": []}}
+    bad = {"id": "C2", "ideas": [{"title": "x", "angle": "", "cards": ["B-made-up"]}], "pick": {"title": "Five tips for first-time buyers", "cards": []}}
+    assert qa.review(office, "ideas", "MC-1204", ok, cause=None, attempt=1) == []
+    fails = qa.review(office, "ideas", "MC-1204", bad, cause=None, attempt=1)
+    assert {f["check"] for f in fails} == {"idea-names-listing", "idea-real-cards"} and {f["owner"] for f in fails} == {"midea"}
+    ev = office.log.list()[-1]
+    assert ev["type"] == "qa.failed" and ev["agent"] == "plan" and ev["content"]["returned_to"] == ["midea"]
+
+
+def test_a_script_that_keeps_failing_goes_to_a_person_with_the_reasons(office):
+    from diwan.agents import qa
+    bad = {"id": "C9", "hook_en": "This apartment is a guaranteed investment that will double in value very soon for sure", "hook_ar": "", "lines_en": ["one"]}
+    item = studio.reviewed(office, "script", "MC-1204", lambda fb: bad, None)
+    assert item is None
+    fails = [e for e in office.log.list() if e["type"] == "qa.failed"]
+    assert len(fails) == qa.MAX_TRIES and fails[0]["agent"] == "mcopy"
+    assert {f["check"] for f in fails[0]["content"]["fails"]} >= {"script-hook-short", "script-length", "script-no-promises", "script-arabic"}
+    card = [e for e in office.log.list() if e["type"] == "decision.needed"][-1]
+    assert card["content"]["who"] == "layla" and "failed review 3 times" in card["content"]["question"]
+
+
+def test_a_permit_hold_goes_back_to_the_agent_who_caused_it(office):
+    from diwan.agents import qa
+    sc = {"hook_en": "What does AED 2,300,000 buy?", "lines_en": ["a"] * 5}
+    assert qa.blame(office, "MC-1204", "amounts not on the listing: 2,300,000", sc, {"text": ""}) == "mscript"
+    assert qa.blame(office, "MC-1204", "permit number missing", sc, {"text": ""}) == "mwriter"

@@ -74,6 +74,17 @@
     <div class="row" style="margin-top:12px"><span class="small muted" id="ig-hook"></span><button class="primary" id="ig-save">Save</button></div>
   </section>
 
+  <section class="panel card" style="margin-top:18px">
+    <h3>HeyGen · AI presenter <span class="chip" id="hg-state"></span></h3>
+    <p class="small muted">Lets the studio turn an approved script into a presenter video. Use only an avatar and voice of a person who agreed to it; every video is started by a person who confirms that.</p>
+    <div class="fields">
+      <div class="full"><label>API key <span class="set" id="s-HEYGEN_API_KEY"></span></label><input id="HEYGEN_API_KEY" type="password" autocomplete="off"></div>
+      <div><label>Avatar ID <span class="set" id="s-HEYGEN_AVATAR_ID"></span></label><input id="HEYGEN_AVATAR_ID"></div>
+      <div><label>Voice ID <span class="set" id="s-HEYGEN_VOICE_ID"></span></label><input id="HEYGEN_VOICE_ID"></div>
+    </div>
+    <div class="row" style="margin-top:12px"><span></span><button class="primary" id="hg-save">Save</button></div>
+  </section>
+
   <section class="panel" style="margin-top:18px">
     <h2>Meta models</h2>
     <p class="small muted" style="margin-top:-4px">These keys go in the .env file directly (see .env.example), never into a web form.</p>
@@ -96,6 +107,8 @@ async function load() {
   const st = (el, on) => { el.textContent = on ? "connected" : "not connected"; el.className = `chip ${on ? "ok" : ""}`; };
   st($("aisensy-state"), info.aisensy.connected); st($("cloud-state"), info.cloud.connected); st($("ig-state"), info.instagram.connected);
   for (const [k, v] of Object.entries(info.instagram.fields)) { const s = $(`s-${k}`); if (s) s.textContent = v ? "✓ saved" : ""; }
+  st($("hg-state"), info.heygen.connected);
+  for (const [k, v] of Object.entries(info.heygen.fields)) { const s = $(`s-${k}`); if (s) s.textContent = v ? "✓ saved" : ""; }
   $("ig-hook").textContent = `Comments webhook: ${info.instagram.webhook}`;
   $("cloud-hook").textContent = info.cloud.webhook;
   if (info.aisensy.webhook) {
@@ -118,6 +131,7 @@ async function save(keys) {
 }
 async function choose(k) { await post("/api/integrations", { values: { WHATSAPP_PROVIDER: k === "sandbox" ? "sandbox" : k } }); load(); }
 
+$("hg-save").onclick = () => save(["HEYGEN_API_KEY", "HEYGEN_AVATAR_ID", "HEYGEN_VOICE_ID"]);
 $("ig-save").onclick = () => save(["IG_ACCESS_TOKEN", "IG_USER_ID", "IG_VERIFY_TOKEN", "PUBLIC_BASE_URL"]);
 $("aisensy-save").onclick = () => save(["AISENSY_PROJECT_ID", "AISENSY_PROJECT_API_PWD", "AISENSY_API_KEY"]);
 $("cloud-save").onclick = () => save(["WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_VERIFY_TOKEN", "WHATSAPP_APP_SECRET"]);

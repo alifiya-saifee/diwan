@@ -62,18 +62,23 @@ import { h, api, post, header, follow, toast, NAMES } from "./app.js";
 header("studio.html");
 const $ = (id) => document.getElementById(id);
 let ref = new URLSearchParams(location.search).get("ref") || "MC-1204", data;
-const ROOMS = [["Research", ["mrival", "mtrend", "mtrans", "research"]], ["Planning", ["midea", "mlane", "mfilm"]], ["Scripting", ["mscript", "mcheck", "mplay"]],
+const ROOMS = [["Research", ["mrival", "mtrend", "mtrans", "research"]], ["Planning", ["midea", "mlane", "mfilm"]], ["Scripting", ["mscript", "mcheck", "mplay", "mcopy"]],
+  ["Production", ["mshoot", "mvideo"]],
   ["Editing", ["mcap", "mremix", "mwriter"]], ["Publishing", ["mthumb", "mpermit", "msched", "mcross", "mpub"]]];
 const NAME = { mrival: "Competitor watch", mtrend: "Trend scout", mtrans: "Transcript reader", research: "Researcher", midea: "Idea generator", mlane: "Lane balancer",
   mfilm: "Film list", mscript: "Script writer", mcheck: "Video check", mplay: "Playbook writer", mcap: "Captions", mremix: "Remix", mwriter: "Content writer",
-  mthumb: "Thumbnail", mpermit: "Permit checker", msched: "Scheduler", mcross: "Cross-publisher", mpub: "Publisher" };
+  mthumb: "Thumbnail", mpermit: "Permit checker", msched: "Scheduler", mcross: "Cross-publisher", mpub: "Publisher",
+  mcopy: "Copywriter (review)", mshoot: "Shoot coordinator", mvideo: "AI video producer" };
 let last = {};
 
 async function load() {
   data = await api(`/api/studio?ref=${ref}`);
   const evs = await api("/api/events");
   last = {};
-  for (const e of evs) if (e.type === "agent.pack" && NAME[e.agent]) last[e.agent] = e.content.pack.verdict;
+  for (const e of evs) {
+    if (e.type === "agent.pack" && NAME[e.agent]) last[e.agent] = e.content.pack.verdict;
+    if (e.type === "agent.started" && NAME[e.agent]) last[e.agent] = `Working: ${e.content.task}… (a free model endpoint can take a couple of minutes)`;
+  }
   render();
 }
 
@@ -108,8 +113,17 @@ function render() {
     const b = data.blocked[id], t = last[id];
     return h("div", { class: "stepline" }, h("span", { class: "dotc", style: `background:${b ? "var(--warn)" : t ? "var(--green)" : "var(--faint)"}` }),
       h("span", { class: "nm" }, NAME[id]), h("span", { class: "tx" }, b ? `Waiting: ${b}` : t || "Not run yet"));
-  }))), ...data.approvals.map((r) => h("div", { class: "item", style: "margin-top:10px" }, h("div", {}, h("b", {}, "Needs your approval: "), r.text),
-    h("div", { class: "row", style: "margin-top:8px" }, h("span", {}), h("button", { onclick: () => decide(r.id, "reject") }, "Reject"), h("button", { class: "primary", onclick: () => decide(r.id, "approve") }, "Approve & publish")))));
+  }))), ...data.approvals.map((r) => h("div", { class: "item", style: "margin-top:10px" },
+    h("div", {}, h("b", {}, r.kind === "use_script" ? "Script waiting for the Marketing manager: " : "Waiting for the owner: "), r.text),
+    r.kind === "use_script" ? h("p", { class: "small muted" }, "Approving lets filming, AI video, editing and covers start. Nothing costly runs before this.") : null,
+    h("div", { class: "row", style: "margin-top:8px" }, h("span", {}),
+      h("button", { onclick: () => { const note = prompt("What should the Script writer change?") || ""; decide(r.id, "reject", note, r.kind === "use_script" ? "maya" : "layla"); } }, r.kind === "use_script" ? "Send back" : "Reject"),
+      h("button", { class: "primary", onclick: () => decide(r.id, "approve", "", r.kind === "use_script" ? "maya" : "layla") }, r.kind === "use_script" ? "Approve script" : "Approve & publish")))),
+    data.script_approved ? h("div", { class: "item", style: "margin-top:10px" }, h("b", {}, "Production: "), "the broker has the film list. Or have an AI presenter read the script.",
+      h("label", { style: "display:flex;gap:8px;align-items:center;margin-top:8px" }, h("input", { type: "checkbox", id: "consent", style: "width:auto" }),
+        "The person in the avatar agreed to their face and voice being used."),
+      h("div", { class: "row", style: "margin-top:8px" }, h("span", { class: "small muted" }, data.heygen ? "Uses HeyGen credits." : "Connect HeyGen in Settings first."),
+        h("button", { class: "primary", disabled: !data.heygen, onclick: aiVideo }, "Make AI video"))) : null);
   const m = data.made, out = [];
   if (m.ideas) out.push(h("div", {}, h("b", {}, "Idea"), h("pre", {}, `${m.ideas.pick.title}\n(${m.ideas.via})`)));
   if (m["film list"]) out.push(h("div", {}, h("b", {}, `Film list for ${NAMES[m["film list"].who] || m["film list"].who}, ${m["film list"].when}`), h("pre", {}, m["film list"].shots.map((s, i) => `${i + 1}. ${s}`).join("\n"))));
@@ -122,10 +136,14 @@ function render() {
   if (m.published) out.push(h("div", {}, h("b", {}, "Published"), h("pre", {}, `Instagram id ${m.published.instagram_id}`)));
   $("made").replaceChildren(...(out.length ? out : [h("p", { class: "small muted" }, "Run a listing to see what each step makes.")]));
 }
-async function decide(id, decision) {
-  const r = await post(`/api/requests/${id}/decide`, { decision, by: "layla" });
-  toast(r.ok ? (r.id ? `Published: ${r.id}` : "Done") : `Not published yet: ${(r.needs || [r.error]).join("; ")}`);
+async function decide(id, decision, note = "", by = "layla") {
+  const r = await post(`/api/requests/${id}/decide`, { decision, by, note });
+  toast(r.next ? `Done: ${r.next}` : r.ok ? (r.id ? `Published: ${r.id}` : "Done") : `Not published yet: ${(r.needs || [r.error]).join("; ")}`);
   load();
+}
+async function aiVideo() {
+  if (!document.getElementById("consent").checked) return toast("Confirm the avatar's consent first");
+  try { await post("/api/studio/ai-video", { ref, by: "maya", consent: true }); toast("Recording: the AI presenter video is being made"); } catch (e) { toast(e.message); }
 }
 $("save").onclick = async () => { await post("/api/studio/competitors", { usernames: $("names").value }); toast("Competitors saved"); load(); };
 $("suggest").onclick = async () => {

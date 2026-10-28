@@ -119,10 +119,12 @@ def studio_view(ref: str = "MC-1204"):
             blocked.pop(e["agent"])
     made = {k: studio.made(S.office, k, ref if k not in ("lanes", "slot", "playbook") else None)
             for k in ("ideas", "lanes", "film list", "script", "take check", "playbook", "cut", "remix plan", "post text", "cover", "slot", "versions", "transcript", "published")}
-    reqs = [n for n in g().of("request", status="open") if n.props.get("agent") == "mpub"]
+    reqs = [n for n in g().of("request", status="open") if n.props.get("agent") in ("mpub", "mcopy")]
+    from diwan.providers import heygen
     return {"ref": ref, "connected": {"instagram": instagram.ready(), "meta": meta.ready(), "public_url": bool(env("PUBLIC_BASE_URL"))},
             "analysis": analysis.report(S.office), "board": studio.board(S.office), "made": made, "blocked": blocked,
-            "footage": studio.footage(S.office, ref), "approvals": [{"id": n.id, "text": n.props["text"]} for n in reqs],
+            "footage": studio.footage(S.office, ref), "approvals": [{"id": n.id, "text": n.props["text"], "kind": n.props.get("kind")} for n in reqs],
+            "script_approved": bool(studio.approved_script(S.office, ref)), "heygen": heygen.ready(),
             "listings": [{"ref": n.props["ref"], "title": n.props["title"], "permit": n.props.get("permit")} for n in g().of("listing")]}
 
 
@@ -163,6 +165,24 @@ async def import_posts(file: UploadFile = File(...), by: str = Form("layla")):
     if not rows or missing:
         raise HTTPException(422, f"Use the template: missing columns {', '.join(missing) or 'all'}")
     return studio.import_posts(S.office, rows, by=by)
+
+
+class AIVideoIn(BaseModel):
+    ref: str
+    by: str = "maya"
+    consent: bool = False
+
+
+@app.post("/api/studio/ai-video")
+async def make_ai_video(body: AIVideoIn):
+    """A person starts an AI presenter video from the approved script, confirming the avatar's consent."""
+    from diwan.agents import studio
+    if not studio.approved_script(S.office, body.ref):
+        raise HTTPException(409, "No approved script for this listing yet")
+    if not body.consent:
+        raise HTTPException(422, "Confirm that the person in the avatar agreed to it")
+    asyncio.create_task(studio.ai_video(S.office, body.ref, by=body.by, consent=True))
+    return {"started": body.ref}
 
 
 @app.post("/api/studio/footage")
@@ -698,6 +718,8 @@ def integrations(request: Request):
         "instagram": {"connected": all(is_set(k) for k in ("IG_ACCESS_TOKEN", "IG_USER_ID")),
                       "fields": {k: is_set(k) for k in ("IG_ACCESS_TOKEN", "IG_USER_ID", "IG_VERIFY_TOKEN", "PUBLIC_BASE_URL")},
                       "webhook": f"{base}/api/instagram/webhook"},
+        "heygen": {"connected": all(is_set(k) for k in ("HEYGEN_API_KEY", "HEYGEN_AVATAR_ID", "HEYGEN_VOICE_ID")),
+                   "fields": {k: is_set(k) for k in ("HEYGEN_API_KEY", "HEYGEN_AVATAR_ID", "HEYGEN_VOICE_ID")}},
         "meta": {p.id: p.available() for p in PROVIDERS.values()} | {"voice": voice.available()},
     }
 

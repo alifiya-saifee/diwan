@@ -142,10 +142,10 @@ function deptOf(agent) {
   for (let a = AG[agent]; a; a = AG[a.parent]) if (DEPT_OF[a.id]) return DEPT_OF[a.id];
   return "front";
 }
-const TEAM_LINE = { research: "Research finds what is working.", plan: "Planning picks what to film and when.", mcopy: "Scripting writes it in our voice.",
+const TEAM_LINE = { mprod: "Production turns the approved script into footage: the broker films it, or an AI presenter reads it.", research: "Research finds what is working.", plan: "Planning picks what to film and when.", mcopy: "Scripting writes it in our voice.",
   mart: "Editing cuts the takes into reels.", mpub: "Publishing checks the permit and posts it everywhere.", inbox: "The inbox answers every comment and enquiry." };
-const TEAM_NAME = { research: "Research", plan: "Planning", mcopy: "Scripting", mart: "Editing", mpub: "Publishing", inbox: "Inbox" };
-const TICKET = { research: "Research", plan: "Plan", mcopy: "Script", mart: "Edit", mpub: "Post", inbox: "Reply" };
+const TEAM_NAME = { research: "Research", plan: "Planning", mcopy: "Scripting", mprod: "Production", mart: "Editing", mpub: "Publishing", inbox: "Inbox" };
+const TICKET = { mprod: "Shoot", research: "Research", plan: "Plan", mcopy: "Script", mart: "Edit", mpub: "Post", inbox: "Reply" };
 
 // the teams on a department's own floor
 function teamsOf(dept) {
@@ -276,7 +276,7 @@ function station(group, id, x, z, color, { scale = 1, screen = true, rotY = 0 } 
 
 // what each kind of agent's screen looks like: its latest work plus a picture of the kind of work it does
 const KIND = { mtrend: "tiles", mrival: "tiles", research: "tiles", mtrans: "wave", mcap: "wave", mcheck: "wave", midea: "list", mlane: "bars", mfilm: "list", plan: "list",
-  mscript: "text", mcopy: "text", mplay: "list", mremix: "timeline", mwriter: "text", mart: "timeline", mthumb: "tiles", msched: "calendar", mcross: "tiles",
+  mscript: "text", mcopy: "text", mplay: "list", mremix: "timeline", mwriter: "text", mart: "timeline", mvideo: "wave", mshoot: "list", mprod: "list", mthumb: "tiles", msched: "calendar", mcross: "tiles",
   mpermit: "check", mpub: "calendar", rania: "chat", scribe: "wave", deck: "tiles", pay: "bars", analyst: "bars", archivist: "list", screen: "check", sof: "bars",
   report: "text", formf: "list", factcheck: "check", devil: "text" };
 const lastWork = {};
@@ -392,7 +392,20 @@ function buildFloor(dept) {
     const p = pad(group, x, z, w, 4.8, d.color, t.name);
     t.agents.forEach((aid, j) => { stations[aid] = station(group, aid, x + (j - (n - 1) / 2) * 2.5, z - .3, d.color, { scale: .92 }); });
     const tag = label(t.name, { size: 34, accent: hex(d.color) }); tag.position.set(x, 5.4, z - 1.6); group.add(tag);
-    return { ...t, x, z, pad: p, tag };
+    let rec = null;
+    if (t.id === "mprod") {  // the recording set: a camera on a tripod, a ring light, and a REC light that glows while a video is made
+      const set = new THREE.Group(); set.position.set(x + w / 2 + 1.6, .18, z + .6);
+      for (const a of [0, 2.1, 4.2]) { const leg = new THREE.Mesh(new THREE.CylinderGeometry(.03, .03, 1.5, 8), new THREE.MeshStandardMaterial({ color: 0x2a3142 }));
+        leg.position.set(Math.cos(a) * .3, .7, Math.sin(a) * .3); leg.rotation.z = Math.cos(a) * .2; leg.rotation.x = -Math.sin(a) * .2; set.add(leg); }
+      const cam = new THREE.Mesh(new THREE.BoxGeometry(.6, .4, .8), new THREE.MeshStandardMaterial({ color: 0x0d1016, metalness: .6, roughness: .3 })); cam.position.y = 1.6; set.add(cam);
+      const lens = new THREE.Mesh(new THREE.CylinderGeometry(.16, .2, .35, 20), new THREE.MeshStandardMaterial({ color: 0x1a1f2a, metalness: .8 })); lens.rotation.x = Math.PI / 2; lens.position.set(0, 1.6, -.55); set.add(lens);
+      rec = new THREE.Mesh(new THREE.SphereGeometry(.07, 12, 10), emissive(0xff3b3b, .3)); rec.position.set(.22, 1.85, .2); set.add(rec);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(.55, .06, 10, 40), emissive(0xfff2dd, 1.1)); ring.position.set(-1.4, 1.9, -.4); set.add(ring);
+      const stand = new THREE.Mesh(new THREE.CylinderGeometry(.03, .03, 1.9, 8), new THREE.MeshStandardMaterial({ color: 0x2a3142 })); stand.position.set(-1.4, .95, -.4); set.add(stand);
+      set.rotation.y = -Math.PI / 2; group.add(set);
+      const recTag = label("REC · AI presenter", { size: 28, color: "#ffb3b3", bg: "rgba(60,10,10,.75)" }); recTag.position.set(x + w / 2 + 1.6, 3.1, z + .6); group.add(recTag);
+    }
+    return { ...t, x, z, pad: p, tag, rec };
   });
   FLOOR_HOME = { pos: new THREE.Vector3(27 * S, 26 * S, 27 * S), look: new THREE.Vector3(-1, 0, -1) };
   const stops = [{ id: "room", name: "Room", line: d.about, pos: FLOOR_HOME.pos, look: FLOOR_HOME.look },
@@ -828,6 +841,7 @@ let screenTick = 0;
     room.top.material.emissiveIntensity = room.flash * (.28 + Math.sin(t * 12) * .1);
     room.rimMat.emissiveIntensity = .9 + room.flash * 2.5; room.flash = Math.max(0, room.flash - dt * .25);
   }
+  if (floor) for (const t of floor.teams) if (t.rec) t.rec.material.emissiveIntensity = t.agents.some((a) => agentState(a) === "working") ? (Math.sin(clock.elapsedTime * 6) > 0 ? 3 : .2) : .3;
   if (floor) { floor.core.rotation.y += dt * .4; floor.core.rotation.x += dt * .15; floor.coreIn.scale.setScalar(1 + Math.sin(t * 2) * .08); }
   if ((screenTick += dt) > .25 && floor) { screenTick = 0; for (const st of Object.values(floor.stations)) if (st.canvas && agentState(st.id) === "working" && ["wave"].includes(KIND[st.id])) drawScreen(st); }
   for (let i = orbs.length - 1; i >= 0; i--) {

@@ -35,6 +35,16 @@ def _listing(o: Office, ref: str) -> dict:
     return o.graph().nodes[f"listing:{ref}"].props
 
 
+GENERIC = {"unit", "apartment", "villa", "townhouse", "flat", "dubai", "with", "the", "and"}
+
+
+def _names_listing(o: Office, ref: str, text: str) -> bool:
+    """The text is about this listing: it names the ref, or a distinctive word of its title (the building, the villa)."""
+    t = text.lower()
+    words = {w for w in __import__("re").findall(r"[a-z]{4,}", _listing(o, ref)["title"].lower())} - GENERIC
+    return ref.lower() in t or any(w in t for w in words)
+
+
 def _money(text: str) -> set[int]:
     from diwan.agents.studio import _amounts
     return _amounts(text)
@@ -46,8 +56,8 @@ def _script_text(item: dict) -> str:
 
 CHECKS: dict[str, list[Check]] = {
     "ideas": [
-        Check("idea-names-listing", "The chosen idea is about this listing (names it or its ref).", "midea",
-              lambda o, ref, it: ((_listing(o, ref)["title"].lower() in it["pick"]["title"].lower() or ref.lower() in it["pick"]["title"].lower()), it["pick"]["title"][:80]),
+        Check("idea-names-listing", "The chosen idea is about this listing (names its building, title or ref).", "midea",
+              lambda o, ref, it: (_names_listing(o, ref, it["pick"]["title"]), it["pick"]["title"][:80]),
               "Make the idea about the listing by name."),
         Check("idea-real-cards", "Every card an idea builds on is on the research board.", "midea",
               lambda o, ref, it: (lambda board: (all(c in board for i in it["ideas"] for c in i["cards"]), "unknown card"))({b["id"] for b in _board(o)}),
