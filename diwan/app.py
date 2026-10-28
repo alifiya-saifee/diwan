@@ -73,6 +73,15 @@ async def lifespan(_):
 app = FastAPI(title="Diwan", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def fresh_pages(request: Request, call_next):
+    """The app's pages and scripts are never cached, so a browser always shows the current version."""
+    res = await call_next(request)
+    if request.url.path.startswith("/web"):
+        res.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return res
+
+
 def g():
     return S.office.graph()
 

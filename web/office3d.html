@@ -10,13 +10,15 @@
   #stage { position: fixed; inset: 56px 420px 0 0; }
   #stage canvas { display: block; }
   .glass { background: rgba(12, 16, 24, .74); backdrop-filter: blur(14px) saturate(140%); border: 1px solid var(--line); }
-  .title { position: fixed; left: 22px; top: 72px; pointer-events: none; max-width: 520px; }
+  .toast { bottom: 96px; }
+  .title { position: fixed; left: 12px; top: 64px; pointer-events: none; max-width: 620px; padding: 10px 14px 12px; border-radius: 14px;
+           background: linear-gradient(180deg, rgba(11,15,24,.82), rgba(11,15,24,.55)); backdrop-filter: blur(6px); }
   .title .k { font: 600 11px var(--font); letter-spacing: 2.4px; color: var(--gold); text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
   .title .k .live { width: 7px; height: 7px; border-radius: 50%; background: #ff6b6b; animation: live 1.6s infinite; }
   @keyframes live { 0% { box-shadow: 0 0 0 0 rgba(255, 107, 107, .6); } 70% { box-shadow: 0 0 0 8px rgba(255, 107, 107, 0); } 100% { box-shadow: none; } }
   .title h1 { font-size: 34px; margin: 6px 0 2px; }
   .title p { margin: 0; color: var(--muted); font-size: 13px; }
-  .hud { position: fixed; left: 22px; top: 166px; display: flex; border-radius: 12px; overflow: hidden; }
+  .hud { position: fixed; left: 12px; top: 172px; display: flex; border-radius: 12px; overflow: hidden; }
   .stat { padding: 8px 16px; border-right: 1px solid var(--line); }
   .stat:last-child { border-right: 0; }
   .stat b { font: 600 18px var(--font); display: block; line-height: 1.2; }
@@ -189,7 +191,7 @@ if (THREE.EffectComposer && THREE.UnrealBloomPass) {
 }
 const emissive = (color, i = 1.6) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: i, toneMapped: false });
 
-function label(text, { size = 40, color = "#ece8df", bg = "rgba(10,13,19,.8)", accent = null, maxW = 820, pill = true, dark = false, border = null } = {}) {
+function label(text, { size = 40, color = "#ece8df", bg = "rgba(10,13,19,.8)", accent = null, maxW = 820, pill = true, dark = false, border = null, prio = 1 } = {}) {
   const c = document.createElement("canvas"), x = c.getContext("2d");
   const font = `600 ${size}px Inter, system-ui, sans-serif`;
   x.font = font;
@@ -204,7 +206,7 @@ function label(text, { size = 40, color = "#ece8df", bg = "rgba(10,13,19,.8)", a
   x.fillStyle = color; x.textBaseline = "top";
   lines.forEach((l, i) => x.fillText(l, padL, 15 + i * size * 1.32));
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false, toneMapped: false }));
-  s.scale.set(W / 125, H / 125, 1); s.renderOrder = 10;
+  s.scale.set(W / 125, H / 125, 1); s.renderOrder = 10 + prio; s.userData.prio = prio; s.userData.text = String(text).slice(0, 40);
   return s;
 }
 
@@ -269,7 +271,7 @@ function station(group, id, x, z, color, { scale = 1, screen = true, rotY = 0 } 
   const tag = label(a ? a.name : id, { size: screen ? 26 : 32, accent: hex(color) }); tag.position.set(0, screen ? 3.75 : 2.85, screen ? -.85 : -.2); g.add(tag);
   r.body.userData.agent = r.head.userData.agent = id;
   group.add(g);
-  const st = { id, g, bot: r.bot, eyeMat: r.eyeMat, home: g.position.clone(), color, glow: 0, bubble: null, bubbleT: 0, walk: null, canvas, tex };
+  const st = { id, g, bot: r.bot, eyeMat: r.eyeMat, home: g.position.clone(), color, glow: 0, bubble: null, bubbleT: 0, walk: null, canvas, tex, tag };
   if (canvas) drawScreen(st);
   return st;
 }
@@ -380,7 +382,7 @@ function buildFloor(dept) {
   const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.1, 1), new THREE.MeshStandardMaterial({ color: d.color, emissive: d.color, emissiveIntensity: .9, wireframe: true, toneMapped: false }));
   core.position.set(3.6, 1.6, 3.6); group.add(core);
   const coreIn = new THREE.Mesh(new THREE.IcosahedronGeometry(.6, 2), emissive(d.color, 1.4)); coreIn.position.copy(core.position); group.add(coreIn);
-  const coreTag = label(d.core || "Memory", { size: 36, accent: hex(d.color) }); coreTag.position.set(3.6, 3.3, 3.6); group.add(coreTag);
+  const coreTag = label(d.core || "Memory", { size: 36, accent: hex(d.color), prio: 2 }); coreTag.position.set(3.6, 3.3, 3.6); group.add(coreTag);
   core.userData.core = coreIn.userData.core = coreTag.userData.core = dept;  // click it to see what it remembers
   if (dept === "mkt") {
     kids("mlib").forEach((a, i) => { const st = station(group, a.id, 6.4 + i * 1.6, 6.8, d.color, { scale: .7, rotY: -Math.PI / 4 }); stations[a.id] = st; });
@@ -392,7 +394,8 @@ function buildFloor(dept) {
     const n = t.agents.length, w = Math.max(4.6, n * 2.5 + 1.2);
     const p = pad(group, x, z, w, 4.8, d.color, t.name);
     t.agents.forEach((aid, j) => { stations[aid] = station(group, aid, x + (j - (n - 1) / 2) * 2.5, z - .3, d.color, { scale: .92 }); });
-    const tag = label(t.name, { size: 34, accent: hex(d.color) }); tag.position.set(x, 5.4, z - 1.6); group.add(tag);
+    if (n === 1 && AG[t.agents[0]]?.name === t.name) stations[t.agents[0]].g.remove(stations[t.agents[0]].tag);  // one agent named like its team: one label
+    const tag = label(t.name, { size: 34, accent: hex(d.color), prio: 2 }); tag.position.set(x, 5.4, z - 1.6); group.add(tag);
     let rec = null;
     if (t.id === "mprod") {  // the recording set: a camera on a tripod, a ring light, and a REC light that glows while a video is made
       const set = new THREE.Group(); set.position.set(x + w / 2 + 1.6, .18, z + .6);
@@ -521,10 +524,11 @@ function refreshTags() {
     const w = t.agents.map((a) => lastWork[a]).filter(Boolean).sort((a, b) => b.at - a.at)[0];
     const text = st === "waiting" ? `${t.agents.reduce((s, a) => s + (gstate.waiting[a] || 0), 0)} need you` : st === "working" && w ? w.text.slice(0, 34) + (w.text.length > 34 ? "…" : "") : "";
     floor.group.remove(t.tag);
-    t.tag = label(text ? `${t.name} · ${text}` : t.name, { size: 34, accent: st === "waiting" ? "#f0b35e" : st === "working" ? "#5ccfb5" : hex(DEPTS[floor.dept].color),
+    t.tag = label(text ? `${t.name} · ${text}` : t.name, { size: 34, prio: 2, accent: st === "waiting" ? "#f0b35e" : st === "working" ? "#5ccfb5" : hex(DEPTS[floor.dept].color),
       border: st === "waiting" ? "#f0b35e" : null });
     t.tag.position.set(t.x, 5.4, t.z - 1.6); floor.group.add(t.tag);
   }
+  declutter();
 }
 
 // ---------- events drive both views ----------
@@ -577,8 +581,9 @@ function teamOfAgent(a) { return floor?.teams.find((t) => t.agents.includes(a))?
 
 function say(st, text, secs = 5) {
   if (st.bubble) st.g.remove(st.bubble);
-  st.bubble = label(text.length > 110 ? text.slice(0, 107) + "…" : text, { size: 30, color: "#141821", bg: "rgba(246,242,233,.97)", maxW: 680, pill: false, dark: true, accent: hex(st.color) });
+  st.bubble = label(text.length > 110 ? text.slice(0, 107) + "…" : text, { size: 30, prio: 3, color: "#141821", bg: "rgba(246,242,233,.97)", maxW: 680, pill: false, dark: true, accent: hex(st.color) });
   st.bubble.position.set(0, st.canvas ? 4.6 : 3.9, 0); st.bubble.scale.multiplyScalar(1 / st.g.scale.x); st.g.add(st.bubble); st.bubbleT = secs; st.glow = 1;
+  declutter();  // place the new bubble now, not on the next frame
 }
 const QA_OWNER = { ideas: "midea", "film list": "mfilm", script: "mscript", "post text": "mwriter", cut: "mcap", slot: "msched", versions: "mcross" };
 window.__diwan = { walks: 0 };  // read by the browser test
@@ -868,6 +873,45 @@ renderer.domElement.addEventListener("dblclick", (ev) => { const x = hit(ev); if
 // ---------- loop ----------
 function resize() { const w = stage.clientWidth, hh = stage.clientHeight; renderer.setSize(w, hh); composer?.setSize(w, hh); camera.aspect = w / hh; camera.updateProjectionMatrix(); }
 addEventListener("resize", resize); resize();
+// ---------- labels never overlap each other or the panels on top of the scene ----------
+const OVERLAYS = ["title", "hud", "demo", "caption", "bar"];
+function labelRects() {
+  const root = where === "hq" ? hq : floor?.group; if (!root) return [];
+  const cr = renderer.domElement.getBoundingClientRect(), out = [], v = new THREE.Vector3(), sc = new THREE.Vector3();
+  const unit = cr.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+  root.traverse((o) => {
+    if (!o.isSprite || o.userData.prio == null) return;
+    o.getWorldPosition(v); const dist = v.distanceTo(camera.position);
+    if (o.userData.prio >= 2) {  // room names and bubbles stay readable from far away: never smaller than ~16px of text
+      o.userData.base ||= o.scale.clone();
+      o.scale.copy(o.userData.base).multiplyScalar(Math.max(1, dist / 26));
+    }
+    o.getWorldScale(sc);
+    v.project(camera);
+    if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) { out.push({ o, off: true }); return; }
+    const w = sc.x / dist * unit, hh = sc.y / dist * unit, cx = cr.left + (v.x + 1) / 2 * cr.width, cy = cr.top + (1 - v.y) / 2 * cr.height;
+    out.push({ o, prio: o.userData.prio, dist, x0: cx - w / 2, x1: cx + w / 2, y0: cy - hh / 2, y1: cy + hh / 2, tiny: hh < 11 });
+  });
+  return out;
+}
+const hit2 = (a, b, m = 3) => a.x0 < b.x1 + m && b.x0 < a.x1 + m && a.y0 < b.y1 + m && b.y0 < a.y1 + m;
+function overlayRects() {
+  return OVERLAYS.map((id) => document.getElementById(id)).filter((el) => el && getComputedStyle(el).opacity !== "0" && el.offsetParent !== null)
+    .map((el) => { const r = el.getBoundingClientRect(); return { x0: r.left, x1: r.right, y0: r.top, y1: r.bottom }; }).filter((r) => r.x1 > r.x0);
+}
+function declutter() {
+  const placed = overlayRects(), items = labelRects().sort((a, b) => (b.prio || 0) - (a.prio || 0) || a.dist - b.dist);
+  for (const it of items) {
+    if (it.off || (it.tiny && it.prio < 2) || placed.some((p) => hit2(it, p))) { it.o.visible = false; continue; }
+    it.o.visible = true; placed.push(it);
+  }
+}
+window.__diwanOverlaps = () => {  // for the browser test: visible labels that overlap each other or a panel
+  const vis = labelRects().filter((r) => !r.off && r.o.visible), ov = overlayRects(), pairs = [];
+  vis.forEach((a, i) => { if (ov.some((p) => hit2(a, p, 0))) pairs.push(`${a.o.userData.text} / a panel`);
+    for (const b of vis.slice(i + 1)) if (hit2(a, b, 0)) pairs.push(`${a.o.userData.text} / ${b.o.userData.text}`); });
+  return { overlaps: pairs.length, shown: vis.length, pairs };
+};
 const clock = new THREE.Clock();
 let screenTick = 0;
 (function tick() {
@@ -908,6 +952,8 @@ let screenTick = 0;
     if (k >= 1) fly = null;
   }
   controls.update();
+  controls.update(); camera.updateMatrixWorld(); scene.updateMatrixWorld();
+  declutter();  // last, after robots, bubbles and the camera have moved this frame, so no label slips under another or a panel
   composer ? composer.render() : renderer.render(scene, camera);
   requestAnimationFrame(tick);
 })();
