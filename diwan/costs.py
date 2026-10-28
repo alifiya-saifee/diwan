@@ -15,7 +15,8 @@ from datetime import datetime, timezone
 from diwan import config
 
 PRICES = {  # USD per 1M tokens: (input, output). Estimates; set DIWAN_PRICE_<PROVIDER>="in,out" to correct one.
-    "meta": (0.50, 1.50), "baseten": (0.30, 0.90), "fireworks": (0.30, 0.90), "modal": (0.30, 0.90), "nvidia": (0.0, 0.0),
+    "meta": (1.25, 4.25),  # Muse Spark list price as reported Oct 2026; confirm on Meta's Models page
+    "baseten": (0.30, 0.90), "fireworks": (0.30, 0.90), "modal": (0.30, 0.90), "nvidia": (0.0, 0.0),
 }
 
 
@@ -40,12 +41,17 @@ def budget() -> float:
     return float(config.env("DIWAN_BUDGET_USD", "25"))
 
 
-def record(agent: str, usage: dict, *, cached: bool = False) -> None:
+def fee(name: str, default: float) -> float:
+    """A per-use price for Meta's other services (web search, an image, a minute of audio). Estimates; set DIWAN_PRICE_META_<NAME>."""
+    return float(config.env(f"DIWAN_PRICE_META_{name.upper()}", str(default)))
+
+
+def record(agent: str, usage: dict, *, cached: bool = False, extra_usd: float = 0.0, what: str | None = None) -> None:
     src = usage.get("recorded_from") if cached else usage.get("provider")
-    cost = estimate(src or "", usage.get("input_tokens"), usage.get("output_tokens")) if src else 0.0
+    cost = (estimate(src or "", usage.get("input_tokens"), usage.get("output_tokens")) if src else 0.0) + extra_usd
     row = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "agent": agent, "provider": src,
-           "model": usage.get("model"), "input_tokens": usage.get("input_tokens"), "output_tokens": usage.get("output_tokens"),
-           "cached": cached, "cost_usd": 0.0 if cached else cost, "saved_usd": cost if cached else 0.0}
+           "model": usage.get("model"), "input_tokens": usage.get("input_tokens"), "output_tokens": usage.get("output_tokens"), "reasoning_tokens": usage.get("reasoning_tokens"),
+           "cached": cached, "cost_usd": 0.0 if cached else round(cost, 6), "saved_usd": round(cost, 6) if cached else 0.0, "what": what or "chat"}
     try:
         with _file().open("a") as f:
             f.write(json.dumps(row) + "\n")

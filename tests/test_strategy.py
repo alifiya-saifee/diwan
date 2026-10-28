@@ -104,3 +104,24 @@ def test_without_our_history_lead_with_what_wins_in_the_market(office):
     studio.import_posts(office, rows, by="maya")
     picks = strategy.pick(office, 3, NOW)
     assert picks[0]["angle"] == "walkthrough" and picks[0]["slot"] == "market"
+
+
+def test_the_review_catches_what_the_live_model_got_wrong(office):
+    """The first live Studio run (28 Oct) passed review with placeholders, repeated lines and no call to action."""
+    bad = {"id": "C5", "hook_en": "A day in Unit 1204, Marina Crest, Dubai Marina", "hook_ar": "يوم في الوحدة 1204",
+           "lines_en": ["This is Unit 1204, Marina Crest, Dubai Marina.", "A 2 bed apartment.", "Morning here: [detail not in listing]",
+                        "This is Unit 1204, Marina Crest, Dubai Marina.", "Priced at AED 2,600,000."]}
+    rules = {f["check"] for f in qa.review(office, "script", "MC-1204", bad, cause=None, attempt=1)}
+    assert {"script-no-placeholders", "script-no-repeats", "script-call-to-action"} <= rules
+    idea = {"ideas": [], "pick": {"title": "MC-1204 Unit 1204 tour - no cards", "cards": []}}
+    assert "idea-no-notes" in {f["check"] for f in qa.review(office, "ideas", "MC-1204", idea, cause=None, attempt=1)}
+
+
+def test_the_writers_see_the_listing_features(office):
+    assert "features: sea view" in studio._brief(office, "MC-1204").lower()
+
+
+def test_a_word_after_the_price_is_not_a_multiplier():
+    """Found on the live run: "AED 2,600,000 m..." was read as 2.6 trillion and a good script was thrown out."""
+    assert studio._amounts("AED 2,600,000 makes it yours") == {2_600_000}
+    assert studio._amounts("AED 2.6M") == {2_600_000} and studio._amounts("AED 950k") == {950_000}

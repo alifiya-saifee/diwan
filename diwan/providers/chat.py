@@ -63,7 +63,7 @@ class ChatProvider:
     def available(self) -> bool:
         return not offline() and not self.missing()
 
-    def complete_json(self, system: str, user: str, schema: dict, *, reasoning: str | None = "low",
+    def complete_json(self, system: str, user: str, schema: dict, *, reasoning: str | None = None,
                       timeout: float = 90) -> Reply:
         """One structured call: the reply must be JSON matching `schema` ({"name", "schema", "strict"})."""
         if not self.available():
@@ -74,8 +74,8 @@ class ChatProvider:
             body.pop("response_format")
             body["messages"][0]["content"] += ("\n\nReply with one JSON object only, no markdown, no other text, matching this JSON schema:\n"
                                                + json.dumps(schema["schema"]))
-        if reasoning and self.id == "meta":
-            body["reasoning_effort"] = reasoning
+        if self.id == "meta":  # reasoning tokens are billed as output: DIWAN_REASONING=minimal|low|medium|high (Meta's default is high)
+            body["reasoning_effort"] = reasoning or env("DIWAN_REASONING", "low")
         headers = {"Authorization": f"Bearer {self._key()}"} if self._key() else {}
         t0 = time.monotonic()
         try:
@@ -100,7 +100,9 @@ class ChatProvider:
         u = out.get("usage") or {}
         return Reply(parse_json(text), {"provider": self.id, "model": self.model(),
                                         "latency_ms": round((time.monotonic() - t0) * 1000),
-                                        "input_tokens": u.get("prompt_tokens"), "output_tokens": u.get("completion_tokens")})
+                                        "input_tokens": u.get("prompt_tokens"), "output_tokens": u.get("completion_tokens"),
+                                        "reasoning_tokens": (u.get("completion_tokens_details") or {}).get("reasoning_tokens"),
+                                        "cached_input_tokens": (u.get("prompt_tokens_details") or {}).get("cached_tokens")})
 
 
 def parse_json(text: str) -> dict:

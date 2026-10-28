@@ -56,6 +56,9 @@ def _script_text(item: dict) -> str:
 
 CHECKS: dict[str, list[Check]] = {
     "ideas": [
+        Check("idea-no-notes", "The idea title reads as a hook, with no internal notes.", "midea",
+              lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(re.search(r"\bno cards?\b|\bcard ids?\b|\bTBD\b|\[[^\]]*\]", it["pick"]["title"], re.I)),
+              "Write the title as the hook a viewer would see."),
         Check("idea-names-listing", "The chosen idea is about this listing (names its building, title or ref).", "midea",
               lambda o, ref, it: (_names_listing(o, ref, it["pick"]["title"]), it["pick"]["title"][:80]),
               "Make the idea about the listing by name."),
@@ -78,6 +81,16 @@ CHECKS: dict[str, list[Check]] = {
               "Use only the listing's price; remove every other amount."),
         Check("script-no-promises", "No promised returns or guarantees.", "mscript",
               lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(re.search(BANNED, _script_text(it), re.I)), "Remove the promise; describe the property instead."),
+        Check("script-no-placeholders", "No placeholders, brackets or notes to self.", "mscript",
+              lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(re.search(r"\[[^\]]*\]|\bTBD\b|\bnot in (the )?listing\b|\bplaceholder\b", _script_text(it), re.I)),
+              "Remove the placeholder; leave out any fact the listing does not have."),
+        Check("script-no-repeats", "No line says the same thing twice, and no line repeats the hook.", "mscript",
+              lambda o, ref, it: (lambda ls: (len(ls) == len(set(ls)), "a repeated line"))([re.sub(r"[^a-z0-9]", "", l.lower()) for l in [it["hook_en"], *it["lines_en"]]]),
+              "Make every line say something new; the hook is said once, then the lines move on."),
+        Check("script-call-to-action", "The script ends by asking the viewer to get in touch.", "mscript",
+              lambda o, ref, it: (bool(re.search(r"\b(message|dm|call|whatsapp|book|contact|enquire|inquire|link in bio)\b", (it["lines_en"] or [""])[-1], re.I)),
+                                  (it["lines_en"] or [""])[-1][:80]),
+              "End with a line inviting the viewer to message us to book a viewing."),
         Check("script-arabic", "The hook is also written in Arabic.", "mscript",
               lambda o, ref, it: (bool(re.search(r"[؀-ۿ]", it.get("hook_ar", ""))), "no Arabic hook"), "Add the hook in Arabic."),
         Check("script-lessons", "Every lesson taught to the Script writer is kept.", "mscript",

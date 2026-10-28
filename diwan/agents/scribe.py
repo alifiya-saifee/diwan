@@ -75,7 +75,8 @@ def _words(tokens: list[str]) -> float:
 def amounts(text: str) -> list[float]:
     out = []
     for m in re.finditer(r"(\d[\d,]*(?:\.\d+)?)\s*(k|m|mn|million|thousand)?\b", text, re.I):
-        v = float(m.group(1).replace(",", "")) * SCALES.get((m.group(2) or "").lower(), 1)
+        base = float(m.group(1).replace(",", ""))
+        v = base * SCALES.get((m.group(2) or "").lower(), 1) if base < 10_000 else base  # "2.6 million", never "2,600,000 million"
         out.append(v)
     toks = re.findall(r"[a-z]+", text.lower().replace("-", " "))
     run: list[str] = []

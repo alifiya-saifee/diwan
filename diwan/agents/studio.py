@@ -25,6 +25,7 @@ the missing connection). Nothing is invented to keep the floor busy.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import statistics
@@ -100,6 +101,13 @@ def _made(office: Office, agent: str, kind: str, ref: str, data: dict, cause: in
     c = {"id": f"C{n}", "kind": kind, "ref": ref, "by": agent, **data}
     office.log.append("content.made", actor=agent, agent=agent, caused_by=cause, content=c)
     return c
+
+
+def _brief(office: Office, ref: str) -> str:
+    """The listing as the writers see it: the record plus every feature, so a script has real things to say."""
+    lst = _listing(office, ref)
+    feats = "; ".join(lst.get("features") or []) or "none recorded"
+    return office.graph().record(f"listing:{ref}") + f" · features: {feats}"
 
 
 def _listing(office: Office, ref: str) -> dict:
@@ -178,7 +186,7 @@ def import_posts(office: Office, rows: list[dict], *, by: str) -> dict:
     outliers.sort(key=lambda p: -p["score"])
     for p in outliers[:3]:
         office.log.append("board.pinned", actor="mrival", agent="mrival", key=f"pin:{p['id']}",
-                          content={"id": f"B-{abs(hash(p['id'])) % 10**8}", "kind": "outlier", "title": (p["caption"] or "(no caption)")[:90], "account": p["account"],
+                          content={"id": _stable_id("B", p["id"]), "kind": "outlier", "title": (p["caption"] or "(no caption)")[:90], "account": p["account"],
                                    "why": f"{p['score']}x @{p['account']}'s usual likes+comments", "url": p["permalink"], "post": p["id"], "type": p["type"]})
     comp = [p for p in clean if p["source"] == "competitor"]
     _pack(office, "mrival", f"Imported {len(clean)} posts ({len(comp)} from {len({p['account'] for p in comp})} competitors): {len(outliers)} outliers at 2x or more their account's usual."
@@ -237,28 +245,42 @@ def watch(office: Office, cause: int | None) -> list[dict]:
     return top
 
 
+def _stable_id(prefix: str, key: str) -> str:
+    """The same source always gets the same card id (Python's hash() changes on every restart)."""
+    return f"{prefix}-{hashlib.sha1(key.encode()).hexdigest()[:8]}"
+
+
 def trends(office: Office, cause: int | None) -> list[dict]:
+    # trends move by the week, not the minute: one search a day is enough, and every run in between reuses it
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    recent = [e["content"] for e in office.log.list() if e["type"] == "board.pinned" and e["content"].get("kind") == "trend"
+              and datetime.fromisoformat(e["at"]) >= since]
+    if recent:
+        _pack(office, "mtrend", f"Using today's {len(recent)} trend card{'s' if len(recent) != 1 else ''} (one search a day).", cause=cause)
+        return recent
     if not meta.ready():
         _blocked(office, "mtrend", "Trend research needs Muse Spark web search (META_API_KEY)", cause=cause)
         return []
     try:
         r = meta.search("What short-form video formats and hooks are performing for Dubai real-estate brokers on Instagram and TikTok "
-                        "in the last month? Give three, one line each, each with the source you saw it in.")
+                        "in the last month? Answer with exactly three lines and nothing else, each in the form:\n"
+                        "1. <the format or hook, under 12 words> | <why it works, under 15 words> | <the URL of the page you saw it on>")
     except meta.MetaError as e:
         _blocked(office, "mtrend", f"Web search failed: {e}", cause=cause)
         return []
-    cited = [c for c in r["cited"] if c.get("url")] or [s for s in r["sources"] if s.get("url")][:3]
-    if not cited:
-        _blocked(office, "mtrend", "Web search returned no sources, so nothing is pinned", cause=cause)
-        return []
-    lines = [ln.strip("-• ").strip() for ln in r["text"].splitlines() if ln.strip()][:3]
+    seen = {s["url"].rstrip("/") for s in [*r["sources"], *r["cited"]] if s.get("url")}
     cards = []
-    for i, src in enumerate(cited[:3]):
-        c = {"id": f"B-trend-{abs(hash(src['url'])) % 10**8}", "kind": "trend", "title": (lines[i] if i < len(lines) else src.get("title") or "")[:120],
-             "why": src.get("title") or "", "url": src["url"]}
+    for ln in r["text"].splitlines():
+        m = re.match(r"\s*\d+[.)]\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(https?://\S+)", ln)
+        if not m or m.group(3).rstrip("/.)") not in {u.rstrip("/.)") for u in seen}:
+            continue  # only a trend whose link is one the search actually opened is pinned
+        c = {"id": _stable_id("B-trend", m.group(3)), "kind": "trend", "title": m.group(1)[:120], "why": m.group(2)[:160], "url": m.group(3).rstrip(".)")}
         office.log.append("board.pinned", actor="mtrend", agent="mtrend", key=f"pin:{c['id']}", content=c)
         cards.append(c)
-    _pack(office, "mtrend", f"{len(cards)} rising formats pinned, each with its source.", cause=cause,
+    if not cards:
+        _blocked(office, "mtrend", "Web search gave no trend tied to a page it opened, so nothing is pinned", cause=cause)
+        return []
+    _pack(office, "mtrend", f"{len(cards)} rising formats pinned, each with the page it came from.", cause=cause,
           evidence=[Evidence(c["url"], c["id"]) for c in cards], sources={c["id"]: c["url"] for c in cards}, usage={"queries": r["queries"]})
     return cards
 
@@ -309,9 +331,10 @@ def ideas(office: Office, ref: str, cards: list[dict], cause: int | None, feedba
     ids = {c["id"] for c in cards}
     c = get("midea")
     system = runner.instructions(c, office.log)
-    user = runner.user_message(f"Three short-video ideas for listing {ref}. Each idea names the listing and the card ids it builds on (or none)."
+    user = runner.user_message(f"Three short-video ideas for listing {ref}. Each title is the hook a viewer would see, naming the building or area and one "
+                               "real feature; list the card ids an idea builds on (an empty list if none). Use only facts from the listing."
                                + (f"\n\n{feedback}" if feedback else ""),
-                               {f"listing:{ref}": office.graph().record(f"listing:{ref}"), **{x["id"]: f"{x['title']} ({x['why']})" for x in cards}})
+                               {f"listing:{ref}": _brief(office, ref), **{x["id"]: f"{x['title']} ({x['why']})" for x in cards}})
     out, by = [], "rules"
     if runner.has_model(c, system, user, schema=IDEAS_SCHEMA):
         office.log.append("agent.started", actor="midea", agent="midea", caused_by=cause, content={"task": f"Writing ideas for {ref} with the model"})
@@ -371,7 +394,7 @@ SCRIPT_SCHEMA = {"name": "script", "strict": True, "schema": {"type": "object", 
                                 "lines_en": {"type": "array", "items": {"type": "string"}}, "lines_ar": {"type": "array", "items": {"type": "string"}}}}}
 
 
-MONEY = re.compile(r"(?:aed|dhs?|dirhams?|درهم)\s*[\d.,]+(?:\s*(?:k|m|mn|million|thousand))?|[\d.,]+\s*(?:k|m|mn|million|thousand|aed|dirhams?|درهم)\b"
+MONEY = re.compile(r"(?:aed|dhs?|dirhams?|درهم)\s*[\d.,]+(?:\s*(?:k|m|mn|million|thousand)\b)?|[\d.,]+\s*(?:k|m|mn|million|thousand|aed|dirhams?|درهم)\b"
                    r"|(?:one|two|three|four|five|six|seven|eight|nine|ten|[a-z-]+ty)(?:[ -][a-z]+)*\s+(?:million|thousand)", re.I)
 
 
@@ -413,9 +436,12 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
     model changes what was asked and keeps the rest; without a model the change is applied to the template where it can be."""
     from diwan.agents import strategy
     lst = _listing(office, ref)
-    rec = office.graph().record(f"listing:{ref}")
+    rec = _brief(office, ref)
     c = get("mscript")
-    system = runner.instructions(c, office.log) + "\nWrite in the `script` format. Only facts and amounts from the listing. 30 seconds, 5 to 7 lines."
+    system = runner.instructions(c, office.log) + ("\nWrite in the `script` format: about 30 seconds, 5 to 7 lines. Use only facts and amounts from "
+                                                   "the listing, and build the lines from its features. Every line says something new; never repeat a "
+                                                   "line or the unit name. No placeholders or brackets: if a fact is missing, leave it out. The last "
+                                                   "line invites the viewer to message us to book a viewing. lines_ar translates lines_en.")
     task = (f"Script for: {idea['pick']['title']}. Angle: {strategy.ANGLES[angle][0]}. Borrow the structure, never the words, of the hook card if given."
             + (f"\n\nRevise this draft; change only what is asked, keep everything else:\n{json.dumps({k: base[k] for k in ('hook_en', 'hook_ar', 'lines_en')}, ensure_ascii=False)}" if base else "")
             + (f"\n\n{feedback}" if feedback else ""))

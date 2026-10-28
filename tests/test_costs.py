@@ -56,3 +56,41 @@ def test_nvidia_free_endpoint_costs_nothing():
 def test_price_can_be_corrected(monkeypatch):
     monkeypatch.setenv("DIWAN_PRICE_META", "1,2")
     assert costs.estimate("meta", 1_000_000, 1_000_000) == 3.0
+
+
+def _search_reply(final: str):
+    import httpx
+    body = {"model": "muse-spark-1.3", "usage": {"input_tokens": 100, "output_tokens": 50},
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": "I'll research what's performing for Dubai brokers."}]},
+                       {"type": "web_search_call", "action": {"query": "dubai reels"},
+                        "results": [{"title": "Reel guide", "url": "https://example.com/reels"}, {"title": "Hooks", "url": "https://example.com/hooks"}]},
+                       {"type": "message", "content": [{"type": "output_text", "text": final}]}]}
+    return httpx.MockTransport(lambda req: httpx.Response(200, json=body))
+
+
+def test_trends_pin_only_the_final_answer_tied_to_pages_the_search_opened(monkeypatch, tmp_path):
+    """The first live run pinned the model's narration ("I'll research...") as trends."""
+    from diwan import demo
+    from diwan.agents import studio
+    from diwan.office import Office
+    from diwan.providers import meta
+    monkeypatch.setenv("META_API_KEY", "k")
+    monkeypatch.setattr(meta, "TRANSPORT", _search_reply(
+        "1. Price-first hooks | stop the scroll | https://example.com/reels\n2. Walk with the broker | feels personal | https://example.com/hooks\n"
+        "3. Invented trend | made up | https://nowhere.example/x"))
+    o = Office(EventLog()); demo.seed(o)
+    cards = studio.trends(o, None)
+    assert [c["title"] for c in cards] == ["Price-first hooks", "Walk with the broker"]          # the made-up link is dropped
+    assert not any("research" in c["title"].lower() for c in cards)
+    assert studio.trends(o, None) == cards                                                    # same day: no second search
+    row = costs.rows()[-1]
+    assert row["what"] == "web search x1" and row["cost_usd"] == round(costs.estimate("meta", 100, 50) + costs.fee("search", 0.01), 6)
+
+
+def test_search_images_and_transcription_stop_at_the_budget(monkeypatch):
+    from diwan.providers import meta
+    monkeypatch.setenv("META_API_KEY", "k")
+    monkeypatch.setenv("DIWAN_BUDGET_USD", "0")
+    for call in (lambda: meta.search("x"), lambda: meta.image("x", "n"), lambda: meta.transcribe(b"0" * 100)):
+        with pytest.raises(meta.MetaError, match="budget"):
+            call()
