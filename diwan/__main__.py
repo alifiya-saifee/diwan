@@ -79,6 +79,12 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "check"
     if cmd == "check":
         check("--ping" in sys.argv)
+    elif cmd == "doc":
+        from pathlib import Path
+        from diwan import docgen
+        out = Path(sys.argv[2] if len(sys.argv) > 2 else "studio-handbook.html")
+        docgen.build(out)
+        print(f"wrote {out}")
     elif cmd == "eval":
         from diwan import evals
         res = evals.run(model="--model" in sys.argv)

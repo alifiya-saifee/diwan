@@ -1,5 +1,5 @@
 {
- "at": "2026-10-28T09:32:24",
+ "at": "2026-10-28T09:37:19",
  "mode": "rules",
  "suites": {
   "Scribe": {
@@ -417,7 +417,7 @@
   "Studio": {
    "passed": 17,
    "total": 17,
-   "seconds": 0.0,
+   "seconds": 0.1,
    "cases": [
     {
      "case": "Competitor watch finds every outlier (2x the account's median)",
