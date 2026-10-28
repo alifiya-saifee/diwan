@@ -280,8 +280,14 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
     reason = None
     lvl = lessons.level(office.log, RANIA)
     dry = lvl != "autopilot"
+    out = None
     if runner.has_model(c, system, user, schema=RECEPTION_SCHEMA, tape_root=tape_root):
-        out = runner.call(c, system, user, schema=RECEPTION_SCHEMA, tape_root=tape_root).data
+        try:
+            out = runner.call(c, system, user, schema=RECEPTION_SCHEMA, tape_root=tape_root, timeout=runner.LIVE).data
+        except Exception as e:  # a customer is waiting: too slow or failed, answer by the rules and note it
+            office.log.append("agent.failed", actor=RANIA, agent=RANIA, deal=deal, caused_by=got["id"], content={"error": str(e)[:300]})
+            out = None
+    if out:
         reply, refs = out["reply"], [r if r.startswith(("listing:", "K")) else f"listing:{r}" for r in out["listing_refs"]] + out["knowledge_refs"]
         actions = [Action("reply", reply)]
         if out["handover"] or not _amounts_ok(reply, sources):

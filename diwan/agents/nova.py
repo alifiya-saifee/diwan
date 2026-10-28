@@ -11,6 +11,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from diwan.agents import runner
+from diwan.providers.chat import ProviderError
 from diwan.agents.charters import get
 from diwan.graph import OPEN, Graph
 from diwan.office import Office
@@ -234,8 +235,13 @@ def ask(office: Office, question: str, person: str = "layla", *, session: str | 
         return {"kind": "unknown", "text": f"I don't have that in the office's records. {_who_knows(g, deal)}.", "cites": [], "request": req}
     system = runner.instructions(c, office.log)
     task = f"{name(person)} asks: {question}\nAnswer in at most three sentences from these records only, citing record ids in brackets."
+    res = None
     if runner.has_model(c, system, runner.user_message(task, sources), tape_root=tape_root):
-        res = runner.run(office.log, NOVA, request=req, task=task, sources=sources, deal=deal, tape_root=tape_root)
+        try:
+            res = runner.run(office.log, NOVA, request=req, task=task, sources=sources, deal=deal, tape_root=tape_root, timeout=runner.LIVE)
+        except (runner.NotSetUp, ProviderError, KeyError, TypeError):
+            res = None  # the model was too slow or failed (logged as agent.failed): answer from the records in plain sentences
+    if res:
         if not res.pack.evidence:
             return {"kind": "unsupported", "request": req, "cites": [],
                     "text": f"I couldn't back an answer with a record, so I won't guess. {_who_knows(g, deal)}."}
@@ -388,8 +394,13 @@ def route(office: Office, text: str, person: str = "layla", *, tape_root=None) -
     action = next((a for rx, agent, a in ROUTES if hits and agent == hits[0] and re.search(rx, low)), None)
     if not hits:
         user = f"Instruction: {text}\nAgents: " + "; ".join(f"{c.id} = {c.name}: {c.job}" for c in _specialists())
+        out = None
         if runner.has_model(nova, runner.instructions(nova), user, schema=ROUTE_SCHEMA, tape_root=tape_root):
-            out = runner.call(nova, runner.instructions(nova), user, schema=ROUTE_SCHEMA, tape_root=tape_root).data
+            try:
+                out = runner.call(nova, runner.instructions(nova), user, schema=ROUTE_SCHEMA, tape_root=tape_root, timeout=runner.LIVE).data
+            except (ProviderError, KeyError):
+                out = None
+        if out:
             if out["confidence"] >= 0.6 and out["agent"] in {c.id for c in _specialists()}:
                 hits, action = [out["agent"]], out["action"]
             else:

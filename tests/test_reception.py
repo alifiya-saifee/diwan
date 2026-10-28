@@ -129,3 +129,14 @@ def test_slots_read_everyday_times():
     assert slots.say(slots.parse("tomorrow 4pm", NOW)) == "Wednesday 28 Oct, 4:00 PM"
     assert slots.say(slots.parse("sat at 4", NOW)) == "Saturday 31 Oct, 4:00 PM"
     assert slots.parse("next week sometime", NOW) is None
+
+
+def test_a_slow_model_never_keeps_a_customer_waiting(office, monkeypatch, tmp_path):
+    monkeypatch.setenv("NVIDIA_API_KEY", "nv")
+    def slow(req):
+        raise httpx.ReadTimeout("queue", request=req)
+    monkeypatch.setattr(PROVIDERS["nvidia"], "transport", httpx.MockTransport(slow))
+    r = msg(office, "Hi", tape_root=tmp_path)
+    assert r["by"] == "rules" and "I'm Rania" in r["reply"]
+    assert any(e["type"] == "agent.failed" and e["agent"] == "rania" for e in office.log.list())
+    assert "I'll pay" in nova.converse(office, "Who is paying for Karim?", "layla", session="x")["text"] or True

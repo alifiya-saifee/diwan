@@ -36,6 +36,7 @@ class ChatProvider:
     model_default: str | None
     open_weights: bool = False
     key_required: bool = True
+    extra: dict = field(default_factory=dict)  # provider-specific request fields
     transport: httpx.BaseTransport | None = field(default=None, repr=False)
 
     def base_url(self) -> str | None:
@@ -67,7 +68,7 @@ class ChatProvider:
         if not self.available():
             raise ProviderError(f"{self.label} is not set up: missing {', '.join(self.missing()) or 'online mode'}")
         body = {"model": self.model(), "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                "response_format": {"type": "json_schema", "json_schema": schema}}
+                "response_format": {"type": "json_schema", "json_schema": schema}, **self.extra}
         if reasoning and self.id == "meta":
             body["reasoning_effort"] = reasoning
         headers = {"Authorization": f"Bearer {self._key()}"} if self._key() else {}
@@ -120,7 +121,8 @@ PROVIDERS: dict[str, ChatProvider] = {
                           ("MODAL_API_KEY",), "MODAL_MODEL", None, open_weights=True, key_required=False),
     # Meta's open-weights Muse Glimmer on NVIDIA's free endpoint: development and fictional data only (40 requests a minute)
     "nvidia": ChatProvider("nvidia", "NVIDIA endpoint (Muse Glimmer)", "NVIDIA_API_BASE", "https://integrate.api.nvidia.com/v1",
-                           ("NVIDIA_API_KEY",), "NVIDIA_MODEL", "meta/muse-glimmer-30b", open_weights=True),
+                           ("NVIDIA_API_KEY",), "NVIDIA_MODEL", "meta/muse-glimmer-30b", open_weights=True,
+                           extra={"max_tokens": 4096, "chat_template_kwargs": {"enable_thinking": False}}),
 }
 
 

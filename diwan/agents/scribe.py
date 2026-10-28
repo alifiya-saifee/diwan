@@ -172,10 +172,14 @@ def hear(office: Office, deal: str, speaker: str, text: str, cause: int, *, tape
     sources = {src: f"{speaker}: {text}"} | {f.id: g.record(f.id) for f in g.facts(deal)}
     system = runner.instructions(c, office.log) + RULES
     user = runner.user_message(f"New turn from {speaker}. Earlier facts of this deal are also given.", sources)
+    found = None
     if runner.has_model(c, system, user, schema=FACTS_SCHEMA, tape_root=tape_root):
-        reply = runner.call(c, system, user, schema=FACTS_SCHEMA, tape_root=tape_root)
-        found, by = reply.data["facts"], reply.usage.get("provider")
-    else:
+        try:
+            reply = runner.call(c, system, user, schema=FACTS_SCHEMA, tape_root=tape_root, timeout=runner.LIVE)
+            found, by = reply.data["facts"], reply.usage.get("provider")
+        except Exception as e:  # too slow or failed while people are talking: the rules reader hears it, and that is noted
+            office.log.append("agent.failed", actor=c.id, agent=c.id, deal=deal, caused_by=cause, content={"error": str(e)[:300]})
+    if found is None:
         found, by = read_rules(text, speaker), "rules"
     if not found:
         return {"facts": [], "rejected": [], "questions": [], "by": by, "turn": cause}

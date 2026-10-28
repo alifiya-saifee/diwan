@@ -78,7 +78,12 @@ def has_model(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA,
     return tape_mode() != "off" and tape.load(c.id, tape.key(c.id, system, user, schema), tape_root) is not None
 
 
-def call(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape_root=None) -> Reply:
+LIVE = float(env("DIWAN_LIVE_TIMEOUT", "25"))         # someone is waiting: Nova, Rania, a meeting
+BACKGROUND = float(env("DIWAN_MODEL_TIMEOUT", "240"))  # nobody is waiting: the studio, overnight work
+
+
+def call(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape_root=None, timeout: float | None = None) -> Reply:
+    """One model turn. `timeout`: how long the model may take; a live caller falls back to rules when it runs out."""
     k, mode = tape.key(c.id, system, user, schema), tape_mode()
     recorded = tape.load(c.id, k, tape_root) if mode != "off" else None
     p = None if offline() else provider_for(c)
@@ -87,7 +92,7 @@ def call(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape
             return recorded
         raise NotSetUp(f"{c.name} has no live model ({needs(c)}) and no recording of this request")
     try:
-        reply = p.complete_json(system, user, schema)
+        reply = p.complete_json(system, user, schema, timeout=timeout or BACKGROUND)
     except ProviderError as e:
         if recorded:
             recorded.usage["live_failed"] = str(e)[:200]
@@ -137,13 +142,13 @@ def submit(log: EventLog, c: Charter, pack: Pack, *, sources: dict[str, str], de
 
 
 def run(log: EventLog, agent_id: str, *, request: str, task: str, sources: dict[str, str], deal: str | None = None,
-        caused_by: int | None = None, tape_root=None) -> Result:
+        caused_by: int | None = None, tape_root=None, timeout: float | None = None) -> Result:
     c = get(agent_id)
     start = log.append("agent.started", actor=c.id, agent=c.id, request=request, deal=deal, caused_by=caused_by,
                        content={"task": task, "sources": sorted(sources)})
     system, user = instructions(c, log), user_message(task, sources)
     try:
-        reply = call(c, system, user, tape_root=tape_root)
+        reply = call(c, system, user, tape_root=tape_root, timeout=timeout)
         pack = from_model(request, c.id, reply.data)
     except (NotSetUp, ProviderError, KeyError, TypeError) as e:
         log.append("agent.failed", actor=c.id, agent=c.id, request=request, deal=deal, caused_by=start["id"],
