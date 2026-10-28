@@ -1,6 +1,7 @@
 """python -m diwan check        what is plugged in, what is missing, where each agent will run (no secrets shown)
 python -m diwan check --ping one tiny live call per configured provider
 python -m diwan roster       the agents as JSON, for screens
+python -m diwan eval         score every agent on labelled cases (add --model to use the connected model)
 python -m diwan nova         talk to Nova in the fictional demo office (ask, instruct, or "brief <person>")
 """
 from __future__ import annotations
@@ -78,6 +79,15 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "check"
     if cmd == "check":
         check("--ping" in sys.argv)
+    elif cmd == "eval":
+        from diwan import evals
+        res = evals.run(model="--model" in sys.argv)
+        for name, st in res["suites"].items():
+            print(f"{name:30} {st['passed']:>3}/{st['total']:<3} ({st['seconds']}s)")
+            for c in st["cases"]:
+                if not c["pass"]:
+                    print(f"    FAIL  {c['case'][:70]}  ·  {c['why']}")
+        print(f"\n{'TOTAL':30} {res['passed']:>3}/{res['total']}  ({res['mode']})")
     elif cmd == "nova":
         talk()
     elif cmd == "roster":

@@ -185,7 +185,8 @@ def test_muse_glimmer_on_nvidia_stands_in_for_spark_and_survives_no_json_mode(mo
         return httpx.Response(200, json={"choices": [{"message": {"content": '```json\n{"ok": true}\n```'}}], "usage": {}})
     monkeypatch.setattr(PROVIDERS["nvidia"], "transport", httpx.MockTransport(handle))
     r = PROVIDERS["nvidia"].complete_json("sys", "user", {"name": "x", "strict": True, "schema": {"type": "object"}})
-    assert r.data == {"ok": True} and calls[0]["model"] == "meta/muse-glimmer-30b"
-    assert "JSON schema" in calls[1]["messages"][0]["content"] and "response_format" not in calls[1]
+    assert r.data == {"ok": True} and calls[0]["model"] == "meta/muse-glimmer-30b" and len(calls) == 1
+    assert "JSON schema" in calls[0]["messages"][0]["content"] and "response_format" not in calls[0]
+    assert calls[0]["chat_template_kwargs"] == {"enable_thinking": False}
     monkeypatch.setenv("META_API_KEY", "m")
     assert for_tier("spark").id == "meta"

@@ -3,3 +3,6 @@
 __pycache__/
 *.db
 media/
+*.bak
+diwan.db*
+evals/results-model.json

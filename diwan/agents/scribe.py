@@ -116,7 +116,7 @@ def read_rules(text: str, speaker: str) -> list[dict]:
         elif nums and re.search(r"\b(deposit|down ?payment|cheque|check|instal+ment|booking)\b", low):
             method = next((v for k, v in (("cash", "cash"), ("cheque", "cheque"), ("check", "cheque"), ("transfer", "bank transfer"),
                                           ("card", "card"), ("crypto", "crypto")) if k in low), None)
-            due = (re.search(r"\b(today|tomorrow|next week|next month|this week|on \w+day|by \w+)\b", low) or [None])[0]
+            due = (re.search(r"\b(today|tomorrow|next week|next month|this week|on \w+day|by (?!bank|cash|cheque|check|card|transfer|wire)\w+)\b", low) or [None])[0]
             facts.append({**blank, "kind": "payment_promise", "quote": s, "amount_aed": nums[0], "method": method, "due": due, "stance": stance})
         elif nums and re.search(r"\b(million|price|budget|offer|for the (unit|villa|apartment|flat|townhouse))\b", low):
             facts.append({**blank, "kind": "deal_term", "quote": s, "amount_aed": max(nums), "stance": stance})

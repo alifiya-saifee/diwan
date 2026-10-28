@@ -198,8 +198,8 @@ def converse(office: Office, text: str, person: str = "layla", *, session: str =
         return {"kind": "done", "text": f"Done. I'll do my rounds before {at} and have your briefing ready then."}
     if re.match(r"(?i)^(brief( me)?|play( the)? briefing|what('s| is) (new|happening))\b", t):
         return brief(office, person, log=False, now=now) | {"kind": "brief"}
-    if out := lobby.draft(t, person, session, now):
-        return out
+    if not any(re.search(rx, t.lower()) for rx, _, _ in REFUSE) and (out := lobby.draft(t, person, session, now)):
+        return out  # a request for a person; anything only people may do is refused by route() below first
     q = (t.endswith("?") or re.match(r"(?i)(who|what|when|where|why|how|is|are|does|did|can|which|show|find|any|hi|hello|hey|thanks|summar\w*|tell me|give me)\b", t)
          or re.search(SMALLTALK, t.lower()))
     return ask(office, t, person, session=session, tape_root=tape_root, today=now.date()) if q else route(office, t, person, tape_root=tape_root)

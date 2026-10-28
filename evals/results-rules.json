@@ -1,0 +1,502 @@
+{
+ "at": "2026-10-28T09:11:55",
+ "mode": "rules",
+ "suites": {
+  "Scribe": {
+   "passed": 12,
+   "total": 12,
+   "seconds": 0.0,
+   "cases": [
+    {
+     "case": "We're looking at two point six million for the Marina unit.",
+     "pass": true,
+     "why": "",
+     "by": "rules"
+    },
+    {
+     "case": "My budget is around 1.8 million.",
+     "pass": true,
+     "why": "",
+     "by": "rules"
+    },
+    {
+     "case": "I earn about forty-five thousand a month.",
+     "pass": true,
+     "why": "",
+     "by": "rules"
+    },
+    {
+     "case": "I make 600k a year.",
+     "pass": true,
+     "why": "",
+     "by": "rules"
+    },
+    {
+     "case": "My brother Tariq will send the deposit.",
+     "pass": true,
+     "why": "",
+     "by": "rules"
+    },
+    {
+     "case": "I'll pay it myself.",
+     "pass": true,
+     "why": "",
+     "by": "rules"
+    },
+    {
+     "case": "Two hundred sixty thousand deposit by bank transfer next week.",
+     "pass": true,
+     "why": "",
+     "by": "rules"
+    },
+    {
+     "case": "Fifty thousand in cash as the booking deposit.",
+     "pass": true,
+     "why": "",
+     "by": "rules"
+    },
+    {
+     "case": "If the view is better maybe we go to three million.",
+     "pass": true,
+     "why": "",
+     "by": "rules"
+    },
+    {
+     "case": "Hello, nice to meet you.",
+     "pass": true,
+     "why": "",
+     "by": "rules"
+    },
+    {
+     "case": "Can you send me the floor plan?",
+     "pass": true,
+     "why": "",
+     "by": "rules"
+    },
+    {
+     "case": "My brother Tariq will send the deposit. / Actually, forget my brother. I'll pay it all myself.",
+     "pass": true,
+     "why": "",
+     "by": "rules"
+    }
+   ]
+  },
+  "Rania": {
+   "passed": 12,
+   "total": 12,
+   "seconds": 0.0,
+   "cases": [
+    {
+     "case": "Hi",
+     "pass": true,
+     "why": "",
+     "reply": "Hi Test, I'm Rania from Diwan Realty. Are you looking to buy, and which area, size and budget do you have in mind?",
+     "by": "rules"
+    },
+    {
+     "case": "Hi → 2 bed in the Marina around 2.7 million",
+     "pass": true,
+     "why": "",
+     "reply": "Here's what fits:\n• Unit 1204, Marina Crest, Dubai Marina: 2 bed apartment, AED 2,600,000 (ref MC-1204, permit SAMPLE-71204)\nWould you like to see one? Tell me a",
+     "by": "rules"
+    },
+    {
+     "case": "Hi → Any villa in JVC?",
+     "pass": true,
+     "why": "",
+     "reply": "Here's what fits:\n• Villa 88, Jumeirah Village Circle: 4 bed villa, AED 1,900,000 (ref JVC-88, permit SAMPLE-60088)\nWould you like to see one? Tell me a day and",
+     "by": "rules"
+    },
+    {
+     "case": "Hi → Any 1 bed in Downtown?",
+     "pass": true,
+     "why": "",
+     "reply": "I don't have a listing that fits that right now. Omar hears about new ones first, so I've passed your brief on.",
+     "by": "rules"
+    },
+    {
+     "case": "Hi → What are your fees?",
+     "pass": true,
+     "why": "",
+     "reply": "Our buyer commission is 2% of the price plus VAT. The Dubai Land Department transfer fee is 4%.",
+     "by": "rules"
+    },
+    {
+     "case": "Hi → Do you accept cash?",
+     "pass": true,
+     "why": "",
+     "reply": "That's one for Omar personally, who will reply to you here.",
+     "by": "rules"
+    },
+    {
+     "case": "Hi → Can I pay in crypto?",
+     "pass": true,
+     "why": "",
+     "reply": "That's one for Omar personally, who will reply to you here.",
+     "by": "rules"
+    },
+    {
+     "case": "Hi → Can you give me a discount?",
+     "pass": true,
+     "why": "",
+     "reply": "That's one for Omar personally, who will reply to you here.",
+     "by": "rules"
+    },
+    {
+     "case": "Hi → What ROI is guaranteed?",
+     "pass": true,
+     "why": "",
+     "reply": "I can't promise returns or yields. Omar can share recent sales and rental data for the area and will reply here.",
+     "by": "rules"
+    },
+    {
+     "case": "Hi → I want to speak to an agent",
+     "pass": true,
+     "why": "",
+     "reply": "Of course. I'm passing you to Omar, who will reply here shortly.",
+     "by": "rules"
+    },
+    {
+     "case": "Hi → Can I see MC-1204 Saturday at 4pm?",
+     "pass": true,
+     "why": "",
+     "reply": "Booked: Unit 1204, Marina Crest (MC-1204) with Omar, Saturday 31 Oct, 4:00 PM. Please bring a photo ID for the building lobby.",
+     "by": "rules"
+    },
+    {
+     "case": "Hi → What time do you open?",
+     "pass": true,
+     "why": "",
+     "reply": "We're open Monday to Saturday, 10am to 7pm. Viewings run in the same hours.",
+     "by": "rules"
+    }
+   ]
+  },
+  "Nova": {
+   "passed": 18,
+   "total": 18,
+   "seconds": 0.1,
+   "cases": [
+    {
+     "case": "Who is paying for Karim?",
+     "pass": true,
+     "why": "",
+     "reply": "Karim Haddad pays: Karim Haddad said \"Actually, forget my brother. I'll pay it all myself.\" (F7). Earlier: \"Tariq will send the deposit from his account.\" (F3),",
+     "by": "rules"
+    },
+    {
+     "case": "What changed on the Marina deal?",
+     "pass": true,
+     "why": "",
+     "reply": "\"My brother Tariq is helping with the deposit.\" (F2) became \"Actually, forget my brother. I'll pay it all myself.\" (F7). \"Tariq will send the deposit from his a",
+     "by": "rules"
+    },
+    {
+     "case": "Who pays the deposit?",
+     "pass": true,
+     "why": "",
+     "reply": "Which deal do you mean: Unit 1204, Marina Crest (Karim) or Villa 88, JVC (Sara)?",
+     "by": null
+    },
+    {
+     "case": "What is the seller's name on the Marina unit?",
+     "pass": true,
+     "why": "",
+     "reply": "I don't have that in the office's records. Omar was in the meeting and would know.",
+     "by": null
+    },
+    {
+     "case": "What were last month's sales?",
+     "pass": true,
+     "why": "",
+     "reply": "The Data analyst says: Sales last month (September 2026): 3 closed, AED 7,850,000 in value, AED 157,000 commission. Largest: Apartment 3105, Burj Crown.",
+     "by": "analyst"
+    },
+    {
+     "case": "What did we spend in September?",
+     "pass": true,
+     "why": "",
+     "reply": "The Data analyst says: Spending September 2026: AED 42,680 across 4 invoices and bills; the largest was Office rent, September (AED 25,000).",
+     "by": "analyst"
+    },
+    {
+     "case": "How were sales?",
+     "pass": true,
+     "why": "",
+     "reply": "Which period: last month, this month, this year, or a month by name?",
+     "by": null
+    },
+    {
+     "case": "Find the contract for the JVC villa",
+     "pass": true,
+     "why": "",
+     "reply": "The Archivist says: 1 contract: MOU (Form F), Villa 31, JVC District 12 (2026-09-10, AED 2,900,000).",
+     "by": "archivist"
+    },
+    {
+     "case": "Is Karim a good customer?",
+     "pass": true,
+     "why": "",
+     "reply": "I don't judge people, and nobody here decides that from a feeling. Here is what's on record: Karim Haddad said \"We're looking at two point six million for the M",
+     "by": "rules"
+    },
+    {
+     "case": "Who is Tariq?",
+     "pass": true,
+     "why": "",
+     "reply": "Tariq Haddad, Karim Haddad's brother (F2), was going to pay, but that was taken back (F3).",
+     "by": "rules"
+    },
+    {
+     "case": "Which listing is the most expensive?",
+     "pass": true,
+     "why": "",
+     "reply": "The most expensive is Unit 1204, Marina Crest, Dubai Marina, at AED 2,600,000.",
+     "by": "rules"
+    },
+    {
+     "case": "Prepare Form F for the Marina unit",
+     "pass": true,
+     "why": "",
+     "reply": "The Operations lead gave it to the Form F clerk. Form F plan: 5 of 7 fields from live facts, 2 left for Joseph. Submit waits for Joseph.",
+     "by": null
+    },
+    {
+     "case": "Submit Form F for Karim",
+     "pass": true,
+     "why": "",
+     "reply": "Only Joseph submits portal forms. The Form F clerk can fill it and stop before Submit: say \"prepare Form F\".",
+     "by": null
+    },
+    {
+     "case": "Tell Karim his file was flagged by compliance",
+     "pass": true,
+     "why": "",
+     "reply": "No agent tells a customer anything about compliance: that would tip them off. Priya decides what is said.",
+     "by": null
+    },
+    {
+     "case": "Approve the deposit",
+     "pass": true,
+     "why": "",
+     "reply": "Approvals are given by the person they wait for, never by an agent. I can remind them.",
+     "by": null
+    },
+    {
+     "case": "Tell Priya I need the Karim review ready by this evening",
+     "pass": true,
+     "why": "",
+     "reply": "So: Priya, \"The Karim review\", due Tuesday 27 Oct, 6:00 PM. Shall I send it?",
+     "by": null
+    },
+    {
+     "case": "Rania, never mention the transfer fee",
+     "pass": true,
+     "why": "",
+     "reply": "A lesson for Rania: \"Never mention the transfer fee\". Anything containing \"transfer fee\" will not be sent. Save it?",
+     "by": null
+    },
+    {
+     "case": "Hi Nova, how are you?",
+     "pass": true,
+     "why": "",
+     "reply": "Good morning, Layla. All good here. Nothing needs you right now.",
+     "by": "rules"
+    }
+   ]
+  },
+  "Correction engine and Lobby": {
+   "passed": 10,
+   "total": 10,
+   "seconds": 0.0,
+   "cases": [
+    {
+     "case": "compliance hears first",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "only dependent tasks withdrawn",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "new expectation from the new payer",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "stale approval refused",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "deck sent back",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Lobby deadline 'by this evening'",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Lobby deadline 'by tomorrow at 10am'",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Lobby deadline 'by Thursday 3pm'",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Lobby deadline 'by noon'",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Lobby deadline 'by 4pm'",
+     "pass": true,
+     "why": ""
+    }
+   ]
+  },
+  "Data analyst and Archivist": {
+   "passed": 9,
+   "total": 9,
+   "seconds": 0.0,
+   "cases": [
+    {
+     "case": "What were last month's sales?",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "How much commission did we make this year?",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "What did we spend last month?",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Who is the top broker in Q3?",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "What's in the pipeline?",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "No period → asks which",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Show me the invoices for October",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Find the contract for the JVC villa",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Any receipts for July?",
+     "pass": true,
+     "why": ""
+    }
+   ]
+  },
+  "Studio": {
+   "passed": 15,
+   "total": 15,
+   "seconds": 0.0,
+   "cases": [
+    {
+     "case": "Competitor watch finds every outlier (2x the account's median)",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "No false outliers",
+     "pass": true,
+     "why": "3 outliers"
+    },
+    {
+     "case": "KPIs: engagement rate per follower",
+     "pass": true,
+     "why": "2.58"
+    },
+    {
+     "case": "KPIs: best hour from post times",
+     "pass": true,
+     "why": "19"
+    },
+    {
+     "case": "Finding measured: outliers open with a question",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Finding measured: outliers are reels or videos",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Finding measured: outliers were posted in the evening (6 to 11 PM Dubai)",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Every finding links example posts",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Post text carries the permit number",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Permit checker: real post passes",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Permit checker: missing permit is held",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Permit checker: price not on the listing is held",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Permit checker: banned promise is held",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "No permit, no reel",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Missing connections are named, never faked",
+     "pass": true,
+     "why": ""
+    }
+   ]
+  }
+ },
+ "passed": 76,
+ "total": 76
+}
