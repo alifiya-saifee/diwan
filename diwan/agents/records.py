@@ -15,7 +15,7 @@ from diwan.pack import Action, Evidence, Pack
 from diwan.people import name
 
 MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
-NUMBERS = r"\b(sales?|sold|revenue|turnover|volume|commissions?|earned|made|pipeline|how many deals|closed|spend|spent|expenses?|costs?|top broker|best broker)\b"
+NUMBERS = r"\b(sales?|sell|sold|revenue|turnover|volume|commissions?|earned|made|pipeline|how many deals|closed|spend|spent|expenses?|costs?|top broker|best broker)\b"
 DOCUMENTS = r"\b(invoices?|bills?|receipts?|contracts?|mou|form ?f|documents?|files?|statements?|paperwork|archive)\b"
 DOC_KINDS = {"invoice": "invoice", "bill": "bill", "receipt": "receipt", "contract": "contract", "mou": "contract",
              "form": "form", "statement": "statement"}

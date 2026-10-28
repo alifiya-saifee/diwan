@@ -24,6 +24,11 @@
   .made img, .made video { max-width: 100%; border-radius: 10px; margin-top: 8px; border: 1px solid var(--line); }
   .covers { display: flex; gap: 10px; }
   .covers img { width: 48%; }
+  .opt { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 10px; }
+  .opt pre { white-space: pre-wrap; font: 13px var(--font); margin: 6px 0; color: #dcd8cf; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); margin-right: 6px; color: var(--gold-2); }
+  .st-winning { color: var(--green); } .st-fading { color: var(--warn); } .st-retired { color: var(--muted); }
+  .cost { font-size: 12px; color: var(--muted); margin-left: auto; }
   .pin { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 </style>
 </head>
@@ -45,6 +50,9 @@
         <div id="notes" class="small muted" style="margin-top:8px"></div>
       </section>
       <section class="panel" style="margin-top:18px"><h2>Why their best posts win</h2><div id="why"></div></section>
+      <section class="panel" style="margin-top:18px"><h2>What to post next</h2>
+        <p class="small muted">Each angle measured on our own posts against our median: two in a row at 1.2x or more is <b>winning</b> (keep it); down three times and under the median is <b>fading</b> (shift away); two under 0.8x is <b>resting</b> for 30 days. One slot always tests something new.</p>
+        <div id="strategy"></div></section>
       <section class="panel" style="margin-top:18px"><h2>Their best posts</h2><div id="tops"></div></section>
     </div>
     <div>
@@ -89,7 +97,15 @@ function render() {
     h("button", { class: "primary", onclick: async () => { await post(`/api/marketing/run?ref=${ref}`); toast("Running: watch it on the Marketing floor or here"); } }, "Run this listing"),
     h("a", { class: "btn", href: "office3d.html?enter=mkt" }, "Watch on the floor"),
     pill(c.instagram, c.instagram ? "Instagram connected" : "Connect Instagram"), pill(c.meta, c.meta ? "Meta models on" : "Meta key missing"),
-    pill(c.public_url, c.public_url ? "Public video address set" : "No public address (publishing)"));
+    pill(c.public_url, c.public_url ? "Public video address set" : "No public address (publishing)"),
+    h("span", { class: "cost", id: "cost", title: "Estimated from tokens; a repeated request is answered from the cache at no cost" },
+      `Model spend ${data.costs.month}: $${data.costs.spend_usd.toFixed(2)} of $${data.costs.budget_usd} · saved $${data.costs.saved_usd.toFixed(2)} by cache (${data.costs.cached_calls}/${data.costs.calls} calls)${data.costs.over ? " · budget reached: templates only" : ""}`));
+  const st = data.strategy, LABEL = { winning: "winning: keep", fading: "fading: shift", retired: "resting", steady: "steady", untested: "untested" };
+  $("strategy").replaceChildren(...(st.note ? [h("p", { class: "small muted" }, st.note)] : []), h("table", { class: "kpi" },
+    h("tr", {}, ...["Angle", "Status", "Our last posts", "Competitors", "Why"].map((x) => h("th", {}, x))),
+    ...st.angles.map((x) => h("tr", {}, h("td", { title: x.what }, x.angle), h("td", { class: `st-${x.status}` }, LABEL[x.status]),
+      h("td", {}, x.last.length ? x.last.map((r) => r + "x").join(", ") : "—"),
+      h("td", {}, x.market_posts ? `${x.market_score}x on ${x.market_posts} (${x.market_outliers} outliers)` : "—"), h("td", { class: "small", style: "white-space:normal" }, x.why)))));
   const a = data.analysis;
   if (!$("names").value) $("names").value = a.names.map((n) => "@" + n).join(", ");
   const K = (k) => k ?? "—";
@@ -113,21 +129,20 @@ function render() {
     const b = data.blocked[id], t = last[id];
     return h("div", { class: "stepline" }, h("span", { class: "dotc", style: `background:${b ? "var(--warn)" : t ? "var(--green)" : "var(--faint)"}` }),
       h("span", { class: "nm" }, NAME[id]), h("span", { class: "tx" }, b ? `Waiting: ${b}` : t || "Not run yet"));
-  }))), ...data.approvals.map((r) => h("div", { class: "item", style: "margin-top:10px" },
-    h("div", {}, h("b", {}, r.kind === "use_script" ? "Script waiting for the Marketing manager: " : "Waiting for the owner: "), r.text),
-    r.kind === "use_script" ? h("p", { class: "small muted" }, "Approving lets filming, AI video, editing and covers start. Nothing costly runs before this.") : null,
+  }))), ...data.approvals.map((r) => r.kind === "use_script" ? scriptCard(r) : h("div", { class: "item", style: "margin-top:10px" },
+    h("div", {}, h("b", {}, "Waiting for the owner: "), r.text),
     h("div", { class: "row", style: "margin-top:8px" }, h("span", {}),
-      h("button", { onclick: () => { const note = prompt("What should the Script writer change?") || ""; decide(r.id, "reject", note, r.kind === "use_script" ? "maya" : "layla"); } }, r.kind === "use_script" ? "Send back" : "Reject"),
-      h("button", { class: "primary", onclick: () => decide(r.id, "approve", "", r.kind === "use_script" ? "maya" : "layla") }, r.kind === "use_script" ? "Approve script" : "Approve & publish")))),
+      h("button", { onclick: () => decide(r.id, "reject", prompt("Why?") || "") }, "Reject"),
+      h("button", { class: "primary", onclick: () => decide(r.id, "approve") }, "Approve & publish")))),
     data.script_approved ? h("div", { class: "item", style: "margin-top:10px" }, h("b", {}, "Production: "), "the broker has the film list. Or have an AI presenter read the script.",
       h("label", { style: "display:flex;gap:8px;align-items:center;margin-top:8px" }, h("input", { type: "checkbox", id: "consent", style: "width:auto" }),
         "The person in the avatar agreed to their face and voice being used."),
       h("div", { class: "row", style: "margin-top:8px" }, h("span", { class: "small muted" }, data.heygen ? "Uses HeyGen credits." : "Connect HeyGen in Settings first."),
-        h("button", { class: "primary", disabled: !data.heygen, onclick: aiVideo }, "Make AI video"))) : null);
+        h("button", { class: "primary", disabled: !data.heygen, onclick: aiVideo }, "Make AI video"))) : "");
   const m = data.made, out = [];
   if (m.ideas) out.push(h("div", {}, h("b", {}, "Idea"), h("pre", {}, `${m.ideas.pick.title}\n(${m.ideas.via})`)));
   if (m["film list"]) out.push(h("div", {}, h("b", {}, `Film list for ${NAMES[m["film list"].who] || m["film list"].who}, ${m["film list"].when}`), h("pre", {}, m["film list"].shots.map((s, i) => `${i + 1}. ${s}`).join("\n"))));
-  if (m.script) out.push(h("div", {}, h("b", {}, `Script (${m.script.via})`), h("pre", {}, [m.script.hook_en, m.script.hook_ar, "", ...m.script.lines_en].join("\n"))));
+  if (m.script) out.push(h("div", {}, h("b", {}, `Latest script · ${m.script.angle || ""} (${m.script.via})`), h("pre", {}, [m.script.hook_en, m.script.hook_ar, "", ...m.script.lines_en].join("\n"))));
   if (m["post text"]) out.push(h("div", {}, h("b", {}, "Post text"), h("pre", {}, m["post text"].text)));
   if (m.slot) out.push(h("div", {}, h("b", {}, "Slot"), h("pre", {}, `${new Date(m.slot.at).toLocaleString("en-GB", { weekday: "long", hour: "2-digit", minute: "2-digit" })}: ${m.slot.why}`)));
   if (m.cover) out.push(h("div", {}, h("b", {}, "Covers"), h("div", { class: "covers" }, ...["frame", "generated"].filter((k) => m.cover[k]).map((k) => h("img", { src: m.cover[k], title: k === "frame" ? "A frame of the footage" : "Muse Image" })))));
@@ -136,8 +151,22 @@ function render() {
   if (m.published) out.push(h("div", {}, h("b", {}, "Published"), h("pre", {}, `Instagram id ${m.published.instagram_id}`)));
   $("made").replaceChildren(...(out.length ? out : [h("p", { class: "small muted" }, "Run a listing to see what each step makes.")]));
 }
-async function decide(id, decision, note = "", by = "layla") {
-  const r = await post(`/api/requests/${id}/decide`, { decision, by, note });
+function scriptCard(r) {
+  return h("div", { class: "item", style: "margin-top:10px" },
+    h("b", {}, `Pick a script: ${r.options.length} checked by the Copywriter, waiting for the Marketing manager`),
+    h("p", { class: "small muted" }, "Filming, AI video, editing and covers start only after you pick one. Ask for a change in plain words and only that script is rewritten."),
+    ...r.options.map((o, i) => h("div", { class: "opt", "data-script": o.id },
+      h("div", {}, h("span", { class: "tag" }, `${i + 1} · ${o.angle}`), h("span", { class: "small muted" }, `${o.why || ""} · ${o.via}${o.revises ? ` · revised from ${o.revises}` : ""}`)),
+      h("pre", {}, [o.hook_en, o.hook_ar, "", ...o.lines_en].join("\n")),
+      h("input", { placeholder: "Change something, e.g. make the hook shorter, sea view first", class: "change", style: "width:100%;margin-bottom:8px" }),
+      h("div", { class: "row" }, h("span", { style: "flex:1" }),
+        h("button", { onclick: (e) => { const note = e.target.closest(".opt").querySelector(".change").value.trim(); if (!note) return toast("Say what to change");
+          decide(r.id, "revise", note, "maya", o.id); } }, "Ask for change"),
+        h("button", { class: "primary", onclick: () => decide(r.id, "approve", "", "maya", o.id) }, "Use this one")))),
+    h("div", { class: "row", style: "margin-top:8px" }, h("span", {}), h("button", { onclick: () => decide(r.id, "reject", prompt("What is wrong with all of them?") || "", "maya") }, "Send all back")));
+}
+async function decide(id, decision, note = "", by = "layla", choice = null) {
+  const r = await post(`/api/requests/${id}/decide`, { decision, by, note, choice });
   toast(r.next ? `Done: ${r.next}` : r.ok ? (r.id ? `Published: ${r.id}` : "Done") : `Not published yet: ${(r.needs || [r.error]).join("; ")}`);
   load();
 }

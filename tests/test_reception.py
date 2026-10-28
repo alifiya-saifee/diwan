@@ -54,7 +54,7 @@ def test_books_a_free_slot_and_offers_others_when_taken(office):
     r = msg(office, "Wednesday 4pm for MC-1204")
     assert r["reply"].startswith("Booked: Unit 1204") and "V1" in r["refs"]
     r2 = reception.message(office, "971559999999", "Can I see MC-1204 Wednesday at 4pm?", name_="Sara Malik", now=NOW)
-    assert "isn't available" in r2["reply"] and "Wednesday 28 Oct, 10:00 AM" in r2["reply"]
+    assert "isn't available" in r2["reply"] and "Wednesday 28 Oct, 3:00 PM" in r2["reply"] and "5:00 PM" in r2["reply"]  # nearest to 4pm
     assert "Viewing of MC-1204 with Karim Haddad" in nova.brief(office, "omar")["text"]
 
 
@@ -140,3 +140,34 @@ def test_a_slow_model_never_keeps_a_customer_waiting(office, monkeypatch, tmp_pa
     assert r["by"] == "rules" and "I'm Rania" in r["reply"]
     assert any(e["type"] == "agent.failed" and e["agent"] == "rania" for e in office.log.list())
     assert "I'll pay" in nova.converse(office, "Who is paying for Karim?", "layla", session="x")["text"] or True
+
+
+def test_a_number_that_counts_something_is_not_the_hour():
+    from datetime import datetime
+
+    from diwan import slots
+    now = datetime(2026, 10, 28, 9, 58, tzinfo=slots.DUBAI)
+    assert slots.parse("Is the Marina Crest 2 bed available? Can I see it Saturday at 4pm?", now).hour == 16  # found in a browser run: was 2 PM
+    assert slots.parse("Saturday for the 3 bed", now) is None
+    assert slots.parse("Thursday at 11", now).hour == 11
+
+
+def test_a_price_question_gets_the_price_or_which_listing_not_a_knowledge_card(office):
+    """Found in a browser run: "price please?" matched a card that says "please bring a photo ID"."""
+    r = reception.message(office, "ig:tester", "price please? 🙏", name_="@tester")
+    assert "Which property" in r["reply"] and "AED 2,600,000" in r["reply"] and "photo ID" not in r["reply"]
+    r = reception.message(office, "ig:tester", "How much is the Marina Crest one?", name_="@tester")
+    assert r["reply"].startswith("Unit 1204, Marina Crest") and "AED 2,600,000" in r["reply"]
+
+
+def test_a_taken_time_offers_the_nearest_free_ones():
+    from datetime import datetime
+
+    from diwan import slots
+    o = Office(EventLog())
+    demo.company(o)
+    now = datetime(2026, 10, 28, 10, tzinfo=slots.DUBAI)
+    first = reception.message(o, "971500000001", "Can I see Marina Crest on Saturday at 4pm?", name_="A", now=now)
+    assert "4:00 PM" in first["reply"] and first["reply"].startswith("Booked")
+    second = reception.message(o, "971500000002", "Can I see Marina Crest on Saturday at 4pm?", name_="B", now=now)
+    assert "isn't available" in second["reply"] and "Saturday 31 Oct, 3:00 PM" in second["reply"] and "Wednesday" not in second["reply"]

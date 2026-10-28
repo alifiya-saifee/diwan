@@ -42,11 +42,11 @@ header.top {
 .brand svg { width: 26px; height: 26px; }
 .brand .word { font-family: var(--display); font-size: 25px; letter-spacing: .3px; line-height: 1; }
 .brand .tag { font-size: 11px; color: var(--muted); letter-spacing: .4px; border-left: 1px solid var(--line-2); padding-left: 10px; margin-left: 2px; }
-header.top nav { display: flex; gap: 2px; flex-wrap: wrap; }
+header.top nav { display: flex; gap: 2px; flex-wrap: nowrap; }
 header.top nav a { color: var(--muted); padding: 7px 12px; border-radius: 9px; font-weight: 500; font-size: 13px; transition: .15s; }
 header.top nav a:hover { color: var(--ink); background: var(--chip); }
 header.top nav a.on { color: var(--bg); background: var(--gold); }
-header.top .status { margin-left: auto; display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+header.top .status { min-width: 0; overflow: hidden; flex-wrap: nowrap; white-space: nowrap; margin-left: auto; display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--chip); white-space: nowrap; }
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
 .dot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(130, 217, 159, .15); }
@@ -104,3 +104,5 @@ label { font-size: 12px; color: var(--muted); display: block; margin: 8px 0 4px;
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: .8px; text-transform: uppercase; }
+
+@media (max-width: 1500px) { header.top .status .pill:not(.meta-badge) { display: none; } }

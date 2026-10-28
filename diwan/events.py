@@ -77,4 +77,6 @@ class EventLog:
             if v:
                 q += f" and {col} = ?"
                 args.append(v)
-        return [self._row(r) for r in self.db.execute(q + " order by id", args).fetchall()]
+        with self.lock:  # one connection is shared by the web threads and the studio's workers (a browser run found the race)
+            rows = self.db.execute(q + " order by id", args).fetchall()
+        return [self._row(r) for r in rows]

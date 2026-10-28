@@ -54,3 +54,14 @@ def test_follow_up_questions_stay_on_the_deal_just_discussed(office):
     r = nova.ask(office, "And what changed?", session="s")
     assert "(F3) became" in r["text"]
     assert nova.ask(office, "And what changed?", session="other")["kind"] == "question"
+
+
+def test_what_did_we_sell_goes_to_the_analyst():
+    from diwan import demo
+    from diwan.agents import nova
+    from diwan.events import EventLog
+    from diwan.office import Office
+    o = Office(EventLog())
+    demo.seed(o)
+    r = nova.converse(o, "What did we sell last month?", "layla")
+    assert r["delegated_to"] == "analyst"  # found in a browser run: "sell" was asked back as "which deal?"

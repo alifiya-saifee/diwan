@@ -176,16 +176,18 @@ async function loadDetail() {
   renderChat(); renderProfile();
 }
 
+const shown = (p) => p.startsWith("ig:") ? `Instagram @${p.slice(3)}` : `+${p}`;
 function renderChat() {
   const d = detail, on = d.mode === "ai";
   const head = h("div", { class: "chead" }, avatar(d.name),
-    h("div", { style: "flex:1;min-width:0" }, h("div", { class: "nm" }, d.name), h("div", { class: "ph" }, `+${d.phone}`, d.linked ? ` · linked to ${d.property}` : "")),
+    h("div", { style: "flex:1;min-width:0" }, h("div", { class: "nm" }, d.name), h("div", { class: "ph" }, shown(d.phone), d.linked ? ` · linked to ${d.property}` : "")),
     h("select", { onchange: async (e) => { await post(`/api/chats/${d.phone}/stage`, { stage: e.target.value, by: ME }); load(); } },
       d.stages.map((s) => h("option", { value: s, selected: s === d.stage }, s))),
     h("div", { class: `switch ${on ? "on" : ""}`, title: "AI auto-reply", onclick: async () => { await post(`/api/chats/${d.phone}/${on ? "take" : "release"}?by=${ME}`); load(); } },
       h("span", { class: "knob" }), on ? "Rania replying" : `${NAMES[d.handled_by] || "You"} has it`));
-  const via = integ?.provider === "aisensy" ? "via AiSensy" : integ?.provider === "cloud" ? "via Meta Cloud API" : "sandbox line";
-  const chan = h("div", { class: "chan" }, h("span", { class: "on" }, "WhatsApp"), h("span", {}, via));
+  const ig = d.phone.startsWith("ig:");
+  const via = ig ? "comment reply" : integ?.provider === "aisensy" ? "via AiSensy" : integ?.provider === "cloud" ? "via Meta Cloud API" : "sandbox line";
+  const chan = h("div", { class: "chan" }, h("span", { class: "on" }, ig ? "Instagram" : "WhatsApp"), h("span", {}, via));
   const banners = [];
   if (d.viewing) banners.push(h("div", { class: "banner view" }, "📅 ", d.viewing.replace(/^viewing of /, "Viewing booked: ")));
   const left = d.window_closes ? (new Date(d.window_closes) - Date.now()) / 36e5 : 0;
@@ -256,7 +258,7 @@ function renderProfile() {
   const d = detail;
   const idx = d.stages.indexOf(d.stage);
   $("prof").replaceChildren(
-    h("div", { class: "big" }, avatar(d.name), h("div", {}, h("h3", {}, d.name), h("div", { class: "small muted" }, `+${d.phone}`))),
+    h("div", { class: "big" }, avatar(d.name), h("div", {}, h("h3", {}, d.name), h("div", { class: "small muted" }, shown(d.phone)))),
     h("div", { class: "kv" }, h("span", {}, "Stage"), h("span", {}, d.stage), h("span", {}, "Deal"), h("span", {}, d.property || "—"),
       h("span", {}, "Broker"), h("span", {}, NAMES[d.broker] || d.broker || "—"), h("span", {}, "Replying"), h("span", {}, d.mode === "ai" ? "Rania (AI)" : NAMES[d.handled_by] || "A person")),
     h("div", { class: "pipe" }, d.stages.slice(0, 8).map((s, i) => h("i", { class: i <= idx ? "done" : "", title: s }))),

@@ -24,7 +24,7 @@ from diwan.config import env
 from diwan.events import EventLog
 from diwan.office import Office
 from diwan.people import PEOPLE
-from diwan.providers import voice, whatsapp
+from diwan.providers import meta, voice, whatsapp
 from diwan.providers.chat import PROVIDERS
 
 WEB = Path(__file__).resolve().parents[1] / "web"
@@ -109,7 +109,8 @@ async def marketing_run(ref: str = "MC-1204"):
 
 @app.get("/api/studio")
 def studio_view(ref: str = "MC-1204"):
-    from diwan.agents import analysis, studio
+    from diwan import costs
+    from diwan.agents import analysis, strategy, studio
     from diwan.providers import instagram, meta
     blocked = {}
     for e in S.office.log.list():
@@ -123,7 +124,10 @@ def studio_view(ref: str = "MC-1204"):
     from diwan.providers import heygen
     return {"ref": ref, "connected": {"instagram": instagram.ready(), "meta": meta.ready(), "public_url": bool(env("PUBLIC_BASE_URL"))},
             "analysis": analysis.report(S.office), "board": studio.board(S.office), "made": made, "blocked": blocked,
-            "footage": studio.footage(S.office, ref), "approvals": [{"id": n.id, "text": n.props["text"], "kind": n.props.get("kind")} for n in reqs],
+            "footage": studio.footage(S.office, ref), "approvals": [{"id": n.id, "text": n.props["text"], "kind": n.props.get("kind"),
+                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises")}
+                                       for x in studio.script_options(S.office, n.props["text"])] if n.props.get("kind") == "use_script" else []} for n in reqs],
+            "strategy": strategy.report(S.office), "costs": costs.summary(),
             "script_approved": bool(studio.approved_script(S.office, ref)), "heygen": heygen.ready(),
             "listings": [{"ref": n.props["ref"], "title": n.props["title"], "permit": n.props.get("permit")} for n in g().of("listing")]}
 
@@ -201,9 +205,10 @@ async def upload_footage(ref: str = Form(...), file: UploadFile = File(...), by:
 
 
 class DecideIn(BaseModel):
-    decision: str  # approve | reject
+    decision: str  # approve | reject | revise (a script: change `choice` as the note says)
     by: str = "layla"
     note: str = ""
+    choice: str | None = None  # which of the offered scripts
 
 
 @app.post("/api/requests/{rid}/decide")
@@ -213,11 +218,21 @@ async def decide(rid: str, body: DecideIn):
     n = g().nodes.get(rid)
     if not n or n.type != "request":
         raise HTTPException(404, "no such request")
-    S.office.log.append("decision.made", actor=body.by, content={"card": rid, "answer": body.decision, "note": body.note})
     ref_of = next((x.props["ref"] for x in g().of("listing") if x.props["ref"] in n.props["text"]), None)
     if n.props.get("kind") == "use_script" and ref_of:
+        offered = [x["id"] for x in studio.script_options(S.office, n.props["text"])]
+        if body.choice and body.choice not in offered:
+            raise HTTPException(400, f"{body.choice} is not one of the scripts offered ({', '.join(offered)})")
+        if body.decision == "revise":
+            if not body.choice or not (body.note or "").strip():
+                raise HTTPException(400, "say which script to change and what to change")
+            S.office.log.append("decision.made", actor=body.by, content={"card": rid, "answer": "revise", "choice": body.choice, "note": body.note})
+            asyncio.get_event_loop().create_task(studio.script_revise(S.office, ref_of, body.choice, body.note, rid))
+            return {"ok": True, "next": f"{body.choice} back to the Script writer with your change"}
+        S.office.log.append("decision.made", actor=body.by, content={"card": rid, "answer": body.decision, "note": body.note, "choice": body.choice})
         asyncio.get_event_loop().create_task(studio.after_script(S.office, ref_of) if body.decision == "approve" else studio.script_rejected(S.office, ref_of, body.note))
         return {"ok": True, "next": "film list to the broker" if body.decision == "approve" else "back to the Script writer"}
+    S.office.log.append("decision.made", actor=body.by, content={"card": rid, "answer": body.decision, "note": body.note})
     if body.decision == "approve" and n.props.get("kind") == "publish":
         ref = next((x.props["ref"] for x in g().of("listing") if x.props["ref"] in n.props["text"]), None)
         return studio.publish(S.office, ref, by=body.by) if ref else {"ok": False, "needs": ["a listing reference"]}
@@ -242,6 +257,12 @@ async def ig_receive(request: Request):
         if c["username"] and c["text"]:
             reception.message(S.office, f"ig:{c['username']}", c["text"], name_=f"@{c['username']}", comment_id=c["comment_id"])
     return {"ok": True}
+
+
+@app.get("/api/costs")
+def model_costs():
+    from diwan import costs
+    return costs.summary()
 
 
 @app.get("/api/kpis/marketing")
@@ -816,4 +837,5 @@ def root():
 if WEB.exists():
     app.mount("/web", StaticFiles(directory=WEB), name="web")
 (Path(__file__).resolve().parents[1] / "media").mkdir(exist_ok=True)
-app.mount("/media", StaticFiles(directory=Path(__file__).resolve().parents[1] / "media"), name="media")
+meta.MEDIA.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=meta.MEDIA), name="media")

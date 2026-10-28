@@ -2,6 +2,12 @@
 export const NAMES = { layla: "Layla", omar: "Omar", priya: "Priya", joseph: "Joseph", ahmed: "Ahmed", maya: "Maya" };
 export const AGENTS = {};
 
+// Like h(), screens may pass null or false for "nothing here"; never print them as text.
+for (const m of ["replaceChildren", "append"]) {
+  const orig = Element.prototype[m];
+  Element.prototype[m] = function (...kids) { return orig.apply(this, kids.filter((k) => k != null && k !== false)); };
+}
+
 export function h(tag, attrs = {}, ...kids) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {

@@ -146,3 +146,21 @@ Everything in this repository was written during the Meta Global AI Developer Ha
 - Muse Glimmer (Meta open weights) on NVIDIA's free endpoint as a stand-in for Muse Spark when the Meta key is not
   set (development and fictional data only); endpoints without strict JSON mode get the schema in the instructions.
 - Reset starts a fresh saved log and keeps the old one as a dated backup.
+
+## 28 Oct 2026: script choices, angle strategy, cost controls, browser-tested
+
+- 2 to 3 checked scripts per listing, one per angle. The Marketing manager picks one, or asks for a change to one in
+  plain words; only that script is rewritten (model, or rules for shorter hook / feature first / fewer lines), checked
+  again and offered again.
+- Strategy: each angle measured on our own posts against our median. Winning (last 2 at 1.2x or more) is kept, fading
+  (down 3 times, under the median) is dropped, two under 0.8x rests 30 days, one slot always explores. With no history
+  of ours, the competitors' outliers lead. Shown on the Studio page as "What to post next".
+- Cost: identical requests are answered from the cache (default tape mode), every live call is on a ledger with tokens
+  and an estimated price, and a monthly budget (DIWAN_BUDGET_USD) stops live calls. Spend and savings on the Studio.
+- End-to-end browser runs (Playwright, e2e/): WhatsApp sandbox to Rania to a person taking over; a lesson taught on
+  the Team page and kept; an Instagram comment in the inbox; Nova reading back a job, the Lobby card; the studio from
+  run to three scripts, a change, a pick, footage, captions and the publish request. Each run twice on one server.
+- Found by those runs and fixed, each with a test: "2 bed ... Saturday at 4pm" booked 2 PM (the bed count was read as
+  the hour); a taken time offered the earliest slots of the day, now the nearest; "price please?" matched a knowledge
+  card on the word "please"; "what did we sell" was not sent to the analyst; the studio's worker threads and the web
+  raced on one database connection (500s); "null" printed on two screens; Instagram chats labelled as WhatsApp.

@@ -30,6 +30,12 @@ def free(g: Graph, broker: str, after: datetime, n: int = 3) -> list[datetime]:
     return out
 
 
+def nearest(g: Graph, broker: str, want: datetime, now: datetime, n: int = 3) -> list[datetime]:
+    """Free slots closest to the time asked for (same day first), never in the past: what a good receptionist offers."""
+    near = sorted(free(g, broker, max(now, want - timedelta(days=2)), 40), key=lambda t: (t.date() != want.date(), abs(t - want)))
+    return sorted(near[:n])
+
+
 def parse(text: str, now: datetime) -> datetime | None:
     """'tomorrow 4pm', 'Thursday at 11', 'today 17:00' -> a Dubai time, or None if no day and hour are said."""
     low, local = text.lower(), now.astimezone(DUBAI)
@@ -43,7 +49,9 @@ def parse(text: str, now: datetime) -> datetime | None:
             if re.search(rf"\b{d}|\b{d[:3]}\b", low):
                 day = local.date() + timedelta(days=(i - local.weekday()) % 7 or 7)
                 break
-    m = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", low)
+    # the hour: said with am/pm or a colon first, then after "at", never a number that counts something ("2 bed", "3 million")
+    m = (re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", low) or re.search(r"\b(\d{1,2}):(\d{2})()", low)
+         or re.search(r"\b(?:at|around|by)\s+(\d{1,2})()()\b(?!\s*(?:bed|br|bhk|room|million|m\b|k\b|sq|%|aed|year|min))", low))
     if day is None or not m:
         return None
     h = int(m.group(1))

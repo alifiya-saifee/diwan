@@ -6,3 +6,4 @@ media/
 *.bak
 diwan.db*
 evals/results-model.json
+usage.jsonl

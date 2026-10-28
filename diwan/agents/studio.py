@@ -25,6 +25,7 @@ the missing connection). Nothing is invented to keep the floor busy.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import statistics
 import subprocess
@@ -380,17 +381,48 @@ def _amounts(text: str) -> set[int]:
     return {int(a) for m in MONEY.finditer(text) for a in scribe.amounts(m.group(0))}
 
 
-def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: int | None, feedback: str | None = None) -> dict:
+def _template(lst: dict, angle: str) -> dict:
+    """A plain script for each angle, from the listing's own facts, for when no model is connected or it fails."""
+    price, feats = f"AED {lst['price_aed']:,}", lst.get("features") or []
+    cap = lambda f: f"{f[:1].upper()}{f[1:]}."  # noqa: E731
+    home = f"{lst['beds']} bedroom {lst['type']}"
+    close = [f"{price}. Permit {lst.get('permit')}.", "Message us to book a viewing."]
+    if angle == "walkthrough":
+        return {"hook_en": f"Step inside this {home} in {lst['community']}.", "hook_ar": f"ادخل معنا إلى هذا المنزل في {lst['community']}",
+                "lines_en": [f"Start with the best part: {feats[0] if feats else 'the view'}.", *[cap(f) for f in feats[1:3]],
+                             f"This is {lst['title']}.", *close]}
+    if angle == "lifestyle":
+        return {"hook_en": f"Imagine your mornings in {lst['community']}.", "hook_ar": f"تخيّل صباحك في {lst['community']}",
+                "lines_en": [f"Wake up to {feats[0] if feats else 'the light'}.", *[cap(f) for f in feats[1:3]],
+                             f"A {home} at {lst['title']}.", *close]}
+    if angle == "investor":
+        return {"hook_en": f"The facts investors ask first about {lst['title']}.", "hook_ar": f"الحقائق التي يسأل عنها المستثمرون أولاً",
+                "lines_en": [f"{home} in {lst['community']}.", *[cap(f) for f in feats[:2]], "Ask us for the service charge and title deed.",
+                             *close]}
+    if angle == "market-check":
+        return {"hook_en": f"What {price} gets you in {lst['community']} right now.", "hook_ar": f"ماذا يشتري {lst['price_aed']:,} درهم اليوم",
+                "lines_en": [f"At {lst['title']}: a {home}.", *[cap(f) for f in feats[:3]], "Same budget elsewhere often means less space.",
+                             *close]}
+    return {"hook_en": f"What does {price} buy in {lst['community']}?", "hook_ar": f"ماذا تشتري {lst['price_aed']:,} درهم في {lst['community']}؟",
+            "lines_en": [f"This is {lst['title']}.", *[cap(f) for f in feats[:3]], f"{home}.", *close]}
+
+
+def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: int | None, feedback: str | None = None,
+           angle: str = "price-reveal", why: str = "", base: dict | None = None) -> dict:
+    """One script on one angle. `base` is a draft to revise (a person's change request or a supervisor's return): the
+    model changes what was asked and keeps the rest; without a model the change is applied to the template where it can be."""
+    from diwan.agents import strategy
     lst = _listing(office, ref)
     rec = office.graph().record(f"listing:{ref}")
     c = get("mscript")
     system = runner.instructions(c, office.log) + "\nWrite in the `script` format. Only facts and amounts from the listing. 30 seconds, 5 to 7 lines."
-    user = runner.user_message(f"Script for: {idea['pick']['title']}. Borrow the structure, never the words, of the hook card if given."
-                               + (f"\n\n{feedback}" if feedback else ""),
-                               {f"listing:{ref}": rec, **({"hook": hook_card["hook"]} if hook_card else {})})
+    task = (f"Script for: {idea['pick']['title']}. Angle: {strategy.ANGLES[angle][0]}. Borrow the structure, never the words, of the hook card if given."
+            + (f"\n\nRevise this draft; change only what is asked, keep everything else:\n{json.dumps({k: base[k] for k in ('hook_en', 'hook_ar', 'lines_en')}, ensure_ascii=False)}" if base else "")
+            + (f"\n\n{feedback}" if feedback else ""))
+    user = runner.user_message(task, {f"listing:{ref}": rec, **({"hook": hook_card["hook"]} if hook_card else {})})
     data, by = None, "template"
     if runner.has_model(c, system, user, schema=SCRIPT_SCHEMA):
-        office.log.append("agent.started", actor="mscript", agent="mscript", caused_by=cause, content={"task": f"Writing the script for {ref} with the model"})
+        office.log.append("agent.started", actor="mscript", agent="mscript", caused_by=cause, content={"task": f"Writing the {angle} script for {ref} with the model"})
         try:
             data = runner.call(c, system, user, schema=SCRIPT_SCHEMA).data
             by = "muse-spark"
@@ -401,16 +433,62 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
         except Exception as e:
             _blocked(office, "mscript", f"Muse Spark failed, using the template: {str(e)[:120]}", cause=cause)
     if not data:
-        price = f"AED {lst['price_aed']:,}"
-        feats = lst.get("features") or []
-        data = {"hook_en": f"What does {price} buy in {lst['community']}?",
-                "hook_ar": f"ماذا تشتري {lst['price_aed']:,} درهم في {lst['community']}؟",
-                "lines_en": [f"This is {lst['title']}.", *[f"{f[:1].upper()}{f[1:]}." for f in feats[:3]],
-                             f"{lst['beds']} bedroom {lst['type']}.", f"{price}. Permit {lst.get('permit')}.", "Message us to book a viewing."],
-                "lines_ar": []}
-    m = _made(office, "mscript", "script", ref, data | {"via": by}, cause)
-    _pack(office, "mscript", f"Hook: \"{data['hook_en']}\" / \"{data['hook_ar']}\" · {len(data['lines_en'])} lines ({by}).", cause=cause, usage={"provider": by})
+        data = {**_template(lst, angle), "lines_ar": []}
+        if base:
+            data = {**{k: base[k] for k in ("hook_en", "hook_ar", "lines_en")}, "lines_ar": base.get("lines_ar", [])}
+        data = _apply_rules(data, feedback or "", lst)
+    m = _made(office, "mscript", "script", ref, data | {"via": by, "angle": angle, "why": why, **({"revises": base["id"]} if base else {})}, cause)
+    _pack(office, "mscript", f"{angle} script{' (revised from ' + base['id'] + ')' if base else ''}: \"{data['hook_en']}\" · {len(data['lines_en'])} lines ({by}).",
+          cause=cause, usage={"provider": by})
     return m
+
+
+def _shorter(hook: str) -> str:
+    """A tighter hook that keeps the place: "2 bedroom apartment" becomes "2-bed", filler goes, and if it is still long
+    the middle is cut, never the area at the end."""
+    end = "?" if hook.rstrip().endswith("?") else "."
+    h = re.sub(r"(\d) bedroom (apartment|flat|villa|townhouse|home)", r"\1-bed", hook.rstrip(" .?!"), flags=re.I)
+    h = re.sub(r"\b(this|really|just|very|right now|the facts)\s+", "", h, flags=re.I)
+    h = re.sub(r"^what does (.+?) buy in (.+)$", r"\1 in \2", h, flags=re.I)        # the price and the place, as a question
+    h = re.sub(r"^imagine your (\w+) in (.+)$", lambda m: f"{m.group(1).capitalize()} in {m.group(2)}", h, flags=re.I)
+    w = h.split()
+    if len(w) >= len(hook.split()):
+        w = w[1:]  # drop the opening word, keep the place at the end
+    return " ".join(w)[:1].upper() + " ".join(w)[1:] + end
+
+
+def _apply_rules(data: dict, note: str, lst: dict) -> dict:
+    """Changes the template can make without a model: a shorter hook, a feature first, fewer lines, a line removed.
+    Anything else waits for the model and says so."""
+    d = {**data, "lines_en": list(data["lines_en"])}
+    low = note.lower()
+    if re.search(r"\b(short|shorter|cut|tighter|punchier)\b.*\bhook\b|\bhook\b.*\b(short|shorter|cut|tighter|punchier)\b|12 words", low):
+        d["hook_en"] = _shorter(d["hook_en"])
+    for f in lst.get("features") or []:
+        if f.lower() in low and re.search(r"\b(first|lead|open|start)\b", low):
+            line = f"{f[:1].upper()}{f[1:]}."
+            d["lines_en"] = [line] + [x for x in d["lines_en"] if x.lower().rstrip(".") != f.lower()]
+    m = re.search(r"\b(?:remove|drop|no|without)\b (?:the )?(?:line )?(?:about |mention of )?([a-z ]{3,30})", low)
+    if m:
+        w = m.group(1).strip().split()[0]
+        d["lines_en"] = [x for x in d["lines_en"] if w not in x.lower() or "permit" in x.lower()] or d["lines_en"]
+    if re.search(r"\b(shorter|fewer lines|too long)\b", low) and "hook" not in low and len(d["lines_en"]) > 5:
+        keep = [x for x in d["lines_en"] if "permit" in x.lower() or "message us" in x.lower()]
+        d["lines_en"] = [x for x in d["lines_en"] if x not in keep][:5 - len(keep)] + keep
+    return d
+
+
+def variants(office: Office, ref: str, idea: dict, tr: dict | None, cause: int | None, n: int = 3) -> list[dict]:
+    """Up to n scripts on different angles, each checked by the Copywriter, chosen by the strategy."""
+    from diwan.agents import strategy
+    picks = strategy.pick(office, n)
+    _pack(office, "mcopy", "Scripting " + "; ".join(f"{p['angle']} ({p['slot']}: {p['why']})" for p in picks), cause=cause, kind="assign")
+    out = []
+    for p in picks:
+        sc = reviewed(office, "script", ref, lambda fb, p=p: script(office, ref, idea, tr, cause, fb, angle=p["angle"], why=f"{p['slot']}: {p['why']}"), cause)
+        if sc:
+            out.append(sc)
+    return out
 
 
 def video_check(office: Office, ref: str, sc: dict, cause: int | None) -> dict | None:
@@ -723,32 +801,63 @@ async def run(office: Office, ref: str, pause: float = .6) -> None:
     if not idea:
         return
     await step(lanes, office, start); await asyncio.sleep(pause)
-    sc = await step(reviewed, office, "script", ref, lambda fb: script(office, ref, idea, tr, start, fb), start); await asyncio.sleep(pause)
-    if not sc:
+    scs = await step(variants, office, ref, idea, tr, start); await asyncio.sleep(pause)
+    if not scs:
         return
     await step(playbook, office, start)
-    ask_script_approval(office, ref, sc, start)  # nothing that costs filming, editing or model time starts before a person says yes
+    ask_script_approval(office, ref, scs, start)  # nothing that costs filming, editing or model time starts before a person says yes
 
 
-def ask_script_approval(office: Office, ref: str, sc: dict, cause: int | None) -> None:
-    """The Copywriter asks the Marketing manager to approve the script. An older open request for this listing is replaced."""
+def _content(office: Office, cid: str) -> dict | None:
+    return next((e["content"] for e in office.log.list() if e["type"] == "content.made" and e["content"]["id"] == cid), None)
+
+
+def ask_script_approval(office: Office, ref: str, scs: list[dict] | dict, cause: int | None) -> None:
+    """The Copywriter asks the Marketing manager to pick one of the checked scripts (or ask for a change).
+    An older open request for this listing is replaced."""
+    scs = [scs] if isinstance(scs, dict) else scs
     for n in office.graph().of("request", status="open"):
         if n.props.get("kind") == "use_script" and ref in n.props.get("text", ""):
             office.log.append("decision.made", actor="mcopy", agent="mcopy", content={"card": n.id, "answer": "replaced by a newer draft"})
-    _pack(office, "mcopy", f"Use script {sc['id']} for {ref}: \"{sc['hook_en']}\" ({len(sc['lines_en'])} lines, checked by the Copywriter)",
-          cause=cause, kind="use_script")
+    opts = " | ".join(f"script {x['id']} [{x.get('angle', 'price-reveal')}] \"{x['hook_en']}\"" for x in scs)
+    _pack(office, "mcopy", f"Pick a script for {ref} ({len(scs)} checked by the Copywriter): {opts}", cause=cause, kind="use_script")
+
+
+def script_options(office: Office, text: str) -> list[dict]:
+    """The scripts offered in a request, in order."""
+    return [c for c in (_content(office, i) for i in re.findall(r"script (C\d+)", text)) if c]
 
 
 def approved_script(office: Office, ref: str) -> dict | None:
-    """The script a person approved for filming, if any."""
+    """The script a person approved for filming, if any: the one they picked, or the only one offered."""
     g = office.graph()
     for e in reversed(office.log.list()):
         if e["type"] == "decision.made" and e["content"].get("answer") == "approve":
             n = g.nodes.get(e["content"]["card"])
             if n and n.props.get("kind") == "use_script" and ref in n.props.get("text", ""):
-                sid = re.search(r"script (C\d+)", n.props["text"])
-                return next((x["content"] for x in office.log.list() if x["type"] == "content.made" and sid and x["content"]["id"] == sid.group(1)), None)
+                opts = script_options(office, n.props["text"])
+                choice = e["content"].get("choice")
+                return next((x for x in opts if x["id"] == choice), opts[0] if opts else None)
     return None
+
+
+async def script_revise(office: Office, ref: str, sid: str, note: str, card: str | None = None, pause: float = .6) -> None:
+    """The Marketing manager asked for a change to one script: the Script writer revises that one, the Copywriter checks
+    it, and the choice is asked again with the revision in its place."""
+    step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
+    base = _content(office, sid)
+    if not base:
+        return
+    n = office.graph().nodes.get(card) if card else None
+    others = script_options(office, n.props["text"]) if n else [base]
+    idea, tr = made(office, "ideas", ref), made(office, "transcript")
+    start = _pack(office, "mcopy", f"Change asked to {sid} for {ref}: \"{note}\". Back to the Script writer.", kind="assign")
+    fb = f"The Marketing manager asked for this change: {note}"
+    angle = base.get("angle", "price-reveal")
+    sc = await step(reviewed, office, "script", ref,
+                    lambda f: script(office, ref, idea, tr, start, "\n".join(x for x in (fb, f) if x), angle=angle, why=base.get("why", ""), base=base), start)
+    if sc:
+        ask_script_approval(office, ref, [sc if x["id"] == sid else x for x in others], start)
 
 
 async def after_script(office: Office, ref: str, pause: float = .6) -> None:
@@ -767,14 +876,14 @@ async def after_script(office: Office, ref: str, pause: float = .6) -> None:
 
 
 async def script_rejected(office: Office, ref: str, note: str, pause: float = .6) -> None:
-    """A person sent the script back: the note goes to the Script writer, the new draft is checked and asked again."""
+    """A person sent all the scripts back: the note goes to the Script writer, new drafts are checked and asked again."""
     step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
     idea, tr = made(office, "ideas", ref), made(office, "transcript")
-    start = _pack(office, "mcopy", f"Script for {ref} sent back by the Marketing manager: {note or 'no reason given'}", kind="assign")
+    start = _pack(office, "mcopy", f"Scripts for {ref} sent back by the Marketing manager: {note or 'no reason given'}", kind="assign")
     fb = f"The Marketing manager sent your script back: {note}" if note else None
     sc = await step(reviewed, office, "script", ref, lambda f: script(office, ref, idea, tr, start, "\n".join(x for x in (fb, f) if x) or None), start)
     if sc:
-        ask_script_approval(office, ref, sc, start)
+        ask_script_approval(office, ref, [sc], start)
 
 
 async def after_footage(office: Office, ref: str, pause: float = .6) -> None:
@@ -841,8 +950,12 @@ def run_now(office: Office, ref: str) -> None:
     asyncio.run(run(office, ref, pause=0))
 
 
-def approve_script_now(office: Office, ref: str, by: str = "maya") -> None:
-    """For tests and the evaluation: a person approves the open script request, then the approved steps run."""
-    n = next(n for n in office.graph().of("request", status="open") if n.props.get("kind") == "use_script" and ref in n.props["text"])
-    office.log.append("decision.made", actor=by, content={"card": n.id, "answer": "approve"})
+def script_request(office: Office, ref: str):
+    return next((n for n in office.graph().of("request", status="open") if n.props.get("kind") == "use_script" and ref in n.props["text"]), None)
+
+
+def approve_script_now(office: Office, ref: str, by: str = "maya", choice: str | None = None) -> None:
+    """For tests and the evaluation: a person picks a script from the open request, then the approved steps run."""
+    n = script_request(office, ref)
+    office.log.append("decision.made", actor=by, content={"card": n.id, "answer": "approve", "choice": choice})
     asyncio.run(after_script(office, ref, pause=0))

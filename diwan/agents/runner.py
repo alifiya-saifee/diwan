@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from diwan import costs
 from diwan.agents.charters import Charter, get
 from diwan.config import env, offline, tape_mode
 from diwan.events import EventLog
@@ -72,10 +73,10 @@ def provider_for(c: Charter) -> ChatProvider | None:
 
 
 def has_model(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape_root=None) -> bool:
-    """Whether a turn can run at all: a live provider, or a recording of this exact request."""
-    if not offline() and provider_for(c) is not None:
+    """Whether a turn can run at all: a recording of this exact request, or a live provider within the budget."""
+    if tape_mode() != "off" and tape.load(c.id, tape.key(c.id, system, user, schema), tape_root) is not None:
         return True
-    return tape_mode() != "off" and tape.load(c.id, tape.key(c.id, system, user, schema), tape_root) is not None
+    return not offline() and provider_for(c) is not None and costs.allowed()
 
 
 LIVE = float(env("DIWAN_LIVE_TIMEOUT", "25"))         # someone is waiting: Nova, Rania, a meeting
@@ -83,10 +84,21 @@ BACKGROUND = float(env("DIWAN_MODEL_TIMEOUT", "240"))  # nobody is waiting: the 
 
 
 def call(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape_root=None, timeout: float | None = None) -> Reply:
-    """One model turn. `timeout`: how long the model may take; a live caller falls back to rules when it runs out."""
+    """One model turn. `timeout`: how long the model may take; a live caller falls back to rules when it runs out.
+
+    Tapes (DIWAN_TAPE): cache (the default) answers an identical request from its recording and saves every new live
+    reply, so the same prompt is never paid for twice; replay uses a recording only when no live model is there;
+    record always calls live and saves; off never uses recordings. Live calls stop at the monthly budget."""
     k, mode = tape.key(c.id, system, user, schema), tape_mode()
     recorded = tape.load(c.id, k, tape_root) if mode != "off" else None
+    if recorded and mode == "cache":
+        costs.record(c.id, recorded.usage, cached=True)
+        return recorded
     p = None if offline() else provider_for(c)
+    if p is not None and not costs.allowed():
+        p = None
+        if not recorded:
+            raise NotSetUp(f"{c.name}: this month's model budget (USD {costs.budget():g}) is used up")
     if p is None:
         if recorded:
             return recorded
@@ -98,9 +110,11 @@ def call(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape
             recorded.usage["live_failed"] = str(e)[:200]
             return recorded
         raise
+    reply.usage["cost_usd"] = costs.estimate(p.id, reply.usage.get("input_tokens"), reply.usage.get("output_tokens"))
+    costs.record(c.id, reply.usage)
     if c.runs_on == "open" and not p.open_weights:
         reply.usage["fallback"] = "open-weight host not set up; ran on Meta's API by DIWAN_OPEN_FALLBACK"
-    if mode == "record":
+    if mode in ("record", "cache"):
         tape.save(c.id, k, reply, tape_root)
     return reply
 

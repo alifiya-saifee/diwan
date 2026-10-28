@@ -190,3 +190,16 @@ def test_muse_glimmer_on_nvidia_stands_in_for_spark_and_survives_no_json_mode(mo
     assert calls[0]["chat_template_kwargs"] == {"enable_thinking": False}
     monkeypatch.setenv("META_API_KEY", "m")
     assert for_tier("spark").id == "meta"
+
+
+def test_the_log_can_be_read_and_written_from_many_threads():
+    """Found in a browser run: the studio's worker threads and the web threads raced on one connection."""
+    from concurrent.futures import ThreadPoolExecutor
+    log = EventLog()
+
+    def work(i):
+        log.append("agent.started", actor="mkt", agent="mkt", content={"i": i})
+        return len(log.list())
+    with ThreadPoolExecutor(16) as ex:
+        list(ex.map(work, range(400)))
+    assert len(log.list()) == 400

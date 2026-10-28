@@ -28,6 +28,7 @@ HANDOVER = r"\b(agent|human|real person|someone|call me|speak to|talk to|broker|
 NOT_MINE = (r"\b(cash|crypto|bitcoin|usdt|source of (funds|wealth)|aml|sanction\w*|anonymous|without (id|documents|kyc)|"
             r"no (id|documents)|third party|offshore|negotiat\w*|discount|lower (the )?price|best price|commission split)\b")
 RETURNS = r"\b(roi|returns?|yield|guarantee\w*|rental income|appreciat\w*)\b"
+PRICE = r"\b(price|how much|cost|asking|aed\?)\b|\bpp\b|السعر|كم"
 BOOK = r"\b(view|viewing|visit|see|book|appointment|come (by|over)|show me)\b"
 SEARCH = r"\b(bed|br|bedroom|studio|villa|apartment|flat|townhouse|looking for|budget|available|listings?|options?)\b"
 
@@ -190,7 +191,7 @@ def book(office: Office, phone: str, deal: str, listing: Node, when: datetime | 
     broker = g.nodes[f"deal:{deal}"].props["broker"]
     who = g.nodes[f"chat:{phone}"].label
     ref = listing.props["ref"]
-    options = slots.free(g, broker, now, 3)
+    options = slots.nearest(g, broker, when, now, 3) if when else slots.free(g, broker, now, 3)
     if when is None or not slots.is_open(when) or when.isoformat() in slots.busy(g, broker) or when <= now:
         opts = ", ".join(slots.say(t) for t in options)
         lead = "That time isn't available. " if when else ""
@@ -229,6 +230,12 @@ def answer_rules(office: Office, phone: str, deal: str, text: str, now: datetime
         return f"Thank you, noted. {broker} will go through the payment details with you personally.", list(heard), [Action("record_fact", "Noted")], None
     if re.search(HANDOVER, low):
         return f"Of course. I'm passing you to {broker}, who will reply here shortly.", [], [Action("assign", "Hand to broker")], "asked for a person"
+    if re.search(PRICE, low) and not re.search(SEARCH + r"|\d", low):
+        listing = _listing_named(g, text, chat)
+        if listing:
+            return f"{_listing_line(listing)}. Would you like to see it? Tell me a day and time.", [listing.id], [Action("reply", "Price")], None
+        opts = "\n".join(f"• {_listing_line(n)}" for n in advertisable(g)[:3])
+        return f"Happy to help. Which property do you mean? Here are some of ours:\n{opts}", [n.id for n in advertisable(g)[:3]], [Action("reply", "Ask which listing")], None
     if re.search(BOOK, low) or slots.parse(text, now):
         listing = _listing_named(g, text, chat)
         if not listing:
@@ -245,7 +252,8 @@ def answer_rules(office: Office, phone: str, deal: str, text: str, now: datetime
                     [], [Action("assign", "Brief the broker")], "no listing fits the brief")
         lines = "\n".join(f"• {_listing_line(n)}" for n in found)
         return f"Here's what fits:\n{lines}\nWould you like to see one? Tell me a day and time.", [n.id for n in found], [Action("reply", "Listings")], None
-    words = set(re.findall(r"[a-z]{4,}", low)) - {"what", "your", "have", "does", "about", "with", "there", "hello", "thanks"}
+    words = set(re.findall(r"[a-z]{4,}", low)) - {"what", "your", "have", "does", "about", "with", "there", "hello", "thanks", "please", "could",
+                                                   "would", "want", "need", "know", "tell", "this", "that", "just", "still", "much", "they", "them"}
     best = max(g.of("knowledge", status="confirmed"), key=lambda k: len(words & set(re.findall(r"[a-z]{4,}", f"{k.props['title']} {k.props['text']}".lower()))), default=None)
     if best and words & set(re.findall(r"[a-z]{4,}", f"{best.props['title']} {best.props['text']}".lower())):
         return best.props["text"], [best.id], [Action("reply", best.props["title"])], None

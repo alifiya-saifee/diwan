@@ -30,9 +30,11 @@ STEPS = [
     ("Pick the idea", "midea", "The listing and the board", "Muse Spark proposes ideas that name the cards they build on; invented card ids are dropped. Without a model, one idea per card plus a walk-through.",
      "The chosen idea", "Strategist"),
     ("Balance the week", "mlane", "Our last 30 days of posts", "Sorts our captions into five lanes and names the empty one.", "Lane counts and the gap", None),
-    ("Write the script", "mscript", "The idea, the listing, the outlier's hook", "Muse Spark writes a hook and 5 to 8 lines in English and Arabic, borrowing structure never words. Every amount must be on the listing.",
-     "Hook EN/AR and lines", "Copywriter"),
-    ("Approve the script", "mcopy", "The checked script", "The Copywriter asks the Marketing manager. Nothing that spends filming, editing or model time starts before yes. A no with a note goes back to the Script writer.",
+    ("Choose the angles", "mcopy", "Our posts and the competitors' outliers", "The strategy keeps angles that are winning on our account, drops ones that are fading or resting, leads with what wins in the market when we have no history, and always keeps one slot to explore.",
+     "Up to 3 angles, each with the numbers behind it", None),
+    ("Write the scripts", "mscript", "The idea, the listing, the outlier's hook, the angle", "One script per angle: a hook and 5 to 8 lines in English and Arabic, borrowing structure never words. Every amount must be on the listing. Each is checked before it is offered.",
+     "2 to 3 checked scripts", "Copywriter"),
+    ("Pick or change a script", "mcopy", "The checked scripts", "The Marketing manager picks one, or asks for a change to one in plain words (\"make the hook shorter, sea view first\"): only that script is rewritten, checked again and offered again. Nothing that spends filming, editing or model time starts before a pick.",
      "An approved script", "Marketing manager (a person)"),
     ("Get footage", "mshoot / mvideo", "The approved script", "The broker gets a film list with the time to shoot; or a person clicks Make AI video and an AI presenter (HeyGen) reads the script, after confirming the avatar's consent.",
      "Footage", "Producer"),
@@ -223,7 +225,7 @@ flowchart LR
 
 <section><p class="eyebrow">People and money</p><h2>Where a person must say yes</h2>
 <div class="gates">
- <div class="gate"><b>The script</b>The Marketing manager approves the checked script. Until then nothing that spends filming time, HeyGen credits, editing or image generation can start. A "send back" with a note goes straight to the Script writer, whose next draft is checked again and asked again.</div>
+ <div class="gate"><b>The script</b>The Marketing manager picks one of 2 to 3 checked scripts, or asks for a change to one. Until then nothing that spends filming time, HeyGen credits, editing or image generation can start. A "send back" with a note goes straight to the Script writer, whose next draft is checked again and asked again.</div>
  <div class="gate"><b>A face or a voice</b>An AI presenter video starts only when a person clicks Make AI video and confirms that the person in the avatar agreed. The confirmation is recorded with the footage.</div>
  <div class="gate"><b>Publishing</b>The owner approves the finished post. If something is still missing (the cut, Instagram, a public address for the video), the approval is kept and the post says what it needs.</div>
 </div></section>
@@ -238,6 +240,22 @@ flowchart LR
  <div><b>4. Escalated</b><span class="muted">Third failure: the Marketing lead raises it to the owner with every reason, as a decision: fix it myself, accept as is, or stop this reel.</span></div>
  <div><b>5. Learned</b><span class="muted">A correction a person makes can be saved as a lesson ("Script writer, never mention service charges"). It goes into that agent's instructions, and "never" lessons are enforced in code from the next draft.</span></div>
 </div></section>
+
+<section class="col"><p class="eyebrow">Strategy</p><h2>When to keep an angle, and when to shift</h2>
+<p>Every post is put in one angle: price reveal, walk-through, lifestyle, investor facts, or market check. Each of our own posts is measured against our median engagement, oldest first.</p>
+<table class="kpi"><tr><th>Status</th><th>Rule</th><th>What the studio does</th></tr>
+<tr><td>Winning</td><td>The last 2 posts both at 1.2x our median or more</td><td>Keep making it; it gets the first script</td></tr>
+<tr><td>Fading</td><td>It worked before, each of the last 3 did worse than the one before, and the latest is under our median</td><td>Shift away: no script on it this run</td></tr>
+<tr><td>Resting</td><td>The last 2 posts both under 0.8x our median</td><td>Stop for 30 days, then it may be tested again</td></tr>
+<tr><td>Steady</td><td>In between</td><td>Keep in rotation</td></tr>
+<tr><td>Untested</td><td>Fewer than 2 posts of ours</td><td>A candidate for the explore slot, ranked by how it does for competitors</td></tr></table>
+<p>Up to 2 scripts come from what is working (ours first, then the competitors' outliers) and 1 always explores, so the account never runs one idea until it dies.</p></section>
+
+<section class="col"><p class="eyebrow">Cost</p><h2>Not paying twice, and a cap</h2>
+<p><b>Cache.</b> An identical request (same agent, same prompt, same format) is answered from its recording at no cost. A changed prompt, or changed facts, is a new call.</p>
+<p><b>Ledger.</b> Every live call is written down with its tokens and an estimated price, and every cache hit with what it saved. The Studio shows this month's spend, the budget and the savings.</p>
+<p><b>Cap.</b> At the monthly budget (DIWAN_BUDGET_USD, default 25) live calls stop; agents use rules and templates and say so. NVIDIA's free endpoint costs nothing.</p>
+<p><b>Order of spend.</b> Research and scripts are text and cost cents. Filming time and HeyGen (about $1 a minute, no free API credits) only start after a person picks a script.</p></section>
 
 <section class="col"><p class="eyebrow">The research agent, in depth</p><h2>How research works and how we know it is right</h2>
 <p><b>Who the competitors are.</b> A person lists the accounts. "Suggest" asks Muse Spark to search the web for Dubai brokerages active in our listing areas; nothing is watched until a person confirms. Without an Instagram connection, real posts can be copied into a spreadsheet template and imported.</p>

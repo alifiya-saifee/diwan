@@ -261,6 +261,7 @@ def run(model: bool = False) -> dict:
     if not model:
         os.environ["DIWAN_OFFLINE"] = "1"
         os.environ["DIWAN_LOCAL_ASR"] = "0"
+    os.environ["DIWAN_TAPE"] = "record" if model else "off"  # measure the model or the rules, never a cached answer
     res = {"at": datetime.now().isoformat(timespec="seconds"), "mode": "model" if model else "rules", "suites": {}}
     for name, fn in SUITES.items():
         t0 = time.monotonic()

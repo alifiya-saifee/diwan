@@ -25,8 +25,9 @@ def offline() -> bool:
 
 
 def tape_mode() -> str:
-    """off: live only. replay: live if possible, else tape. record: live, and save every reply to a tape."""
-    return env("DIWAN_TAPE", "replay")
+    """cache (default): a recorded reply first, else live and save it. replay: live if possible, else tape.
+    record: live, and save every reply. off: live only."""
+    return env("DIWAN_TAPE", "cache")
 
 
 # Settings a person may enter from the Settings screen. Values go into the local .env (never into the event log), and

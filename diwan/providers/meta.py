@@ -14,7 +14,7 @@ import httpx
 from diwan.config import ROOT, env, offline
 
 TRANSPORT: httpx.BaseTransport | None = None  # tests swap in a fake
-MEDIA = ROOT / "media"
+MEDIA = Path(env("DIWAN_MEDIA") or ROOT / "media")  # a test server keeps its files apart
 
 
 class MetaError(RuntimeError):

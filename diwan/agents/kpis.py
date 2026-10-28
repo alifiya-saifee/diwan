@@ -79,7 +79,7 @@ def measure(office: Office) -> dict[str, dict]:
     decided = {e["content"]["card"]: e["content"]["answer"] for e in evs if e["type"] == "decision.made"}
     cards = [f"R{e['id']}" for e in approvals]
     approved = sum(1 for c in cards if decided.get(c) == "approve")
-    sent_back = sum(1 for c in cards if decided.get(c) == "reject")
+    sent_back = sum(1 for c in cards if decided.get(c) in ("reject", "revise"))  # a change request is a send-back
     pinned = [e["content"] for e in evs if e["type"] == "board.pinned"]
     posts = [e for e in evs if e["type"] == "content.made" and e["content"]["kind"] == "post text"]
     footage_ai = [e for e in evs if e["type"] == "footage.added" and e["content"].get("source", "").startswith("AI")]
