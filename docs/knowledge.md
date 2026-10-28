@@ -1,7 +1,7 @@
 # Knowledge and catalog: spec and definition of done
 
 What every agent (Rania on WhatsApp, Nova, the marketing writers) is allowed to know and say, how people keep it
-correct, and how the listings catalog works at real scale. Status: **to build**. Nothing here is done until every box in
+correct, and how the listings catalog works at real scale. Status: **spec agreed, to build**. Nothing here is done until every box in
 section 6 is ticked by a check in the browser.
 
 ## 1. Who uses it, and for what
@@ -103,8 +103,8 @@ Memory graph
 - **Listing prices: brokers always propose, never edit.** Decided by the product owner. The catalog price is one price
   for every customer, so changing it is the listing owner's decision. A price agreed with one customer ("2.5M for you")
   is not a catalog change: it lives in that customer's chat and deal, and no agent repeats it to anyone else.
-- **Review period, per kind** (recommended, awaiting confirmation): fees and policies 90 days; company basics 180 days;
+- **Review period, per kind** (decided): fees and policies 90 days; company basics 180 days;
   area guides 90 days; approved answers 180 days; projects until their valid-until date; listings have no review date
   (the feed is their source) but are flagged when the feed has not updated them for 7 days.
-- **Photos** (recommended, awaiting confirmation): from the portal feed first; upload is allowed for listings that are
+- **Photos** (decided): from the portal feed first; upload is allowed for listings that are
   on no portal (off-market, pre-launch) and for areas and projects. A feed photo wins over an upload.
