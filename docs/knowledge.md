@@ -55,11 +55,22 @@ A customer's own facts stay in their deal and chat; they never become shared kno
 Wiring this into Rania's replies and the portal feed belongs to the session building WhatsApp and portals; this spec
 gives them one search function and one item format to call.
 
+## 5a. One store, two screens
+
+Knowledge stays small (tens to a few hundred items, edited now and then); the catalog grows to thousands of listings
+that change daily and are searched while a broker is on the phone. On one page the catalog would bury the knowledge.
+
+- **Knowledge page:** company, approved answers, areas, projects, brand, as tabs.
+- **Catalog page:** its own full-width screen for listings: photo grid or table, filters, paging, search by reference or building.
+- **The same underneath:** one item format, one set of edit / propose / retire / history rules, one search across both
+  (the header search box and Rania's lookup), and links both ways (an area guide lists its listings; a listing shows
+  its area's knowledge). The memory graph shows both.
+
 ## 6. Definition of done (each checked in the browser, with a screenshot)
 
 Knowledge page
 - [ ] Tabs for each kind, with counts
-- [ ] Search box finds an item by any word in its title or text
+- [ ] Search box finds an item by any word in its title or text, across knowledge and the catalog
 - [ ] Filters: status, audience, stale, area
 - [ ] Add an item (any kind) with audience and review date
 - [ ] Edit an item: the new text shows, the old version is in its history
@@ -69,7 +80,7 @@ Knowledge page
 - [ ] Empty state for each tab says what to add and how
 - [ ] Usage: "used in N replies" on each item
 
-Catalog
+Catalog (its own page, linked from Knowledge)
 - [ ] 1,000 listings load and scroll without lag (paged, 50 at a time)
 - [ ] Filters: area, beds, price range, status, agent, has permit
 - [ ] Search by reference, building or title
