@@ -77,6 +77,16 @@ class ChatProvider:
                 r = c.post(f"{self.base_url().rstrip('/')}/chat/completions", json=body, headers=headers)
         except httpx.HTTPError as e:
             raise ProviderError(f"{self.label}: {type(e).__name__}") from None
+        if r.status_code in (400, 422) and "response_format" in r.text:
+            # this endpoint has no strict JSON mode: ask for the same JSON in words, then check it as usual
+            body.pop("response_format")
+            body["messages"][0]["content"] += ("\n\nReply with one JSON object only, no other text, matching this JSON schema:\n"
+                                               + json.dumps(schema["schema"]))
+            try:
+                with httpx.Client(transport=self.transport, timeout=timeout) as c:
+                    r = c.post(f"{self.base_url().rstrip('/')}/chat/completions", json=body, headers=headers)
+            except httpx.HTTPError as e:
+                raise ProviderError(f"{self.label}: {type(e).__name__}") from None
         if r.status_code >= 400:
             raise ProviderError(f"{self.label}: HTTP {r.status_code} {r.text[:300]}")
         out = r.json()
@@ -108,15 +118,21 @@ PROVIDERS: dict[str, ChatProvider] = {
                               ("FIREWORKS_API_KEY",), "FIREWORKS_MODEL", None, open_weights=True),
     "modal": ChatProvider("modal", "Modal endpoint (Muse Spark Open)", "MODAL_ENDPOINT_URL", None,
                           ("MODAL_API_KEY",), "MODAL_MODEL", None, open_weights=True, key_required=False),
+    # Meta's open-weights Muse Glimmer on NVIDIA's free endpoint: development and fictional data only (40 requests a minute)
+    "nvidia": ChatProvider("nvidia", "NVIDIA endpoint (Muse Glimmer)", "NVIDIA_API_BASE", "https://integrate.api.nvidia.com/v1",
+                           ("NVIDIA_API_KEY",), "NVIDIA_MODEL", "meta/muse-glimmer-30b", open_weights=True),
 }
 
 
 def for_tier(tier: str) -> ChatProvider | None:
     """`spark` runs on Meta's API; `open` runs on the first open-weight host that is set up (DIWAN_OPEN_ORDER)."""
-    if tier == "spark":
-        return PROVIDERS["meta"] if PROVIDERS["meta"].available() else None
+    if tier == "spark":  # Muse Spark on Meta's API; without it, Meta's open Muse Glimmer on NVIDIA's endpoint
+        for pid in ("meta", "nvidia"):
+            if PROVIDERS[pid].available():
+                return PROVIDERS[pid]
+        return None
     if tier == "open":
-        for pid in env("DIWAN_OPEN_ORDER", "baseten,fireworks,modal").split(","):
+        for pid in env("DIWAN_OPEN_ORDER", "baseten,fireworks,modal,nvidia").split(","):
             p = PROVIDERS.get(pid.strip())
             if p and p.available():
                 return p

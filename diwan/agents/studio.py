@@ -25,7 +25,6 @@ the missing connection). Nothing is invented to keep the floor busy.
 from __future__ import annotations
 
 import asyncio
-import difflib
 import re
 import statistics
 import subprocess
@@ -42,7 +41,7 @@ from diwan.graph import Graph
 from diwan.office import Office
 from diwan.pack import Action, Evidence, Pack
 from diwan.people import name
-from diwan.providers import instagram, meta
+from diwan.providers import instagram, local_asr, meta
 
 LANES = {"listing": r"\b(bed|br|apartment|villa|unit|for sale|listing|aed|price|tour)\b",
          "area guide": r"\b(area|community|guide|living in|neighbou?rhood|marina|jvc|downtown|business bay)\b",
@@ -117,10 +116,73 @@ def _duration(path: Path) -> float:
     return float(r.stdout.strip() or 0)
 
 
+def can_transcribe() -> bool:
+    return meta.ready() or local_asr.available()
+
+
+def transcribe(wav: bytes) -> dict:
+    """Muse Voice Transcribe; without the Meta key, local Whisper (labelled). Adds "via"."""
+    if meta.ready():
+        return meta.transcribe(wav) | {"via": "Muse Voice Transcribe"}
+    if local_asr.available():
+        return local_asr.transcribe(wav) | {"via": "local Whisper (no Meta key)"}
+    raise meta.MetaError("needs META_API_KEY")
+
+
 def _wav(src: Path) -> bytes:
     out = src.with_suffix(".wav")
     _ffmpeg("-i", str(src), "-ac", "1", "-ar", "16000", str(out))
     return out.read_bytes()
+
+
+# ---------- posts brought in by hand (a spreadsheet), until Instagram is connected ----------
+
+CSV_COLUMNS = ["source", "account", "followers", "url", "type", "caption", "likes", "comments", "posted_at"]
+CSV_TEMPLATE = ",".join(CSV_COLUMNS) + "\ncompetitor,brokerage.one,12000,https://www.instagram.com/p/XXXX/,REELS,\"What does 2M buy in Dubai Marina?\",950,40,2026-10-20 19:30\n"
+
+
+def import_posts(office: Office, rows: list[dict], *, by: str) -> dict:
+    """Real posts someone copied from Instagram into the template. Scored against each account's own median, the
+    same as fetched posts, and the outliers are pinned on the research board with their links."""
+    clean, errors = [], []
+    for i, r in enumerate(rows, 2):
+        try:
+            acc = (r.get("account") or "").strip().lstrip("@")
+            if not acc:
+                raise ValueError("no account")
+            at = (r.get("posted_at") or "").strip()
+            iso = None
+            if at:
+                dt = datetime.fromisoformat(at.replace(" ", "T"))
+                iso = (dt if dt.tzinfo else dt.replace(tzinfo=timezone(timedelta(hours=4)))).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+0000")
+            url = (r.get("url") or "").strip()
+            clean.append({"id": url or f"{acc}-{i}", "account": acc, "source": "own" if (r.get("source") or "").strip().lower() == "own" else "competitor",
+                          "followers": int(float(r["followers"])) if (r.get("followers") or "").strip() else None, "permalink": url,
+                          "type": (r.get("type") or "").strip().upper() or None, "caption": (r.get("caption") or "")[:600],
+                          "likes": int(float(r.get("likes") or 0)), "comments": int(float(r.get("comments") or 0)), "at": iso})
+        except (ValueError, KeyError) as e:
+            errors.append(f"row {i}: {e}")
+    by_acc: dict[str, list] = {}
+    for p in clean:
+        by_acc.setdefault((p["source"], p["account"]), []).append(p)
+    outliers = []
+    for (_, _acc), ps in by_acc.items():
+        eng = [p["likes"] + p["comments"] for p in ps]
+        med = statistics.median(eng) if len(eng) >= 5 else None
+        for p, v in zip(ps, eng):
+            p.update(engagement=v, score=round(v / med, 1) if med else None)
+            office.log.append("post.seen", actor=by, agent="mrival", key=f"import:{p['id']}:{v}", content=p | {"imported": True})
+            if p["source"] == "competitor" and p["score"] and p["score"] >= 2:
+                outliers.append(p)
+    outliers.sort(key=lambda p: -p["score"])
+    for p in outliers[:3]:
+        office.log.append("board.pinned", actor="mrival", agent="mrival", key=f"pin:{p['id']}",
+                          content={"id": f"B-{abs(hash(p['id'])) % 10**8}", "kind": "outlier", "title": (p["caption"] or "(no caption)")[:90], "account": p["account"],
+                                   "why": f"{p['score']}x @{p['account']}'s usual likes+comments", "url": p["permalink"], "post": p["id"], "type": p["type"]})
+    comp = [p for p in clean if p["source"] == "competitor"]
+    _pack(office, "mrival", f"Imported {len(clean)} posts ({len(comp)} from {len({p['account'] for p in comp})} competitors): {len(outliers)} outliers at 2x or more their account's usual."
+          + (f" Skipped: {'; '.join(errors[:3])}" if errors else ""), kind="draft")
+    return {"imported": len(clean), "outliers": len(outliers), "errors": errors}
 
 
 # ---------- research ----------
@@ -129,7 +191,11 @@ def watch(office: Office, cause: int | None) -> list[dict]:
     """Competitor watch: score every competitor post against its own account's median; pin the outliers."""
     names = competitors(office.graph())
     if not instagram.ready():
-        _blocked(office, "mrival", "Connect Instagram in Settings (IG_ACCESS_TOKEN, IG_USER_ID)", cause=cause)
+        pinned = [b for b in board(office) if b["kind"] == "outlier"]
+        if pinned:
+            _pack(office, "mrival", f"Using imported posts: {len(pinned)} outliers pinned. Connect Instagram to fetch them automatically.", cause=cause)
+            return [{"id": b["post"], "account": b["account"], "score": None, "permalink": b["url"], "type": b.get("type")} for b in pinned]
+        _blocked(office, "mrival", "Connect Instagram in Settings, or import posts from a spreadsheet in the Studio", cause=cause)
         return []
     if not names:
         _blocked(office, "mrival", "Add competitor accounts in Settings → Content studio", cause=cause)
@@ -200,7 +266,7 @@ def transcript_of(office: Office, card: dict | None, cause: int | None) -> dict 
     if not card:
         _blocked(office, "mtrans", "Waiting for an outlier video from Competitor watch", cause=cause)
         return None
-    if not meta.ready():
+    if not can_transcribe():
         _blocked(office, "mtrans", "Transcribing needs Muse Voice Transcribe (META_API_KEY)", cause=cause)
         return None
     if card.get("type") not in ("VIDEO", "REELS") or not card.get("media_url"):
@@ -216,7 +282,7 @@ def transcript_of(office: Office, card: dict | None, cause: int | None) -> dict 
                     f.write(chunk)
                     if i * 65536 > 80_000_000:
                         raise RuntimeError("video over 80 MB")
-        t = meta.transcribe(_wav(tmp))
+        t = transcribe(_wav(tmp))
     except Exception as e:  # download or transcription failed: say so, keep going without it
         _blocked(office, "mtrans", f"Could not transcribe @{card.get('account')}'s video: {str(e)[:160]}", cause=cause)
         return None
@@ -348,18 +414,19 @@ def video_check(office: Office, ref: str, sc: dict, cause: int | None) -> dict |
     if not f:
         _blocked(office, "mcheck", f"Waiting for footage of {ref} (upload it in the studio)", cause=cause)
         return None
-    if not meta.ready():
+    if not can_transcribe():
         _blocked(office, "mcheck", "Checking the take needs Muse Voice Transcribe (META_API_KEY)", cause=cause)
         return None
     try:
-        t = meta.transcribe(_wav(Path(f["path"])))
+        t = transcribe(_wav(Path(f["path"])))
     except Exception as e:
         _blocked(office, "mcheck", f"Could not transcribe the footage: {str(e)[:160]}", cause=cause)
         return None
-    said = t["text"].lower()
-    drift = [ln for ln in sc["lines_en"] if difflib.SequenceMatcher(None, ln.lower(), said).find_longest_match(0, len(ln), 0, len(said)).size < len(ln) * .6]
-    m = _made(office, "mcheck", "take check", ref, {"said": t["text"], "turns": t["turns"], "drift": drift}, cause)
-    _pack(office, "mcheck", "The take follows the script." if not drift else f"{len(drift)} line(s) drifted: \"{drift[0][:80]}\"", cause=cause,
+    words = lambda x: re.findall(r"[a-z\u0600-\u06ff]+|\d+", x.lower().replace(",", ""))  # noqa: E731
+    heard = set(words(t["text"]))
+    drift = [ln for ln in sc["lines_en"] if words(ln) and sum(w in heard for w in words(ln)) / len(words(ln)) < .6]
+    m = _made(office, "mcheck", "take check", ref, {"said": t["text"], "turns": t["turns"], "drift": drift, "via": t["via"]}, cause)
+    _pack(office, "mcheck", ("The take follows the script." if not drift else f"{len(drift)} line(s) drifted: \"{drift[0][:80]}\"") + f" (heard by {t['via']})", cause=cause,
           kind="draft" if not drift else "send_back")
     return m
 
@@ -428,13 +495,20 @@ def captions(office: Office, ref: str, check: dict | None, cause: int | None) ->
     if not f:
         _blocked(office, "mcap", f"Waiting for footage of {ref}", cause=cause)
         return None
-    if not check:
-        _blocked(office, "mcap", "Captions need the transcript of the take (Voice Transcribe)", cause=cause)
-        return None
     src = Path(f["path"])
     dur = _duration(src)
     srt = src.with_suffix(".srt")
-    srt.write_text(_srt(check["turns"], check["said"], dur))
+    if check and check["said"].strip():
+        srt.write_text(_srt(check["turns"], check["said"], dur))
+        source = f"what was said ({check.get('via', 'transcribed')})"
+    elif (sc := made(office, "script", ref)):
+        lines = sc["lines_en"]
+        step = dur / max(1, len(lines))
+        srt.write_text(_srt([{"start": i * step, "end": (i + 1) * step, "text": ln} for i, ln in enumerate(lines)], "", dur))
+        source = "the script (the audio could not be transcribed)"
+    else:
+        _blocked(office, "mcap", "Captions need a transcript of the take or a script", cause=cause)
+        return None
     rows = [blk.split("\n") for blk in srt.read_text().strip().split("\n\n") if "-->" in blk]
     w = int(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width", "-of", "csv=p=0", str(src)],
                            capture_output=True, text=True).stdout.strip() or 720)
@@ -448,14 +522,15 @@ def captions(office: Office, ref: str, check: dict | None, cause: int | None) ->
         out = f"[v{i}]"
         chain.append(f"{last}[{i + 1}:v]overlay=(W-w)/2:H-h-H*0.12:enable='between(t,{a:.2f},{b:.2f})'{out}")
         last = out
+    meta.MEDIA.mkdir(parents=True, exist_ok=True)
     out = meta.MEDIA / f"cut-{ref}-{f['id']}.mp4"
     try:
         _ffmpeg(*inputs, "-filter_complex", ";".join(chain), "-map", last, "-map", "0:a?", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(out))
     except Exception as e:
         _blocked(office, "mcap", f"ffmpeg could not put the captions on: {str(e)[:160]}", cause=cause)
         return None
-    m = _made(office, "mcap", "cut", ref, {"path": str(out), "served": f"/media/{out.name}", "srt": str(srt), "lines": len(rows)}, cause)
-    _pack(office, "mcap", f"Captions on the video: {len(rows)} lines. Cut ready.", cause=cause)
+    m = _made(office, "mcap", "cut", ref, {"path": str(out), "served": f"/media/{out.name}", "srt": str(srt), "lines": len(rows), "from": source}, cause)
+    _pack(office, "mcap", f"Captions on the video: {len(rows)} lines from {source}. Cut ready.", cause=cause)
     return m
 
 
@@ -488,6 +563,7 @@ def cover(office: Office, ref: str, sc: dict, cause: int | None) -> dict | None:
     out = {}
     if f:
         src = Path(f["path"])
+        meta.MEDIA.mkdir(parents=True, exist_ok=True)
         frame = meta.MEDIA / f"frame-{ref}-{f['id']}.jpg"
         try:
             _ffmpeg("-ss", f"{max(0.5, _duration(src) * .3):.1f}", "-i", str(src), "-frames:v", "1", str(frame))

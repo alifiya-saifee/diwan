@@ -107,7 +107,7 @@ def test_analysis_gives_kpis_and_measured_reasons(connected):
     assert one["kpis"]["followers"] == 10000 and one["kpis"]["outliers"] == 2 and one["kpis"]["formats"] == {"REELS": 2, "IMAGE": 6}
     assert one["kpis"]["engagement_rate"] == round(100 * (905 + 855 + 105 * 6) / 8 / 10000, 2)
     found = {w["feature"] for w in r["why"]}
-    assert {"opens with a question", "is a reel or video", "was posted in the evening (6 to 11 PM Dubai)"} <= found
+    assert {"open with a question", "are reels or videos", "were posted in the evening (6 to 11 PM Dubai)"} <= found
     assert all(w["examples"] for w in r["why"])
     assert "not available" in r["notes"][0]
 
@@ -149,3 +149,27 @@ def test_instagram_comment_goes_to_rania_and_the_reply_goes_back_as_a_comment(co
     r = reception.message(connected, f"ig:{c['username']}", c["text"], name_=f"@{c['username']}", comment_id=c["comment_id"])
     sent = [e for e in connected.log.list() if e["type"] == "chat.sent"][-1]["content"]
     assert "MC-1204" in r["reply"] and sent["via"] == "instagram" and sent["provider_id"] == "reply1"
+
+
+def test_imported_posts_feed_the_analysis_and_the_board(office):
+    rows = [{"source": "competitor", "account": "@rival.one", "followers": "10000", "url": f"https://instagram.com/p/a{i}", "type": "REELS" if i < 2 else "IMAGE",
+             "caption": "What does 2M buy in the Marina?" if i < 2 else "New listing with lots of features " * 4, "likes": "900" if i < 2 else "100", "comments": "5",
+             "posted_at": "2026-10-20 19:30" if i < 2 else "2026-10-21 11:00"} for i in range(8)]
+    r = studio.import_posts(office, rows + [{"account": "", "likes": "1", "comments": "1"}], by="layla")
+    assert r["imported"] == 8 and r["outliers"] == 2 and r["errors"] == ["row 10: no account"]
+    a = analysis.report(office)
+    assert a["competitors"][0]["account"] == "rival.one" and a["competitors"][0]["kpis"]["followers"] == 10000
+    assert [b["kind"] for b in studio.board(office)] == ["outlier", "outlier"]
+    studio.run_now(office, "MC-1204")
+    assert studio.made(office, "ideas", "MC-1204")["ideas"][1]["cards"]  # an idea built on an imported outlier
+
+
+def test_captions_come_from_the_script_when_nothing_can_transcribe(office, tmp_path):
+    studio.run_now(office, "MC-1204")
+    clip = tmp_path / "take.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x568:rate=10", "-f", "lavfi", "-i", "sine=frequency=440",
+                    "-t", "3", "-shortest", "-pix_fmt", "yuv420p", str(clip)], check=True)
+    office.log.append("footage.added", actor="omar", content={"id": "F1", "ref": "MC-1204", "path": str(clip)})
+    asyncio.run(studio.after_footage(office, "MC-1204", pause=0))
+    cut = studio.made(office, "cut", "MC-1204")
+    assert Path(cut["path"]).exists() and cut["from"].startswith("the script")

@@ -37,6 +37,10 @@
       <section class="panel"><h2>Competitors</h2>
         <div class="row"><input id="names" placeholder="@brokerage.one, @brokerage.two"><button id="save">Save</button><button id="suggest">Suggest</button></div>
         <div id="sugg" class="small muted" style="margin-top:8px"></div>
+        <div class="row" style="margin-top:10px;flex-wrap:wrap"><span class="small muted" style="flex:1 1 260px">No Instagram connection yet? Copy real posts into the
+          <a href="/api/studio/import-template">spreadsheet template</a> (likes, comments, caption, link, date) and import it.</span>
+          <input type="file" id="csv" accept=".csv,text/csv" style="flex:0 1 220px"><button id="imp">Import posts</button></div>
+        <div id="impres" class="small" style="margin-top:6px"></div>
         <div style="overflow:auto;margin-top:12px"><table class="kpi" id="kpi"></table></div>
         <div id="notes" class="small muted" style="margin-top:8px"></div>
       </section>
@@ -90,7 +94,7 @@ function render() {
     h("td", {}, k.formats ? Object.entries(k.formats).map(([f, n]) => `${n} ${f.toLowerCase()}`).join(", ") : "—"), h("td", {}, K(k.best_day)),
     h("td", {}, k.best_hour != null ? `${k.best_hour}:00` : "—"), h("td", {}, K(k.outliers)));
   $("kpi").replaceChildren(head, ...(a.competitors.length ? a.competitors.map((r) => row("@" + r.account, r.kpis)) : [h("tr", {}, h("td", { colspan: 10, class: "muted" },
-    c.instagram ? "Save competitor accounts and run a listing to fetch their posts." : "Connect Instagram in Settings, add competitors, then run a listing."))]),
+    c.instagram ? "Save competitor accounts and run a listing to fetch their posts." : "Connect Instagram in Settings, or import posts from the spreadsheet template above."))]),
     ...(a.ours.posts ? [row("Us", a.ours.kpis, "ours")] : []));
   $("notes").replaceChildren(...a.notes.map((n) => h("div", {}, "· " + n)));
   $("why").replaceChildren(...(a.why.length ? a.why.map((w) => h("div", { class: "finding" }, w.finding,
@@ -129,6 +133,14 @@ $("suggest").onclick = async () => {
   const r = await post("/api/studio/competitors/suggest");
   $("sugg").replaceChildren(...(r.ok ? [h("span", {}, "Suggested (check before saving): "), ...r.suggestions.map((s) => h("a", { href: "#", style: "margin-right:8px",
     onclick: (e) => { e.preventDefault(); $("names").value = [$("names").value, "@" + s].filter(Boolean).join(", "); } }, "@" + s))] : [h("span", {}, r.needs)]));
+};
+$("imp").onclick = async () => {
+  const f = $("csv").files[0]; if (!f) return toast("Pick the filled-in template");
+  const fd = new FormData(); fd.append("file", f);
+  const r = await fetch("/api/studio/import", { method: "POST", body: fd });
+  const d = await r.json();
+  $("impres").textContent = r.ok ? `Imported ${d.imported} posts, ${d.outliers} outliers.${d.errors.length ? " Skipped: " + d.errors.slice(0, 3).join("; ") : ""}` : d.detail;
+  load();
 };
 $("up").onclick = async () => {
   const f = $("file").files[0]; if (!f) return toast("Pick a video file");

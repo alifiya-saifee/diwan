@@ -146,6 +146,25 @@ def suggest_competitors():
         return {"ok": False, "needs": f"Search failed: {str(e)[:160]}"}
 
 
+@app.get("/api/studio/import-template")
+def import_template():
+    from diwan.agents import studio
+    return PlainTextResponse(studio.CSV_TEMPLATE, headers={"Content-Disposition": "attachment; filename=diwan-posts-template.csv"}, media_type="text/csv")
+
+
+@app.post("/api/studio/import")
+async def import_posts(file: UploadFile = File(...), by: str = Form("layla")):
+    import csv
+    import io
+    from diwan.agents import studio
+    text = (await file.read()).decode("utf-8-sig", errors="replace")
+    rows = list(csv.DictReader(io.StringIO(text)))
+    missing = [c for c in ("account", "likes", "comments") if rows and c not in rows[0]]
+    if not rows or missing:
+        raise HTTPException(422, f"Use the template: missing columns {', '.join(missing) or 'all'}")
+    return studio.import_posts(S.office, rows, by=by)
+
+
 @app.post("/api/studio/footage")
 async def upload_footage(ref: str = Form(...), file: UploadFile = File(...), by: str = Form("omar")):
     from diwan.agents import studio
@@ -264,7 +283,12 @@ def people():
 
 @app.post("/api/demo/reset")
 def reset(correction: bool = False):
-    S.office = Office(EventLog(":memory:"))
+    """A fresh demo office. With a saved log, the old file is kept as a dated backup (logs are never rewritten)."""
+    path = env("DIWAN_DB", ":memory:")
+    if path != ":memory:" and Path(path).exists():
+        S.office.log.db.close()
+        Path(path).rename(f"{path}.{datetime.now().strftime('%Y%m%d-%H%M%S')}.bak")
+    S.office = Office(EventLog(path))
     demo.seed(S.office)
     if correction:
         demo.correction(S.office)

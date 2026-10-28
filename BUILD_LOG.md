@@ -135,3 +135,14 @@ Everything in this repository was written during the Meta Global AI Developer Ha
 - Footage upload: the take is checked against the script, captions are drawn and overlaid with ffmpeg, a cover frame
   is cut. Permit check counts only money as prices (unit and permit numbers are not prices).
 - Studio page: competitors, KPI table, findings, top posts, the line step by step, what it made, footage, approval.
+
+## 28 Oct 2026: marketing works without keys, honestly labelled
+
+- Import real posts from a spreadsheet template until Instagram is connected: scored against each account's own
+  median, outliers pinned, KPIs and findings computed the same way as fetched posts.
+- Local Whisper as a development fallback for transcription (Muse Voice Transcribe is always first); every result
+  says which one heard it. Captions come from what was said, or from the script when nothing can transcribe.
+- The take check compares words, not punctuation. Findings read as plain sentences.
+- Muse Glimmer (Meta open weights) on NVIDIA's free endpoint as a stand-in for Muse Spark when the Meta key is not
+  set (development and fictional data only); endpoints without strict JSON mode get the schema in the instructions.
+- Reset starts a fresh saved log and keeps the old one as a dated backup.

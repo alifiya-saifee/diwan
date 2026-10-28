@@ -20,16 +20,16 @@ DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 AREAS = r"\b(marina|jvc|downtown|business bay|palm|creek|hills|jbr|meydan|arabian ranches|dubai south)\b"
 
 FEATURES = {
-    "is a reel or video": lambda p: p.get("type") in ("VIDEO", "REELS"),
-    "is a carousel": lambda p: p.get("type") == "CAROUSEL_ALBUM",
-    "opens with a question": lambda p: "?" in _hook(p) or "؟" in _hook(p),
-    "puts a price or number in the first line": lambda p: bool(re.search(r"\d|aed|million|\bm\b|k\b", _hook(p).lower())),
-    "names an area": lambda p: bool(re.search(AREAS, (p.get("caption") or "").lower())),
-    "has Arabic in the caption": lambda p: bool(re.search(r"[؀-ۿ]", p.get("caption") or "")),
-    "asks people to DM, comment or call": lambda p: bool(re.search(r"\b(dm|comment|call|whatsapp|link in bio|book|message us)\b", (p.get("caption") or "").lower())),
-    "has a short caption (under 150 characters)": lambda p: len(p.get("caption") or "") < 150,
-    "was posted in the evening (6 to 11 PM Dubai)": lambda p: 18 <= _hour(p) <= 23,
-    "uses 5 or more hashtags": lambda p: (p.get("caption") or "").count("#") >= 5,
+    "are reels or videos": lambda p: p.get("type") in ("VIDEO", "REELS"),
+    "are carousels": lambda p: p.get("type") == "CAROUSEL_ALBUM",
+    "open with a question": lambda p: "?" in _hook(p) or "؟" in _hook(p),
+    "put a price or number in the first line": lambda p: bool(re.search(r"\d|aed|million|\bm\b|k\b", _hook(p).lower())),
+    "name an area": lambda p: bool(re.search(AREAS, (p.get("caption") or "").lower())),
+    "have Arabic in the caption": lambda p: bool(re.search(r"[\u0600-\u06ff]", p.get("caption") or "")),
+    "ask people to DM, comment or call": lambda p: bool(re.search(r"\b(dm|comment|call|whatsapp|link in bio|book|message us)\b", (p.get("caption") or "").lower())),
+    "have a short caption (under 150 characters)": lambda p: len(p.get("caption") or "") < 150,
+    "were posted in the evening (6 to 11 PM Dubai)": lambda p: 18 <= _hour(p) <= 23,
+    "use 5 or more hashtags": lambda p: (p.get("caption") or "").count("#") >= 5,
 }
 
 
@@ -103,7 +103,7 @@ def why(ps: list[dict]) -> list[dict]:
         a = sum(1 for p in wins if f(p)) / len(wins)
         b = sum(1 for p in rest if f(p)) / len(rest)
         if abs(a - b) >= .25:
-            out.append({"finding": f"Outliers {'more' if a > b else 'less'} often {label}: {round(a * 100)}% of {len(wins)} outliers vs {round(b * 100)}% of {len(rest)} other posts.",
+            out.append({"finding": f"{round(a * 100)}% of the {len(wins)} outliers {label}, against {round(b * 100)}% of the other {len(rest)} posts.",
                         "feature": label, "outliers": round(a * 100), "others": round(b * 100),
                         "examples": [p["permalink"] for p in wins if f(p) == (a > b)][:3]})
     return sorted(out, key=lambda x: -abs(x["outliers"] - x["others"]))

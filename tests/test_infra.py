@@ -170,3 +170,22 @@ def test_tape_is_not_reused_when_the_prompt_changes(monkeypatch, tmp_path):
     monkeypatch.setenv("DIWAN_OFFLINE", "1")
     with pytest.raises(runner.NotSetUp):
         runner.run(EventLog(), "scribe", request="R1", task="t2", sources={"meeting:M1": MEETING}, tape_root=tmp_path)
+
+
+def test_muse_glimmer_on_nvidia_stands_in_for_spark_and_survives_no_json_mode(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "nv")
+    assert for_tier("spark").id == "nvidia" and for_tier("open").id == "nvidia"
+    calls = []
+
+    def handle(req):
+        body = json.loads(req.content)
+        calls.append(body)
+        if "response_format" in body:
+            return httpx.Response(400, text='{"error": "response_format json_schema not supported"}')
+        return httpx.Response(200, json={"choices": [{"message": {"content": '```json\n{"ok": true}\n```'}}], "usage": {}})
+    monkeypatch.setattr(PROVIDERS["nvidia"], "transport", httpx.MockTransport(handle))
+    r = PROVIDERS["nvidia"].complete_json("sys", "user", {"name": "x", "strict": True, "schema": {"type": "object"}})
+    assert r.data == {"ok": True} and calls[0]["model"] == "meta/muse-glimmer-30b"
+    assert "JSON schema" in calls[1]["messages"][0]["content"] and "response_format" not in calls[1]
+    monkeypatch.setenv("META_API_KEY", "m")
+    assert for_tier("spark").id == "meta"
