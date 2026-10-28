@@ -36,6 +36,7 @@ from pathlib import Path
 
 import httpx
 
+from diwan import brand
 from diwan.agents import runner
 from diwan.agents.charters import get
 from diwan.config import env
@@ -263,7 +264,7 @@ def trends(office: Office, cause: int | None) -> list[dict]:
         return []
     try:
         r = meta.search("What short-form video formats and hooks are performing for Dubai real-estate brokers on Instagram and TikTok "
-                        "in the last month? Answer with exactly three lines and nothing else, each in the form:\n"
+                        "in the last month? Use at most two searches. Answer with exactly three lines and nothing else, each in the form:\n"
                         "1. <the format or hook, under 12 words> | <why it works, under 15 words> | <the URL of the page you saw it on>")
     except meta.MetaError as e:
         _blocked(office, "mtrend", f"Web search failed: {e}", cause=cause)
@@ -334,7 +335,7 @@ def ideas(office: Office, ref: str, cards: list[dict], cause: int | None, feedba
     user = runner.user_message(f"Three short-video ideas for listing {ref}. Each title is the hook a viewer would see, naming the building or area and one "
                                "real feature; list the card ids an idea builds on (an empty list if none). Use only facts from the listing."
                                + (f"\n\n{feedback}" if feedback else ""),
-                               {f"listing:{ref}": _brief(office, ref), **{x["id"]: f"{x['title']} ({x['why']})" for x in cards}})
+                               {f"listing:{ref}": _brief(office, ref), "brand": brand.brief(office), **{x["id"]: f"{x['title']} ({x['why']})" for x in cards}})
     out, by = [], "rules"
     if runner.has_model(c, system, user, schema=IDEAS_SCHEMA):
         office.log.append("agent.started", actor="midea", agent="midea", caused_by=cause, content={"task": f"Writing ideas for {ref} with the model"})
@@ -404,12 +405,12 @@ def _amounts(text: str) -> set[int]:
     return {int(a) for m in MONEY.finditer(text) for a in scribe.amounts(m.group(0))}
 
 
-def _template(lst: dict, angle: str) -> dict:
+def _template(lst: dict, angle: str, sign_off: str = "Message us to book a viewing.") -> dict:
     """A plain script for each angle, from the listing's own facts, for when no model is connected or it fails."""
     price, feats = f"AED {lst['price_aed']:,}", lst.get("features") or []
     cap = lambda f: f"{f[:1].upper()}{f[1:]}."  # noqa: E731
     home = f"{lst['beds']} bedroom {lst['type']}"
-    close = [f"{price}. Permit {lst.get('permit')}.", "Message us to book a viewing."]
+    close = [f"{price}. Permit {lst.get('permit')}.", sign_off]
     if angle == "walkthrough":
         return {"hook_en": f"Step inside this {home} in {lst['community']}.", "hook_ar": f"ادخل معنا إلى هذا المنزل في {lst['community']}",
                 "lines_en": [f"Start with the best part: {feats[0] if feats else 'the view'}.", *[cap(f) for f in feats[1:3]],
@@ -441,11 +442,11 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
     system = runner.instructions(c, office.log) + ("\nWrite in the `script` format: about 30 seconds, 5 to 7 lines. Use only facts and amounts from "
                                                    "the listing, and build the lines from its features. Every line says something new; never repeat a "
                                                    "line or the unit name. No placeholders or brackets: if a fact is missing, leave it out. The last "
-                                                   "line invites the viewer to message us to book a viewing. lines_ar translates lines_en.")
+                                                   "line invites the viewer to get in touch, in the brand's own sign-off if it has one. lines_ar translates lines_en.")
     task = (f"Script for: {idea['pick']['title']}. Angle: {strategy.ANGLES[angle][0]}. Borrow the structure, never the words, of the hook card if given."
             + (f"\n\nRevise this draft; change only what is asked, keep everything else:\n{json.dumps({k: base[k] for k in ('hook_en', 'hook_ar', 'lines_en')}, ensure_ascii=False)}" if base else "")
             + (f"\n\n{feedback}" if feedback else ""))
-    user = runner.user_message(task, {f"listing:{ref}": rec, **({"hook": hook_card["hook"]} if hook_card else {})})
+    user = runner.user_message(task, {f"listing:{ref}": rec, "brand": brand.brief(office), **({"hook": hook_card["hook"]} if hook_card else {})})
     data, by = None, "template"
     if runner.has_model(c, system, user, schema=SCRIPT_SCHEMA):
         office.log.append("agent.started", actor="mscript", agent="mscript", caused_by=cause, content={"task": f"Writing the {angle} script for {ref} with the model"})
@@ -459,7 +460,7 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
         except Exception as e:
             _blocked(office, "mscript", f"Muse Spark failed, using the template: {str(e)[:120]}", cause=cause)
     if not data:
-        data = {**_template(lst, angle), "lines_ar": []}
+        data = {**_template(lst, angle, brand.cta(office)), "lines_ar": []}
         if base:
             data = {**{k: base[k] for k in ("hook_en", "hook_ar", "lines_en")}, "lines_ar": base.get("lines_ar", [])}
         data = _apply_rules(data, feedback or "", lst)
@@ -655,9 +656,11 @@ def remix(office: Office, ref: str, tr: dict | None, film: dict, cause: int | No
 
 def post_text(office: Office, ref: str, sc: dict, cause: int | None, feedback: str | None = None) -> dict:
     lst = _listing(office, ref)
-    base = f"{sc['hook_en']}\n\n{lst['title']}, {lst['community']} · {lst['beds']} bed {lst['type']} · AED {lst['price_aed']:,}\nPermit {lst.get('permit')}"
+    feats = ", ".join(lst.get("features") or [])
+    base = (f"{sc['hook_en']}\n\n{lst['title']}, {lst['community']} · {lst['beds']} bed {lst['type']}{' · ' + feats if feats else ''} · "
+            f"AED {lst['price_aed']:,}\nPermit {lst.get('permit')}\n\n{brand.cta(office)}")
     ar = f"\n\n{sc['hook_ar']}" if sc.get("hook_ar") else ""
-    tags = " #DubaiRealEstate #" + re.sub(r"\W", "", lst["community"])
+    tags = " " + " ".join(dict.fromkeys(brand.hashtags(office) + ["#DubaiRealEstate", "#" + re.sub(r"\W", "", lst["community"])]))
     m = _made(office, "mwriter", "post text", ref, {"text": base + ar + tags}, cause)
     _pack(office, "mwriter", f"Post text ready with permit {lst.get('permit')} ({len(m['text'])} characters).", cause=cause,
           evidence=[Evidence(str(lst.get("permit")), f"listing:{ref}")], sources={f"listing:{ref}": office.graph().record(f"listing:{ref}")})

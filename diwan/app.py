@@ -82,6 +82,8 @@ async def fresh_pages(request: Request, call_next):
     return res
 
 
+from diwan.brand_api import router as brand_router  # noqa: E402
+app.include_router(brand_router)
 def g():
     return S.office.graph()
 

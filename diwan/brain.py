@@ -45,9 +45,15 @@ def brain(office: Office, dept: str) -> dict:
         plays = [c for c in evs if c["kind"] == "playbook"]
         st = strategy.report(office)
         comp = studio.competitors(g)
-        brand = [n for n in g.of("knowledge", status="confirmed")]
+        known = [n for n in g.of("knowledge", status="confirmed")]
+        from diwan import brand
+        bp = brand.profile(office)
+        prof = [{"ref": None, "text": f"{brand.FIELDS[k][0]}: {v['value']}", "sub": f"set by {v['by']} · {(v['at'] or '')[:10]}" + (f" · {v['via']}" if v.get("via") else "")}
+                for k, v in bp.items() if v["value"]]
         return {"title": "Brand brain", "about": "What the marketing team writes from: the brand, what works for us, what people taught it.", "sections": [
-            _section("Company and brand knowledge", "Confirmed by a person; agents quote it, never invent it.", _items(g, brand), "Nothing confirmed yet. Add it on the Knowledge page."),
+            _section("Brand profile", "Read by " + ", ".join(brand.USED_BY) + " on every idea, script and post. Owned by the Marketing manager.",
+                     prof, "Not set: writers are told to write plainly and invent no slogan. Set it in the Studio (Brand)."),
+            _section("Company knowledge", "Confirmed facts about the office (hours, fees, who we are). Rania quotes them; the brand draft starts from them.", _items(g, known), "Nothing confirmed yet. Add it on the Knowledge page."),
             lessons(g, "mkt"),
             _section("Script library", "Scripts a person approved for filming.",
                      [{"ref": s["id"], "text": s["hook_en"], "sub": f"{s['ref']} · {s.get('angle', 'price-reveal')} · {s.get('via')}"} for s in approved],

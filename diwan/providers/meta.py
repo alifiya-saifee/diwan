@@ -59,7 +59,7 @@ def search(prompt: str, *, country: str = "AE", timeout: float = 120, agent: str
     from diwan import costs
     _guard("web search")
     body = {"model": env("META_MODEL_SPARK", "muse-spark-1.3"), "input": prompt, "include": ["web_search_call.results"],
-            "tools": [{"type": "web_search", "search_context_size": "medium", "user_location": {"type": "approximate", "country": country}}]}
+            "tools": [{"type": "web_search", "search_context_size": env("DIWAN_SEARCH_CONTEXT", "low"), "user_location": {"type": "approximate", "country": country}}]}
     t0 = time.monotonic()
     with _client(timeout) as c:
         r = c.post(f"{_base()}/responses", json=body)

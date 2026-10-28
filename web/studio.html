@@ -29,6 +29,12 @@
   .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); margin-right: 6px; color: var(--gold-2); }
   .st-winning { color: var(--green); } .st-fading { color: var(--warn); } .st-retired { color: var(--muted); }
   .cost { font-size: 12px; color: var(--muted); margin-left: auto; }
+  .bgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+  .bgrid label { font-size: 12px; color: var(--muted); display: block; }
+  .bgrid .wide { grid-column: 1 / -1; }
+  .bgrid textarea { width: 100%; min-height: 38px; resize: vertical; font: 13px var(--font); }
+  .bgrid .who { font-size: 11px; color: var(--faint, #6b7280); margin-top: 2px; }
+  @media (max-width: 700px) { .bgrid { grid-template-columns: 1fr; } }
   .pin { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 </style>
 </head>
@@ -39,7 +45,13 @@
   <div class="top" id="top"></div>
   <div class="grid2">
     <div>
-      <section class="panel"><h2>Competitors</h2>
+      <section class="panel" id="brandpanel"><h2>Our brand</h2>
+        <p class="small muted" id="brandnote"></p>
+        <div class="bgrid" id="brandform"></div>
+        <div class="row" style="margin-top:10px"><span class="small muted" id="brandmsg" style="flex:1"></span>
+          <button id="branddraft">Draft it for me</button><button class="primary" id="brandsave">Save</button></div>
+      </section>
+      <section class="panel" style="margin-top:18px"><h2>Competitors</h2>
         <div class="row"><input id="names" placeholder="@brokerage.one, @brokerage.two"><button id="save">Save</button><button id="suggest">Suggest</button></div>
         <div id="sugg" class="small muted" style="margin-top:8px"></div>
         <div class="row" style="margin-top:10px;flex-wrap:wrap"><span class="small muted" style="flex:1 1 260px">No Instagram connection yet? Copy real posts into the
@@ -196,6 +208,34 @@ $("up").onclick = async () => {
   const r = await fetch("/api/studio/footage", { method: "POST", body: fd });
   $("upres").textContent = r.ok ? "Uploaded. The studio is checking and captioning it." : "Upload failed";
 };
+async function loadBrand() {
+  const b = await api("/api/brand");
+  $("brandnote").textContent = (b.set ? "The writers use this on every idea, script and post: " : "Not set yet. Until it is, writers are told to write plainly and invent no slogan. Read by: ") +
+    b.used_by.join(", ") + ". A script or post with a word from \"never use\" goes back to its writer.";
+  $("brandform").replaceChildren(...b.fields.map((f) => {
+    const v = b.profile[f.key];
+    return h("div", { class: ["positioning", "audience", "cta"].includes(f.key) ? "wide" : "" },
+      h("label", { for: `b-${f.key}` }, f.label), h("textarea", { id: `b-${f.key}`, placeholder: f.hint, rows: 1 }, v.value),
+      v.by ? h("div", { class: "who" }, `saved by ${NAMES[v.by] || v.by} · ${v.at.slice(0, 10)}${v.via && v.via !== "typed" ? " · " + v.via : ""}`) : "");
+  }));
+}
+const brandValues = () => Object.fromEntries([...document.querySelectorAll("#brandform textarea")].map((t) => [t.id.slice(2), t.value]));
+let drafted = false;
+$("brandsave").onclick = async () => {
+  const r = await post("/api/brand", { values: brandValues(), by: "maya", via: drafted ? "drafted by the Brand brain, checked by Maya" : "typed" });
+  drafted = false;
+  $("brandmsg").textContent = r.changed.length ? `Saved: ${r.changed.length} field${r.changed.length > 1 ? "s" : ""}. The next script uses it.` : "Nothing changed.";
+  loadBrand();
+};
+$("branddraft").onclick = async () => {
+  $("brandmsg").textContent = "The Brand brain is drafting from our company knowledge and our own posts… (one model call)";
+  const r = await post("/api/brand/draft");
+  if (r.needs) { $("brandmsg").textContent = r.needs; return; }
+  for (const [k, v] of Object.entries(r.values)) { const t = $(`b-${k}`); if (t && v && !t.value.trim()) t.value = v; }
+  drafted = true;
+  $("brandmsg").textContent = `Draft filled into the empty fields, from ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}. Read it, change anything, then Save. Nothing is saved yet.`;
+};
+loadBrand();
 load();
 follow((evs) => { if (evs.some((e) => ["agent.pack", "content.made", "step.blocked", "post.seen", "decision.made"].includes(e.type))) { clearTimeout(load.t); load.t = setTimeout(load, 400); } });
 </script>

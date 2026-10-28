@@ -72,5 +72,5 @@ def test_every_brain_shows_records_not_samples():
         b = client.get(f"/api/brain/{d}").json()
         assert b["sections"] and not any(re.search(r"\bsample\b(?!-)", (i["text"] or "").lower()) for s in b["sections"] for i in s["items"])  # demo permits are SAMPLE-…
     mk = client.get("/api/brain/mkt").json()
-    assert {s["title"] for s in mk["sections"]} >= {"Company and brand knowledge", "Lessons people taught", "Script library", "What to post next"}
+    assert {s["title"] for s in mk["sections"]} >= {"Brand profile", "Company knowledge", "Lessons people taught", "Script library", "What to post next"}
     assert client.get("/api/brain/nowhere").status_code == 404

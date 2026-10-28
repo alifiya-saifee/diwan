@@ -52,7 +52,7 @@ with sync_playwright() as p:
     assert walked and walked > 0, "no agent walked work to another"
     pg.locator("#bar button", has_text="Brand brain").first.click()
     expect(pg.locator("#ztitle")).to_have_text("Brand brain", timeout=10_000)
-    expect(pg.locator("#zbody")).to_contain_text("Company and brand knowledge")
+    expect(pg.locator("#zbody")).to_contain_text("Brand profile")
     expect(pg.locator("#zbody")).to_contain_text("Listings we can advertise")
     pg.wait_for_timeout(1500)
     pg.screenshot(path=str(OUT / "f2b-brain.png"))

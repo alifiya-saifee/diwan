@@ -245,7 +245,7 @@ ROSTER: list[Charter] = [
       "Playbook entries", "Our results", "Playbook", "A playbook entry is approved", "Script library", "—", ("draft",), (), "Keep an entry with no proof", "rules"),
     C("mpos", "Positioning", "Who we are for", "mlib", None, "rules", "Holds who we serve, what we promise and what makes us different.",
       "The owner's words", "The owner's words", "Positioning sheet", "The owner changes it", "Script library", "—", ("draft",), (), "Rewrite it alone", "planned", hack=False),
-    C("mbrand", "Brand brain", "Voice, words, banned claims", "mlib", None, "rules", "Holds the brand voice, the words we use and avoid, and the lessons the team has taught.",
+    C("mbrand", "Brand brain", "Voice, words, banned claims", "mlib", None, "spark", "Holds the brand voice, the words we use and avoid, and the lessons the team has taught.",
       "Lessons, the owner's words", "Our own material", "Brand rules every writer loads", "A lesson is saved", "Script library", "—", ("draft",), (), "Drop a lesson", "rules"),
 ]
 
