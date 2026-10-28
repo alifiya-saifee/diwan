@@ -75,7 +75,8 @@ Catalog
 - [ ] Search by reference, building or title
 - [ ] Each listing shows a photo (from the feed) or a clear placeholder, price, permit, status and agent
 - [ ] A listing without a permit is marked "not advertised" and is never offered by Rania or the studio
-- [ ] Editing a listing's price makes a new version; Rania quotes the new price at once
+- [ ] A broker's price change is a proposal; once the listing owner accepts it, it becomes a new version and Rania quotes the new price at once
+- [ ] A price agreed with one customer stays in that deal: Rania never offers it to another customer
 
 Agents
 - [ ] After an edit, Rania's next answer uses the new text (checked on the sandbox WhatsApp line)
@@ -86,8 +87,13 @@ Agents
 Memory graph
 - [ ] An edit shows as version 2 replacing version 1; a retire shows the item dimmed with its reason
 
-## 7. Open questions for the owner of the product
+## 7. Decisions
 
-- Should brokers be able to edit listing prices directly, or always propose?
-- Review period: 90 days for everything, or per kind?
-- Photos: from the portal feed only, or uploaded here too?
+- **Listing prices: brokers always propose, never edit.** Decided by the product owner. The catalog price is one price
+  for every customer, so changing it is the listing owner's decision. A price agreed with one customer ("2.5M for you")
+  is not a catalog change: it lives in that customer's chat and deal, and no agent repeats it to anyone else.
+- **Review period, per kind** (recommended, awaiting confirmation): fees and policies 90 days; company basics 180 days;
+  area guides 90 days; approved answers 180 days; projects until their valid-until date; listings have no review date
+  (the feed is their source) but are flagged when the feed has not updated them for 7 days.
+- **Photos** (recommended, awaiting confirmation): from the portal feed first; upload is allowed for listings that are
+  on no portal (off-market, pre-launch) and for areas and projects. A feed photo wins over an upload.
