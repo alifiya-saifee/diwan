@@ -1,5 +1,6 @@
 """Studio, end to end in a real browser: run a listing, see three scripts, ask for a change to one, pick one, upload a
 take, and see the captioned cut and the publish request. Run against a server: python e2e/studio_flow.py http://127.0.0.1:8031"""
+import os
 import sys
 from pathlib import Path
 
@@ -12,7 +13,8 @@ SHOTS.mkdir(parents=True, exist_ok=True)
 errors = []
 
 with sync_playwright() as p:
-    b = p.chromium.launch()
+    watch = os.environ.get("WATCH") == "1"  # WATCH=1: a visible window, slowed down so a person can follow each click
+    b = p.chromium.launch(headless=not watch, slow_mo=700 if watch else 0)
     pg = b.new_page(viewport={"width": 1440, "height": 1000})
     pg.on("pageerror", lambda e: errors.append(str(e)))
     pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)

@@ -13,7 +13,7 @@ from pathlib import Path
 import httpx
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -827,6 +827,12 @@ async def no_store(request: Request, call_next):
     if request.url.path.startswith("/web"):
         r.headers["Cache-Control"] = "no-store"
     return r
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" stroke="#d4af6a" stroke-width="4"/></svg>'
+    return Response(svg, media_type="image/svg+xml")
 
 
 @app.get("/")
