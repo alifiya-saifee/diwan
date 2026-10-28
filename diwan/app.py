@@ -244,6 +244,12 @@ async def ig_receive(request: Request):
     return {"ok": True}
 
 
+@app.get("/api/kpis/marketing")
+def marketing_kpis():
+    from diwan.agents import kpis
+    return {"agents": kpis.measure(S.office), "rooms": kpis.team_tree()}
+
+
 @app.get("/api/agents/{aid}")
 def agent_detail(aid: str):
     from dataclasses import asdict
