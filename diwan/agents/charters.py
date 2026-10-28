@@ -184,8 +184,9 @@ ROSTER: list[Charter] = [
       "Shot list per broker", "Every morning", "Strategist", "No viewing today: suggests an office or area shot", ("draft",), (), "Book anything", "planned", hack=False),
 
     C("mcopy", "Copywriter", "Words that hook", "mkt", "room", "spark", "Writes hooks and scripts in English and Arabic from the plan.",
-      "Plan, library, lessons", "Listing, library", "Scripts with the idea and lane each serves", "A plan is approved", "Marketing lead",
-      "—", ("assign", "draft"), (), "Promise returns, quote a price not on the listing", "planned", hack=False),
+      "Plan, library, lessons", "Listing, library", "Scripts with the idea and lane each serves", "A plan is approved", "Marketing manager",
+      "—", ("assign", "draft"), ("use_script",), "Promise returns, quote a price not on the listing, start filming before the script is approved",
+      "planned", hack=False),
     C("mcheck", "Video check", "Did the film follow the script?", "mcopy", None, "voice",
       "Transcribes the filmed take and checks it against the script and the brand rules.", "Filmed video, script", "The video's audio, the library",
       "Pass, or the lines that drifted", "A video is uploaded", "Copywriter", "No audio: checks captions only", ("draft", "send_back"), (), "Edit the video", "planned", hack=False),

@@ -183,16 +183,21 @@ async def upload_footage(ref: str = Form(...), file: UploadFile = File(...), by:
 class DecideIn(BaseModel):
     decision: str  # approve | reject
     by: str = "layla"
+    note: str = ""
 
 
 @app.post("/api/requests/{rid}/decide")
-def decide(rid: str, body: DecideIn):
+async def decide(rid: str, body: DecideIn):
     """A person answers an agent's request. Approving a publish request publishes, or says what is still missing."""
     from diwan.agents import studio
     n = g().nodes.get(rid)
     if not n or n.type != "request":
         raise HTTPException(404, "no such request")
-    S.office.log.append("decision.made", actor=body.by, content={"card": rid, "answer": body.decision})
+    S.office.log.append("decision.made", actor=body.by, content={"card": rid, "answer": body.decision, "note": body.note})
+    ref_of = next((x.props["ref"] for x in g().of("listing") if x.props["ref"] in n.props["text"]), None)
+    if n.props.get("kind") == "use_script" and ref_of:
+        asyncio.get_event_loop().create_task(studio.after_script(S.office, ref_of) if body.decision == "approve" else studio.script_rejected(S.office, ref_of, body.note))
+        return {"ok": True, "next": "film list to the broker" if body.decision == "approve" else "back to the Script writer"}
     if body.decision == "approve" and n.props.get("kind") == "publish":
         ref = next((x.props["ref"] for x in g().of("listing") if x.props["ref"] in n.props["text"]), None)
         return studio.publish(S.office, ref, by=body.by) if ref else {"ok": False, "needs": ["a listing reference"]}

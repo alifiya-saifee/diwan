@@ -234,6 +234,10 @@ def eval_studio() -> list[dict]:
         out.append({"case": f"Finding measured: outliers {f}", "pass": f in feats, "why": "" if f in feats else f"findings: {sorted(feats)}"})
     out.append({"case": "Every finding links example posts", "pass": all(w["examples"] for w in a["why"]), "why": ""})
     studio.run_now(o, "MC-1204")
+    out.append({"case": "Nothing costly before a person approves the script",
+                "pass": not studio.made(o, "film list", "MC-1204") and any(n.props.get("kind") == "use_script" for n in o.graph().of("request", status="open")), "why": ""})
+    studio.approve_script_now(o, "MC-1204")
+    out.append({"case": "Approved script → film list goes to the broker", "pass": any("Film MC-1204" in t.props["action"] for t in o.graph().of("task")), "why": ""})
     text = studio.made(o, "post text", "MC-1204")
     out.append({"case": "Post text carries the permit number", "pass": "SAMPLE-71204" in text["text"], "why": ""})
     for t, ok_expected, label in [(text["text"], True, "real post passes"), (text["text"].replace("SAMPLE-71204", ""), False, "missing permit is held"),

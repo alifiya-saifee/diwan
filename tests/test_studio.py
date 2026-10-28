@@ -34,12 +34,15 @@ def test_with_nothing_connected_every_step_says_what_it_needs_and_nothing_is_inv
     studio.run_now(office, "MC-1204")
     b = blocked(office)
     assert "Connect Instagram" in b["mrival"] and "META_API_KEY" in b["mtrend"] and "Waiting for an outlier" in b["mtrans"]
-    assert "Waiting for footage" in b["mcheck"] and "footage" in b["mcap"] and "Muse Image" in b["mthumb"]
+    req = next(e for e in office.log.list() if e["type"] == "approval.requested")
+    assert req["agent"] == "mcopy" and req["content"]["kind"] == "use_script" and req["content"]["reviewer"] == "Marketing manager"
+    assert not studio.made(office, "film list", "MC-1204") and not studio.made(office, "post text", "MC-1204")  # nothing costly before approval
+    studio.approve_script_now(office, "MC-1204")
+    assert studio.made(office, "film list", "MC-1204") and any(t.props.get("needs_person") == "omar" for t in office.graph().of("task"))
     packs = [e for e in office.log.list() if e["type"] == "agent.pack" and e["agent"].startswith("m")]
     assert not any(e["content"]["usage"].get("sample") for e in packs)
     assert studio.made(office, "script", "MC-1204")["via"] == "template"
     assert "SAMPLE-71204" in studio.made(office, "post text", "MC-1204")["text"]
-    assert next(e for e in office.log.list() if e["type"] == "approval.requested")["agent"] == "mpub"
 
 
 def test_no_permit_no_reel(office):
@@ -128,6 +131,7 @@ def test_footage_is_checked_captioned_covered_then_published_after_approval(conn
     monkeypatch.setattr(meta, "TRANSPORT", fake_meta([]))
     monkeypatch.setattr(PROVIDERS["meta"], "transport", httpx.MockTransport(lambda r: httpx.Response(500)))  # chat fails: template script
     studio.run_now(connected, "MC-1204")
+    studio.approve_script_now(connected, "MC-1204")
     clip = tmp_path / "take.mp4"
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x568:rate=10", "-f", "lavfi", "-i", "sine=frequency=440",
                     "-t", "3", "-shortest", "-pix_fmt", "yuv420p", str(clip)], check=True)
@@ -166,6 +170,7 @@ def test_imported_posts_feed_the_analysis_and_the_board(office):
 
 def test_captions_come_from_the_script_when_nothing_can_transcribe(office, tmp_path):
     studio.run_now(office, "MC-1204")
+    studio.approve_script_now(office, "MC-1204")
     clip = tmp_path / "take.mp4"
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x568:rate=10", "-f", "lavfi", "-i", "sine=frequency=440",
                     "-t", "3", "-shortest", "-pix_fmt", "yuv420p", str(clip)], check=True)

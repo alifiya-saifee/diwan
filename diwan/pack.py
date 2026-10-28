@@ -56,6 +56,7 @@ ACTIONS = {
     "expect_payment": "Create or withdraw an expected payment",
     "hold": "Hold an item for a person",
     "publish": "Publish or schedule a post",
+    "use_script": "Use a script for filming (spends filming, editing and model time)",
     "send": "Send a message to a customer or third party",
     "reply": "Reply to a customer's enquiry from listings and company knowledge",
     "book_viewing": "Book a viewing in a broker's free slot",

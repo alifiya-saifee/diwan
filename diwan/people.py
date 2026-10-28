@@ -7,11 +7,13 @@ PEOPLE = {
     "priya": {"name": "Priya", "role": "Compliance officer", "team": "comp"},
     "joseph": {"name": "Joseph", "role": "Transactions officer", "team": "ops"},
     "ahmed": {"name": "Ahmed", "role": "Finance", "team": "fin"},
+    "maya": {"name": "Maya", "role": "Marketing manager", "team": "mkt"},
 }
 
 # A charter names its reviewer by role; this is who that is today.
 BY_ROLE = {"The owner": "layla", "Owner": "layla", "Broker": "omar", "Compliance officer": "priya",
-           "Transactions officer": "joseph", "Finance": "ahmed", "Finance lead": "ahmed"}
+           "Transactions officer": "joseph", "Finance": "ahmed", "Finance lead": "ahmed",
+           "Marketing manager": "maya"}
 
 # Who decides what an agent may not.
 ONLY_PEOPLE = {

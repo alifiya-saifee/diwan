@@ -1,5 +1,5 @@
 // Shared helpers for every Diwan screen. Text from the server always goes on the page through textContent.
-export const NAMES = { layla: "Layla", omar: "Omar", priya: "Priya", joseph: "Joseph", ahmed: "Ahmed" };
+export const NAMES = { layla: "Layla", omar: "Omar", priya: "Priya", joseph: "Joseph", ahmed: "Ahmed", maya: "Maya" };
 export const AGENTS = {};
 
 export function h(tag, attrs = {}, ...kids) {

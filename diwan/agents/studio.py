@@ -303,12 +303,13 @@ IDEAS_SCHEMA = {"name": "ideas", "strict": True, "schema": {"type": "object", "a
                                                                                    "cards": {"type": "array", "items": {"type": "string"}}}}}}}}
 
 
-def ideas(office: Office, ref: str, cards: list[dict], cause: int | None) -> dict:
+def ideas(office: Office, ref: str, cards: list[dict], cause: int | None, feedback: str | None = None) -> dict:
     lst = _listing(office, ref)
     ids = {c["id"] for c in cards}
     c = get("midea")
     system = runner.instructions(c, office.log)
-    user = runner.user_message(f"Three short-video ideas for listing {ref}. Each idea names the card ids it builds on (or none).",
+    user = runner.user_message(f"Three short-video ideas for listing {ref}. Each idea names the listing and the card ids it builds on (or none)."
+                               + (f"\n\n{feedback}" if feedback else ""),
                                {f"listing:{ref}": office.graph().record(f"listing:{ref}"), **{x["id"]: f"{x['title']} ({x['why']})" for x in cards}})
     out, by = [], "rules"
     if runner.has_model(c, system, user, schema=IDEAS_SCHEMA):
@@ -346,7 +347,7 @@ def lanes(office: Office, cause: int | None) -> dict:
     return m
 
 
-def film_list(office: Office, ref: str, idea: dict, cause: int | None) -> dict:
+def film_list(office: Office, ref: str, idea: dict, cause: int | None, feedback: str | None = None) -> dict:
     g = office.graph()
     lst = _listing(office, ref)
     feats = lst.get("features") or []
@@ -378,12 +379,13 @@ def _amounts(text: str) -> set[int]:
     return {int(a) for m in MONEY.finditer(text) for a in scribe.amounts(m.group(0))}
 
 
-def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: int | None) -> dict:
+def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: int | None, feedback: str | None = None) -> dict:
     lst = _listing(office, ref)
     rec = office.graph().record(f"listing:{ref}")
     c = get("mscript")
     system = runner.instructions(c, office.log) + "\nWrite in the `script` format. Only facts and amounts from the listing. 30 seconds, 5 to 7 lines."
-    user = runner.user_message(f"Script for: {idea['pick']['title']}. Borrow the structure, never the words, of the hook card if given.",
+    user = runner.user_message(f"Script for: {idea['pick']['title']}. Borrow the structure, never the words, of the hook card if given."
+                               + (f"\n\n{feedback}" if feedback else ""),
                                {f"listing:{ref}": rec, **({"hook": hook_card["hook"]} if hook_card else {})})
     data, by = None, "template"
     if runner.has_model(c, system, user, schema=SCRIPT_SCHEMA):
@@ -545,7 +547,7 @@ def remix(office: Office, ref: str, tr: dict | None, film: dict, cause: int | No
     return m
 
 
-def post_text(office: Office, ref: str, sc: dict, cause: int | None) -> dict:
+def post_text(office: Office, ref: str, sc: dict, cause: int | None, feedback: str | None = None) -> dict:
     lst = _listing(office, ref)
     base = f"{sc['hook_en']}\n\n{lst['title']}, {lst['community']} · {lst['beds']} bed {lst['type']} · AED {lst['price_aed']:,}\nPermit {lst.get('permit')}"
     ar = f"\n\n{sc['hook_ar']}" if sc.get("hook_ar") else ""
@@ -586,7 +588,7 @@ def cover(office: Office, ref: str, sc: dict, cause: int | None) -> dict | None:
     return m
 
 
-def permit_check(office: Office, ref: str, text: dict, cause: int | None) -> bool:
+def permit_check(office: Office, ref: str, text: dict, cause: int | None, findings: list | None = None) -> bool:
     lst = _listing(office, ref)
     t = text["text"]
     fails = []
@@ -599,6 +601,8 @@ def permit_check(office: Office, ref: str, text: dict, cause: int | None) -> boo
         fails.append(f"banned promise \"{m.group(0)}\"")
     _pack(office, "mpermit", f"Pass: permit {lst['permit']}, price matches {ref}, no banned promises." if not fails else "Held: " + "; ".join(fails) + ".",
           cause=cause, kind=None if not fails else "hold")
+    if findings is not None:
+        findings.extend(fails)
     return not fails
 
 
@@ -658,6 +662,46 @@ def publish(office: Office, ref: str, *, by: str) -> dict:
     return {"ok": True, "id": pid}
 
 
+# ---------- supervision: make, check, return with the fix, escalate ----------
+
+def reviewed(office: Office, kind: str, ref: str, make, cause: int | None):
+    """Make a piece of work and have the room lead check it; send it back with the reasons up to twice more; then
+    the Marketing lead raises it to a person. Returns the accepted work, or None if it was escalated."""
+    from diwan.agents import qa
+    feedback, fails = None, []
+    for attempt in range(1, qa.MAX_TRIES + 1):
+        item = make(feedback)
+        if item is None:
+            return None  # the step itself is waiting for something (already said why)
+        fails = qa.review(office, kind, ref, item, cause=cause, attempt=attempt)
+        if not fails:
+            return item
+        feedback = qa.feedback_text(fails)
+    qa.escalate(office, kind, ref, fails, cause=cause)
+    return None
+
+
+def permit_gate(office: Office, ref: str, sc: dict, text: dict, cause: int | None) -> tuple[bool, dict, dict]:
+    """The last gate before publishing. A hold is traced to the agent who caused it, who fixes it; then it is checked again."""
+    from diwan.agents import qa
+    for attempt in range(1, qa.MAX_TRIES + 1):
+        found: list = []
+        if permit_check(office, ref, text, cause, found):
+            return True, sc, text
+        owner = qa.blame(office, ref, "; ".join(found), sc, text)
+        fails = [{"check": "permit-gate", "rule": "Passes the permit check.", "found": f, "owner": owner, "fix": "Remove what the permit checker held."} for f in found]
+        office.log.append("qa.failed", actor="mpub", agent="mpub", caused_by=cause,
+                          content={"kind": "permit", "ref": ref, "attempt": attempt, "fails": fails, "returned_to": [owner]})
+        if attempt == qa.MAX_TRIES:
+            qa.escalate(office, "post", ref, fails, cause=cause)
+            return False, sc, text
+        fb = qa.feedback_text(fails)
+        if owner == "mscript":
+            sc = script(office, ref, {"pick": {"title": (made(office, "ideas", ref) or {}).get("pick", {}).get("title", ref)}}, None, cause, fb)
+        text = post_text(office, ref, sc, cause, fb)
+    return False, sc, text
+
+
 # ---------- the run ----------
 
 async def run(office: Office, ref: str, pause: float = .6) -> None:
@@ -673,41 +717,89 @@ async def run(office: Office, ref: str, pause: float = .6) -> None:
     pins = board(office)
     _pack(office, "research", f"Board: {len(pins)} card{'s' if len(pins) != 1 else ''} pinned, each with its source." if pins else "Board empty: see what research is waiting for.",
           cause=start, kind="assign")
-    idea = await step(ideas, office, ref, pins, start); await asyncio.sleep(pause)
-    await step(lanes, office, start); await asyncio.sleep(pause)
-    film = await step(film_list, office, ref, idea, start); await asyncio.sleep(pause)
-    sc = await step(script, office, ref, idea, tr, start); await asyncio.sleep(pause)
-    chk = await step(video_check, office, ref, sc, start); await asyncio.sleep(pause)
-    await step(playbook, office, start); await asyncio.sleep(pause)
-    cut = await step(captions, office, ref, chk, start); await asyncio.sleep(pause)
-    await step(remix, office, ref, tr, film, start); await asyncio.sleep(pause)
-    text = await step(post_text, office, ref, sc, start); await asyncio.sleep(pause)
-    await step(cover, office, ref, sc, start); await asyncio.sleep(pause)
-    ok = await step(permit_check, office, ref, text, start); await asyncio.sleep(pause)
-    if not ok:
+    idea = await step(reviewed, office, "ideas", ref, lambda fb: ideas(office, ref, pins, start, fb), start); await asyncio.sleep(pause)
+    if not idea:
         return
-    slot = await step(schedule, office, start); await asyncio.sleep(pause)
-    await step(cross, office, ref, text, start); await asyncio.sleep(pause)
-    await step(ask_to_publish, office, ref, cut, text, slot, start)
-    del tr_cards
+    await step(lanes, office, start); await asyncio.sleep(pause)
+    sc = await step(reviewed, office, "script", ref, lambda fb: script(office, ref, idea, tr, start, fb), start); await asyncio.sleep(pause)
+    if not sc:
+        return
+    await step(playbook, office, start)
+    ask_script_approval(office, ref, sc, start)  # nothing that costs filming, editing or model time starts before a person says yes
+
+
+def ask_script_approval(office: Office, ref: str, sc: dict, cause: int | None) -> None:
+    """The Copywriter asks the Marketing manager to approve the script. An older open request for this listing is replaced."""
+    for n in office.graph().of("request", status="open"):
+        if n.props.get("kind") == "use_script" and ref in n.props.get("text", ""):
+            office.log.append("decision.made", actor="mcopy", agent="mcopy", content={"card": n.id, "answer": "replaced by a newer draft"})
+    _pack(office, "mcopy", f"Use script {sc['id']} for {ref}: \"{sc['hook_en']}\" ({len(sc['lines_en'])} lines, checked by the Copywriter)",
+          cause=cause, kind="use_script")
+
+
+def approved_script(office: Office, ref: str) -> dict | None:
+    """The script a person approved for filming, if any."""
+    g = office.graph()
+    for e in reversed(office.log.list()):
+        if e["type"] == "decision.made" and e["content"].get("answer") == "approve":
+            n = g.nodes.get(e["content"]["card"])
+            if n and n.props.get("kind") == "use_script" and ref in n.props.get("text", ""):
+                sid = re.search(r"script (C\d+)", n.props["text"])
+                return next((x["content"] for x in office.log.list() if x["type"] == "content.made" and sid and x["content"]["id"] == sid.group(1)), None)
+    return None
+
+
+async def after_script(office: Office, ref: str, pause: float = .6) -> None:
+    """The script is approved: the broker gets the film list, the post text is written. Editing waits for footage."""
+    step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
+    sc = approved_script(office, ref)
+    if not sc:
+        return
+    idea = made(office, "ideas", ref)
+    start = _pack(office, "mkt", f"Script {sc['id']} for {ref} approved: filming can start.", kind="assign")
+    film = await step(reviewed, office, "film list", ref, lambda fb: film_list(office, ref, idea, start, fb), start); await asyncio.sleep(pause)
+    if film:
+        office.add_task(None, "mfilm", f"Film {ref}: " + "; ".join(film["shots"]) + f" ({film['when']})", needs_person=film["who"], by="mfilm", caused_by=start)
+    await step(reviewed, office, "post text", ref, lambda fb: post_text(office, ref, sc, start, fb), start)
+
+
+async def script_rejected(office: Office, ref: str, note: str, pause: float = .6) -> None:
+    """A person sent the script back: the note goes to the Script writer, the new draft is checked and asked again."""
+    step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
+    idea, tr = made(office, "ideas", ref), made(office, "transcript")
+    start = _pack(office, "mcopy", f"Script for {ref} sent back by the Marketing manager: {note or 'no reason given'}", kind="assign")
+    fb = f"The Marketing manager sent your script back: {note}" if note else None
+    sc = await step(reviewed, office, "script", ref, lambda f: script(office, ref, idea, tr, start, "\n".join(x for x in (fb, f) if x) or None), start)
+    if sc:
+        ask_script_approval(office, ref, sc, start)
 
 
 async def after_footage(office: Office, ref: str, pause: float = .6) -> None:
     """Footage arrived: check the take, caption it, cover it, re-check the permit and ask to publish."""
     step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
-    sc = made(office, "script", ref)
+    sc = approved_script(office, ref)
     if not sc:
-        _blocked(office, "mcheck", f"No script for {ref} yet: run the listing through the studio first")
+        _blocked(office, "mcheck", f"Footage for {ref} is waiting: no approved script yet (the Marketing manager approves it first)")
         return
     start = _pack(office, "mart", f"Footage for {ref} arrived: checking, captioning and covering it.", kind="assign")
     chk = await step(video_check, office, ref, sc, start); await asyncio.sleep(pause)
-    cut = await step(captions, office, ref, chk, start); await asyncio.sleep(pause)
+    cut = await step(reviewed, office, "cut", ref, lambda fb: captions(office, ref, chk, start), start); await asyncio.sleep(pause)
     text = made(office, "post text", ref) or await step(post_text, office, ref, sc, start)
     await step(cover, office, ref, sc, start); await asyncio.sleep(pause)
-    if await step(permit_check, office, ref, text, start):
+    await step(remix, office, ref, made(office, "transcript"), made(office, "film list", ref) or {"shots": ["our own shots"]}, start)
+    ok, sc, text = await step(permit_gate, office, ref, sc, text, start)
+    if ok:
+        await step(reviewed, office, "versions", ref, lambda fb: cross(office, ref, text, start), start)
         slot = made(office, "slot", "next") or await step(schedule, office, start)
         await step(ask_to_publish, office, ref, cut, text, slot, start)
 
 
 def run_now(office: Office, ref: str) -> None:
     asyncio.run(run(office, ref, pause=0))
+
+
+def approve_script_now(office: Office, ref: str, by: str = "maya") -> None:
+    """For tests and the evaluation: a person approves the open script request, then the approved steps run."""
+    n = next(n for n in office.graph().of("request", status="open") if n.props.get("kind") == "use_script" and ref in n.props["text"])
+    office.log.append("decision.made", actor=by, content={"card": n.id, "answer": "approve"})
+    asyncio.run(after_script(office, ref, pause=0))

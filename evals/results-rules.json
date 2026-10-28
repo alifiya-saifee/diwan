@@ -1,5 +1,5 @@
 {
- "at": "2026-10-28T09:11:55",
+ "at": "2026-10-28T09:21:27",
  "mode": "rules",
  "suites": {
   "Scribe": {
@@ -415,8 +415,8 @@
    ]
   },
   "Studio": {
-   "passed": 15,
-   "total": 15,
+   "passed": 17,
+   "total": 17,
    "seconds": 0.0,
    "cases": [
     {
@@ -460,6 +460,16 @@
      "why": ""
     },
     {
+     "case": "Nothing costly before a person approves the script",
+     "pass": true,
+     "why": ""
+    },
+    {
+     "case": "Approved script → film list goes to the broker",
+     "pass": true,
+     "why": ""
+    },
+    {
      "case": "Post text carries the permit number",
      "pass": true,
      "why": ""
@@ -497,6 +507,6 @@
    ]
   }
  },
- "passed": 76,
- "total": 76
+ "passed": 78,
+ "total": 78
 }
