@@ -41,3 +41,10 @@ async def draft_brand():
         return await asyncio.to_thread(brand.draft, _office())
     except Exception as e:  # the model failed or timed out: say so, keep what was typed
         return {"needs": f"The draft failed: {str(e)[:160]}. You can type the profile yourself."}
+
+
+@router.get("/api/memory/marketing")
+def marketing_memory(upto: int | None = None):
+    """The marketing team's memory as a graph, rewindable to any event."""
+    from diwan.brain import marketing_graph
+    return marketing_graph(_office(), upto)

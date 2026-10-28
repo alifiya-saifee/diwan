@@ -71,3 +71,21 @@ def test_templates_and_post_text_sign_off_in_the_brand(office):
 def test_a_draft_needs_something_real_to_start_from():
     o = Office(EventLog())
     assert "needs" in brand.draft(o)
+
+
+def test_the_marketing_memory_graph_shows_the_brand_and_what_follows_it(office):
+    from diwan.brain import marketing_graph
+    before = marketing_graph(office)
+    assert not any(n["type"] == "brand" for n in before["nodes"])
+    brand.save(office, PROFILE, by="maya")
+    studio.run_now(office, "MC-1204")
+    req = studio.script_request(office, "MC-1204")
+    pick = studio.script_options(office, req.props["text"])[1]["id"]
+    studio.approve_script_now(office, "MC-1204", choice=pick)
+    g = marketing_graph(office)
+    rels = {(e["src"], e["rel"], e["dst"]) for e in g["edges"]}
+    assert ("person:maya", "set", "brand:voice") in rels and ("person:maya", "picked", pick) in rels
+    assert all((s["id"], "follows", "brand:profile") in rels for s in g["nodes"] if s["type"] == "script")
+    assert {n["id"]: n["status"] for n in g["nodes"]}[pick] == "approved"
+    rewound = marketing_graph(office, upto=before["last_event"])
+    assert not any(n["type"] == "brand" for n in rewound["nodes"])  # rewinding goes back to before the brand was set

@@ -3,6 +3,8 @@
 """
 from __future__ import annotations
 
+import re
+
 from diwan.agents.charters import get
 from diwan.graph import Graph
 from diwan.office import Office
@@ -96,3 +98,103 @@ def brain(office: Office, dept: str) -> dict:
                 _section("Company knowledge", "Confirmed by a person.", _items(g, g.of("knowledge", status="confirmed")), "None.")]
     names = {"sales": "Deal memory", "records": "Archive", "review": "Live facts", "comp": "Rule book", "fin": "Ledger", "ops": "Portal", "front": "Lobby board"}
     return {"title": names.get(dept, "Memory"), "about": "What this department remembers, straight from the office's log.", "sections": secs + common}
+
+
+def marketing_graph(office: Office, upto: int | None = None) -> dict:
+    """The marketing team's memory as a graph, rebuilt from the log up to an event (so it can be rewound like the deals):
+    the brand profile and what it was drafted from, listings, research cards, ideas, scripts and their angles, who
+    picked or sent back each script, the post text, and the lessons the writers follow."""
+    from diwan import brand as brandmod
+    from diwan.agents import strategy
+    evs = [e for e in office.log.list() if upto is None or e["id"] <= upto]
+    nodes: dict[str, dict] = {}
+    edges: list[dict] = []
+
+    def node(i, t, record, status="live"):
+        nodes.setdefault(i, {"id": i, "type": t, "status": status, "record": record})
+        return nodes[i]
+
+    def edge(a, b, rel):
+        if a in nodes and b in nodes and a != b:
+            edges.append({"src": a, "dst": b, "rel": rel})
+
+    brand_fields, scripts, latest_idea, requests = {}, {}, {}, {}
+    for e in evs:
+        t, c = e["type"], e["content"]
+        if t == "listing.added":
+            node(f"listing:{c['ref']}", "listing", f"{c['ref']} · {c['title']}, {c['community']} · AED {c['price_aed']:,} · features: "
+                 f"{', '.join(c.get('features') or []) or 'none'} · permit {c.get('permit') or 'MISSING'}")
+        elif t == "knowledge.added":
+            node(c["id"], "knowledge", f"{c['id']} · {c['title']}: {c['text']}")
+        elif t == "setting.changed" and c.get("person") == "brand" and c.get("key") in brandmod.FIELDS:
+            brand_fields[c["key"]] = (c.get("value") or "", e["actor"], e["at"][:10], c.get("via"))
+            node("brand:profile", "brand", "Brand profile · read by " + ", ".join(brandmod.USED_BY))
+        elif t == "setting.changed" and c.get("person") == "studio" and c.get("key") == "competitors":
+            for name in [x.strip().lstrip("@") for x in (c.get("value") or "").split(",") if x.strip()]:
+                node(f"competitor:{name}", "competitor", f"@{name} · a competitor the team watches")
+        elif t == "board.pinned":
+            node(c["id"], c.get("kind", "card"), f"{c['id']} · {c['kind']}: {c['title']} · {c.get('why', '')} · {c.get('url', '')}")
+            if c.get("account"):
+                node(f"competitor:{c['account']}", "competitor", f"@{c['account']} · a competitor the team watches")
+                edge(c["id"], f"competitor:{c['account']}", "posted_by")
+        elif t == "lesson.added":
+            node(c["id"], "lesson", f"{c['id']} · {c['rule']} (taught to {c['agent']} by {e['actor']})")
+        elif t == "lesson.removed" and c.get("id") in nodes:
+            nodes[c["id"]]["status"] = "withdrawn"
+        elif t == "content.made" and c["kind"] == "ideas":
+            i = c["id"]
+            node(i, "idea", f"{i} · idea for {c['ref']}: {c['pick']['title']} ({c.get('via')})")
+            edge(i, f"listing:{c['ref']}", "for")
+            for card in c["pick"].get("cards", []):
+                edge(i, card, "builds_on")
+            latest_idea[c["ref"]] = i
+        elif t == "content.made" and c["kind"] == "script":
+            i = c["id"]
+            scripts[i] = c
+            node(i, "script", f"{i} · {c.get('angle', 'price-reveal')} script for {c['ref']} ({c.get('via')}): \"{c['hook_en']}\" · "
+                 + " / ".join(c.get("lines_en", [])), status="drafted")
+            edge(i, f"listing:{c['ref']}", "for")
+            if c["ref"] in latest_idea:
+                edge(i, latest_idea[c["ref"]], "from_idea")
+            if brand_fields:
+                edge(i, "brand:profile", "follows")
+            if c.get("revises"):
+                edge(i, c["revises"], "revises")
+                if c["revises"] in nodes:
+                    nodes[c["revises"]]["status"] = "superseded"
+            a = c.get("angle")
+            if a:
+                node(f"angle:{a}", "angle", f"angle · {a}: {strategy.ANGLES.get(a, ('',))[0]}")
+                edge(i, f"angle:{a}", "angle")
+        elif t == "content.made" and c["kind"] == "post text":
+            node(c["id"], "post", f"{c['id']} · post text for {c['ref']}: {c['text'][:300]}")
+            edge(c["id"], f"listing:{c['ref']}", "for")
+        elif t == "approval.requested" and c.get("kind") == "use_script":
+            requests[f"R{e['id']}"] = c.get("summary", "")
+            for sid in re.findall(r"script (C\d+)", c.get("summary", "")):
+                if sid in nodes and nodes[sid]["status"] == "drafted":
+                    nodes[sid]["status"] = "offered"
+        elif t == "decision.made" and c.get("card") in requests:
+            who = e["actor"]
+            node(f"person:{who}", "person", f"{who}")
+            offered = re.findall(r"script (C\d+)", requests[c["card"]])
+            pick = c.get("choice") or (offered[0] if offered else None)
+            if c.get("answer") == "approve" and pick in nodes:
+                nodes[pick]["status"] = "approved"
+                edge(f"person:{who}", pick, "picked")
+            elif c.get("answer") in ("reject", "revise"):
+                for sid in ([pick] if c.get("answer") == "revise" else offered):
+                    if sid in nodes:
+                        edge(f"person:{who}", sid, "sent_back")
+    if brand_fields:
+        for k, (v, by, at, via) in brand_fields.items():
+            if v:
+                node(f"brand:{k}", "brand", f"{brandmod.FIELDS[k][0]}: {v} · set by {by} on {at}{' · ' + via if via else ''}")
+                edge(f"brand:{k}", "brand:profile", "part_of")
+                node(f"person:{by}", "person", by)
+                edge(f"person:{by}", f"brand:{k}", "set")
+        for n in [n for n in nodes.values() if n["type"] == "knowledge"]:
+            edge(n["id"], "brand:profile", "informs")
+        for n in [n for n in nodes.values() if n["type"] == "lesson" and n["status"] != "withdrawn"]:
+            edge(n["id"], "brand:profile", "rule_for_writers")
+    return {"nodes": list(nodes.values()), "edges": edges, "last_event": evs[-1]["id"] if evs else 0}

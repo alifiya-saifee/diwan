@@ -716,7 +716,7 @@ async function renderBrain() {
   $("ztitle").textContent = b.title; $("zsub").textContent = b.about;
   $("zbody").replaceChildren(
     h("div", { class: "row", style: "margin-bottom:12px" }, h("button", { onclick: () => { brainOpen = null; renderSide(); } }, `← ${DEPTS[where].name} team`),
-      h("a", { class: "btn", href: "graph.html" }, "Open the memory graph")),
+      h("a", { class: "btn", href: brainOpen === "mkt" ? "graph.html?view=marketing" : "graph.html" }, "Open the memory graph")),
     ...b.sections.map((sec) => h("div", { class: "team brain" },
       h("div", { class: "tn" }, sec.title, h("span", { class: "state idle" }, String(sec.items.length))),
       h("div", { class: "st" }, sec.note),

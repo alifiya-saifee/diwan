@@ -12,6 +12,10 @@
   .edge { stroke: var(--line); stroke-width: 1.4; }
   .edge.replaces { stroke: var(--bad); stroke-dasharray: 4 3; }
   .edge.rests_on, .edge.uses { stroke: var(--warn); }
+  .edge.follows, .edge.part_of { stroke: #e8c77a; opacity: .7; }
+  .edge.picked { stroke: var(--green, #5ccfb5); stroke-width: 2.4; }
+  .edge.sent_back { stroke: var(--bad); stroke-dasharray: 4 3; }
+  .edge.builds_on, .edge.informs { stroke: #f0b35e; stroke-dasharray: 2 3; }
   .legend span { margin-right: 10px; }
   .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 </style>
@@ -19,7 +23,7 @@
 <body>
 <main>
   <h1>The office&rsquo;s <em>memory</em></h1>
-  <p class="sub">The office's memory, rebuilt from the event log. Drag the slider to rewind and watch a correction rewire the office.</p>
+  <p class="sub" id="sub">The office's memory, rebuilt from the event log. Drag the slider to rewind and watch a correction rewire the office.</p>
   <div class="row" style="margin-bottom:12px">
     <select id="deal" style="max-width:260px"></select>
     <input type="range" id="upto" min="1" value="1">
@@ -42,21 +46,38 @@ header("graph.html");
 const $ = (id) => document.getElementById(id);
 const COLORS = { person: "#5b7bd5", deal: "#1d1c1a", property: "#8a7f6a", fact: "#0f8a6f", task: "#c27c1a", approval: "#7a4fc4",
   slide: "#b5527e", draft: "#b5527e", decision: "#a4262c", check: "#a4262c", question: "#d18b2a", request: "#7a4fc4",
-  chat: "#25a35a", viewing: "#2d8fb5", listing: "#8a7f6a", knowledge: "#6b6860" };
+  chat: "#25a35a", viewing: "#2d8fb5", listing: "#8a7f6a", knowledge: "#6b6860",
+  brand: "#e8c77a", idea: "#c58fe0", script: "#f08fc0", angle: "#5ccfb5", trend: "#f0b35e", outlier: "#f27d7d", competitor: "#8b92a3", post: "#82d99f", lesson: "#d9b26f" };
+const MKT = "__marketing";
+const isMkt = () => $("deal").value === MKT;
 const SHOW = new Set(["person", "deal", "fact", "task", "approval", "slide", "decision", "check", "question", "request", "chat", "viewing", "listing"]);
 let data = { nodes: [], edges: [] }, pos = {}, selected = null, live = true;
+const SUB = document.getElementById("sub").textContent;
 
-$("legend").append(...Object.entries(COLORS).filter(([k]) => SHOW.has(k)).map(([k, c]) => h("span", {}, h("span", { class: "sw", style: `background:${c}` }), k)));
+function legend() {
+  const present = new Set(data.nodes.map((n) => n.type));
+  $("legend").replaceChildren(...Object.entries(COLORS).filter(([k]) => present.has(k)).map(([k, c]) => h("span", {}, h("span", { class: "sw", style: `background:${c}` }), k)));
+}
 
 async function deals() {
   const ds = await api("/api/deals"), keep = $("deal").value;
-  $("deal").replaceChildren(...ds.map((d) => h("option", { value: d.deal }, `${d.label} · ${d.props.customer}`)));
-  if (keep && ds.some((d) => d.deal === keep)) $("deal").value = keep;
+  $("deal").replaceChildren(h("option", { value: MKT }, "Marketing & brand"), ...ds.map((d) => h("option", { value: d.deal }, `${d.label} · ${d.props.customer}`)));
+  if (keep && (keep === MKT || ds.some((d) => d.deal === keep))) $("deal").value = keep;
+  else if (new URLSearchParams(location.search).get("view") === "marketing") $("deal").value = MKT;
+  else if (ds.length) $("deal").value = ds[0].deal;
 }
 
 async function load(upto) {
-  const q = new URLSearchParams({ deal: $("deal").value });
+  const q = new URLSearchParams(isMkt() ? {} : { deal: $("deal").value });
   if (upto) q.set("upto", upto);
+  if (isMkt()) {
+    data = await api(`/api/memory/marketing?${q}`);
+    $("sub").textContent = "The marketing team's memory: the brand and what it was drafted from, the research it built on, every script with its angle, who picked or sent it back. Rewind to see how it grew.";
+    if (!upto) { $("upto").max = data.last_event; $("upto").value = data.last_event; }
+    $("at").textContent = `event ${upto || data.last_event} of ${$("upto").max}`;
+    legend(); layout(); return;
+  }
+  $("sub").textContent = SUB;
   data = await api(`/api/graph?${q}`);
   const keep = new Set(data.nodes.filter((n) => SHOW.has(n.type) && (n.deal === $("deal").value || n.type === "person" || n.type === "listing")).map((n) => n.id));
   data.edges = data.edges.filter((e) => keep.has(e.src) && keep.has(e.dst));
@@ -64,7 +85,7 @@ async function load(upto) {
   data.nodes = data.nodes.filter((n) => keep.has(n.id) && (linked.has(n.id) || n.type === "deal"));
   if (!upto) { $("upto").max = data.last_event; $("upto").value = data.last_event; }
   $("at").textContent = `event ${upto || data.last_event} of ${$("upto").max}`;
-  layout();
+  legend(); layout();
 }
 
 function layout() {
@@ -99,7 +120,7 @@ function draw() {
     g.append(el("circle", { r: n.type === "deal" ? 13 : 9, fill: COLORS[n.type] || "#999", opacity: dead ? 0.3 : 1,
       stroke: n.id === selected ? "var(--ink)" : "none", "stroke-width": 2 }));
     const t = el("text", { x: 13, y: 4 });
-    t.textContent = `${n.id.replace(/^(person|deal|listing|chat):/, "")}${dead ? " ✕" : ""}`;
+    t.textContent = `${n.id.replace(/^(person|deal|listing|chat|brand|angle|competitor):/, "")}${dead ? " ✕" : n.status === "approved" ? " ✓" : ""}`;
     g.append(t);
     g.addEventListener("click", () => pick(n));
     svg.append(g);
@@ -108,7 +129,7 @@ function draw() {
 
 function pick(n) {
   selected = n.id;
-  $("record").textContent = n.record;
+  $("record").textContent = n.record + (n.status && !["live", "open"].includes(n.status) ? ` · ${n.status}` : "");
   $("record").className = "";
   const rel = data.edges.filter((e) => e.src === n.id || e.dst === n.id);
   $("links").replaceChildren(...rel.map((e) => h("div", { style: "padding:3px 0" }, `${e.src.replace(/^\w+:/, "")} — ${e.rel.replace("_", " ")} → ${e.dst.replace(/^\w+:/, "")}`)));
