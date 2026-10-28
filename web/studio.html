@@ -47,6 +47,14 @@
     <div>
       <section class="panel" id="brandpanel"><h2>Our brand <a class="small" href="graph.html?view=marketing" style="float:right;text-transform:none;letter-spacing:0;font-weight:500">See it in the memory graph →</a></h2>
         <p class="small muted" id="brandnote"></p>
+        <details id="learnbox" style="margin-top:6px"><summary class="small" style="cursor:pointer">Learn our company from its pages or a document</summary>
+          <p class="small muted" style="margin:6px 0">Paste up to 6 public pages about the company (its site, its Property Finder or Bayut profile). The Brand brain reads them and
+            proposes knowledge cards, each with a quote copied from its page; a card whose quote is not on the page is dropped. Nothing is used until you confirm it on the Knowledge page.</p>
+          <div class="row"><input id="learnco" placeholder="Company name" style="flex:0 0 220px"><textarea id="learnurls" rows="2" placeholder="Web pages: https://… one per line" style="flex:1"></textarea></div>
+          <textarea id="learndoc" rows="4" placeholder="…or paste a company profile, brochure or about-us text" style="width:100%;margin-top:6px"></textarea>
+          <div class="row" style="margin-top:6px"><button id="learndemo">Use the demo company profile</button><span style="flex:1"></span><button class="primary" id="learngo">Read and propose</button></div>
+          <div id="learnres" class="small" style="margin-top:6px"></div>
+        </details>
         <div class="bgrid" id="brandform"></div>
         <div class="row" style="margin-top:10px"><span class="small muted" id="brandmsg" style="flex:1"></span>
           <button id="branddraft">Draft it for me</button><button class="primary" id="brandsave">Save</button></div>
@@ -234,6 +242,27 @@ $("branddraft").onclick = async () => {
   for (const [k, v] of Object.entries(r.values)) { const t = $(`b-${k}`); if (t && v && !t.value.trim()) t.value = v; }
   drafted = true;
   $("brandmsg").textContent = `Draft filled into the empty fields, from ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}. Read it, change anything, then Save. Nothing is saved yet.`;
+};
+$("learngo").onclick = async () => {
+  const urls = $("learnurls").value.split(/\s+/).filter((u) => u.startsWith("http")), document = $("learndoc").value;
+  if (!urls.length && !document.trim()) return toast("Give a web address or paste a document");
+  $("learnres").textContent = "The Brand brain is reading… (one model call)";
+  const r = await post("/api/brand/learn", { urls, document, document_name: $("learndoc").dataset.name || "company profile", company: $("learnco").value, by: "maya" });
+  if (r.needs) { $("learnres").textContent = r.needs; return; }
+  for (const [k, v] of Object.entries(r.brand || {})) { const t = $(`b-${k}`); if (t && v && !t.value.trim()) t.value = v; }
+  drafted = true;
+  $("learnres").replaceChildren(
+    h("div", {}, h("b", {}, `${r.proposed.length} knowledge cards proposed`), ` about ${r.company}, from ${r.pages.length} source${r.pages.length > 1 ? "s" : ""}. `,
+      h("a", { href: "knowledge.html" }, "Confirm them on the Knowledge page →")),
+    ...r.proposed.map((k) => h("div", { class: "muted", style: "padding:2px 0" }, `${k.id} · ${k.title}: “${k.quote}”`)),
+    r.dropped.length ? h("div", { style: "margin-top:4px" }, `Dropped ${r.dropped.length}: ${r.dropped.map((d) => `${d.title} (${d.why})`).join("; ")}`) : "",
+    r.problems.length ? h("div", { class: "muted" }, "Could not read: " + r.problems.join("; ")) : "",
+    h("div", { class: "muted" }, "Brand fields it could support were filled into the empty boxes below; check them, then Save."));
+};
+$("learndemo").onclick = async () => {
+  const d = await api("/api/brand/demo-profile");
+  $("learndoc").value = d.text; $("learndoc").dataset.name = d.name; $("learnco").value = "Diwan Realty";
+  toast("Demo profile loaded: everything in it is fictional");
 };
 loadBrand();
 load();

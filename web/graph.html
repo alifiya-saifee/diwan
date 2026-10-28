@@ -7,7 +7,7 @@
 <style>
   .wrap { display: grid; grid-template-columns: 1fr 320px; gap: 16px; }
   @media (max-width: 1000px) { .wrap { grid-template-columns: 1fr; } }
-  svg { width: 100%; height: 640px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; touch-action: none; }
+  svg { width: 100%; height: 720px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; touch-action: none; }
   .node text { font-size: 11px; fill: var(--ink); pointer-events: none; }
   .edge { stroke: var(--line); stroke-width: 1.4; }
   .edge.replaces { stroke: var(--bad); stroke-dasharray: 4 3; }
@@ -47,7 +47,7 @@ const $ = (id) => document.getElementById(id);
 const COLORS = { person: "#5b7bd5", deal: "#1d1c1a", property: "#8a7f6a", fact: "#0f8a6f", task: "#c27c1a", approval: "#7a4fc4",
   slide: "#b5527e", draft: "#b5527e", decision: "#a4262c", check: "#a4262c", question: "#d18b2a", request: "#7a4fc4",
   chat: "#25a35a", viewing: "#2d8fb5", listing: "#8a7f6a", knowledge: "#6b6860",
-  brand: "#e8c77a", idea: "#c58fe0", script: "#f08fc0", angle: "#5ccfb5", trend: "#f0b35e", outlier: "#f27d7d", competitor: "#8b92a3", post: "#82d99f", lesson: "#d9b26f" };
+  brand: "#e8c77a", idea: "#c58fe0", script: "#f08fc0", angle: "#5ccfb5", trend: "#f0b35e", outlier: "#f27d7d", competitor: "#8b92a3", post: "#82d99f", lesson: "#d9b26f", source: "#4f7cac" };
 const MKT = "__marketing";
 const isMkt = () => $("deal").value === MKT;
 const SHOW = new Set(["person", "deal", "fact", "task", "approval", "slide", "decision", "check", "question", "request", "chat", "viewing", "listing"]);
@@ -89,16 +89,16 @@ async function load(upto) {
 }
 
 function layout() {
-  const W = $("svg").clientWidth, H = 640;
+  const W = $("svg").clientWidth, H = 720, many = data.nodes.length > 18, rep = many ? 5200 : 2200, len = many ? 150 : 110;
   for (const n of data.nodes) pos[n.id] ||= { x: W / 2 + (Math.random() - .5) * 300, y: H / 2 + (Math.random() - .5) * 300, vx: 0, vy: 0 };
   for (let it = 0; it < 220; it++) {
     for (const a of data.nodes) for (const b of data.nodes) {
       if (a === b) continue;
       const p = pos[a.id], q = pos[b.id], dx = p.x - q.x, dy = p.y - q.y, d2 = dx * dx + dy * dy + 0.01;
-      const f = 2200 / d2; p.vx += dx * f / Math.sqrt(d2); p.vy += dy * f / Math.sqrt(d2);
+      const f = rep / d2; p.vx += dx * f / Math.sqrt(d2); p.vy += dy * f / Math.sqrt(d2);
     }
     for (const e of data.edges) {
-      const p = pos[e.src], q = pos[e.dst], dx = q.x - p.x, dy = q.y - p.y, d = Math.sqrt(dx * dx + dy * dy) + 0.01, f = (d - 110) * 0.02;
+      const p = pos[e.src], q = pos[e.dst], dx = q.x - p.x, dy = q.y - p.y, d = Math.sqrt(dx * dx + dy * dy) + 0.01, f = (d - len) * 0.02;
       p.vx += dx / d * f; p.vy += dy / d * f; q.vx -= dx / d * f; q.vy -= dy / d * f;
     }
     for (const n of data.nodes) {
@@ -106,8 +106,31 @@ function layout() {
       p.x = Math.max(30, Math.min(W - 30, p.x + p.vx * 0.5)); p.y = Math.max(20, Math.min(H - 20, p.y + p.vy * 0.5)); p.vx *= 0.6; p.vy *= 0.6;
     }
   }
+  // then nudge apart any two nodes whose labels would touch (a label runs right of its dot, about 6.3px a character)
+  const label = (n) => n.label || n.id.replace(/^\w+:/, "");
+  const box = (n) => { const p = pos[n.id], w = 14 + label(n).length * 6.3; return { x0: p.x - 10, x1: p.x + w, y0: p.y - 10, y1: p.y + 10 }; };
+  for (let it = 0; it < 120; it++) {
+    let moved = false;
+    for (let i = 0; i < data.nodes.length; i++) for (let j = i + 1; j < data.nodes.length; j++) {
+      const a = box(data.nodes[i]), b = box(data.nodes[j]);
+      if (a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) {
+        const pa = pos[data.nodes[i].id], pb = pos[data.nodes[j].id], dir = pa.y <= pb.y ? -1 : 1, dy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) + 2;
+        pa.y = Math.max(20, Math.min(H - 20, pa.y + dir * dy / 2)); pb.y = Math.max(20, Math.min(H - 20, pb.y - dir * dy / 2)); moved = true;
+      }
+    }
+    if (!moved) break;
+  }
   draw();
 }
+window.__graphOverlaps = () => {  // for the browser test: pairs of labels that touch
+  const boxes = [...document.querySelectorAll("svg .node text")].map((t) => t.getBoundingClientRect());
+  let n = 0;
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i], b = boxes[j];
+    if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) n++;
+  }
+  return n;
+};
 
 function draw() {
   const NS = "http://www.w3.org/2000/svg", svg = $("svg");
@@ -117,10 +140,11 @@ function draw() {
   for (const n of data.nodes) {
     const g = el("g", { class: "node", transform: `translate(${pos[n.id].x},${pos[n.id].y})`, style: "cursor:pointer" });
     const dead = ["superseded", "withdrawn", "refused", "sent_back", "cancelled"].includes(n.status);
-    g.append(el("circle", { r: n.type === "deal" ? 13 : 9, fill: COLORS[n.type] || "#999", opacity: dead ? 0.3 : 1,
+    const pending = n.status === "proposed";
+    g.append(el("circle", { r: n.type === "deal" || n.id === "brand:profile" ? 14 : n.type === "source" ? 11 : 8, fill: COLORS[n.type] || "#999", opacity: dead ? 0.3 : pending ? 0.55 : 1,
       stroke: n.id === selected ? "var(--ink)" : "none", "stroke-width": 2 }));
     const t = el("text", { x: 13, y: 4 });
-    t.textContent = `${n.id.replace(/^(person|deal|listing|chat|brand|angle|competitor):/, "")}${dead ? " ✕" : n.status === "approved" ? " ✓" : ""}`;
+    t.textContent = `${n.label || n.id.replace(/^(person|deal|listing|chat|brand|angle|competitor|source):/, "")}${dead ? " ✕" : n.status === "approved" ? " ✓" : ""}`;
     g.append(t);
     g.addEventListener("click", () => pick(n));
     svg.append(g);

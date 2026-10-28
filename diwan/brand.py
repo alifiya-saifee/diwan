@@ -26,7 +26,15 @@ USED_BY = ["Idea generator", "Script writer", "Content writer", "Copywriter (rev
 
 
 def _split(v: str) -> list[str]:
-    return [x.strip() for x in re.split(r"[,\n;]", v or "") if x.strip()]
+    """The items of a list field, however it was written: "luxury, hurry", one per line, or a sentence that quotes them
+    ('We never say "luxury", "hurry" or "best investment"'). Quoted words win; otherwise split on commas, "and", "or"."""
+    v = v or ""
+    quoted = re.findall(r"[\"“”']([^\"“”']{2,60})[\"“”']", v)
+    if quoted:
+        return [q.strip() for q in quoted if q.strip()]
+    v = re.sub(r"^\s*(we\s+)?(never|don't|do not)\s+(say|use|claim)\s*:?\s*", "", v, flags=re.I)
+    items = [re.sub(r"^(that|any|a|an|the)\s+", "", x.strip(" ."), flags=re.I) for x in re.split(r"[,\n;]|\s+(?:and|or)\s+", v)]
+    return [x for x in items if x]
 
 
 def profile(office: Office) -> dict:

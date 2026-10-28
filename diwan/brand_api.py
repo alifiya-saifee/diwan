@@ -48,3 +48,29 @@ def marketing_memory(upto: int | None = None):
     """The marketing team's memory as a graph, rewindable to any event."""
     from diwan.brain import marketing_graph
     return marketing_graph(_office(), upto)
+
+
+class LearnIn(BaseModel):
+    urls: list[str] = []
+    document: str = ""          # pasted text: a company profile, a brochure
+    document_name: str = "company profile"
+    company: str = ""
+    by: str = "maya"
+
+
+@router.post("/api/brand/learn")
+async def learn_company(body: LearnIn):
+    """The Brand brain reads public pages and proposes knowledge cards (each proven by a quote) and a brand draft."""
+    from diwan import learn
+    try:
+        docs = {body.document_name or "company profile": body.document} if body.document.strip() else {}
+        return await asyncio.to_thread(learn.learn, _office(), body.urls[:6], documents=docs, by=body.by, company=body.company)
+    except Exception as e:
+        return {"needs": f"Reading the pages failed: {str(e)[:160]}"}
+
+
+@router.get("/api/brand/demo-profile")
+def demo_profile():
+    """The fictional company profile the demo learns from."""
+    from pathlib import Path
+    return {"name": "Diwan Realty company profile", "text": (Path(__file__).parent / "demo_profile.md").read_text()}

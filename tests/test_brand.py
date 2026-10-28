@@ -89,3 +89,35 @@ def test_the_marketing_memory_graph_shows_the_brand_and_what_follows_it(office):
     assert {n["id"]: n["status"] for n in g["nodes"]}[pick] == "approved"
     rewound = marketing_graph(office, upto=before["last_event"])
     assert not any(n["type"] == "brand" for n in rewound["nodes"])  # rewinding goes back to before the brand was set
+
+
+def test_learning_keeps_only_cards_proven_by_a_quote(office, monkeypatch):
+    """The AI proposes knowledge from a document; a card whose quote is not in the document is dropped, and every kept card waits for a person."""
+    from diwan import learn
+    from pathlib import Path
+    doc = (Path(studio.__file__).parents[1] / "demo_profile.md").read_text()
+    reply = {"company": "Diwan Realty", "brand": {k: "" for k in brand.FIELDS} | {"cta": "WhatsApp us and we'll walk you through it."},
+             "cards": [{"topic": "about", "title": "Founded in 2016", "text": "Diwan Realty was founded in 2016 by Layla Mansour.",
+                        "quote": "independent Dubai real estate brokerage founded in 2016 by Layla Mansour", "source": "company profile"},
+                       {"topic": "track record", "title": "Award winner", "text": "Diwan won Broker of the Year.",
+                        "quote": "Broker of the Year 2025", "source": "company profile"}]}
+    monkeypatch.setenv("META_API_KEY", "k")
+    monkeypatch.setenv("DIWAN_TAPE", "off")
+    monkeypatch.setattr(PROVIDERS["meta"], "transport", fake(reply))
+    r = learn.learn(office, documents={"company profile": doc})
+    assert [k["title"] for k in r["proposed"]] == ["Founded in 2016"]
+    assert r["dropped"] == [{"title": "Award winner", "why": "its quote is not on the page it cites"}]
+    k = office.graph().nodes[r["proposed"][0]["id"]]
+    assert k.status == "proposed" and k.props["source"] == "company profile"
+    assert r["brand"]["cta"] == "WhatsApp us and we'll walk you through it."
+
+
+def test_list_fields_written_as_sentences_still_work(office):
+    """The live draft wrote the never-use list as a sentence; the check must still catch each word."""
+    brand.save(office, {"avoid": 'We never say "luxury", "once-in-a-lifetime", "hurry" or "best investment", and we never use more than one exclamation mark.',
+                        "never_claim": "We never claim guaranteed returns, guaranteed rental income or that prices will rise.",
+                        "hashtags": "#DiwanRealty and #HonestHomes", "voice": "Warm, plain and expert."}, by="maya")
+    assert brand._split(brand.profile(office)["avoid"]["value"]) == ["luxury", "once-in-a-lifetime", "hurry", "best investment"]
+    assert brand.broken(office, "A luxury home") == "luxury" and brand.broken(office, "Guaranteed returns for you") == "guaranteed returns"
+    assert brand.broken(office, "prices will rise next year") == "prices will rise"
+    assert brand.hashtags(office) == ["#DiwanRealty", "#HonestHomes"]
