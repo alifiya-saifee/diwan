@@ -4,6 +4,21 @@ Two sessions build Diwan in parallel until the hackathon deadline (4 Nov 2026, 9
 files, builds them to the contract in `docs/rooms.md`, and follows the rules in `docs/handoff.md` section 2. Read
 `docs/handoff.md` first.
 
+## Rules for both sessions (the product owner's standing instructions)
+
+1. **No feature without a reason.** Every change states which row of `docs/rooms.md` or which checklist item below it
+   fulfils. Anything that is on neither is not built without the product owner's OK, however useful it looks.
+2. **Work the checklist top to bottom.** The items are in priority order: safety first, then what the demo shows,
+   then the rest. Finish and check one before starting the next, so if time runs out, what is missing is the least important.
+3. **Working means working for a person.** Each item is checked in the browser the way a user would use it, with a
+   screenshot, including what happens when something is missing, wrong or at real scale. Passing tests alone is not done.
+4. **Efficient output.** Each agent produces exactly the output its contract names, from its sources, cited; no extra
+   steps, no repeated model calls (use the saved replies), the cheapest reasoning level that keeps quality.
+5. **End-of-day report** to the product owner: every checklist item marked checked in the browser / tested in code
+   only / not done, with the reason; the day's model spend; anything that needs their decision.
+6. **Target: everything on the checklist working by the end of 29 Oct.** If an item cannot be finished properly, say
+   so early rather than shipping it half-done.
+
 ## The split
 
 | | Marketing session | Front office session |
@@ -35,7 +50,9 @@ hook lines; web search cost unverified.
 > You are the Marketing session for Diwan. Read docs/handoff.md, docs/rooms.md and docs/sessions.md. You own the
 > Marketing rows in docs/sessions.md; don't edit the Front office session's files. Build the Marketing definition of
 > done in docs/sessions.md, one item at a time, checking each in the browser with screenshots and reporting item by
-> item. Run repeated tests offline (DIWAN_OFFLINE=1); use the live model only for a final pass, and tell me the cost.
+> item. Follow "Rules for both sessions" exactly: nothing outside the checklist without my OK, work top to bottom, and
+> send me the end-of-day report. Run repeated tests offline (DIWAN_OFFLINE=1); use the live model only for a final
+> pass, and tell me the cost.
 
 ## Front office session: front desk and sales working end to end
 
@@ -59,7 +76,8 @@ Definition of done (checked in the browser, with screenshots):
 > docs/front-office.md and docs/knowledge.md. You own the Front office rows in docs/sessions.md; don't edit the
 > Marketing session's files. Fix the two "fix first" items, then build the Front office definition of done in
 > docs/sessions.md, one item at a time, checking each in the browser with screenshots and reporting item by item.
-> Run repeated tests offline (DIWAN_OFFLINE=1); never loop tests against the live model.
+> Follow "Rules for both sessions" exactly: nothing outside the checklist without my OK, work top to bottom, and send
+> me the end-of-day report. Run repeated tests offline (DIWAN_OFFLINE=1); never loop tests against the live model.
 
 ## Where the two sessions meet
 
@@ -75,4 +93,4 @@ Agree any new event shape at a meeting point in the changelog below before build
 
 ## Changelog (append one line per shared change)
 
-- 29 Oct: split agreed; rooms.md and sessions.md written.
+- 29 Oct: split agreed; rooms.md and sessions.md written; rules for both sessions added (no feature without a reason, priority order, end-of-day report).
