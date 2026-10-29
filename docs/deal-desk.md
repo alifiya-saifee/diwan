@@ -65,6 +65,22 @@ card waiting for me; mark a payment received; open the Form F plan and see which
    *Browser:* 1280 wide and phone width, no sideways scroll; 300 deals in the list still pages and searches; an empty
    office says "No deals yet"; an unknown deal id says so.
 
+## The three views (approved by the product owner 29 Oct, from the mock https://claude.ai/artifact/QhbpjWAm81BRsJnZmwZW5b)
+
+As deals pile up, people work through their own pile and the owner wants totals first, so the desk has three views of
+the same deals and one deal opens in a side panel:
+
+- **Overview**: the latest correction and what it set off (Compliance first, tasks withdrawn, approvals back, drafts
+  sent back), corrections this week, and four tiles (waiting for people, money in the next 7 days and overdue,
+  Compliance, Paperwork). Every number opens exactly the deals or the work behind it. Money expected day by day; deals by stage.
+- **My work**: one queue per person across every deal, most urgent first, acted on in the row (Reviewed, Clear,
+  Received, I submitted it, Answer…); a row that needs the story opens the deal.
+- **Deals**: the pipeline as a sortable, searchable table, 50 a page, with each department's state and who it waits for.
+- **Catch-up**: deals recorded before a Compliance rule existed get it when the server starts (adds only what is missing).
+- Compliance asks the broker, once, how a purchase is funded when a price or deposit is on the table and the customer
+  has not said; the question closes itself when the customer says it.
+- The page refreshes live but never while someone is typing.
+
 ## States every section must handle
 
 Empty (no deals; a deal with no money facts; nothing to screen), errors (an action by the wrong person is refused with

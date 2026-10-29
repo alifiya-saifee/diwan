@@ -168,7 +168,7 @@ def test_each_person_hears_what_needs_them_with_records(corrected):
     priya, ahmed, omar = (nova.brief(corrected, p, now=morning) for p in ("priya", "ahmed", "omar"))
     assert priya["text"].startswith("Good morning, Priya. 3 things need you. Payment arrangement changed")
     assert {"A1", "F3", "F7"} <= set(ahmed["lines"][0]["refs"])
-    assert omar["text"].startswith("Good morning, Omar. Nothing needs you.") and "took back" in omar["text"]
+    assert omar["text"].startswith("Good morning, Omar. 1 thing needs you. How is Sara Malik funding the purchase?") and "took back" in omar["text"]
 
 
 def test_briefing_runs_at_seven_dubai_once_a_day():
@@ -179,7 +179,7 @@ def test_briefing_runs_at_seven_dubai_once_a_day():
 
 @pytest.mark.parametrize("q, expect", [
     ("Hi Nova, how are you?", "All good here"),
-    ("What should I focus on today?", "Waiting on others: Priya"),
+    ("What should I focus on today?", "Waiting on others: Omar: How is Sara Malik funding the purchase?"),
     ("Is Karim a good customer?", "I don't judge people"),
     ("Which listing is the most expensive?", "Unit 1204, Marina Crest"),
     ("How many listings do we have?", "4 listings, 3 advertised"),

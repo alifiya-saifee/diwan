@@ -5,12 +5,93 @@
 <title>Diwan Deal desk</title>
 <link rel="stylesheet" href="app.css">
 <style>
-  .desk { grid-template-columns: 280px minmax(0, 1fr) 340px; }
-  @media (max-width: 1250px) { .desk { grid-template-columns: 260px minmax(0, 1fr); } .desk > .side { grid-column: 1 / -1; } }
-  @media (max-width: 800px) { .desk { grid-template-columns: minmax(0, 1fr); } .deals .list { max-height: 240px; overflow: auto; } }
-  .deals .item { padding: 9px 12px; }
-  .deals .item strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pager { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-top: 10px; }
+  /* three views of the same deals (Overview · My work · Deals); one deal opens in a side panel, never a new page */
+  .deskbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+  .views { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
+  .views a { color: var(--muted); padding: 7px 14px; border-radius: 9px; font-weight: 500; display: flex; gap: 8px; align-items: center; }
+  .views a.on { background: var(--gold); color: var(--bg); }
+  .views a .n { font: 600 11px var(--mono); background: var(--bad); color: #1b0b0b; border-radius: 99px; padding: 0 6px; }
+  .views a.on .n { background: var(--bg); color: var(--gold); }
+  .actas { margin-left: auto; display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+  .actas select { width: auto; min-width: 170px; }
+  .lede { color: var(--muted); margin: -2px 0 20px; max-width: 70ch; }
+  .num { font-variant-numeric: tabular-nums; }
+  /* overview */
+  .story { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 18px; margin-bottom: 18px; }
+  .correction { border-color: rgba(232, 199, 122, .35); background: linear-gradient(135deg, rgba(232, 199, 122, .10), var(--panel) 55%); }
+  .correction .was { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--bad); font-family: var(--display); font-style: italic; font-size: 17px; }
+  .correction .now { font: italic 400 26px/1.25 var(--display); margin: 4px 0; text-wrap: balance; }
+  .ripple { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+  .ripple div { border-radius: 12px; padding: 10px 12px; background: rgba(0, 0, 0, .25); border: 1px solid var(--line); }
+  .ripple b { display: block; font-size: 22px; } .ripple .first b { color: var(--bad); }
+  .ripple span { font-size: 12px; color: var(--muted); }
+  .clist .ci { display: flex; justify-content: space-between; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .clist .ci:hover { background: rgba(255, 255, 255, .03); }
+  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-bottom: 18px; }
+  .tile { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .tile .k { font: 600 11px var(--font); letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); }
+  .tile .big { font: 400 38px/1 var(--display); }
+  .tile .r { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+  .tile .r:hover { background: rgba(255, 255, 255, .05); } .tile .r b { font-variant-numeric: tabular-nums; }
+  .tile .r.zero { color: var(--faint); cursor: default; } .tile .r.zero:hover { background: none; }
+  .charts { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; }
+  svg text { fill: var(--muted); font: 11px var(--font); }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .stage { display: grid; grid-template-columns: 110px minmax(0, 1fr) 96px; gap: 10px; align-items: center; padding: 7px 4px; font-size: 13px; cursor: pointer; border-radius: 8px; }
+  .stage:hover { background: rgba(255, 255, 255, .03); }
+  .stage .bar { height: 14px; background: rgba(255, 255, 255, .04); border-radius: 99px; overflow: hidden; display: flex; }
+  .stage .bar i { display: block; height: 100%; background: var(--gold); } .stage .bar i + i { opacity: .35; }
+  .stage .v { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  @media (max-width: 1100px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .story, .charts { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) { .tiles { grid-template-columns: 1fr; } .ripple { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  /* my work */
+  .people { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .person { display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; border-radius: 99px; }
+  .person .av { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 12px; background: var(--raise); color: var(--gold); }
+  .person.on { border-color: var(--gold); background: var(--gold-soft); }
+  .person small { display: block; color: var(--muted); font-size: 11px; line-height: 1.1; text-align: left; }
+  .qhead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .qhead .big { font: 400 32px var(--display); }
+  .groups { display: flex; gap: 6px; flex-wrap: wrap; }
+  .groups button, .filters button { padding: 5px 12px; font-size: 12px; border-radius: 99px; color: var(--muted); background: transparent; }
+  .groups button.on, .filters button.on { color: var(--gold); background: var(--gold-soft); border-color: rgba(232, 199, 122, .4); }
+  .q { display: grid; grid-template-columns: 5px minmax(0, 1fr) auto; gap: 14px; padding: 13px 14px 13px 0; border-bottom: 1px solid var(--line); align-items: center; transition: opacity .3s, transform .3s; }
+  .q .sev { align-self: stretch; border-radius: 0 4px 4px 0; }
+  .q .title { font-weight: 600; } .q .meta { color: var(--muted); font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; margin-top: 3px; align-items: center; }
+  .q .acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .q .acts input { width: 170px; padding: 7px 10px; font-size: 13px; }
+  .q.gone { opacity: 0; transform: translateX(24px); }
+  @media (max-width: 760px) { .q { grid-template-columns: 5px minmax(0, 1fr); } .q .acts { grid-column: 2; justify-content: flex-start; } }
+  .allclear { padding: 40px 10px; text-align: center; color: var(--muted); } .allclear b { display: block; font: 400 26px var(--display); color: var(--ink); }
+  /* deals table */
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .toolbar input { flex: 1 1 240px; width: auto; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tablebox { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  .tablebox table { min-width: 1040px; }
+  .tablebox th { cursor: pointer; white-space: nowrap; user-select: none; } .tablebox th.on { color: var(--gold); }
+  .tablebox td { white-space: nowrap; vertical-align: middle; }
+  .tablebox tbody tr { cursor: pointer; } .tablebox tbody tr:hover { background: rgba(255, 255, 255, .03); } .tablebox tbody tr.sel { background: var(--gold-soft); }
+  .tablebox .sub { color: var(--muted); font-size: 12px; }
+  .steps { display: inline-flex; gap: 3px; vertical-align: middle; } .steps i { width: 8px; height: 8px; border-radius: 2px; background: rgba(255, 255, 255, .1); } .steps i.f { background: var(--teal); }
+  .pager { display: flex; justify-content: space-between; align-items: center; padding: 12px 2px; color: var(--muted); font-size: 13px; gap: 8px; flex-wrap: wrap; }
+  /* the deal panel (today's deal page, unchanged inside) */
+  .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 40; }
+  aside.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 100vw); z-index: 41; background: var(--bg-2); border-left: 1px solid var(--line-2);
+    overflow-y: auto; padding: 18px 22px 40px; box-shadow: -30px 0 60px -20px rgba(0, 0, 0, .7); }
+  .drawer .closebtn { position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; padding: 0; }
+  .strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
+  .strip div { border-radius: 12px; padding: 9px 10px; border: 1px solid var(--line); font-size: 13px; }
+  .strip div b { display: block; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); font-weight: 600; margin-bottom: 3px; }
+  .strip .ok { border-color: rgba(130, 217, 159, .3); } .strip .warn { border-color: rgba(240, 179, 94, .4); background: var(--warn-soft); } .strip .bad { border-color: rgba(242, 125, 125, .4); background: var(--bad-soft); }
+  @media (max-width: 520px) { .strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } aside.drawer { padding: 16px; } }
+  .tl { position: relative; margin: 6px 0 4px; padding-left: 18px; }
+  .tl::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 1px; background: var(--line-2); }
+  .tl div { position: relative; padding: 5px 0; font-size: 13px; }
+  .tl div::before { content: ""; position: absolute; left: -17px; top: 11px; width: 9px; height: 9px; border-radius: 50%; background: var(--faint); }
+  .tl div.hot::before { background: var(--gold); box-shadow: 0 0 0 4px var(--gold-soft); }
+  .tl time { color: var(--faint); font: 11px var(--mono); margin-right: 6px; }
   .said { display: flex; flex-direction: column; gap: 6px; }
   .said .f { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); }
   .said .f.superseded { opacity: .6; }
@@ -31,30 +112,22 @@
   .slides { margin: 8px 0 0; padding-left: 18px; }
   .slides li.stale { color: var(--bad); }
   .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
-  .who-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
-  .who-row select { max-width: 220px; }
-  .head h1 { font-size: 30px; margin: 0; overflow-wrap: anywhere; }
+  .head h1 { font-size: 30px; margin: 0 40px 0 0; overflow-wrap: anywhere; }
+  details.quiet > summary { cursor: pointer; color: var(--muted); font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 600; margin-top: 18px; }
 </style>
 </head>
 <body>
 <main>
-  <h1>The <em>Deal desk</em></h1>
-  <p class="sub">Compliance, Finance, Paperwork and Review on one deal. Every card names the customer's words it rests on; when those words are replaced, the work built on them comes back here.</p>
-  <div class="grid desk">
-    <section class="panel deals">
-      <h2>Deals</h2>
-      <input id="q" type="search" placeholder="Customer, property or deal id" aria-label="Search deals">
-      <label class="row small" style="margin:8px 0;gap:6px"><input type="checkbox" id="needs" style="width:auto;flex:0"> Waiting for someone</label>
-      <div class="list" id="dlist"></div>
-      <div class="pager small muted" id="pager"></div>
-    </section>
-    <section class="panel" id="main"><div class="empty">Pick a deal.</div></section>
-    <section class="panel side">
-      <div class="who-row small muted">Acting as <select id="as"></select></div>
-      <h2>Happening on this deal</h2>
-      <div class="feed" id="feed"></div>
-    </section>
+  <div class="deskbar">
+    <h1 style="margin:0">The <em>Deal desk</em></h1>
+    <nav class="views" id="views" aria-label="Deal desk views">
+      <a href="#overview" data-v="overview">Overview</a><a href="#my-work" data-v="my-work">My work <span class="n" id="mycount"></span></a><a href="#deals" data-v="deals">Deals</a>
+    </nav>
+    <label class="actas" for="as">Acting as <select id="as"></select></label>
   </div>
+  <div id="view"></div>
+  <div id="drawerRoot" hidden><div class="scrim" id="scrim"></div>
+    <aside class="drawer" role="dialog" aria-label="Deal"><button class="closebtn" id="close" aria-label="Close">✕</button><div id="main"></div></aside></div>
 </main>
 <script type="module">
 import { h, api, post, follow, header, describe, who, loadAgents, time, NAMES, toast } from "./app.js";
@@ -62,40 +135,176 @@ header("deal.html");
 await loadAgents();
 const $ = (id) => document.getElementById(id);
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
-let deal = new URLSearchParams(location.search).get("deal"), page = 1, view = null;
+let deal = new URLSearchParams(location.search).get("deal"), view = null;
+let filter = new URLSearchParams(location.search).get("filter") || "", stage = "", query = "", sort = "changed", desc = true, page = 1, group = "all";
 $("as").replaceChildren(...Object.entries(NAMES).map(([k, v]) => h("option", { value: k }, v)));
-$("as").value = store.get("desk.as") || "ahmed";
-$("as").onchange = () => { store.set("desk.as", $("as").value); render(); };
+$("as").value = store.get("desk.as") || "priya";
+$("as").onchange = () => { store.set("desk.as", $("as").value); render(); show(); };
 const me = () => $("as").value;
+const aed = (n) => !n ? "0" : n >= 1e6 ? `${(n / 1e6).toFixed(2).replace(/\.?0+$/, "")}M` : `${Math.round(n / 1000)}k`;
+const ago = (iso) => { const m = (Date.now() - new Date(iso)) / 6e4; return m < 1 ? "just now" : m < 60 ? `${Math.round(m)} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+const st = ([s, t]) => h("span", { class: `chip ${{ ok: "ok", warn: "warn", bad: "bad" }[s] || ""}` }, t);
 
-// ---------- the list ----------
-async function list() {
-  const r = await api(`/api/desk/deals?q=${encodeURIComponent($("q").value)}&needs=${$("needs").checked}&page=${page}`);
-  if (!r.total) {
-    $("dlist").replaceChildren(h("div", { class: "empty" }, $("q").value || $("needs").checked ? "No deal matches." : "No deals yet."));
-    $("pager").replaceChildren();
-    return r;
-  }
-  $("dlist").replaceChildren(...r.rows.map((d) => h("div", { class: `item click ${d.deal === deal ? "on" : ""}`, onclick: () => open(d.deal) },
-    h("strong", {}, d.customer || d.deal), h("div", { class: "small muted" }, d.property),
-    d.waiting.length ? h("span", { class: "chip warn" }, `waiting for ${d.waiting.join(", ")}`) : null)));
-  $("pager").replaceChildren(h("span", {}, `${r.total} deal${r.total === 1 ? "" : "s"}`),
-    r.pages > 1 ? h("span", {}, h("button", { disabled: page <= 1, onclick: () => { page--; list(); } }, "‹"), ` ${page} / ${r.pages} `,
-      h("button", { disabled: page >= r.pages, onclick: () => { page++; list(); } }, "›")) : null);
-  return r;
+// ---------- the three views ----------
+const VIEW = () => (["my-work", "deals"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview");
+async function show() {
+  document.querySelectorAll("#views a").forEach((a) => a.classList.toggle("on", a.dataset.v === VIEW()));
+  const w = await api(`/api/desk/work?person=${me()}`);
+  $("mycount").textContent = w.counts[me()] || "";
+  if (VIEW() === "my-work") return myWork(w);
+  if (VIEW() === "deals") return deals();
+  return overview();
 }
-let qt;
-$("q").oninput = () => { clearTimeout(qt); qt = setTimeout(() => { page = 1; list(); }, 150); };
-$("needs").onchange = () => { page = 1; list(); };
+addEventListener("hashchange", () => { scrollTo(0, 0); show(); });
+const goDeals = (f = "", s = "") => { filter = f; stage = s; page = 1; location.hash === "#deals" ? show() : (location.hash = "#deals"); };
+const goWork = (p) => { $("as").value = p; store.set("desk.as", p); group = "all"; location.hash === "#my-work" ? show() : (location.hash = "#my-work"); };
 
-// ---------- one deal ----------
+async function overview() {
+  const o = await api("/api/desk/overview"), c = o.corrections[0];
+  const row = (label, n, onclick) => h("div", { class: `r ${n ? "" : "zero"}`, role: "button", tabindex: n ? 0 : -1, onclick: n ? onclick : null }, h("span", {}, label), h("b", {}, n));
+  const tile = (k, big, ...rows) => h("section", { class: "panel tile" }, h("span", { class: "k" }, k), h("span", { class: "big num" }, big), h("div", {}, ...rows));
+  $("view").replaceChildren(
+    h("p", { class: "lede" }, `${o.deals} deal${o.deals === 1 ? "" : "s"} worth AED ${aed(o.value)} in what customers said. Every number opens the deals or the work behind it; nothing is estimated.`),
+    h("div", { class: "story" },
+      c ? h("section", { class: "panel correction" }, h("h2", {}, "Latest correction ", h("span", { class: "chip warn" }, `${c.customer} · ${ago(c.at)}`)),
+        ...c.old.map((x) => h("div", { class: "was" }, `"${x.quote}"`)), h("div", { class: "now" }, `"${c.quote}"`),
+        h("div", { class: "small muted" }, `${c.fact} replaced ${c.old.map((x) => x.id).join(" and ")} · the history is kept`),
+        h("div", { class: "ripple" },
+          h("div", { class: c.compliance_first ? "first" : "" }, h("b", {}, c.compliance_first ? "1st" : "—"), h("span", {}, "Compliance told, before anyone acted")),
+          h("div", {}, h("b", {}, c.withdrawn), h("span", {}, c.withdrawn === 1 ? "task withdrawn" : "tasks withdrawn")), h("div", {}, h("b", {}, c.approvals), h("span", {}, c.approvals === 1 ? "approval back to its approver" : "approvals back to their approver")),
+          h("div", {}, h("b", {}, c.sent_back), h("span", {}, c.sent_back === 1 ? "draft sent back" : "drafts sent back"))),
+        h("button", { class: "primary", onclick: () => open(c.deal) }, `Open ${c.customer.split(" ")[0]}'s deal`))
+        : h("section", { class: "panel" }, h("h2", {}, "Latest correction"), h("div", { class: "empty" }, "No customer has corrected themselves yet. When one does, what it changed shows here.")),
+      h("section", { class: "panel clist" }, h("h2", {}, "Corrections this week ", h("span", { class: "chip" }, o.corrections_week)),
+        ...(o.corrections.length ? o.corrections.slice(0, 6).map((x) => h("div", { class: "ci", onclick: () => open(x.deal) },
+          h("span", { style: "min-width:0" }, h("strong", {}, x.customer), h("span", { class: "small muted" }, ` "${x.quote.slice(0, 60)}${x.quote.length > 60 ? "…" : ""}"`)),
+          h("span", { class: "chip" }, ago(x.at)))) : [h("div", { class: "empty" }, "None this week.")]),
+        h("div", { class: "small muted", style: "margin-top:10px" }, "Each one withdrew or sent back only the work resting on the old words."))),
+    h("div", { class: "tiles" },
+      tile("Waiting for people", o.work, ...Object.entries(o.waiting).sort((a, b) => b[1] - a[1]).map(([p, n]) => row(NAMES[p] || p, n, () => goWork(p)))),
+      tile("Money · next 7 days", `AED ${aed(o.money.next7)}`, row(`Expected (${o.money.next7_n})`, `AED ${aed(o.money.next7)}`, () => goDeals("expected")),
+        row(`Overdue (${o.money.overdue_n} deals)`, o.money.overdue ? `AED ${aed(o.money.overdue)}` : 0, () => goDeals("overdue"))),
+      tile("Compliance", o.comp.unscreened + o.comp.proof + o.comp.cash + o.comp.checks + o.comp.match,
+        row("Not screened", o.comp.unscreened, () => goDeals("unscreened")), row("Possible match", o.comp.match, () => goDeals("match")),
+        row("Payer changed, to review", o.comp.checks, () => goDeals("checks")), row("Proof missing", o.comp.proof, () => goDeals("proof")),
+        row("Cash report to file", o.comp.cash, () => goDeals("cash"))),
+      tile("Paperwork", o.paper.submit + o.paper.sentback + o.paper.transfer, row("Form F to submit", o.paper.submit, () => goDeals("submit")),
+        row("Form F sent back", o.paper.sentback, () => goDeals("sentback")), row("In transfer", o.paper.transfer, () => goDeals("transfer")))),
+    h("div", { class: "charts" },
+      h("section", { class: "panel" }, h("h2", {}, "Money expected, day by day"), moneyChart(o.money.days),
+        h("div", { class: "legend" }, h("span", {}, h("i", { style: "background:var(--bad)" }), "Overdue"), h("span", {}, h("i", { style: "background:var(--gold)" }), "Expected"),
+          h("span", {}, h("i", { style: "background:rgba(255,255,255,.12)" }), "Today"))),
+      h("section", { class: "panel" }, h("h2", {}, "Deals by stage"), ...(o.stages.length ? o.stages.map((s) => {
+        const max = Math.max(...o.stages.map((x) => x.deals));
+        return h("div", { class: "stage", role: "button", tabindex: 0, onclick: () => goDeals("", s.stage) }, h("span", {}, s.stage),
+          h("span", { class: "bar" }, h("i", { style: `width:${(s.waiting / max) * 100}%` }), h("i", { style: `width:${((s.deals - s.waiting) / max) * 100}%` })),
+          h("span", { class: "v" }, `${s.deals} · ${aed(s.value)}`));
+      }) : [h("div", { class: "empty" }, "No deals yet.")]),
+        h("div", { class: "legend" }, h("span", {}, h("i", { style: "background:var(--gold)" }), "Waiting for someone"), h("span", {}, h("i", { style: "background:var(--gold);opacity:.35" }), "Moving")))));
+}
+
+function moneyChart(days) {
+  const W = 640, H = 200, L = 46, B = 24, T = 10, today = days[4].day, max = Math.max(...days.map((d) => d.aed), 1);
+  const step = [50e3, 100e3, 250e3, 500e3, 1e6, 2.5e6, 5e6].find((s) => s * 4 >= max) || 1e7, top = step * 4, bw = (W - L - 6) / days.length;
+  const y = (v) => H - B - (v / top) * (H - B - T), ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("width", "100%");
+  svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "Money expected per day");
+  const el = (tag, a, text) => { const e = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); if (text != null) e.textContent = text; svg.append(e); return e; };
+  for (let v = 0; v <= top; v += step) { el("line", { x1: L, x2: W - 4, y1: y(v), y2: y(v), stroke: "rgba(255,255,255,.06)" }); el("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" }, aed(v)); }
+  days.forEach((d, i) => {
+    const x = L + i * bw + 3, past = d.day < today;
+    if (d.day === today) el("rect", { x: x - 3, y: T, width: bw, height: H - B - T, fill: "rgba(255,255,255,.05)" });
+    if (d.aed) el("rect", { x, y: y(d.aed), width: bw - 6, height: H - B - y(d.aed), rx: 3, fill: past ? "var(--bad)" : "var(--gold)" }).append(Object.assign(document.createElementNS(ns, "title"), { textContent: `${d.day}: AED ${d.aed.toLocaleString()}` }));
+    if (i % 2 === 0) el("text", { x: x + (bw - 6) / 2, y: H - 7, "text-anchor": "middle" }, d.day === today ? "today" : +d.day.slice(8));
+  });
+  if (!days.some((d) => d.aed)) el("text", { x: W / 2, y: H / 2, "text-anchor": "middle" }, "No payments promised in these days");
+  return svg;
+}
+
+const SEV = { bad: "var(--bad)", warn: "var(--warn)", info: "var(--blue)" };
+function myWork(w) {
+  const p = me(), mine = w.items, kinds = [...new Set(mine.map((x) => x.kind))];
+  if (group !== "all" && !kinds.includes(group)) group = "all";
+  const list = mine.filter((x) => group === "all" || x.kind === group);
+  $("view").replaceChildren(
+    h("p", { class: "lede" }, "Everything waiting for one person, across every deal, most urgent first. Act on it here; open the deal when you need the story."),
+    h("div", { class: "people" }, ...Object.keys(NAMES).filter((k) => w.counts[k] || ["priya", "ahmed", "joseph"].includes(k) || k === p).map((k) =>
+      h("button", { class: `person ${k === p ? "on" : ""}`, onclick: () => goWork(k) }, h("span", { class: "av" }, NAMES[k][0]),
+        h("span", {}, NAMES[k], h("small", {}, `${w.counts[k] || 0} to do`))))),
+    h("section", { class: "panel" },
+      h("div", { class: "qhead" }, h("div", {}, h("span", { class: "big num" }, mine.length), h("span", { class: "muted" }, ` for ${NAMES[p]}`)),
+        h("div", { class: "groups" }, h("button", { class: group === "all" ? "on" : "", onclick: () => { group = "all"; myWork(w); } }, "All"),
+          ...kinds.map((k) => h("button", { class: group === k ? "on" : "", onclick: () => { group = k; myWork(w); } }, `${k} · ${mine.filter((x) => x.kind === k).length}`)))),
+      ...(list.length ? list.map(qrow) : [h("div", { class: "allclear" }, h("b", {}, "All clear"), `Nothing is waiting for ${NAMES[p]}.`)])));
+}
+function qrow(x) {
+  const inp = (ph) => h("input", { placeholder: ph, "aria-label": ph });
+  const row = h("div", { class: "q", "data-id": x.id });
+  const doit = async (path, body, msg) => {
+    try { await post(path, { by: me(), ...body }); row.classList.add("gone"); toast(msg); setTimeout(show, 320); } catch (e) { toast(e.message); }
+  };
+  const openBtn = (label = "Open the deal") => h("button", { onclick: () => open(x.deal) }, label);
+  let acts;
+  if (x.act === "reviewed") { const i = inp("Note (optional)"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/cards/${x.id}/answer`, { choice: "Reviewed", note: i.value }, "Marked reviewed") }, "Reviewed")]; }
+  else if (x.act === "answer") { const i = inp("Your answer"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/cards/${x.id}/answer`, { choice: "Answered", note: i.value }, "Answered") }, "Answer")]; }
+  else if (x.act === "reapprove") acts = [h("button", { class: "primary", onclick: () => open(x.deal) }, "Re-approve…"), h("button", { onclick: () => doit(`/api/desk/cards/${x.id}/answer`, { choice: "Cancel" }, "Approval cancelled") }, "Cancel it")];
+  else if (x.act === "screen") { const i = inp("Lists checked"); acts = [i, h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/screen`, { result: "clear", note: i.value }, "Recorded as clear") }, "Clear"),
+    h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/screen`, { result: "possible match", note: i.value }, "Possible match recorded") }, "Possible match")]; }
+  else if (x.act === "filed") { const i = inp("goAML reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/filed`, { reference: i.value }, "Filing recorded") }, "I filed it")]; }
+  else if (x.act === "received") { const i = inp("Bank reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/received`, { reference: i.value }, "Marked received; receipt filed") }, "Received")]; }
+  else if (x.act === "submitted") { const i = inp("Portal reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/submitted`, { reference: i.value }, "Form F submitted") }, "I submitted it")]; }
+  else if (x.act === "tick") acts = [h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/tick`, {}, "Ticked") }, "Done")];
+  else acts = [openBtn()];
+  row.append(h("span", { class: "sev", style: `background:${SEV[x.sev]}` }),
+    h("div", { style: "min-width:0" }, h("div", { class: "title" }, x.title),
+      h("div", { class: "meta" }, h("span", { class: "chip" }, x.kind), h("a", { href: `?deal=${encodeURIComponent(x.deal)}${location.hash}`, onclick: (e) => { e.preventDefault(); open(x.deal); } }, `${x.customer} · ${x.property}`),
+        h("span", {}, x.due ? `due ${x.due}` : `waiting ${ago(x.at).replace(" ago", "")}`), x.waiting_on ? h("span", {}, `waiting on ${x.waiting_on}`) : null)),
+    h("div", { class: "acts" }, ...acts));
+  return row;
+}
+
+const LABEL = { waiting: "Waiting for someone", overdue: "Money overdue", expected: "Money expected", unscreened: "Not screened", proof: "Proof missing",
+  cash: "Cash report to file", checks: "Payer changed", match: "Possible match", submit: "Form F to submit", sentback: "Form F sent back", transfer: "In transfer", corrected: "Corrected this week" };
+async function deals() {
+  const r = await api(`/api/desk/deals?q=${encodeURIComponent(query)}&filter=${filter}&stage=${encodeURIComponent(stage)}&sort=${sort}&desc=${desc}&page=${page}`);
+  const th = (k, label) => h("th", k ? { class: sort === k ? "on" : "", onclick: () => { desc = sort === k ? !desc : k !== "customer"; sort = k; page = 1; deals(); } } : {}, label, sort === k ? (desc ? " ↓" : " ↑") : "");
+  const q = h("input", { id: "q", type: "search", placeholder: "Search customer, property, broker or deal id", value: query, "aria-label": "Search deals" });
+  let qt; q.oninput = () => { clearTimeout(qt); qt = setTimeout(() => { query = q.value; page = 1; deals().then(() => { const n = $("q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }); }, 180); };
+  const quick = ["waiting", "overdue", "unscreened", "submit", "corrected"];
+  $("view").replaceChildren(
+    h("p", { class: "lede" }, "The pipeline: where every deal stands in each department, and who it is waiting for. Click a row for the whole story."),
+    h("div", { class: "toolbar" }, q, h("div", { class: "filters" },
+      ...quick.map((f) => h("button", { class: filter === f ? "on" : "", onclick: () => { filter = filter === f ? "" : f; page = 1; deals(); } }, LABEL[f])),
+      filter && !quick.includes(filter) ? h("button", { class: "on", onclick: () => { filter = ""; deals(); } }, `${LABEL[filter]} ×`) : null,
+      stage ? h("button", { class: "on", onclick: () => { stage = ""; deals(); } }, `Stage: ${stage} ×`) : null)),
+    h("div", { class: "tablebox" }, h("table", {}, h("thead", {}, h("tr", {}, th("customer", "Customer"), th("value", "Value"), th("stage", "Stage"), th("", "Compliance"),
+      th("", "Money"), th("", "Paperwork"), th("", "Review"), th("waiting", "Waiting on"), th("changed", "Changed"))),
+      h("tbody", {}, ...(r.rows.length ? r.rows.map((d) => h("tr", { class: d.deal === deal ? "sel" : "", onclick: () => open(d.deal) },
+        h("td", {}, h("strong", {}, d.customer || d.deal), d.corrected ? h("span", { class: "chip warn", style: "margin-left:6px" }, "corrected") : null, h("div", { class: "sub" }, d.property)),
+        h("td", { class: "num" }, d.value ? `AED ${aed(d.value)}` : h("span", { class: "sub" }, "not said")),
+        h("td", {}, h("span", { class: "chip" }, d.stage)), h("td", {}, st(d.comp)), h("td", {}, st(d.money)),
+        h("td", {}, d.steps ? h("span", {}, h("span", { class: "steps" }, ...Array.from({ length: d.steps[1] }, (_, i) => h("i", { class: i < d.steps[0] ? "f" : "" }))), ` ${d.steps[0]}/${d.steps[1]}`) : st(d.paper)),
+        h("td", {}, st(d.review)), h("td", {}, d.waiting_names.length ? d.waiting_names.join(", ") : h("span", { class: "sub" }, "nobody")),
+        h("td", { class: "sub" }, ago(d.changed))))
+        : [h("tr", {}, h("td", { colspan: 9 }, h("div", { class: "allclear" }, h("b", {}, r.all ? "No deal matches" : "No deals yet"), r.all ? "Clear the search or the filter." : "Deals appear here when an enquiry comes in.")))])))),
+    h("div", { class: "pager", id: "pager" }, h("span", {}, `${r.total} of ${r.all} deals${filter ? ` · ${LABEL[filter]}` : ""}${stage ? ` · stage ${stage}` : ""}`),
+      r.pages > 1 ? h("span", {}, h("button", { disabled: page <= 1, onclick: () => { page--; deals(); } }, "‹"), ` ${page} / ${r.pages} `,
+        h("button", { disabled: page >= r.pages, onclick: () => { page++; deals(); } }, "›")) : null));
+}
+
+// ---------- one deal, in the side panel ----------
 async function open(d) {
   deal = d;
-  history.replaceState(null, "", `?deal=${encodeURIComponent(d)}`);
+  history.replaceState(null, "", `?deal=${encodeURIComponent(d)}${location.hash}`);
+  $("drawerRoot").hidden = false;
   try { view = await api(`/api/desk/deals/${encodeURIComponent(d)}`); }
-  catch (e) { view = null; $("main").replaceChildren(h("div", { class: "empty" }, e.message)); }
-  render(); list(); feed();
+  catch (e) { view = null; $("main").replaceChildren(h("div", { class: "empty", style: "padding-top:40px" }, e.message)); return; }
+  render(); feed();
+  if (VIEW() === "deals") document.querySelectorAll(".tablebox tbody tr").forEach((tr) => tr.classList.remove("sel"));
 }
+function closeDeal() { deal = null; view = null; $("drawerRoot").hidden = true; history.replaceState(null, "", location.pathname + location.hash); }
+$("close").onclick = closeDeal; $("scrim").onclick = closeDeal;
+addEventListener("keydown", (e) => { if (e.key === "Escape" && deal) closeDeal(); });
 
 const chip = (s) => h("span", { class: `chip ${{ open: "warn", queued: "warn", given: "ok", executed: "ok", done: "ok", closed: "ok", live: "ok", refused: "bad", withdrawn: "bad", sent_back: "bad", superseded: "bad" }[s] || ""}` }, s.replace("_", " "));
 const rests = (fs) => fs.length ? h("div", { class: "rests" }, "Rests on ", ...fs.map((f, i) => h("span", { class: f.status === "superseded" ? "x" : "" },
@@ -118,12 +327,15 @@ function cardEl(c) {
   } else if (c.can === "reviewed") {
     const note = h("input", { placeholder: "Note (optional)", "aria-label": "Note" });
     acts.append(note, h("button", { class: "primary", onclick: () => act(c.id, { choice: "Reviewed", note: note.value }) }, "Reviewed"));
+  } else if (c.can === "answer") {
+    const note = h("input", { placeholder: "Your answer", "aria-label": "Your answer" });
+    acts.append(note, h("button", { class: "primary", onclick: () => act(c.id, { choice: "Answered", note: note.value }) }, "Answer"));
   } else acts.append(h("span", { class: "small muted" }, `Waiting for ${c.who_name}.`));
   el.append(acts);
   return el;
 }
 async function act(card, body) {
-  try { await post(`/api/desk/cards/${card}/answer`, { by: me(), ...body }); toast(`${card} answered`); await open(deal); }
+  try { await post(`/api/desk/cards/${card}/answer`, { by: me(), ...body }); toast(`${card} answered`); await open(deal); show(); }
   catch (e) { toast(e.message); }
 }
 
@@ -146,7 +358,7 @@ function approvalEl(a) {
 
 const OPEN = ["open", "queued", "working", "waiting"];
 async function send(path, body, ok) {
-  try { await post(path, { by: me(), ...body }); toast(ok); await open(deal); } catch (e) { toast(e.message); }
+  try { await post(path, { by: me(), ...body }); toast(ok); await open(deal); show(); } catch (e) { toast(e.message); }
 }
 
 function taskEl(t) {
@@ -249,28 +461,37 @@ function render() {
       ...(kids.length ? kids : [h("div", { class: "empty" }, `Nothing for ${label} on this deal.`)]));
   });
   const other = v.cards.filter((c) => !DEPTS.some(([k]) => k === c.dept));
+  const s = v.summary, box = (k, x) => h("div", { class: { ok: "ok", warn: "warn", bad: "bad" }[x[0]] || "" }, h("b", {}, k), x[1]);
   $("main").replaceChildren(
-    h("div", { class: "head" }, h("h1", {}, v.property), h("div", { class: "small muted" },
-      `${v.customer} · broker ${v.broker_name} · ${v.deal}${v.stage ? ` · stage ${v.stage}` : ""}`)),
+    h("div", { class: "head" }, h("div", { class: "small muted" }, `${v.deal} · broker ${v.broker_name} · stage ${s.stage}`), h("h1", {}, v.customer),
+      h("div", { class: "muted" }, `${v.property}${s.value ? ` · AED ${s.value.toLocaleString()}` : ""}`)),
+    h("div", { class: "strip" }, box("Compliance", s.comp), box("Money", s.money), box("Paperwork", s.paper), box("Review", s.review)),
+    s.waiting.length ? h("div", {}, "Waiting for ", ...s.waiting.map((p) => h("span", { class: `chip ${p === me() ? "warn" : ""}` }, NAMES[p] || p))) : null,
     h("section", { class: "dept" }, h("h2", {}, "What the customer said"), said),
     ...sections,
     other.length ? h("section", { class: "dept" }, h("h2", {}, "Other questions on this deal"), ...other.map(cardEl)) : null);
 }
 
+const SHOW = ["fact.created", "fact.superseded", "check.raised", "task.created", "task.withdrawn", "task.done", "decision.needed", "decision.made", "question.asked",
+  "question.answered", "review.returned", "review.passed", "approval.given", "approval.refused", "execution.done", "document.filed", "draft.made", "stage.changed"];
 async function feed() {
   if (!deal) return;
-  const evs = await api(`/api/events?deal=${encodeURIComponent(deal)}`);
-  $("feed").replaceChildren(...evs.filter((e) => e.type !== "agent.started").reverse().slice(0, 200).map((e) =>
-    h("div", { class: "ev" }, h("span", { class: "muted small" }, time(e.at), " "), h("span", { class: "who" }, who(e) || "office"), describe(e))));
+  const evs = (await api(`/api/events?deal=${encodeURIComponent(deal)}`)).filter((e) => SHOW.includes(e.type)).reverse();
+  const hot = (e) => (e.type === "fact.created" && e.content.replaces?.length) || e.type === "check.raised";
+  const tl = h("div", { class: "tl" }, ...evs.slice(0, 14).map((e) => h("div", { class: hot(e) ? "hot" : "" }, h("time", {}, time(e.at)), h("strong", {}, who(e) || "office"), " ", describe(e))));
+  $("main").append(h("details", { class: "quiet", open: true }, h("summary", {}, `What changed (${evs.length})`), tl,
+    evs.length > 14 ? h("div", { class: "small muted" }, `and ${evs.length - 14} earlier events`) : null));
 }
 
-const first = await list();
-if (deal) open(deal); else if (first.rows?.length) open(first.rows[0].deal);
-let rt;
-follow((evs) => {
-  if (!evs.some((e) => e.deal === deal || e.type === "deal.opened")) return;
-  clearTimeout(rt); rt = setTimeout(() => (deal ? open(deal) : list()), 300);
-});
+show();
+if (deal) open(deal);
+// live: other people's work shows up here, but never while someone is typing (a refresh would wipe their words)
+let rt, pending = false;
+const typing = () => document.activeElement?.matches("input:not([type=search]), textarea") && document.activeElement.value;
+const refresh = () => { if (typing()) { pending = true; return; } pending = false; show(); if (deal) open(deal); };
+addEventListener("focusout", () => setTimeout(() => { if (pending) refresh(); }, 50));
+const { events: last } = await api("/api/health");
+follow((evs) => { if (evs.some((e) => e.deal)) { clearTimeout(rt); rt = setTimeout(refresh, 400); } }, last);
 </script>
 </body>
 </html>

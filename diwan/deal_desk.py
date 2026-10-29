@@ -4,7 +4,8 @@ answer a card, carry out an approval.
 """
 from __future__ import annotations
 
-from datetime import date
+from collections import defaultdict
+from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -50,6 +51,8 @@ def _card(g: Graph, n: Node) -> dict:
         can = "reapprove"
     elif n.status == "open" and n.type == "check" and dept(p.get("agent")) == "comp":
         can = "reviewed"
+    elif n.status == "open" and n.type == "question":
+        can = "answer"
     old = g.nodes.get((p.get("refs") or [None])[0]) if can == "reapprove" else None
     return {"id": n.id, "type": n.type, "who": p.get("who"), "who_name": name(p.get("who")), "text": p["text"],
             "title": p.get("title"), "options": p.get("options") or [], "status": n.status, "answer": p.get("answer"),
@@ -90,31 +93,232 @@ def waiting(g: Graph, deal: str) -> list[str]:
     return sorted({w for w in who if w})
 
 
+# ---------- the whole office: summaries, the work queue, the overview ----------
+
+SEV = {"bad": 0, "warn": 1, "info": 2}
+STAGES = ["New", "Qualifying", "Qualified", "Viewing booked", "Viewed", "Offer", "Form F", "Transfer", "Won", "Lost"]  # the Inbox's
+
+
+class Ledger:
+    """One pass over the graph, every node grouped by deal and type, so hundreds of deals cost one scan."""
+
+    def __init__(self, g: Graph, today: date):
+        self.g, self.today = g, today
+        self.by: dict[str, dict[str, list[Node]]] = defaultdict(lambda: defaultdict(list))
+        for n in g.nodes.values():
+            if n.deal:
+                self.by[n.deal][n.type].append(n)
+        self._sum: dict[str, dict] = {}
+
+    def live(self, deal: str) -> list[Node]:
+        return [f for f in self.by[deal]["fact"] if f.status == "live" and f.props.get("stance", "asserted") == "asserted"]
+
+    def open_tasks(self, deal: str, agent: str | None = None) -> list[Node]:
+        return [t for t in self.by[deal]["task"] if t.status in OPEN and (agent is None or t.props["agent"] == agent)]
+
+    def summary(self, deal: str) -> dict:
+        if deal in self._sum:
+            return self._sum[deal]
+        g, by, d = self.g, self.by[deal], self.g.nodes[f"deal:{deal}"]
+        live = self.live(deal)
+        price = ([f for f in live if f.props["kind"] == "deal_term"] or [None])[-1]
+        funds = compliance.source_of_funds(g, deal, by)
+        screens = [t for t in by["task"] if t.props["agent"] == "screen"]
+        flags = {"match": any(t.props.get("result") == "possible match" for t in screens), "cash": bool(self.open_tasks(deal, "report")),
+                 "unscreened": any(t.status in OPEN for t in screens),
+                 "checks": any(c.status == "open" and dept(c.props.get("agent")) == "comp" for c in by["check"]), "proof": bool(funds["missing"])}
+        if any(t.props.get("result") == "possible match" for t in screens):
+            comp = ("bad", "Possible match")
+        elif self.open_tasks(deal, "report"):
+            comp = ("bad", "Cash report to file")
+        elif [t for t in screens if t.status in OPEN]:
+            comp = ("bad", "Not screened")
+        elif [c for c in by["check"] if c.status == "open" and dept(c.props.get("agent")) == "comp"]:
+            comp = ("warn", "Check open")
+        elif funds["missing"]:
+            comp = ("warn", f"{funds['missing']} proof missing")
+        elif screens:
+            comp = ("ok", "Clear")
+        else:
+            comp = ("none", "Nothing yet")
+        pays = [finance.expected(g, t, self.today) | {"t": t} for t in by["task"] if t.props["agent"] == "pay"]
+        due = [p for p in pays if p["t"].status in OPEN]
+        late = [p for p in due if p.get("overdue")]
+        got = [p for p in pays if p["t"].props.get("result") == "received"]
+        money = (("bad", f"AED {_k(sum(p['amount_aed'] or 0 for p in late))} overdue") if late else
+                 ("warn", f"AED {_k(sum(p['amount_aed'] or 0 for p in due))} expected") if due else
+                 ("ok", f"AED {_k(sum(p['amount_aed'] or 0 for p in got))} received") if got else ("none", "Not said"))
+        plans = [x for x in by["draft"] if x.props["kind"] == "Form F"]
+        steps = [t for t in by["task"] if t.props["agent"] == "transfer"]
+        submit = [t for t in self.open_tasks(deal, "formf") if t.props.get("draft")]
+        if steps:
+            n = sum(t.status == "done" for t in steps)
+            paper = ("ok" if n == len(steps) else "warn", "Transfer done" if n == len(steps) else f"Transfer {n}/{len(steps)}")
+        elif plans and plans[-1].status == "sent_back":
+            paper = ("bad", "Form F sent back")
+        elif submit:
+            paper = ("warn", "Form F to submit")
+        else:
+            paper = ("none", "Not started")
+        back = [x for x in by["draft"] if x.status == "sent_back" and DRAFT_DEPT.get(x.props["kind"], "review") == "review"]
+        rev = ("bad", f"{len(back)} sent back") if back else ("ok", "Passed") if by["draft"] else ("none", "Nothing yet")
+        waits = {c.props.get("who") for t in ("check", "decision", "question") for c in by[t] if c.status == "open"}
+        waits |= {t.props.get("needs_person") for t in by["task"] if t.status in OPEN}
+        if due:
+            waits.add(finance.FINANCE)
+        week = (self.today - timedelta(days=7)).isoformat()
+        out = {"deal": deal, "customer": d.props.get("customer"), "property": d.props.get("property"), "broker": d.props.get("broker"),
+               "broker_name": name(d.props.get("broker")), "stage": d.props.get("stage") or "New",
+               "value": price.props.get("amount_aed") if price else None,
+               "comp": comp, "money": money, "paper": paper, "review": rev,
+               "steps": [sum(t.status == "done" for t in steps), len(steps)] if steps else None,
+               "waiting": sorted(w for w in waits if w), "proof_missing": funds["missing"], "flags": flags,
+               "changed": max([n.at for ns in by.values() for n in ns] + [d.at]),
+               "corrected": any(f.props.get("replaces") and f.at[:10] >= week for f in by["fact"]),
+               "expected": [{"amount": p["amount_aed"], "due": p["due"], "overdue": p.get("overdue")} for p in due]}
+        self._sum[deal] = out
+        return out
+
+    def work(self) -> list[dict]:
+        """Everything waiting for a person, across every deal: one row each, with what they can do about it."""
+        items = []
+        for deal, by in self.by.items():
+            if f"deal:{deal}" not in self.g.nodes:
+                continue
+            s = self.summary(deal)
+            base = {"deal": deal, "customer": s["customer"], "property": s["property"]}
+            for c in (c for t in ("check", "decision", "question") for c in by[t] if c.status == "open" and c.props.get("who")):
+                ag = c.props.get("agent")
+                act = "reviewed" if c.type == "check" and dept(ag) == "comp" else "reapprove" if c.type == "decision" and ag == "factcheck" \
+                    else "answer" if c.type == "question" else "open"
+                kind = {"check": "Check", "decision": "Decision", "question": "Question"}[c.type]
+                items.append(base | {"id": c.id, "who": c.props["who"], "kind": kind, "sev": "bad" if c.type in ("check", "decision") else "warn",
+                                     "title": c.props.get("title") or c.props["text"], "text": c.props["text"], "at": c.at, "act": act,
+                                     "approval": self.g.nodes[c.props["refs"][0]].props["action"] if act == "reapprove" else None})
+            for t in by["task"]:
+                if t.status not in OPEN:
+                    continue
+                ag, who = t.props["agent"], t.props.get("needs_person")
+                if ag == "pay":
+                    e = finance.expected(self.g, t, self.today)
+                    soon = e.get("due") and e["due"] <= (self.today + timedelta(days=2)).isoformat()
+                    items.append(base | {"id": t.id, "who": finance.FINANCE, "kind": "Overdue" if e.get("overdue") else "Due soon" if soon else "Expected",
+                                         "sev": "bad" if e.get("overdue") else "warn" if soon else "info", "title": t.props["action"],
+                                         "at": t.at, "act": "received", "due": e.get("due")})
+                elif who and ag in ("screen", "report", "formf", "transfer"):
+                    kind, sev, act = {"screen": ("Screening", "warn", "screen"), "report": ("Cash report", "bad", "filed"),
+                                      "formf": ("Form F", "warn", "submitted"), "transfer": ("Transfer", "info", "tick")}[ag]
+                    if ag == "formf" and not t.props.get("draft"):
+                        continue
+                    items.append(base | {"id": t.id, "who": who, "kind": kind, "sev": sev, "title": t.props["action"], "at": t.at, "act": act,
+                                         "waiting_on": t.props.get("waiting_on")})
+            missing = [p["kind"] for p in compliance.source_of_funds(self.g, deal, by)["proof"] if not p["have"] and p["kind"] != "source of funds"]
+            if missing:  # one row per deal, however many proofs: she marks each one in the deal
+                items.append(base | {"id": f"{deal}:proof", "who": compliance.OFFICER, "kind": "Proof", "sev": "info", "at": s["changed"], "act": "open",
+                                     "title": f"{len(missing)} proof{'s' if len(missing) > 1 else ''} missing: {', '.join(missing)}"})
+        items.sort(key=lambda x: (SEV[x["sev"]], x["at"]))
+        return items
+
+    def overview(self) -> dict:
+        sums = [self.summary(d.deal) for d in self.g.deals()]
+        work = self.work()
+        week = (self.today + timedelta(days=7)).isoformat()
+        exp = [e for s in sums for e in s["expected"]]
+        late = [e for e in exp if e["overdue"]]
+        nxt = [e for e in exp if not e["overdue"] and e["due"] and e["due"] <= week]
+        by_day = defaultdict(int)
+        for e in exp:
+            if e["due"]:
+                by_day[e["due"]] += e["amount"] or 0
+        days = [(self.today + timedelta(days=i)).isoformat() for i in range(-4, 14)]
+        early = sum(v for k, v in by_day.items() if k < days[0])
+        corrections = []
+        for f in self.g.of("fact"):
+            if f.props.get("replaces") and f.status == "live" and f.deal:
+                corrections.append(self._ripple(f))
+        corrections.sort(key=lambda c: c["at"], reverse=True)
+        return {"deals": len(sums), "value": sum(s["value"] or 0 for s in sums),
+                "waiting": {p: sum(1 for w in work if w["who"] == p) for p in sorted({w["who"] for w in work})},
+                "work": len(work),
+                "money": {"next7": sum(e["amount"] or 0 for e in nxt), "next7_n": len(nxt), "overdue": sum(e["amount"] or 0 for e in late),
+                          "overdue_n": len({s["deal"] for s in sums if s["money"][0] == "bad"}),
+                          "days": [{"day": d, "aed": by_day.get(d, 0) + (early if i == 0 else 0)} for i, d in enumerate(days)]},
+                "comp": {k: sum(s["flags"][k] for s in sums) for k in ("unscreened", "proof", "cash", "checks", "match")},
+                "paper": {"submit": sum(s["paper"][1] == "Form F to submit" for s in sums), "sentback": sum(s["paper"][1] == "Form F sent back" for s in sums),
+                          "transfer": sum(s["paper"][1].startswith("Transfer ") and s["paper"][1] != "Transfer done" for s in sums)},
+                "stages": [{"stage": st, "deals": sum(s["stage"] == st for s in sums), "waiting": sum(s["stage"] == st and bool(s["waiting"]) for s in sums),
+                            "value": sum(s["value"] or 0 for s in sums if s["stage"] == st)} for st in STAGES if any(s["stage"] == st for s in sums)],
+                "corrections": corrections[:8], "corrections_week": sum(1 for c in corrections if c["at"][:10] >= (self.today - timedelta(days=7)).isoformat())}
+
+    def _ripple(self, f: Node) -> dict:
+        """What one correction set off, counted from the log by what each event says caused it."""
+        g, evs = self.g, _office().log.list(deal=f.deal)
+        made = next(e for e in evs if e["type"] == "fact.created" and e["content"]["id"] == f.id)
+        causes = {made["id"]} | {e["id"] for e in evs if e["caused_by"] == made["id"] and e["type"] == "fact.superseded"}
+        after = [e for e in evs if e["caused_by"] in causes]
+        olds = [g.nodes[o] for o in f.props.get("replaces", []) if o in g.nodes]
+        return {"deal": f.deal, "customer": g.nodes[f"deal:{f.deal}"].props.get("customer"), "fact": f.id, "quote": f.props["quote"],
+                "old": [{"id": o.id, "quote": o.props["quote"]} for o in olds], "at": f.at,
+                "compliance_first": bool(after) and after[0]["type"] == "check.raised",
+                "withdrawn": sum(e["type"] == "task.withdrawn" for e in after), "approvals": sum(e["type"] == "decision.needed" for e in after),
+                "sent_back": sum(e["type"] == "review.returned" for e in after)}
+
+
+def _k(n: float) -> str:
+    return f"{n / 1e6:.2f}".rstrip("0").rstrip(".") + "M" if n >= 1e6 else f"{round(n / 1000)}k" if n else "0"
+
+
+FILTERS = {"waiting": lambda s: s["waiting"], "overdue": lambda s: s["money"][0] == "bad", "expected": lambda s: s["money"][0] == "warn",
+           "unscreened": lambda s: s["flags"]["unscreened"], "proof": lambda s: s["flags"]["proof"], "cash": lambda s: s["flags"]["cash"],
+           "checks": lambda s: s["flags"]["checks"], "match": lambda s: s["flags"]["match"],
+           "submit": lambda s: s["paper"][1] == "Form F to submit", "sentback": lambda s: s["paper"][1] == "Form F sent back",
+           "transfer": lambda s: s["paper"][1].startswith("Transfer ") and s["paper"][1] != "Transfer done", "corrected": lambda s: s["corrected"]}
+SORTS = {"changed": lambda s: s["changed"], "value": lambda s: s["value"] or 0, "customer": lambda s: (s["customer"] or "").lower(),
+         "stage": lambda s: STAGES.index(s["stage"]) if s["stage"] in STAGES else -1, "waiting": lambda s: len(s["waiting"])}
+
+
 # ---------- HTTP ----------
 
 @router.get("/api/desk/deals")
-def deals(q: str = "", needs: bool = False, page: int = 1):
-    g = _office().graph()
+def deals(q: str = "", needs: bool = False, filter: str = "", person: str = "", stage: str = "", sort: str = "changed", desc: bool = True, page: int = 1):
+    led = Ledger(_office().graph(), date.today())
     words = q.lower().split()
     rows = []
-    for d in sorted(g.deals(), key=lambda d: -d.event):
-        p, deal = d.props, d.deal
-        hay = f"{deal} {p.get('property', '')} {p.get('customer', '')} {name(p.get('broker'))}".lower()
+    for d in led.g.deals():
+        s = led.summary(d.deal)
+        hay = f"{d.deal} {s['property']} {s['customer']} {s['broker_name']}".lower()
         if words and not all(w in hay for w in words):
             continue
-        w = waiting(g, deal)
-        if needs and not w:
+        if (needs and not s["waiting"]) or (filter in FILTERS and not FILTERS[filter](s)) or (person and person not in s["waiting"]) \
+                or (stage and s["stage"] != stage):
             continue
-        rows.append({"deal": deal, "property": p.get("property"), "customer": p.get("customer"), "broker_name": name(p.get("broker")),
-                     "stage": p.get("stage"), "waiting": [name(x) for x in w]})
+        rows.append(s | {"waiting_names": [name(w) for w in s["waiting"]]})
+    rows.sort(key=SORTS.get(sort, SORTS["changed"]), reverse=desc)
     page = max(1, page)
-    return {"total": len(rows), "page": page, "pages": max(1, -(-len(rows) // PAGE)), "rows": rows[(page - 1) * PAGE: page * PAGE]}
+    return {"total": len(rows), "all": len(led.g.deals()), "page": page, "pages": max(1, -(-len(rows) // PAGE)),
+            "rows": rows[(page - 1) * PAGE: page * PAGE]}
+
+
+@router.get("/api/desk/work")
+def work(person: str = ""):
+    items = Ledger(_office().graph(), date.today()).work()
+    counts = defaultdict(int)
+    for x in items:
+        counts[x["who"]] += 1
+    p = pid(person) or person
+    return {"counts": dict(counts), "items": [x for x in items if not p or x["who"] == p]}
+
+
+@router.get("/api/desk/overview")
+def overview():
+    return Ledger(_office().graph(), date.today()).overview()
 
 
 @router.get("/api/desk/deals/{deal}")
 def deal(deal: str):
     try:
-        return deal_view(_office().graph(), deal)
+        g = _office().graph()
+        return deal_view(g, deal) | {"summary": Ledger(g, date.today()).summary(deal)}
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
 
@@ -143,6 +347,11 @@ def answer(card: str, body: Answer):
             return {"approval": review.reapprove(o, n, pid(body.by), body.action)}
         if c["can"] == "reapprove" and body.choice == "Cancel":
             review.cancel(o, n, pid(body.by))
+            return {"ok": True}
+        if n.type == "question" and body.choice == "Answered":
+            if not body.note.strip():
+                raise ValueError("Write the answer.")
+            o.log.append("question.answered", actor=pid(body.by), deal=n.deal, content={"card": card, "answer": body.note.strip()})
             return {"ok": True}
         if c["can"] == "reviewed" and body.choice == "Reviewed":
             o.log.append("decision.made", actor=pid(body.by), deal=n.deal, content={"card": card, "answer": "Reviewed", "note": body.note})

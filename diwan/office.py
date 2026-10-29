@@ -90,6 +90,7 @@ class Office:
             self._contradictions(deal, fid, ev["id"])
         compliance.screen_parties(self, deal, ev["id"])
         compliance.cash_rules(self, deal, ev["id"])
+        compliance.ask_funding(self, deal, ev["id"])
         finance.payment_rules(self, deal, ev["id"])
         return fid
 

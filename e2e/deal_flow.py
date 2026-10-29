@@ -1,6 +1,6 @@
 """The Deal desk, checked as a person would (docs/deal-desk.md). One screenshot per step.
 Run against an offline test server with its own database, never diwan.db:
-python e2e/deal_flow.py http://127.0.0.1:8041 <out dir> [<test server db, for the 300-deal check>]"""
+python e2e/deal_flow.py http://127.0.0.1:8041 <out dir> [--scale]"""
 import re
 import sys
 from pathlib import Path
@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8041"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "e2e/shots") / "deal"
-DB = sys.argv[3] if len(sys.argv) > 3 else None  # the test server's database file, for the 300-deal check
+SCALE = "--scale" in sys.argv  # add 300 enquiries for the scale checks (about a minute)
 OUT.mkdir(parents=True, exist_ok=True)
 SAY = "Actually, forget my brother. I'll pay it all myself."
 errors, results = [], []
@@ -262,35 +262,91 @@ with sync_playwright() as p:
             (OUT / f"16-floor-{k}-wall{i}.png").write_bytes(__import__("base64").b64decode(url.split(",", 1)[1]))
     check("7a", "each Deal desk floor drew its walls (saved for review)", all((OUT / f"16-floor-{k}-wall1.png").exists() for k in ("comp", "fin", "ops", "review")))
 
-    if DB:  # 300 more deals written straight into the test server's log
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-        from diwan.events import EventLog
-        from diwan.office import Office
-        o = Office(EventLog(DB))
+    if SCALE:  # 300 more deals, arriving the way real ones do: an enquiry each on the sandbox WhatsApp line
         for i in range(300):
-            o.open_deal(f"bulk-{i}", property=f"Unit {i}, Test Tower", customer=f"Buyer {i:03d}", broker="hamza")
+            api.post(f"{BASE}/api/chats/incoming", data={"phone": f"+97150{i:07d}", "text": "Hi, is the Marina unit still available?", "name": f"Buyer {i:03d}"})
         pg.set_viewport_size({"width": 1440, "height": 1000})
-        pg.goto(f"{BASE}/web/deal.html?deal=marina-1204")
-        pg.wait_for_selector("#dept-comp .card")
-        check("7b", "302 deals, 50 a page", "302 deals" in pg.locator("#pager").inner_text() and "1 / 7" in pg.locator("#pager").inner_text()
-              and pg.locator("#dlist .item").count() == 50)
+        pg.goto(f"{BASE}/web/deal.html#deals")
+        pg.wait_for_selector(".tablebox tbody tr")
+        rows = pg.locator(".tablebox tbody tr")
+        check("7b", "302 deals in the table, 50 a page", "302 of 302 deals" in pg.locator("#pager").inner_text() and "1 / 7" in pg.locator("#pager").inner_text()
+              and rows.count() == 50)
         pg.locator("#pager button", has_text="›").click()
-        pg.wait_for_timeout(400)
+        pg.wait_for_timeout(500)
         check("7c", "next page", "2 / 7" in pg.locator("#pager").inner_text())
         pg.fill("#q", "buyer 250")
-        pg.wait_for_timeout(600)
-        check("7d", "search finds one deal among 302", pg.locator("#dlist .item").count() == 1 and "Buyer 250" in pg.locator("#dlist").inner_text())
+        pg.wait_for_timeout(800)
+        check("7d", "search finds one deal among 302", rows.count() == 1 and "Buyer 250" in rows.first.inner_text())
         pg.fill("#q", "zzz nobody")
-        pg.wait_for_timeout(600)
-        check("7e", "no match says so", "No deal matches." in pg.locator("#dlist").inner_text())
+        pg.wait_for_timeout(800)
+        check("7e", "no match says so", "No deal matches" in pg.locator(".tablebox").inner_text())
         pg.fill("#q", "")
-        pg.check("#needs")
+        pg.wait_for_timeout(800)
+        pg.locator(".filters button", has_text="Waiting for someone").click()
         pg.wait_for_timeout(600)
-        shot("17-list-waiting", full=False)
-        check("7f", "waiting for someone: only the 2 demo deals", "2 deals" in pg.locator("#pager").inner_text())
+        shot("17-table-waiting", full=False)
+        check("7f", "waiting for someone: only the 2 demo deals", "2 of 302 deals" in pg.locator("#pager").inner_text())
+        pg.locator(".tablebox th", has_text="Value").click()
+        pg.wait_for_timeout(600)
+        check("7h", "sorted by value, largest first", rows.first.inner_text().startswith("Karim Haddad"))
     pg.goto(f"{BASE}/web/deal.html?deal=nope")
     pg.wait_for_timeout(800)
     check("7g", "an unknown deal says so", "There is no deal 'nope'." in pg.locator("#main").inner_text())
+
+    # ---------- 8. the three views: Overview, My work, Deals (fresh demo office, Karim has corrected himself) ----------
+    api.post(f"{BASE}/api/demo/reset?correction=true")
+    pg.set_viewport_size({"width": 1440, "height": 1000})
+    pg.goto(f"{BASE}/web/deal.html#overview")
+    pg.wait_for_selector(".tile")
+    acting("priya")
+    pg.wait_for_timeout(500)
+    shot("18-overview")
+    ov = pg.locator("#view").inner_text()
+    comp_tile = pg.locator(".tile", has_text="Compliance").inner_text()
+    check("8a", "overview: the latest correction, Compliance first, and what it set off",
+          "Actually, forget my brother" in ov and "1st" in ov and "2\ntasks withdrawn" in ov and "1\ndraft sent back" in ov)
+    check("8b", "each compliance count stands on its own (the open check is counted)", "Payer changed, to review\n1" in comp_tile and "Not screened\n2" in comp_tile, comp_tile.replace("\n", " | "))
+    pg.locator(".tile .r", has_text="Not screened").click()
+    pg.wait_for_selector(".tablebox tbody tr")
+    pg.wait_for_timeout(400)
+    check("8c", "a number opens exactly its deals", "#deals" in pg.url and "2 of 2 deals · Not screened" in pg.locator("#pager").inner_text())
+    pg.locator(".tablebox tbody tr", has_text="Sara Malik").click()
+    pg.wait_for_selector("#dept-comp .card")
+    check("8d", "a row opens the deal in the side panel", "Sara Malik" in pg.locator("#main h1").inner_text() and pg.locator("aside.drawer").is_visible())
+    pg.keyboard.press("Escape")
+    pg.wait_for_timeout(300)
+    check("8e", "Escape closes the panel", not pg.locator("aside.drawer").is_visible())
+
+    pg.goto(f"{BASE}/web/deal.html#my-work")
+    pg.wait_for_selector(".q")
+    acting("priya")
+    pg.wait_for_timeout(600)
+    q = pg.locator(".q")
+    shot("19-my-work-priya", full=False)
+    n0 = q.count()
+    check("8f", "Priya's queue: the payer check first, then screenings and proof", n0 == 4 and "Payment arrangement changed" in q.first.inner_text(), f"{n0} rows")
+    row = q.filter(has_text="Screen Karim Haddad")
+    row.locator("input").fill("UN, UAE lists: no entry")
+    row.get_by_role("button", name="Clear").click()
+    pg.wait_for_timeout(1200)
+    check("8g", "cleared inline: the row leaves the queue", q.count() == n0 - 1 and not q.filter(has_text="Screen Karim Haddad").count())
+    pg.locator(".person", has_text="Omar").click()
+    pg.wait_for_timeout(800)
+    row = q.filter(has_text="How is Sara Malik funding")
+    clear()
+    row.get_by_role("button", name="Answer").click()
+    check("8h", "an empty answer is refused", "Write the answer" in toast())
+    row.locator("input").fill("Mortgage pre-approval with ENBD, 70%")
+    row.get_by_role("button", name="Answer").click()
+    pg.wait_for_timeout(1200)
+    shot("20-my-work-omar-clear", full=False)
+    check("8i", "Omar answered: all clear", "All clear" in pg.locator("#view").inner_text())
+    pg.locator(".person", has_text="Ahmed").click()
+    pg.wait_for_timeout(800)
+    q.filter(has_text="Your approval").get_by_role("button", name="Re-approve…").click()
+    pg.wait_for_selector("#dept-review .card")
+    check("8j", "a decision opens the deal at the card that needs his words", "Karim Haddad" in pg.locator("#main h1").inner_text()
+          and pg.locator("#dept-review .card.open", has_text="Your approval").count() == 1)
 
     # widths: no sideways scroll at 1280 or on a phone
     for w, hgt in ((1280, 900), (390, 844)):

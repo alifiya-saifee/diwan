@@ -111,12 +111,17 @@ def _aed(n: float) -> str:
     return f"AED {n:,.0f}"
 
 
-def source_of_funds(g: Graph, deal: str) -> dict:
-    """The money story side by side with the words it rests on, and the proof still missing. Numbers, never a verdict."""
-    one = lambda kind: (g.facts(deal, kind) or [None])[-1]  # noqa: E731
+def source_of_funds(g: Graph, deal: str, nodes: dict | None = None) -> dict:
+    """The money story side by side with the words it rests on, and the proof still missing. Numbers, never a verdict.
+    `nodes`: this deal's nodes by type, when the caller already grouped them (the Deal desk does, for hundreds of deals)."""
+    if nodes is None:
+        facts, docs = g.facts(deal), g.of("document", deal)
+    else:
+        facts = [f for f in nodes.get("fact", []) if f.status == "live" and f.props.get("stance", "asserted") == "asserted"]
+        docs = nodes.get("document", [])
+    one = lambda kind: ([f for f in facts if f.props["kind"] == kind] or [None])[-1]  # noqa: E731
     price, dep, income, payer = one("deal_term"), one("payment_promise"), one("income_claim"), one("payer")
     customer = g.nodes[f"deal:{deal}"].props["customer"]
-    docs = [n for n in g.of("document", deal)]
     numbers = []
     if price:
         numbers.append({"what": "Price", "value": _aed(price.props["amount_aed"]), "fact": price.id, "quote": price.props["quote"]})
@@ -174,3 +179,38 @@ def cash_rules(office: Office, deal: str, cause: int | None) -> None:
         office.add_task(deal, "report", f"File the cash report {did} on goAML once the cash is received", rests_on=rests,
                         needs_person=OFFICER, caused_by=cause, props={"draft": did})
         g = office.graph()
+
+
+# ---------- what nobody has said yet, and deals from before these rules ----------
+
+def ask_funding(office: Office, deal: str, cause: int | None) -> None:
+    """A price or deposit is on the table and the customer has not said how it is funded: one question to the broker,
+    once (Compliance may ask; it never guesses)."""
+    g = office.graph()
+    live = g.facts(deal)
+    money = [f for f in live if f.props["kind"] in ("deal_term", "payment_promise")]
+    if income := next((f for f in live if f.props["kind"] == "income_claim"), None):
+        for q in g.of("question", deal, "open"):  # the customer's own words answered it
+            if q.props.get("kind") == "funding":
+                office.log.append("question.answered", actor="comp", agent="comp", deal=deal, caused_by=cause,
+                                  content={"card": q.id, "answer": f'{income.props.get("speaker")} said: "{income.props["quote"]}" ({income.id})'})
+        return
+    if not money:
+        return
+    if any(q.props.get("kind") == "funding" for q in g.of("question", deal)):
+        return
+    d = g.nodes[f"deal:{deal}"].props
+    office.log.append("question.asked", actor="comp", agent="comp", deal=deal, caused_by=cause,
+                      content={"to": d["broker"], "refs": [money[0].id], "kind": "funding",
+                               "text": f"How is {d['customer']} funding the purchase? Compliance needs it before any money moves."})
+
+
+def catch_up(office: Office) -> int:
+    """Run the Compliance rules over every open deal, for deals whose facts were recorded before a rule existed.
+    Each rule only adds what is missing, so running it twice changes nothing. Returns how many events it added."""
+    before = len(office.log.list())
+    for d in office.graph().deals():
+        screen_parties(office, d.deal, None)
+        ask_funding(office, d.deal, None)
+        cash_rules(office, d.deal, None)
+    return len(office.log.list()) - before

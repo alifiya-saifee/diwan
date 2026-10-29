@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from diwan import demo, slots
-from diwan.agents import nova, reception, scribe
+from diwan.agents import compliance, nova, reception, scribe
 from diwan.agents.charters import ROSTER
 from diwan.config import env
 from diwan.events import EventLog
@@ -42,6 +42,7 @@ def fresh() -> Office:
     o = Office(EventLog(env("DIWAN_DB", ":memory:")))
     if not o.log.list():
         demo.seed(o)
+    compliance.catch_up(o)  # deals recorded before a Compliance rule existed get it now (adds only what is missing)
     return o
 
 
@@ -358,10 +359,12 @@ def people():
 def reset(correction: bool = False):
     """A fresh demo office. With a saved log, the old file is kept as a dated backup (logs are never rewritten)."""
     path = env("DIWAN_DB", ":memory:")
-    if path != ":memory:" and Path(path).exists():
-        S.office.log.db.close()
-        Path(path).rename(f"{path}.{datetime.now().strftime('%Y%m%d-%H%M%S')}.bak")
-    S.office = Office(EventLog(path))
+    old = S.office.log
+    with old.lock:  # a page reading the log in another thread must not have the file closed and renamed under it
+        if path != ":memory:" and Path(path).exists():
+            old.db.close()
+            Path(path).rename(f"{path}.{datetime.now().strftime('%Y%m%d-%H%M%S')}.bak")
+        S.office = Office(EventLog(path))
     demo.seed(S.office)
     if correction:
         demo.correction(S.office)

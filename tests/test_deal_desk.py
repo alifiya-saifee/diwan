@@ -24,7 +24,7 @@ def test_one_deal_shows_each_department_and_the_replaced_words(client):
     v = client.get("/api/desk/deals/marina-1204").json()
     f = {x["id"]: x for x in v["said"]}
     assert f["F3"]["status"] == "superseded" and f["F3"]["replaced_by"] == "F7" and f["F7"]["replaces"] == ["F2", "F3"]
-    assert [c["dept"] for c in v["cards"]][:2] == ["comp", "review"]
+    assert [c["dept"] for c in v["cards"] if c["status"] == "open"] == ["comp", "review"]
     assert {t["id"]: t["status"] for t in v["tasks"]} == {"T1": "queued", "T2": "withdrawn", "T3": "withdrawn", "T5": "queued"}
     assert v["approvals"][0]["stale"] == ["F3"] and v["drafts"][0]["status"] == "sent_back"
     assert client.get("/api/desk/deals/nope").status_code == 404
@@ -216,3 +216,25 @@ def test_a_draft_using_replaced_words_is_sent_back_the_moment_it_is_made(office)
     assert g.nodes[stale].status == "sent_back" and "uses what F3 said" in g.nodes[stale].props["reason"] and "(F7)" in g.nodes[stale].props["reason"]
     assert g.nodes[fresh].status == "live"
     assert [e["content"]["draft"] for e in office.log.list() if e["type"] == "review.passed"][-1] == fresh
+
+
+def test_funding_question_goes_to_the_broker_once_and_closes_when_the_customer_answers(office):
+    from diwan.agents import compliance
+    q = [c for c in office.graph().of("question", "jvc-88") if c.props.get("kind") == "funding"]
+    assert len(q) == 1 and q[0].status == "open" and q[0].props["who"] == "omar"
+    karim = [c for c in office.graph().of("question", "marina-1204") if c.props.get("kind") == "funding"]
+    assert karim[0].status == "closed" and "(F5)" in karim[0].props["answer"]
+    assert compliance.catch_up(office) == 0  # nothing missing: running it adds nothing
+
+
+def test_catch_up_screens_deals_recorded_before_the_rule(monkeypatch):
+    from diwan.agents import compliance
+    o = Office(EventLog())
+    monkeypatch.setattr(compliance, "screen_parties", lambda *a: None)  # an office from before screening existed
+    monkeypatch.setattr(compliance, "ask_funding", lambda *a: None)
+    demo.seed(o)
+    monkeypatch.undo()
+    assert not [t for t in o.graph().of("task") if t.props["agent"] == "screen"]
+    assert compliance.catch_up(o) > 0
+    assert {t.props["person"] for t in o.graph().of("task") if t.props["agent"] == "screen"} == {"Karim Haddad", "Tariq Haddad", "Sara Malik"}
+    assert compliance.catch_up(o) == 0
