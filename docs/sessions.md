@@ -1,10 +1,10 @@
 # Diwan: how the work is split between sessions
 
-Two sessions build Diwan in parallel until the hackathon deadline (4 Nov 2026, 9 PM ET). Each owns a set of rooms and
+Three sessions build Diwan in parallel, one per area; areas that don't touch (marketing and the front desk) never share files until the hackathon deadline (4 Nov 2026, 9 PM ET). Each owns a set of rooms and
 files, builds them to the contract in `docs/rooms.md`, and follows the rules in `docs/handoff.md` section 2. Read
 `docs/handoff.md` first.
 
-## Rules for both sessions (the product owner's standing instructions)
+## Rules for every session (the product owner's standing instructions)
 
 1. **No feature without a reason.** Every change states which row of `docs/rooms.md` or which checklist item below it
    fulfils. Anything that is on neither is not built without the product owner's OK, however useful it looks.
@@ -21,11 +21,15 @@ files, builds them to the contract in `docs/rooms.md`, and follows the rules in 
 
 ## The split
 
-| | Marketing session | Front office session |
+| Session | Rooms | Owns these files |
 |---|---|---|
-| Departments | Marketing (the content studio) | Front desk (Nova, Lobby) and Sales (WhatsApp, Instagram DMs, portals, leads), the knowledge store and catalog; the back office after its core work |
-| Owns these files | `agents/studio.py, qa.py, strategy.py, kpis.py, analysis.py`; `brand.py, brand_api.py, brain.py, learn.py, costs.py, docgen.py`; `providers/instagram.py, heygen.py, meta.py`; `web/studio.html, graph.html`; `e2e/studio_flow, brand_flow, learn_flow, memory_flow, floor_flow, views_flow` | `agents/reception.py, scribe.py, nova.py, lobby.py, records.py`; `inbox.py, leads.py, knowledge.py, knowledge_api.py, playground.py`; `providers/portals.py, aisensy.py, whatsapp.py`; `web/inbox.html, knowledge.html, catalog.html, index.html, meeting.html, team.html, settings.html`; `e2e/office_flow, knowledge_flow` |
-| Shared (small changes only, commit only your own hunks, say so in the changelog below) | `app.py, events.py, graph.py, office.py, people.py, demo.py, config.py, agents/charters.py, agents/runner.py, providers/chat.py, web/app.js, web/app.css, web/office3d.html` | same |
+| **Marketing** | the content studio (research, planning, scripting, production, editing, publishing, library), the brand | `agents/studio.py, qa.py, strategy.py, kpis.py, analysis.py`; `brand.py, brand_api.py, brain.py, learn.py, costs.py, docgen.py, demo_profile.md`; `providers/instagram.py, heygen.py, meta.py`; `web/studio.html, graph.html`; `e2e/studio_flow, brand_flow, learn_flow, memory_flow, floor_flow, views_flow` |
+| **Front desk & Sales** | Nova, the Lobby; WhatsApp and Instagram DMs, portals, leads (intake, Scribe, Profiler, Rania, Dispatcher, Briefer, Lead desk, Follow-up); the knowledge store and catalog | `agents/reception.py, scribe.py, nova.py, lobby.py`; `inbox.py, leads.py, qualify.py, slots.py, knowledge.py, knowledge_api.py, playground.py`; `providers/portals.py, aisensy.py, whatsapp.py, voice.py, local_asr.py`; `web/inbox.html, knowledge.html, catalog.html, index.html, meeting.html, team.html, settings.html`; `e2e/office_flow, knowledge_flow` |
+| **Back office** | Compliance (screening, source of funds, reports), Review (fact checker), Operations (Form F, transfer), Finance (payments), Records (archive, data analyst) | the correction engine in `office.py` (facts replaced, tasks withdrawn, approvals refused, payment rules, Form F guard); `agents/records.py`; the deck, Form F and payment screens it builds |
+
+**Shared by everyone** (small additions only, commit only your own hunks, one line in the changelog below):
+`app.py, events.py, graph.py, people.py, demo.py, config.py, pack.py, agents/charters.py, agents/runner.py, agents/lessons.py, providers/chat.py, providers/tape.py, web/app.js, web/app.css, web/office3d.html`.
+`office.py` belongs to Back office; the others may add a method there but not change the correction engine.
 
 ## Marketing session: make the studio start working for real
 
@@ -48,13 +52,13 @@ hook lines; web search cost unverified.
 
 **Paste this to start it:**
 > You are the Marketing session for Diwan. Read docs/handoff.md, docs/rooms.md and docs/sessions.md. You own the
-> Marketing rows in docs/sessions.md; don't edit the Front office session's files. Build the Marketing definition of
+> Marketing row in docs/sessions.md; don't edit the Front desk & Sales or Back office sessions' files. Build the Marketing definition of
 > done in docs/sessions.md, one item at a time, checking each in the browser with screenshots and reporting item by
 > item. Follow "Rules for both sessions" exactly: nothing outside the checklist without my OK, work top to bottom, and
 > send me the end-of-day report. Run repeated tests offline (DIWAN_OFFLINE=1); use the live model only for a final
 > pass, and tell me the cost.
 
-## Front office session: front desk and sales working end to end
+## Front desk & Sales session: front desk and sales working end to end
 
 **Goal:** a customer on the sandbox WhatsApp line (and Instagram DMs) is answered, qualified, assigned, briefed and
 booked correctly, from the knowledge store and catalog, with people in control.
@@ -68,20 +72,41 @@ Definition of done (checked in the browser, with screenshots):
 - [ ] Rania's three stages: discovery, one question at a time, waiting for the broker; booking in free slots; handover on everything that isn't hers.
 - [ ] Dispatcher, Briefer, Lead desk: assignment, a 5-line brief, cards with due times, overdue, the Pool, notices.
 - [ ] Nova: the morning briefing, questions answered with citations, Lobby jobs with read-back.
-- [ ] The correction moment works end to end across Compliance, Finance, Operations and Review.
 - [ ] Reports leads and viewings per Marketing post and angle (rooms.md, "hands back").
 
 **Paste this to start it:**
-> You are the Front office session for Diwan. Read docs/handoff.md, docs/rooms.md, docs/sessions.md,
-> docs/front-office.md and docs/knowledge.md. You own the Front office rows in docs/sessions.md; don't edit the
-> Marketing session's files. Fix the two "fix first" items, then build the Front office definition of done in
+> You are the Front desk & Sales session for Diwan. Read docs/handoff.md, docs/rooms.md, docs/sessions.md,
+> docs/front-office.md and docs/knowledge.md. You own the Front desk & Sales row in docs/sessions.md; don't edit the
+> Marketing or Back office sessions' files. Fix the two "fix first" items, then build the Front office definition of done in
 > docs/sessions.md, one item at a time, checking each in the browser with screenshots and reporting item by item.
 > Follow "Rules for both sessions" exactly: nothing outside the checklist without my OK, work top to bottom, and send
 > me the end-of-day report. Run repeated tests offline (DIWAN_OFFLINE=1); never loop tests against the live model.
 
-## Where the two sessions meet
+## Back office session: the correction moment and the money trail
 
-| Meeting point | Marketing produces | Front office produces |
+**Goal:** the moment the whole demo rests on works every time, and each back-office room produces exactly its
+`docs/rooms.md` output.
+
+Definition of done (checked in the browser, with screenshots):
+- [ ] The correction: "Actually, forget my brother. I'll pay it all myself." in a meeting or on WhatsApp → Compliance is flagged first with both quotes → the brother's expected payment is withdrawn → the approval resting on it is refused and becomes a decision → Review sends back the deck slide → Nova explains who pays, citing the live fact.
+- [ ] Compliance: every party screened, including a third-party payer; a source-of-funds view with what proof is missing; a cash-report draft at AED 55,000 or more, waiting for the officer.
+- [ ] Review: no draft that rests on a replaced fact reaches a person; each returned draft names the fact and the replacement.
+- [ ] Operations: Form F filled from live facts only, stopping before Submit; a stale fact blocks it with the reason.
+- [ ] Finance: expected payments listed, each tied to the exact words; withdrawn on correction, with history.
+- [ ] Records: "what did we sell last month", commission and pipeline answered from records, never estimated; documents filed and found again.
+- [ ] Each of the five departments shows its work on its 3D floor and in the memory graph's deal view.
+
+**Paste this to start it:**
+> You are the Back office session for Diwan. Read docs/handoff.md, docs/rooms.md and docs/sessions.md. You own the
+> Back office row in docs/sessions.md (the correction engine in office.py and agents/records.py); don't edit the
+> Marketing or Front desk & Sales sessions' files. Build the Back office definition of done in docs/sessions.md, one
+> item at a time, checking each in the browser with screenshots and reporting item by item. Follow "Rules for every
+> session" exactly: nothing outside the checklist without my OK, work top to bottom, and send me the end-of-day report.
+> Run tests offline (DIWAN_OFFLINE=1).
+
+## Where the sessions meet
+
+| Meeting point | Marketing produces | Front desk & Sales produces |
 |---|---|---|
 | A post's comments and DMs | the post with its listing ref and angle | a lead tagged with that post and angle |
 | Lead attribution | — | leads and viewings per post and angle |
@@ -89,8 +114,12 @@ Definition of done (checked in the browser, with screenshots):
 | Brand | masters it (voice, sign-off, never-use words) | Rania signs off in it and avoids its never-use words |
 | Knowledge | proposes cards learned from documents | owns the store, confirmation and `knowledge.search()` |
 
+Front desk & Sales ↔ Back office: the Scribe's money facts reach Compliance first (Back office reacts to `fact.created`
+and `fact.superseded`); an accepted offer opens Form F; Nova reads Records for numbers. Marketing and the Back office
+do not meet.
+
 Agree any new event shape at a meeting point in the changelog below before building it.
 
 ## Changelog (append one line per shared change)
 
-- 29 Oct: split agreed; rooms.md and sessions.md written; rules for both sessions added (no feature without a reason, priority order, end-of-day report).
+- 29 Oct: split into three sessions (Marketing; Front desk & Sales; Back office); rules for every session added (no feature without a reason, priority order, end-of-day report).
