@@ -65,7 +65,7 @@ on it opens a lead tagged `source: post <id>, angle <angle>`.
 **Front desk hands back to Marketing:** leads and viewings per post and per angle, so the strategy can rank angles by
 enquiries, not only likes.
 
-### Front desk and Sales: owned by the Front office session
+### Front desk and Sales: owned by the Front desk & Sales session
 
 | Room / agent | Reacts to | Must output | Picked up by | Only a person |
 |---|---|---|---|---|
@@ -80,7 +80,7 @@ enquiries, not only likes.
 | Knowledge and catalog | edits, the portal feed | confirmed, versioned items; listings with permit and status; `knowledge.search()` for every agent | Rania, Nova, Marketing | edit (owners), accept proposals |
 | Nova (chief of staff) | a person's question or instruction; briefing time | answers citing records; `briefing.ready`; `lobby.posted` jobs with read-back and deadlines; `instruction.given` routed to a lead | people; every department lead | — |
 
-### Back office: today built on rules; owned by the Front office session after its core work
+### Back office: today built on rules; each department has its own session (Review keeps the correction engine)
 
 | Department | Reacts to | Must output | Only a person |
 |---|---|---|---|
