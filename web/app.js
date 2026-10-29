@@ -70,6 +70,7 @@ export function describe(e) {
     case "review.returned": return `sent back ${c.draft}: ${c.reason}`;
     case "approval.given": return `${NAMES[c.approver] || c.approver} approved: ${c.action}`;
     case "approval.refused": return `refused ${c.id}: ${c.because}`;
+    case "decision.made": return `answered ${c.card}: ${c.answer}${c.approval ? ` (${c.approval})` : ""}`;
     case "approval.requested": return `needs ${c.reviewer}: ${c.summary}`;
     case "execution.done": return `done: ${c.action}`;
     case "agent.pack": return c.pack.verdict;
@@ -117,7 +118,7 @@ export const LOGO = `<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGr
   <rect x="8" y="8" width="16" height="16" rx="1.5" transform="rotate(45 16 16)"/></g><circle cx="16" cy="16" r="3" fill="url(#lg)"/></svg>`;
 
 export function header(active) {
-  const pages = [["office3d.html", "Office"], ["index.html", "Nova"], ["inbox.html", "Inbox"], ["studio.html", "Studio"], ["meeting.html", "Meeting"], ["knowledge.html", "Knowledge"],
+  const pages = [["office3d.html", "Office"], ["index.html", "Nova"], ["inbox.html", "Inbox"], ["studio.html", "Studio"], ["meeting.html", "Meeting"], ["deal.html", "Deals"], ["knowledge.html", "Knowledge"],
                  ["graph.html", "Memory"], ["team.html", "Team"], ["settings.html", "Settings"]];
   const status = h("div", { class: "status" });
   api("/api/health").then((s) => {

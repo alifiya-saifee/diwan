@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Deal desk</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .desk { grid-template-columns: 280px minmax(0, 1fr) 340px; }
+  @media (max-width: 1250px) { .desk { grid-template-columns: 260px minmax(0, 1fr); } .desk > .side { grid-column: 1 / -1; } }
+  @media (max-width: 800px) { .desk { grid-template-columns: minmax(0, 1fr); } .deals .list { max-height: 240px; overflow: auto; } }
+  .deals .item { padding: 9px 12px; }
+  .deals .item strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pager { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-top: 10px; }
+  .said { display: flex; flex-direction: column; gap: 6px; }
+  .said .f { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); }
+  .said .f.superseded { opacity: .6; }
+  .said .f.superseded .quote { text-decoration: line-through; text-decoration-color: var(--bad); }
+  .said .f.new { border-color: rgba(232, 199, 122, .45); background: var(--gold-soft); }
+  .fid { font: 600 12px var(--mono); color: var(--gold-2); padding-top: 2px; }
+  section.dept { margin-top: 18px; }
+  section.dept > h2 { display: flex; gap: 8px; align-items: center; }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; background: rgba(255, 255, 255, .02); }
+  .card.open { border-color: rgba(240, 179, 94, .4); background: var(--warn-soft); }
+  .card.mine { box-shadow: 0 0 0 1px rgba(232, 199, 122, .5) inset; }
+  .card .top { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
+  .card .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .card .acts input { flex: 1 1 100%; }
+  .rests { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .rests .x { color: var(--bad); }
+  .done { opacity: .62; }
+  .slides { margin: 8px 0 0; padding-left: 18px; }
+  .slides li.stale { color: var(--bad); }
+  .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+  .who-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .who-row select { max-width: 220px; }
+  .head h1 { font-size: 30px; margin: 0; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <h1>The <em>Deal desk</em></h1>
+  <p class="sub">Compliance, Finance, Paperwork and Review on one deal. Every card names the customer's words it rests on; when those words are replaced, the work built on them comes back here.</p>
+  <div class="grid desk">
+    <section class="panel deals">
+      <h2>Deals</h2>
+      <input id="q" type="search" placeholder="Customer, property or deal id" aria-label="Search deals">
+      <label class="row small" style="margin:8px 0;gap:6px"><input type="checkbox" id="needs" style="width:auto;flex:0"> Waiting for someone</label>
+      <div class="list" id="dlist"></div>
+      <div class="pager small muted" id="pager"></div>
+    </section>
+    <section class="panel" id="main"><div class="empty">Pick a deal.</div></section>
+    <section class="panel side">
+      <div class="who-row small muted">Acting as <select id="as"></select></div>
+      <h2>Happening on this deal</h2>
+      <div class="feed" id="feed"></div>
+    </section>
+  </div>
+</main>
+<script type="module">
+import { h, api, post, follow, header, describe, who, loadAgents, time, NAMES, toast } from "./app.js";
+header("deal.html");
+await loadAgents();
+const $ = (id) => document.getElementById(id);
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+let deal = new URLSearchParams(location.search).get("deal"), page = 1, view = null;
+$("as").replaceChildren(...Object.entries(NAMES).map(([k, v]) => h("option", { value: k }, v)));
+$("as").value = store.get("desk.as") || "ahmed";
+$("as").onchange = () => { store.set("desk.as", $("as").value); render(); };
+const me = () => $("as").value;
+
+// ---------- the list ----------
+async function list() {
+  const r = await api(`/api/desk/deals?q=${encodeURIComponent($("q").value)}&needs=${$("needs").checked}&page=${page}`);
+  if (!r.total) {
+    $("dlist").replaceChildren(h("div", { class: "empty" }, $("q").value || $("needs").checked ? "No deal matches." : "No deals yet."));
+    $("pager").replaceChildren();
+    return r;
+  }
+  $("dlist").replaceChildren(...r.rows.map((d) => h("div", { class: `item click ${d.deal === deal ? "on" : ""}`, onclick: () => open(d.deal) },
+    h("strong", {}, d.customer || d.deal), h("div", { class: "small muted" }, d.property),
+    d.waiting.length ? h("span", { class: "chip warn" }, `waiting for ${d.waiting.join(", ")}`) : null)));
+  $("pager").replaceChildren(h("span", {}, `${r.total} deal${r.total === 1 ? "" : "s"}`),
+    r.pages > 1 ? h("span", {}, h("button", { disabled: page <= 1, onclick: () => { page--; list(); } }, "‹"), ` ${page} / ${r.pages} `,
+      h("button", { disabled: page >= r.pages, onclick: () => { page++; list(); } }, "›")) : null);
+  return r;
+}
+let qt;
+$("q").oninput = () => { clearTimeout(qt); qt = setTimeout(() => { page = 1; list(); }, 150); };
+$("needs").onchange = () => { page = 1; list(); };
+
+// ---------- one deal ----------
+async function open(d) {
+  deal = d;
+  history.replaceState(null, "", `?deal=${encodeURIComponent(d)}`);
+  try { view = await api(`/api/desk/deals/${encodeURIComponent(d)}`); }
+  catch (e) { view = null; $("main").replaceChildren(h("div", { class: "empty" }, e.message)); }
+  render(); list(); feed();
+}
+
+const chip = (s) => h("span", { class: `chip ${{ open: "warn", queued: "warn", given: "ok", executed: "ok", done: "ok", closed: "ok", live: "ok", refused: "bad", withdrawn: "bad", sent_back: "bad", superseded: "bad" }[s] || ""}` }, s.replace("_", " "));
+const rests = (fs) => fs.length ? h("div", { class: "rests" }, "Rests on ", ...fs.map((f, i) => h("span", { class: f.status === "superseded" ? "x" : "" },
+  i ? " · " : "", `${f.id} "${f.quote}"`, f.status === "superseded" ? " (replaced)" : ""))) : null;
+
+function cardEl(c) {
+  const mine = c.who === me();
+  const el = h("div", { class: `card ${c.status === "open" ? "open" : "done"} ${mine && c.status === "open" ? "mine" : ""}` },
+    h("div", { class: "top" }, h("strong", {}, c.title || { check: "Check", decision: "Decision", question: "Question" }[c.type]),
+      h("span", {}, h("span", { class: "chip" }, c.id), c.status === "open" ? h("span", { class: "chip warn" }, `for ${c.who_name}`) : chip(c.status))),
+    h("div", { style: "margin-top:4px" }, c.text));
+  if (c.status !== "open") { if (c.answer) el.append(h("div", { class: "small muted", style: "margin-top:6px" }, `Answered: ${c.answer}`)); return el; }
+  const acts = h("div", { class: "acts" });
+  if (!mine && c.can) acts.append(h("span", { class: "small muted" }, `Only ${c.who_name} can answer this. Switch "Acting as" to act as them.`));
+  else if (c.can === "reapprove") {
+    const inp = h("input", { value: c.approval || "", "aria-label": "What you approve now" });
+    acts.append(h("label", { style: "flex-basis:100%;margin:0" }, "What you approve now, in your words"), inp,
+      h("button", { class: "primary", onclick: () => act(c.id, { choice: "Re-approve on the new facts", action: inp.value }) }, "Re-approve on the new facts"),
+      h("button", { onclick: () => act(c.id, { choice: "Cancel" }) }, "Cancel the approval"));
+  } else if (c.can === "reviewed") {
+    const note = h("input", { placeholder: "Note (optional)", "aria-label": "Note" });
+    acts.append(note, h("button", { class: "primary", onclick: () => act(c.id, { choice: "Reviewed", note: note.value }) }, "Reviewed"));
+  } else acts.append(h("span", { class: "small muted" }, `Waiting for ${c.who_name}.`));
+  el.append(acts);
+  return el;
+}
+async function act(card, body) {
+  try { await post(`/api/desk/cards/${card}/answer`, { by: me(), ...body }); toast(`${card} answered`); await open(deal); }
+  catch (e) { toast(e.message); }
+}
+
+function approvalEl(a) {
+  const mine = a.approver === me();
+  const el = h("div", { class: `card ${a.status === "given" ? "" : "done"}` },
+    h("div", { class: "top" }, h("strong", {}, `${a.approver_name} approved: ${a.action}`), h("span", {}, h("span", { class: "chip" }, a.id), chip(a.status))),
+    rests(a.rests_on), a.because ? h("div", { class: "small", style: "margin-top:6px;color:var(--bad)" }, a.because) : null);
+  if (a.status === "given") {
+    el.append(h("div", { class: "acts" }, h("button", { disabled: !mine, title: mine ? "" : `Only ${a.approver_name} can carry it out`, onclick: async () => {
+      try {
+        const r = await post(`/api/desk/approvals/${a.id}/execute`, { by: me() });
+        toast(r.ok ? `${a.id} carried out${r.duplicate ? " (already done once)" : ""}` : `Blocked: ${r.because}`);
+        await open(deal);
+      } catch (e) { toast(e.message); }
+    } }, "Carry it out"), mine ? null : h("span", { class: "small muted" }, `Only ${a.approver_name} can carry it out.`)));
+  }
+  return el;
+}
+
+function taskEl(t) {
+  return h("div", { class: `card ${["withdrawn", "done"].includes(t.status) ? "done" : ""}` },
+    h("div", { class: "top" }, h("strong", {}, t.action), h("span", {}, h("span", { class: "chip" }, t.id), chip(t.status))),
+    h("div", { class: "small muted" }, t.agent_name || t.agent, t.needs_person ? ` · waits for ${NAMES[t.needs_person] || t.needs_person}` : ""),
+    rests(t.rests_on), t.reason && t.status !== "queued" ? h("div", { class: "small", style: "margin-top:6px" }, t.reason) : null);
+}
+
+function draftEl(d) {
+  return h("div", { class: `card ${d.status === "sent_back" ? "open" : ""}` },
+    h("div", { class: "top" }, h("strong", {}, `${d.kind} v${d.version}`), h("span", {}, h("span", { class: "chip" }, d.id), chip(d.status))),
+    d.reason ? h("div", { style: "margin-top:4px" }, d.reason) : null,
+    h("ol", { class: "slides" }, ...d.slides.map((s) => h("li", { class: s.stale.length ? "stale" : "", value: s.n }, s.text,
+      s.stale.length ? ` · uses ${s.stale.join(", ")}, since replaced` : ""))));
+}
+
+const DEPTS = [["comp", "Compliance"], ["fin", "Finance"], ["ops", "Paperwork"], ["review", "Review"]];
+function render() {
+  if (!view) return;
+  const v = view, by = (k) => (x) => x.dept === k;
+  const said = h("div", { class: "said" }, ...(v.said.length ? v.said.map((f) => h("div", { class: `f ${f.status} ${f.replaces.length && f.status === "live" ? "new" : ""}` },
+    h("span", { class: "fid" }, f.id), h("div", {},
+      h("span", { class: "quote" }, `"${f.quote}"`),
+      h("div", { class: "small muted" }, `${f.label} · ${f.speaker || "someone"}${f.stance !== "asserted" ? ` · ${f.stance}` : ""}`,
+        f.replaced_by ? ` · replaced by ${f.replaced_by}` : "", f.replaces.length ? ` · replaces ${f.replaces.join(", ")}` : ""))))
+    : [h("div", { class: "empty" }, "Nothing recorded from the customer yet.")]));
+  const sections = DEPTS.map(([k, label]) => {
+    const cards = v.cards.filter(by(k)), tasks = v.tasks.filter(by(k));
+    const appr = k === "fin" ? v.approvals : [], drafts = k === "review" ? v.drafts : [];
+    const open = cards.filter((c) => c.status === "open").length;
+    const kids = [...cards.map(cardEl), ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)];
+    return h("section", { class: "dept", id: `dept-${k}` }, h("h2", {}, label, open ? h("span", { class: "chip warn" }, `${open} open`) : null),
+      ...(kids.length ? kids : [h("div", { class: "empty" }, `Nothing for ${label} on this deal.`)]));
+  });
+  const other = v.cards.filter((c) => !DEPTS.some(([k]) => k === c.dept));
+  $("main").replaceChildren(
+    h("div", { class: "head" }, h("h1", {}, v.property), h("div", { class: "small muted" },
+      `${v.customer} · broker ${v.broker_name} · ${v.deal}${v.stage ? ` · stage ${v.stage}` : ""}`)),
+    h("section", { class: "dept" }, h("h2", {}, "What the customer said"), said),
+    ...sections,
+    other.length ? h("section", { class: "dept" }, h("h2", {}, "Other questions on this deal"), ...other.map(cardEl)) : null);
+}
+
+async function feed() {
+  if (!deal) return;
+  const evs = await api(`/api/events?deal=${encodeURIComponent(deal)}`);
+  $("feed").replaceChildren(...evs.filter((e) => e.type !== "agent.started").reverse().slice(0, 200).map((e) =>
+    h("div", { class: "ev" }, h("span", { class: "muted small" }, time(e.at), " "), h("span", { class: "who" }, who(e) || "office"), describe(e))));
+}
+
+const first = await list();
+if (deal) open(deal); else if (first.rows?.length) open(first.rows[0].deal);
+let rt;
+follow((evs) => {
+  if (!evs.some((e) => e.deal === deal || e.type === "deal.opened")) return;
+  clearTimeout(rt); rt = setTimeout(() => (deal ? open(deal) : list()), 300);
+});
+</script>
+</body>
+</html>
