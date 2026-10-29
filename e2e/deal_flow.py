@@ -1,6 +1,7 @@
 """The Deal desk, checked as a person would (docs/deal-desk.md). One screenshot per step.
 Run against an offline test server with its own database, never diwan.db:
 python e2e/deal_flow.py http://127.0.0.1:8041 <out dir>"""
+import re
 import sys
 from pathlib import Path
 
@@ -182,6 +183,37 @@ with sync_playwright() as p:
     t = comp.inner_text()
     check("3i", "a correction sends the report back and withdraws the filing task",
           "SENT BACK" in t.upper() and "still says what" in t and comp.locator(".card", has_text="File the cash report").get_by_text("withdrawn").count() == 1)
+
+    # ---------- 4. Finance, on a fresh demo office, as Ahmed ----------
+    api.post(f"{BASE}/api/demo/reset")
+    desk("ahmed")
+    fin = pg.locator("#dept-fin")
+    p = fin.locator(".card", has_text="Expect AED 260,000 by bank transfer from Tariq Haddad")
+    check("4a", "expected payment with its quote and due day", 'Due ' in p.inner_text() and '("next week")' in p.inner_text() and "F4" in p.inner_text())
+    clear()
+    p.get_by_role("button", name="Received").click()
+    check("4b", "received needs a reference", "reference" in toast())
+    p.locator("input").fill("ENBD 4471")
+    p.get_by_role("button", name="Received").click()
+    pg.wait_for_timeout(700)
+    p = fin.locator(".card", has_text="Expect AED 260,000 by bank transfer from Tariq Haddad")
+    check("4c", "marked received with the reference; receipt filed with Records",
+          "Received, reference ENBD 4471" in p.inner_text() and any(e["type"] == "document.filed" and e["content"]["kind"] == "receipt"
+                                                                    for e in api.get(f"{BASE}/api/events?deal=marina-1204").json()))
+    p.get_by_role("button", name="Approve release").click()
+    pg.wait_for_timeout(700)
+    rel = fin.locator(".card", has_text="Release AED 260,000")
+    check("4d", "release is Ahmed's approval resting on the payment's words", rel.count() == 1 and "F3" in rel.inner_text())
+    shot("11-finance")
+    meeting(SAY)
+    desk("ahmed")
+    clear()
+    pg.locator("#dept-fin .card", has_text="Release AED 260,000").get_by_role("button", name="Carry it out").click()
+    msg = toast()
+    shot("12-release-refused")
+    check("4e", "after the correction the release is refused with the reason", msg.startswith("Blocked") and "F3" in msg, msg)
+    stray = re.findall(r"\b(null|undefined|NaN)\b", pg.locator("main").inner_text())
+    check("4f", "no stray null / undefined / NaN on the screen", not stray, ", ".join(stray))
 
     # widths: no sideways scroll at 1280 or on a phone
     for w, hgt in ((1280, 900), (390, 844)):

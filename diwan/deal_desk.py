@@ -9,7 +9,7 @@ from datetime import date
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from diwan.agents import compliance, review
+from diwan.agents import compliance, finance, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
 from diwan.people import name, pid
@@ -58,14 +58,15 @@ def _card(g: Graph, n: Node) -> dict:
             "approval": old.props["action"] if old else None}
 
 
-def deal_view(g: Graph, deal: str) -> dict:
+def deal_view(g: Graph, deal: str, today: date | None = None) -> dict:
     d = g.nodes.get(f"deal:{deal}")
     if not d or d.type != "deal":
         raise KeyError(deal)
     tasks = [{"id": t.id, "agent": t.props["agent"], "agent_name": t.props.get("agent_name"), "dept": dept(t.props["agent"]),
               "action": t.props["action"], "status": t.status, "reason": t.props.get("reason"), "at": t.at,
               "needs_person": t.props.get("needs_person"), "rests_on": _facts_on(g, t.props.get("rests_on", [])),
-              "person": t.props.get("person"), "result": t.props.get("result"), "draft": t.props.get("draft")}
+              "person": t.props.get("person"), "result": t.props.get("result"), "draft": t.props.get("draft"),
+              **(finance.expected(g, t, today or date.today()) if t.props["agent"] == "pay" else {})}
              for t in g.of("task", deal)]
     approvals = [{"id": a.id, "approver": a.props["approver"], "approver_name": name(a.props["approver"]), "action": a.props["action"],
                   "status": a.status, "because": a.props.get("because"), "stale": [f.id for f in g.stale(a.id)],
@@ -221,3 +222,32 @@ def proof(deal: str, body: Proof):
     customer = g.nodes[f"deal:{deal}"].props["customer"]
     return {"document": o.file_document(kind=body.kind, title=body.title.strip() or need["text"], date=date.today().isoformat(),
                                         by=pid(body.by), deal=deal, party=customer)}
+
+
+class Received(BaseModel):
+    by: str
+    reference: str = ""
+
+
+@router.post("/api/desk/tasks/{tid}/received")
+def received(tid: str, body: Received):
+    try:
+        return {"document": finance.mark_received(_office(), tid, pid(body.by), body.reference, today=date.today())}
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except KeyError:
+        raise HTTPException(404, f"There is no payment {tid}.") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@router.post("/api/desk/tasks/{tid}/release")
+def release(tid: str, body: Run):
+    try:
+        return {"approval": finance.approve_release(_office(), tid, pid(body.by))}
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except KeyError:
+        raise HTTPException(404, f"There is no payment {tid}.") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None

@@ -129,3 +129,49 @@ def test_cash_at_the_threshold_drafts_a_report_for_priya_and_a_correction_sends_
     assert g.nodes[draft.id].status == "sent_back" and g.nodes[task.id].status == "withdrawn"
     office.record_fact("jvc-88", "payment_promise", "Fifty thousand cash as the booking deposit.", "Sara Malik", amount_aed=50_000, method="cash")
     assert not [d for d in office.graph().of("draft", "jvc-88") if d.props["kind"] == "cash report"]
+
+
+# ---------- Finance ----------
+
+def test_due_dates_come_from_the_customers_words():
+    from datetime import date
+    from diwan.agents.finance import due_date
+    thu = date(2026, 10, 29)
+    assert due_date("next week", thu) == date(2026, 11, 5) and due_date("tomorrow", thu) == date(2026, 10, 30)
+    assert due_date("on sunday", thu) == date(2026, 11, 1) and due_date("by thursday", thu) == date(2026, 11, 5)
+    assert due_date(None, thu) is None and due_date("soon", thu) is None
+
+
+def test_expected_payment_shows_its_day_and_turns_overdue(office):
+    from datetime import date, timedelta
+    from diwan.deal_desk import deal_view
+    g = office.graph()
+    pay = lambda v: next(t for t in v["tasks"] if t["agent"] == "pay")  # noqa: E731
+    v = deal_view(g, "marina-1204")
+    assert pay(v)["due_words"] == "next week" and not pay(v)["overdue"]
+    late = date.today() + timedelta(days=10)
+    assert pay(deal_view(g, "marina-1204", today=late))["overdue"]
+
+
+def test_received_needs_ahmed_and_a_reference_and_files_a_receipt(client):
+    tid = next(t["id"] for t in client.get("/api/desk/deals/marina-1204").json()["tasks"] if t["agent"] == "pay" and t["status"] == "queued")
+    assert client.post(f"/api/desk/tasks/{tid}/received", json={"by": "omar", "reference": "x"}).status_code == 403
+    assert client.post(f"/api/desk/tasks/{tid}/received", json={"by": "ahmed", "reference": " "}).status_code == 400
+    doc = client.post(f"/api/desk/tasks/{tid}/received", json={"by": "ahmed", "reference": "ENBD 4471"}).json()["document"]
+    g = appmod.S.office.graph()
+    assert g.nodes[tid].props["result"] == "received" and g.nodes[doc].props["kind"] == "receipt" and g.nodes[doc].deal == "marina-1204"
+    assert client.post(f"/api/desk/tasks/{tid}/received", json={"by": "ahmed", "reference": "again"}).status_code == 400
+
+
+def test_a_release_approved_before_a_correction_is_refused_after_it(office):
+    from datetime import date
+    from diwan.agents import finance
+    finance.mark_received(office, "T3", "ahmed", "ENBD 4471", today=date.today())
+    aid = finance.approve_release(office, "T3", "ahmed")
+    import pytest as _p
+    with _p.raises(ValueError):
+        finance.approve_release(office, "T3", "ahmed")
+    demo.correction(office)
+    out = office.execute(aid, aid)
+    assert not out["ok"] and "F3" in out["because"]
+    assert any(c.props["refs"][0] == aid for c in office.graph().of("decision", "marina-1204", "open"))

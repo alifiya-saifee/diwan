@@ -165,6 +165,20 @@ function taskEl(t) {
       h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/screen`, { result: "possible match", note: note.value }, `${t.person}: possible match recorded`) }, "Possible match"))
       : h("div", { class: "acts small muted" }, "Only Priya records a screening result."));
   }
+  if (t.agent === "pay") {
+    const day = t.due ? new Date(`${t.due}T12:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : null;
+    if (t.overdue) el.querySelector(".top > span").prepend(h("span", { class: "chip bad" }, "overdue"));
+    el.append(h("div", { class: "small", style: "margin-top:6px" }, day ? `Due ${day} ("${t.due_words}")` : "No date said: ask when"));
+    const isAhmed = me() === "ahmed";
+    if (live) {
+      const ref = h("input", { placeholder: "Bank or receipt reference", "aria-label": "Payment reference" });
+      el.append(isAhmed ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/received`, { reference: ref.value }, "Marked received; receipt filed") }, "Received"))
+        : h("div", { class: "acts small muted" }, "Only Ahmed marks money received."));
+    } else if (t.result === "received" && !view.approvals.some((a) => a.action.endsWith(`(${t.id})`))) {
+      el.append(isAhmed ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/release`, {}, "Release approved; carry it out when ready") }, "Approve release"))
+        : h("div", { class: "acts small muted" }, "Only Ahmed releases money."));
+    }
+  }
   if (live && t.agent === "report") {
     const ref = h("input", { placeholder: "goAML reference", "aria-label": "goAML reference" });
     el.append(officer ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/filed`, { reference: ref.value }, "Filing recorded") }, "I filed it"))
