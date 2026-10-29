@@ -134,7 +134,8 @@ def test_instruction_reaches_the_specialist_and_comes_back(corrected):
     evs = corrected.log.list(after=n)
     assert [(e["type"], e["agent"]) for e in evs] == [
         ("instruction.given", "nova"), ("agent.pack", "nova"), ("agent.pack", "ops"), ("task.created", "formf"),
-        ("agent.pack", "formf"), ("approval.requested", "formf"), ("task.done", "formf")]
+        ("agent.pack", "formf"), ("approval.requested", "formf"), ("draft.made", "formf"), ("review.passed", "factcheck"),
+        ("task.created", "formf"), ("task.done", "formf")]
     plan = evs[4]["content"]["pack"]
     assert "Deposit paid by: Karim Haddad (F7)" in plan["next"] and any("Seller" in m for m in plan["missing"])
     assert evs[5]["content"] == {"kind": "submit", "summary": "Submit Form F", "reviewer": "Transactions officer"}

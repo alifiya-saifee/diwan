@@ -175,3 +175,43 @@ def test_a_release_approved_before_a_correction_is_refused_after_it(office):
     out = office.execute(aid, aid)
     assert not out["ok"] and "F3" in out["because"]
     assert any(c.props["refs"][0] == aid for c in office.graph().of("decision", "marina-1204", "open"))
+
+
+# ---------- Operations and Review ----------
+
+def test_form_f_plan_is_sent_back_by_a_correction_and_remade_from_the_live_words(office, monkeypatch):
+    from diwan.agents import operations
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    assert "5 of 7 fields" in c.post("/api/desk/deals/marina-1204/formf", json={"by": "joseph"}).json()["text"]
+    assert c.post("/api/desk/deals/marina-1204/formf", json={"by": "joseph"}).status_code == 409
+    g = office.graph()
+    plan = next(d for d in g.of("draft", "marina-1204") if d.props["kind"] == "Form F")
+    sub = next(t for t in g.of("task", "marina-1204") if t.props.get("draft") == plan.id)
+    assert set(sub.props["rests_on"]) == {"F1", "F4", "F3"} and sub.props["needs_person"] == "joseph"
+    demo.correction(office)
+    g = office.graph()
+    assert g.nodes[plan.id].status == "sent_back" and g.nodes[sub.id].status == "withdrawn"
+    new = [d for d in g.of("draft", "marina-1204") if d.props["kind"] == "Form F"][-1]
+    assert new.status == "live" and "Deposit paid by: Karim Haddad" in [s.props["text"] for s in g.into(new.id, "part_of")]
+    r = c.post(f"/api/desk/tasks/{sub.id}/submitted", json={"by": "joseph", "reference": "X"})
+    assert r.status_code == 400 and "withdrawn" in r.json()["detail"]
+    sub2 = next(t for t in g.of("task", "marina-1204") if t.props.get("draft") == new.id)
+    assert c.post(f"/api/desk/tasks/{sub2.id}/submitted", json={"by": "omar", "reference": "X"}).status_code == 403
+    assert c.post(f"/api/desk/tasks/{sub2.id}/submitted", json={"by": "joseph"}).status_code == 400
+    assert c.post(f"/api/desk/tasks/{sub2.id}/submitted", json={"by": "joseph", "reference": "DLD-88123"}).json()["ok"]
+    steps = [t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "transfer"]
+    assert [t.props["action"] for t in steps] == [s for s, _ in operations.TRANSFER] and all(t.props["needs_person"] == "joseph" for t in steps)
+    assert c.post(f"/api/desk/tasks/{steps[0].id}/tick", json={"by": "omar"}).status_code == 403
+    assert c.post(f"/api/desk/tasks/{steps[0].id}/tick", json={"by": "joseph"}).json()["ok"]
+    assert office.graph().nodes[steps[0].id].status == "done"
+
+
+def test_a_draft_using_replaced_words_is_sent_back_the_moment_it_is_made(office):
+    demo.correction(office)
+    stale = office.make_draft("marina-1204", "deck", [{"n": 1, "text": "Deposit from Tariq", "facts": ["F3"]}])
+    fresh = office.make_draft("marina-1204", "deck", [{"n": 1, "text": "Deposit from Karim", "facts": ["F7"]}])
+    g = office.graph()
+    assert g.nodes[stale].status == "sent_back" and "uses what F3 said" in g.nodes[stale].props["reason"] and "(F7)" in g.nodes[stale].props["reason"]
+    assert g.nodes[fresh].status == "live"
+    assert [e["content"]["draft"] for e in office.log.list() if e["type"] == "review.passed"][-1] == fresh

@@ -215,6 +215,41 @@ with sync_playwright() as p:
     stray = re.findall(r"\b(null|undefined|NaN)\b", pg.locator("main").inner_text())
     check("4f", "no stray null / undefined / NaN on the screen", not stray, ", ".join(stray))
 
+    # ---------- 5 and 6. Paperwork and Review, on a fresh demo office, as Joseph ----------
+    api.post(f"{BASE}/api/demo/reset")
+    desk("joseph")
+    ops = pg.locator("#dept-ops")
+    ops.get_by_role("button", name="Prepare Form F").click()
+    pg.wait_for_timeout(800)
+    t = ops.inner_text()
+    shot("13-formf-plan")
+    check("5a", "Form F plan from live facts, passed review, stops before Submit",
+          "Form F v1" in t and "PASSED REVIEW" in t.upper() and "Deposit paid by: Tariq Haddad" in t and "Seller: not said; Joseph fills it" in t and "I submitted it" in t)
+    acting("omar")
+    check("5b", "only Joseph may mark it submitted", "Only Joseph submits portal forms" in ops.inner_text())
+    meeting(SAY)
+    desk("joseph")
+    t = ops.inner_text()
+    shot("14-formf-sent-back")
+    check("5c", "the correction sends v1 back with the reason and withdraws its submit step",
+          "still says what F3 said" in t and ops.locator(".card", has_text="Submit Form F D2").get_by_text("withdrawn").count() == 1)
+    check("5d", "a new plan from the live words: Karim pays", "Form F v2" in t and "Deposit paid by: Karim Haddad" in t)
+    card = ops.locator(".card", has_text="Submit Form F D3")
+    clear()
+    card.get_by_role("button", name="I submitted it").click()
+    check("5e", "submitting needs the portal reference", "portal reference" in toast())
+    card.locator("input").fill("DLD-88123")
+    card.get_by_role("button", name="I submitted it").click()
+    pg.wait_for_timeout(800)
+    t = ops.inner_text()
+    check("5f", "transfer checklist with who each step waits on", "Developer NOC for the transfer" in t and "waiting on the seller and the developer" in t)
+    ops.locator(".card", has_text="Form F signed by buyer").get_by_role("button", name="Done").click()
+    pg.wait_for_timeout(700)
+    shot("15-transfer")
+    check("5g", "Joseph ticks a step", ops.locator(".card", has_text="Form F signed by buyer").get_by_text("done").count() >= 1)
+    rev = pg.locator("#dept-review").inner_text()
+    check("6a", "Review: the deck sent back names the slide and the replacement", "Slide 3 still says what F3 said; the customer replaced it (F7)" in rev)
+
     # widths: no sideways scroll at 1280 or on a phone
     for w, hgt in ((1280, 900), (390, 844)):
         pg.set_viewport_size({"width": w, "height": hgt})

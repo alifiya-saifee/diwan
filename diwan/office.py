@@ -6,7 +6,7 @@ decides the order.
 """
 from __future__ import annotations
 
-from diwan.agents import compliance, finance, review
+from diwan.agents import compliance, finance, operations, review
 from diwan.agents.charters import get
 from diwan.events import EventLog
 from diwan.graph import OPEN, Graph, build
@@ -110,6 +110,7 @@ class Office:
                     review.approval_stale(self, deal, x, o, n, sup["id"])
                 elif x.type == "slide":
                     review.slide_stale(self, g, deal, x, o, n, sup["id"], sent_back)
+        operations.replan(self, deal, sent_back, cause)
 
     def _contradictions(self, deal: str, fid: str, cause: int) -> None:
         """Two live statements that cannot both be true, and nothing said which replaces which: never pick one.
@@ -167,6 +168,7 @@ class Office:
         did = self._next(g, "draft", "D")
         version = 1 + len([d for d in g.of("draft", deal) if d.props["kind"] == kind])
         self.log.append("draft.made", actor=by, agent=by, deal=deal, content={"id": did, "kind": kind, "version": version, "slides": slides})
+        review.check_draft(self, did)
         return did
 
     # what the office knows: typed by a person it is confirmed; pulled from a document it waits for a person to confirm

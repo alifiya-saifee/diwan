@@ -62,3 +62,18 @@ def slide_stale(office: Office, g: Graph, deal: str, slide: Node, old: Node, new
     office.log.append("review.returned", actor="factcheck", agent="factcheck", deal=deal, caused_by=cause,
                       content={"draft": draft.id, "slide": slide.props["n"], "old": old.props["quote"], "new": new.props["quote"],
                                "reason": f"Slide {slide.props['n']} still says what {old.id} said; the customer replaced it ({new.id})."})
+
+
+def check_draft(office: Office, did: str) -> None:
+    """Every draft is checked when it is made: one using words the customer already replaced never reaches a person."""
+    g = office.graph()
+    d = g.nodes[did]
+    for s in sorted(g.into(did, "part_of"), key=lambda s: s.props["n"]):
+        if stale := g.stale(s.id):
+            old = stale[0]
+            new = g.nodes[live_version(g, old.id)]
+            office.log.append("review.returned", actor="factcheck", agent="factcheck", deal=d.deal,
+                              content={"draft": did, "slide": s.props["n"], "old": old.props["quote"], "new": new.props["quote"],
+                                       "reason": f"Slide {s.props['n']} uses what {old.id} said; the customer replaced it ({new.id})."})
+            return
+    office.log.append("review.passed", actor="factcheck", agent="factcheck", deal=d.deal, content={"draft": did})

@@ -71,6 +71,7 @@ export function describe(e) {
     case "approval.given": return `${NAMES[c.approver] || c.approver} approved: ${c.action}`;
     case "approval.refused": return `refused ${c.id}: ${c.because}`;
     case "document.filed": return `filed ${c.kind}: ${c.title}`;
+    case "review.passed": return `checked ${c.draft}: rests only on live words`;
     case "decision.made": return `answered ${c.card}: ${c.answer}${c.approval ? ` (${c.approval})` : ""}`;
     case "approval.requested": return `needs ${c.reviewer}: ${c.summary}`;
     case "execution.done": return `done: ${c.action}`;

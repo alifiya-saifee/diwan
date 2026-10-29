@@ -9,7 +9,7 @@ from datetime import date
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from diwan.agents import compliance, finance, review
+from diwan.agents import compliance, finance, operations, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
 from diwan.people import name, pid
@@ -66,6 +66,7 @@ def deal_view(g: Graph, deal: str, today: date | None = None) -> dict:
               "action": t.props["action"], "status": t.status, "reason": t.props.get("reason"), "at": t.at,
               "needs_person": t.props.get("needs_person"), "rests_on": _facts_on(g, t.props.get("rests_on", [])),
               "person": t.props.get("person"), "result": t.props.get("result"), "draft": t.props.get("draft"),
+              "waiting_on": t.props.get("waiting_on"),
               **(finance.expected(g, t, today or date.today()) if t.props["agent"] == "pay" else {})}
              for t in g.of("task", deal)]
     approvals = [{"id": a.id, "approver": a.props["approver"], "approver_name": name(a.props["approver"]), "action": a.props["action"],
@@ -251,3 +252,49 @@ def release(tid: str, body: Run):
         raise HTTPException(404, f"There is no payment {tid}.") from None
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
+
+
+def _call(fn, *a, missing="task"):
+    try:
+        return fn(*a)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except KeyError:
+        raise HTTPException(404, f"There is no such {missing}.") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@router.post("/api/desk/deals/{deal}/formf")
+def prepare_formf(deal: str, body: Run):
+    """The Form F clerk makes the plan from live facts (the same clerk Nova hands "prepare Form F" to)."""
+    o = _office()
+    g = o.graph()
+    if f"deal:{deal}" not in g.nodes:
+        raise HTTPException(404, f"There is no deal {deal!r}.")
+    if ready := [d for d in g.of("draft", deal) if d.props["kind"] == "Form F" and d.status != "sent_back"]:
+        raise HTTPException(409, f"{ready[-1].id} is the current Form F plan.")
+    tid = o.add_task(deal, "formf", "Prepare Form F from the live facts", by=pid(body.by) or body.by)
+    return {"text": operations.formf_plan(o, deal, tid, f"desk-{tid}")}
+
+
+class Submitted(BaseModel):
+    by: str
+    reference: str = ""
+
+
+@router.post("/api/desk/tasks/{tid}/submitted")
+def formf_submitted(tid: str, body: Submitted):
+    _call(operations.submitted, _office(), tid, pid(body.by), body.reference)
+    return {"ok": True}
+
+
+class Tick(BaseModel):
+    by: str
+    note: str = ""
+
+
+@router.post("/api/desk/tasks/{tid}/tick")
+def tick(tid: str, body: Tick):
+    _call(operations.tick, _office(), tid, pid(body.by), body.note)
+    return {"ok": True}

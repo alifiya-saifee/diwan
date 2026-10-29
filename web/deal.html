@@ -179,12 +179,33 @@ function taskEl(t) {
         : h("div", { class: "acts small muted" }, "Only Ahmed releases money."));
     }
   }
+  const isJoseph = me() === "joseph";
+  if (t.agent === "formf" && t.draft && live) {
+    const ref = h("input", { placeholder: "Portal reference", "aria-label": "Portal reference" });
+    el.append(h("div", { class: "small", style: "margin-top:6px" }, "Fill the portal from the plan, then press Submit there yourself."),
+      isJoseph ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/submitted`, { reference: ref.value }, "Form F submitted; transfer checklist started") }, "I submitted it"))
+        : h("div", { class: "acts small muted" }, "Only Joseph submits portal forms."));
+  }
+  if (t.agent === "transfer") {
+    el.querySelector(".small.muted").textContent = `Transfer tracker · waiting on ${t.waiting_on}`;
+    if (live) el.append(isJoseph ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/tick`, {}, "Ticked") }, "Done"))
+      : h("div", { class: "acts small muted" }, "Only Joseph ticks the checklist."));
+  }
   if (live && t.agent === "report") {
     const ref = h("input", { placeholder: "goAML reference", "aria-label": "goAML reference" });
     el.append(officer ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/filed`, { reference: ref.value }, "Filing recorded") }, "I filed it"))
       : h("div", { class: "acts small muted" }, "Only Priya files reports with the FIU."));
   }
   return el;
+}
+
+function formfEl(v) {
+  if (v.drafts.some((d) => d.kind === "Form F" && d.status !== "sent_back")) return null;
+  const due = ["Offer", "Form F"].includes(v.stage);
+  return h("div", { class: `card ${due ? "open" : ""}` }, h("strong", {}, "Form F"),
+    h("div", { class: "small", style: "margin-top:4px" }, due ? `The stage is ${v.stage}: the Form F clerk can fill the plan from the live facts.`
+      : "No Form F plan yet. The Form F clerk fills it from the live facts and stops before Submit."),
+    h("div", { class: "acts" }, h("button", { class: due ? "primary" : "", onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/formf`, {}, "Form F plan ready") }, "Prepare Form F")));
 }
 
 function fundsEl(f) {
@@ -202,7 +223,8 @@ function fundsEl(f) {
 
 function draftEl(d) {
   return h("div", { class: `card ${d.status === "sent_back" ? "open" : ""}` },
-    h("div", { class: "top" }, h("strong", {}, `${d.kind} v${d.version}`), h("span", {}, h("span", { class: "chip" }, d.id), chip(d.status))),
+    h("div", { class: "top" }, h("strong", {}, `${d.kind} v${d.version}`), h("span", {}, h("span", { class: "chip" }, d.id),
+      d.status === "live" ? h("span", { class: "chip ok" }, "passed review") : chip(d.status))),
     d.reason ? h("div", { style: "margin-top:4px" }, d.reason) : null,
     h("ol", { class: "slides" }, ...d.slides.map((s) => h("li", { class: s.stale.length ? "stale" : "", value: s.n }, s.text,
       s.stale.length ? ` · uses ${s.stale.join(", ")}, since replaced` : ""))));
@@ -222,7 +244,7 @@ function render() {
     const cards = v.cards.filter(by(k)), tasks = v.tasks.filter(by(k));
     const appr = k === "fin" ? v.approvals : [], drafts = v.drafts.filter(by(k));
     const open = cards.filter((c) => c.status === "open").length;
-    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
+    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "ops" ? formfEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
     return h("section", { class: "dept", id: `dept-${k}` }, h("h2", {}, label, open ? h("span", { class: "chip warn" }, `${open} open`) : null),
       ...(kids.length ? kids : [h("div", { class: "empty" }, `Nothing for ${label} on this deal.`)]));
   });

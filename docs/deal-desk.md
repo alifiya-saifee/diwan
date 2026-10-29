@@ -49,8 +49,8 @@ card waiting for me; mark a payment received; open the Form F plan and see which
    Received with who and when, and a receipt is filed with Records. Past due and not received shows Overdue. Releasing
    money is an approval only Ahmed gives, and it runs only while its facts are live.
    *Browser:* mark received (empty reference refused); an overdue payment; release refused after a correction.
-5. **Operations.** Form F starts when the deal's stage becomes "Form F" (set in the Inbox) or when Nova is told
-   "prepare Form F". The plan lists every field with its value and source fact, or empty with who must fill it, and stops
+5. **Operations.** Form F is prepared when Joseph presses "Prepare Form F" on the Deal desk (highlighted once the broker
+   sets the stage to Offer or Form F in the Inbox) or when Nova is told "prepare Form F"; nothing starts by itself. The plan lists every field with its value and source fact, or empty with who must fill it, and stops
    before Submit. A replaced fact sends the plan back with the reason and a new plan is made from the live facts; Joseph
    cannot mark a sent-back plan submitted. The transfer checklist lists the steps (Form F signed, developer NOC, manager's
    cheques, trustee appointment, title deed) with who each one waits for; Joseph ticks them.
@@ -74,5 +74,5 @@ who may do it; a missing reference; an unknown approval), and scale (hundreds of
 
 1. **Sanctions lists.** No list is connected, so screening prepares the check and Priya records the result. Connecting
    a real list (UN consolidated, UAE local terrorist list) is a later step.
-2. **When Form F starts:** when the broker sets the stage to "Form F" in the Inbox (session 2's stage list), or on Nova's
-   instruction. Written in the changelog.
+2. **When Form F starts:** Joseph presses "Prepare Form F" (highlighted at stage Offer or Form F) or asks Nova. Starting
+   it automatically on the stage change would need a hook in session 2's stage code; say if you want that.
