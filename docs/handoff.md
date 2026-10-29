@@ -1,7 +1,8 @@
 # Diwan: handoff for the next session
 
-Read this first, then `PROJECT.md` (what Diwan is), `docs/knowledge.md` (knowledge and catalog spec) and
-`docs/front-office.md` (leads and WhatsApp design, owned by the WhatsApp session). Written 28 Oct 2026.
+Read this first, then `docs/sessions.md` (which session owns what, with a starting message for each),
+`docs/rooms.md` (what every department must produce and hand on), `PROJECT.md` (what Diwan is),
+`docs/knowledge.md` (knowledge and catalog spec) and `docs/front-office.md` (leads and WhatsApp design). Written 28 Oct 2026.
 
 ## 1. The project in five lines
 
