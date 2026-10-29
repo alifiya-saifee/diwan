@@ -120,3 +120,5 @@ A new event shape at a meeting point is written in the changelog before either s
 ## Changelog (one line per shared change or new event shape)
 
 - 29 Oct: four sessions by how the code is linked: Marketing; Front desk & Sales; Deal desk (Review, Compliance, Finance, Operations); Records. All four can run in parallel.
+- 29 Oct (Deal desk): `nova.formf_plan` moved to `agents/operations.py` (Nova calls it there); the correction engine's department work moved out of `office.py` into `agents/compliance.py, finance.py, review.py`. Same events, same order. Spec: `docs/deal-desk.md`.
+- 29 Oct (Front desk & Sales): new event `qualify.open` (a customer's question Rania could not answer while qualifying; it goes on the broker's qualified-lead card); `qualify.answer` may carry `unsure: true`; each qualification question has `strict` (owner's choice: must answer / "not sure" is OK / optional). Small additions to events.py, graph.py, app.py.

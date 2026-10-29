@@ -1,14 +1,16 @@
 """What happens when something is said, built on the graph. A replaced statement is traced through the graph to
 everything resting on it: compliance hears first, then dependent tasks are withdrawn, approvals go back to the person
 who gave them, and drafts are sent back. Nothing that does not rest on the old statement is touched.
+What each department does with a change lives in its own module (agents/compliance, finance, review); this engine
+decides the order.
 """
 from __future__ import annotations
 
+from diwan.agents import compliance, finance, review
 from diwan.agents.charters import get
 from diwan.events import EventLog
 from diwan.graph import OPEN, Graph, build
 
-MONEY_KINDS = {"payer", "payment_promise", "income_claim"}
 CONFLICTS = {"payer": "payer", "deal_term": "amount_aed"}  # kinds where two different live values cannot both be true
 
 
@@ -86,18 +88,14 @@ class Office:
             self._replace(deal, olds, fid, ev["id"])
         else:
             self._contradictions(deal, fid, ev["id"])
-        self._payment_rules(deal, ev["id"])
+        finance.payment_rules(self, deal, ev["id"])
         return fid
 
     def _replace(self, deal: str, olds: list[str], new: str, cause: int) -> None:
         g = self.graph()
         n = g.nodes[new]
         os_ = [g.nodes[o] for o in olds]
-        if n.props["kind"] in MONEY_KINDS or any(o.props["kind"] in MONEY_KINDS for o in os_):
-            before = " / ".join(f'"{o.props["quote"]}"' for o in os_)
-            self.log.append("check.raised", actor="comp", agent="comp", deal=deal, caused_by=cause,
-                            content={"who": "priya", "title": "Payment arrangement changed", "refs": olds + [new],
-                                     "text": f'Payment arrangement changed: {before} became "{n.props["quote"]}". Review before any money moves.'})
+        compliance.money_changed(self, deal, os_, n, cause)
         sent_back = set()
         for o in os_:
             sup = self.log.append("fact.superseded", actor="scribe", agent="scribe", deal=deal, caused_by=cause, content={"id": o.id, "by": new})
@@ -107,16 +105,9 @@ class Office:
                     self.log.append("task.withdrawn", actor=x.props["agent"], agent=x.props["agent"], deal=deal, caused_by=sup["id"],
                                     content={"id": x.id, "reason": f'{o.id} was replaced by {new}: "{n.props["quote"]}"'})
                 elif x.type == "approval" and x.status == "given":
-                    self.log.append("decision.needed", actor="factcheck", agent="factcheck", deal=deal, caused_by=sup["id"],
-                                    content={"who": x.props["approver"], "refs": [x.id, o.id, new], "options": ["Re-approve on the new facts", "Cancel"],
-                                             "question": f'Your approval "{x.props["action"]}" rests on "{o.props["quote"]}", which the customer replaced with "{n.props["quote"]}".'})
+                    review.approval_stale(self, deal, x, o, n, sup["id"])
                 elif x.type == "slide":
-                    draft = g.out(x.id, "part_of")[0]
-                    if draft.id not in sent_back and draft.status != "sent_back":
-                        sent_back.add(draft.id)
-                        self.log.append("review.returned", actor="factcheck", agent="factcheck", deal=deal, caused_by=sup["id"],
-                                        content={"draft": draft.id, "slide": x.props["n"], "old": o.props["quote"], "new": n.props["quote"],
-                                                 "reason": f"Slide {x.props['n']} still says what {o.id} said; the customer replaced it ({new})."})
+                    review.slide_stale(self, g, deal, x, o, n, sup["id"], sent_back)
 
     def _contradictions(self, deal: str, fid: str, cause: int) -> None:
         """Two live statements that cannot both be true, and nothing said which replaces which: never pick one.
@@ -132,31 +123,6 @@ class Office:
                 self.log.append("decision.needed", actor="scribe", agent="scribe", deal=deal, caused_by=cause,
                                 content={"who": broker, "refs": [old.id, fid], "options": [f"{fid} replaces {old.id}", f"{old.id} stands", "Ask the customer"],
                                          "question": f'These can\'t both be true: "{old.props["quote"]}" ({old.id}) and "{new.props["quote"]}" ({fid}). Which stands?'})
-
-    def _payment_rules(self, deal: str, cause: int) -> None:
-        """The Payment tracker's rules: every live payment promise has one open expectation resting on the promise and
-        on who pays. A third-party payer is screened. Nobody named as payer: one question to the broker."""
-        g = self.graph()
-        payers = g.facts(deal, "payer")
-        customer = g.nodes[f"deal:{deal}"].props["customer"]
-        if len(payers) > 1:
-            return  # a contradiction about who pays is open; nothing is expected from anyone until the broker decides
-        for p in g.facts(deal, "payment_promise"):
-            payer = payers[-1] if payers else None
-            rests = [p.id] + ([payer.id] if payer else [])
-            if any(t.props["agent"] == "pay" and t.status in OPEN and set(t.props.get("rests_on", [])) == set(rests) for t in g.of("task", deal)):
-                continue
-            if not payer:
-                if not any(q.status == "open" and p.id in q.props.get("refs", []) for q in g.of("question", deal)):
-                    self.log.append("question.asked", actor="pay", agent="pay", deal=deal, caused_by=cause,
-                                    content={"to": "omar", "refs": [p.id], "text": f'Who pays this: "{p.props["quote"]}"?'})
-                continue
-            who = payer.props["payer"]
-            self.add_task(deal, "pay", f"Expect AED {p.props['amount_aed']:,} by {p.props.get('method') or 'a method not yet stated'} from {who}",
-                          rests_on=rests, caused_by=cause)
-            if who.lower() != customer.lower():
-                self.add_task(deal, "screen", f"Screen {who}, who will pay for {customer}", rests_on=[payer.id], caused_by=cause)
-            g = self.graph()
 
     def add_task(self, deal: str | None, agent: str, action: str, *, rests_on: list[str] | None = None, needs_person: str | None = None,
                  by: str | None = None, caused_by: int | None = None, request: str | None = None) -> str:
