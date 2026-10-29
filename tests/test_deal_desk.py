@@ -200,6 +200,7 @@ def test_form_f_plan_is_sent_back_by_a_correction_and_remade_from_the_live_words
     assert c.post(f"/api/desk/tasks/{sub2.id}/submitted", json={"by": "omar", "reference": "X"}).status_code == 403
     assert c.post(f"/api/desk/tasks/{sub2.id}/submitted", json={"by": "joseph"}).status_code == 400
     assert c.post(f"/api/desk/tasks/{sub2.id}/submitted", json={"by": "joseph", "reference": "DLD-88123"}).json()["ok"]
+    assert not [r for r in office.graph().of("request", "marina-1204", "open") if r.props.get("kind") == "submit"]
     steps = [t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "transfer"]
     assert [t.props["action"] for t in steps] == [s for s, _ in operations.TRANSFER] and all(t.props["needs_person"] == "joseph" for t in steps)
     assert c.post(f"/api/desk/tasks/{steps[0].id}/tick", json={"by": "omar"}).status_code == 403

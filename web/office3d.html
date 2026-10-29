@@ -457,16 +457,33 @@ async function drawWalls(f) {
       st.strategy.angles.forEach((a, i) => card(R, i, a.angle, `${a.status} · ${a.why}`, "#8b92a3"));
     }
   } else {
-    const facts = nodes.filter((n) => n.type === "fact" && n.status === "live");
+    // a Deal desk floor shows its own department's work (the same records as web/deal.html); other floors the office's
+    const mine = (n) => deptOf(n.props.agent) === f.dept;
+    const desk = ["comp", "fin", "ops", "review"].includes(f.dept);
+    const DRAFT = { "cash report": "comp", "Form F": "ops" };
+    const money = ["payer", "payment_promise", "income_claim"];
+    const facts = nodes.filter((n) => n.type === "fact" && n.status === "live" && (!["comp", "fin"].includes(f.dept) || money.includes(n.props.kind)));
     const replaced = nodes.filter((n) => n.type === "fact" && n.status === "superseded");
-    const cards = nodes.filter((n) => ["check", "decision", "request", "question"].includes(n.type) && n.status === "open");
-    const tasks = nodes.filter((n) => n.type === "task" && n.status === "queued");
-    head(L, `W H A T   T H E   O F F I C E   K N O W S   ·   ${facts.length} QUOTED FACTS`, col);
-    facts.slice(-6).forEach((n, i) => card(L, i, `"${n.props.quote}"`, `${n.id} · ${n.label}`, col));
-    head(R, `O P E N   W O R K   ·   ${tasks.length} TASKS   ·   ${cards.length} WAITING FOR PEOPLE`, "#f0b35e");
-    [...cards.map((n) => [n.props.text, `${n.id} · for ${NAMES[n.props.who] || n.props.who || ""}`, "#f0b35e"]),
-     ...replaced.map((n) => [`"${n.props.quote}"`, `${n.id} · replaced by ${n.props.superseded_by}`, "#f27d7d"]),
-     ...tasks.map((n) => [n.props.action, `${n.id} · ${n.props.agent_name}`, col])].slice(0, 6).forEach(([t, s, c], i) => card(R, i, t, s, c));
+    const cards = nodes.filter((n) => ["check", "decision", "request", "question"].includes(n.type) && n.status === "open" && (!desk || mine(n)));
+    const tasks = nodes.filter((n) => n.type === "task" && ["queued", "open", "waiting"].includes(n.status) && (!desk || mine(n)));
+    const drafts = desk ? nodes.filter((n) => n.type === "draft" && (DRAFT[n.props.kind] || "review") === f.dept) : [];
+    const appr = f.dept === "fin" ? nodes.filter((n) => n.type === "approval" && n.status === "given") : [];
+    head(L, `${desk && ["comp", "fin"].includes(f.dept) ? "T H E   M O N E Y   W O R D S" : "W H A T   T H E   O F F I C E   K N O W S"}   ·   ${facts.length} QUOTED FACTS`, col);
+    if (facts.length) facts.slice(-6).forEach((n, i) => card(L, i, `"${n.props.quote}"`, `${n.id} · ${n.label}`, col));
+    else card(L, 0, "Nothing said yet", "Facts appear here as customers speak", "#8b92a3");
+    const work = [...cards.map((n) => [n.props.text, `${n.id} · for ${NAMES[n.props.who] || n.props.who || ""}`, "#f0b35e"]),
+      ...drafts.filter((n) => n.status === "sent_back").map((n) => [`${n.props.kind} v${n.props.version || 1} sent back`, `${n.id} · ${n.props.reason || ""}`, "#f27d7d"]),
+      ...(desk ? [] : replaced.map((n) => [`"${n.props.quote}"`, `${n.id} · replaced by ${n.props.superseded_by}`, "#f27d7d"])),
+      ...appr.map((n) => {
+        const old = (n.props.rests_on || []).filter((id) => nodes.find((x) => x.id === id)?.status === "superseded");
+        return old.length ? [n.props.action, `${n.id} · rests on ${old.join(", ")}, since replaced`, "#f27d7d"]
+          : [n.props.action, `${n.id} · ${NAMES[n.props.approver] || n.props.approver} approved`, col];
+      }),
+      ...tasks.map((n) => [n.props.action, `${n.id} · ${n.props.agent_name}${n.props.needs_person ? " · waits for " + (NAMES[n.props.needs_person] || n.props.needs_person) : ""}`, col]),
+      ...drafts.filter((n) => n.status !== "sent_back").map((n) => [`${n.props.kind} v${n.props.version || 1}`, `${n.id} · passed review`, col])];
+    head(R, `${desk ? DEPTS[f.dept].name.toUpperCase().split("").join(" ") + "   ·   " : ""}O P E N   W O R K   ·   ${tasks.length} TASKS   ·   ${cards.length} WAITING FOR PEOPLE`, "#f0b35e");
+    if (work.length) work.slice(0, 6).forEach(([t, s, c], i) => card(R, i, t, s, c));
+    else card(R, 0, `Nothing open for ${DEPTS[f.dept].name}`, "Work appears here when a deal needs it", "#8b92a3");
   }
   f.walls.forEach((w) => w.tex.needsUpdate = true);
 }

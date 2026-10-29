@@ -1,6 +1,6 @@
 """The Deal desk, checked as a person would (docs/deal-desk.md). One screenshot per step.
 Run against an offline test server with its own database, never diwan.db:
-python e2e/deal_flow.py http://127.0.0.1:8041 <out dir>"""
+python e2e/deal_flow.py http://127.0.0.1:8041 <out dir> [<test server db, for the 300-deal check>]"""
 import re
 import sys
 from pathlib import Path
@@ -9,6 +9,7 @@ from playwright.sync_api import sync_playwright
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8041"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "e2e/shots") / "deal"
+DB = sys.argv[3] if len(sys.argv) > 3 else None  # the test server's database file, for the 300-deal check
 OUT.mkdir(parents=True, exist_ok=True)
 SAY = "Actually, forget my brother. I'll pay it all myself."
 errors, results = [], []
@@ -249,6 +250,47 @@ with sync_playwright() as p:
     check("5g", "Joseph ticks a step", ops.locator(".card", has_text="Form F signed by buyer").get_by_text("done").count() >= 1)
     rev = pg.locator("#dept-review").inner_text()
     check("6a", "Review: the deck sent back names the slide and the replacement", "Slide 3 still says what F3 said; the customer replaced it (F7)" in rev)
+
+    # ---------- 7. the floors and the list at scale ----------
+    for k in ("comp", "fin", "ops", "review"):
+        pg.goto(f"{BASE}/web/office3d.html?enter={k}")
+        pg.wait_for_function("window.__diwan && window.__diwan.floor", timeout=15000)
+        pg.wait_for_timeout(2500)
+        shot(f"16-floor-{k}", full=False)
+        for i in (0, 1):
+            url = pg.evaluate(f"window.__diwan.floor.walls[{i}].c.toDataURL('image/png')")
+            (OUT / f"16-floor-{k}-wall{i}.png").write_bytes(__import__("base64").b64decode(url.split(",", 1)[1]))
+    check("7a", "each Deal desk floor drew its walls (saved for review)", all((OUT / f"16-floor-{k}-wall1.png").exists() for k in ("comp", "fin", "ops", "review")))
+
+    if DB:  # 300 more deals written straight into the test server's log
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from diwan.events import EventLog
+        from diwan.office import Office
+        o = Office(EventLog(DB))
+        for i in range(300):
+            o.open_deal(f"bulk-{i}", property=f"Unit {i}, Test Tower", customer=f"Buyer {i:03d}", broker="hamza")
+        pg.set_viewport_size({"width": 1440, "height": 1000})
+        pg.goto(f"{BASE}/web/deal.html?deal=marina-1204")
+        pg.wait_for_selector("#dept-comp .card")
+        check("7b", "302 deals, 50 a page", "302 deals" in pg.locator("#pager").inner_text() and "1 / 7" in pg.locator("#pager").inner_text()
+              and pg.locator("#dlist .item").count() == 50)
+        pg.locator("#pager button", has_text="›").click()
+        pg.wait_for_timeout(400)
+        check("7c", "next page", "2 / 7" in pg.locator("#pager").inner_text())
+        pg.fill("#q", "buyer 250")
+        pg.wait_for_timeout(600)
+        check("7d", "search finds one deal among 302", pg.locator("#dlist .item").count() == 1 and "Buyer 250" in pg.locator("#dlist").inner_text())
+        pg.fill("#q", "zzz nobody")
+        pg.wait_for_timeout(600)
+        check("7e", "no match says so", "No deal matches." in pg.locator("#dlist").inner_text())
+        pg.fill("#q", "")
+        pg.check("#needs")
+        pg.wait_for_timeout(600)
+        shot("17-list-waiting", full=False)
+        check("7f", "waiting for someone: only the 2 demo deals", "2 deals" in pg.locator("#pager").inner_text())
+    pg.goto(f"{BASE}/web/deal.html?deal=nope")
+    pg.wait_for_timeout(800)
+    check("7g", "an unknown deal says so", "There is no deal 'nope'." in pg.locator("#main").inner_text())
 
     # widths: no sideways scroll at 1280 or on a phone
     for w, hgt in ((1280, 900), (390, 844)):

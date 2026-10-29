@@ -93,6 +93,9 @@ def submitted(office: Office, tid: str, by: str, reference: str) -> None:
         raise ValueError("Give the portal reference of the submitted Form F.")
     office.log.append("task.done", actor=by, agent="formf", deal=t.deal,
                       content={"id": tid, "reason": f"Submitted on the DLD portal, reference {reference.strip()}", "result": "submitted"})
+    for r in g.of("request", t.deal, "open"):  # the clerk's "only Joseph submits" request is answered by this
+        if r.props.get("kind") == "submit" and r.props.get("agent") == "formf":
+            office.log.append("decision.made", actor=by, deal=t.deal, content={"card": r.id, "answer": f"Submitted, reference {reference.strip()}"})
     for step, who in TRANSFER:
         office.add_task(t.deal, "transfer", step, needs_person=OFFICER, props={"waiting_on": who})
 
