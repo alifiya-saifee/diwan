@@ -80,7 +80,7 @@ enquiries, not only likes.
 | Knowledge and catalog | edits, the portal feed | confirmed, versioned items; listings with permit and status; `knowledge.search()` for every agent | Rania, Nova, Marketing | edit (owners), accept proposals |
 | Nova (chief of staff) | a person's question or instruction; briefing time | answers citing records; `briefing.ready`; `lobby.posted` jobs with read-back and deadlines; `instruction.given` routed to a lead | people; every department lead | — |
 
-### Back office: today built on rules; each department has its own session (Review keeps the correction engine)
+### Back office: today built on rules; the Deal desk session (Review, Compliance, Finance, Operations) and the Records session
 
 | Department | Reacts to | Must output | Only a person |
 |---|---|---|---|

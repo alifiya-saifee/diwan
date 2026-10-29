@@ -1,125 +1,122 @@
-# Diwan: how the work is split between sessions
+# Diwan: which sessions, and why
 
-Three sessions build Diwan in parallel, one per area; areas that don't touch (marketing and the front desk) never share files until the hackathon deadline (4 Nov 2026, 9 PM ET). Each owns a set of rooms and
-files, builds them to the contract in `docs/rooms.md`, and follows the rules in `docs/handoff.md` section 2. Read
-`docs/handoff.md` first.
+Departments whose code is linked are built by one session; departments that only meet through events run in their
+own session, in parallel. Each session owns its files, builds to the contract in `docs/rooms.md`, and follows the
+rules in `docs/handoff.md` section 2. Deadline: 4 Nov 2026, 9 PM ET. Read `docs/handoff.md` first.
+
+## What is linked, and what is independent (from the code)
+
+| Departments | Linked? | Why (in the code today) |
+|---|---|---|
+| Review + Compliance + Finance + Operations | **linked: one session** | `office._replace` (the correction) raises the Compliance check, withdraws the Finance payment task, refuses stale approvals and sends back the deck slide in one function; `office._payment_rules` creates both the Finance "expect payment" task and the Compliance "screen the payer" task; Form F rests on the same approvals and the same live facts. Split, they would collide in the same functions. |
+| Front desk + Sales (with knowledge and catalog) | **linked: one session** | Rania, the Scribe, the inbox, leads, Nova and the knowledge store work on the same chats, leads and items; Nova reads the knowledge and the leads. |
+| Marketing | **independent** | Meets Sales only at one event: a comment or DM on a published post becomes a lead tagged with that post. |
+| Records | **independent** | Nova calls one function (`records.delegate`); documents and the sales ledger are its own. |
+
+So **four sessions, all four can start now and run in parallel**: where they meet is an event or one function call,
+written down in "Where sessions meet" below.
 
 ## Rules for every session (the product owner's standing instructions)
 
 1. **No feature without a reason.** Every change states which row of `docs/rooms.md` or which checklist item below it
-   fulfils. Anything that is on neither is not built without the product owner's OK, however useful it looks.
-2. **Work the checklist top to bottom.** The items are in priority order: safety first, then what the demo shows,
-   then the rest. Finish and check one before starting the next, so if time runs out, what is missing is the least important.
+   fulfils. Anything on neither is not built without the product owner's OK, however useful it looks.
+2. **Work the checklist top to bottom.** Items are in priority order: safety first, then what the demo shows, then the rest.
 3. **Working means working for a person.** Each item is checked in the browser the way a user would use it, with a
-   screenshot, including what happens when something is missing, wrong or at real scale. Passing tests alone is not done.
+   screenshot, including missing, wrong and real-scale cases. Passing tests alone is not done.
 4. **Efficient output.** Each agent produces exactly the output its contract names, from its sources, cited; no extra
    steps, no repeated model calls (use the saved replies), the cheapest reasoning level that keeps quality.
-5. **End-of-day report** to the product owner: every checklist item marked checked in the browser / tested in code
-   only / not done, with the reason; the day's model spend; anything that needs their decision.
-6. **Target: everything on the checklist working by the end of 29 Oct.** If an item cannot be finished properly, say
-   so early rather than shipping it half-done.
+5. **Stay in your files.** Shared files take small additions only; commit only your own hunks
+   (`git diff -U0 <file>` → keep yours → `git apply --cached --unidiff-zero`); one line in the changelog.
+6. **End-of-day report** to the product owner: each item marked checked in the browser / tested in code only / not
+   done (with the reason); the day's model spend; anything that needs their decision.
+7. **Target: the checklist working by the end of 29 Oct.** Say early if an item cannot be finished properly.
+8. **Tests offline** (`DIWAN_OFFLINE=1`); the live model only for one final pass, with its cost reported.
 
-## The split
+## The four sessions
 
-| Session | Rooms | Owns these files |
+| Session | Departments and agents | Owns these files |
 |---|---|---|
-| **Marketing** | the content studio (research, planning, scripting, production, editing, publishing, library), the brand | `agents/studio.py, qa.py, strategy.py, kpis.py, analysis.py`; `brand.py, brand_api.py, brain.py, learn.py, costs.py, docgen.py, demo_profile.md`; `providers/instagram.py, heygen.py, meta.py`; `web/studio.html, graph.html`; `e2e/studio_flow, brand_flow, learn_flow, memory_flow, floor_flow, views_flow` |
-| **Front desk & Sales** | Nova, the Lobby; WhatsApp and Instagram DMs, portals, leads (intake, Scribe, Profiler, Rania, Dispatcher, Briefer, Lead desk, Follow-up); the knowledge store and catalog | `agents/reception.py, scribe.py, nova.py, lobby.py`; `inbox.py, leads.py, qualify.py, slots.py, knowledge.py, knowledge_api.py, playground.py`; `providers/portals.py, aisensy.py, whatsapp.py, voice.py, local_asr.py`; `web/inbox.html, knowledge.html, catalog.html, index.html, meeting.html, team.html, settings.html`; `e2e/office_flow, knowledge_flow` |
-| **Back office** | Compliance (screening, source of funds, reports), Review (fact checker), Operations (Form F, transfer), Finance (payments), Records (archive, data analyst) | the correction engine in `office.py` (facts replaced, tasks withdrawn, approvals refused, payment rules, Form F guard); `agents/records.py`; the deck, Form F and payment screens it builds |
+| **1. Marketing** | Research, Planning, Scripting, Production, Editing, Publishing, Library (brand) | `agents/studio.py, qa.py, strategy.py, kpis.py, analysis.py`; `brand.py, brand_api.py, brain.py, learn.py, costs.py, docgen.py, demo_profile.md`; `providers/instagram.py, heygen.py, meta.py`; `web/studio.html, graph.html` |
+| **2. Front desk & Sales** | Nova, the Lobby; Intake, Scribe, Profiler, Rania, Dispatcher, Briefer, Lead desk, Follow-up; meetings; knowledge store and catalog | `agents/reception.py, scribe.py, nova.py, lobby.py`; `inbox.py, leads.py, qualify.py, slots.py, knowledge.py, knowledge_api.py, playground.py`; `providers/portals.py, aisensy.py, whatsapp.py, voice.py, local_asr.py`; `web/inbox.html, knowledge.html, catalog.html, index.html, meeting.html, team.html, settings.html` |
+| **3. Deal desk** (Review, Compliance, Finance, Operations) | Fact checker, Devil's advocate; Screening, Source of funds, Report drafter; Payment tracker, Invoice clerk; Form F clerk, Transfer tracker | `office.py` (the correction engine, payment rules, approvals, Form F guard); new `agents/compliance.py, finance.py, operations.py, review.py`; Nova's `formf_plan` moves to `agents/operations.py` (one small commit, announced); new `web/deal.html` |
+| **4. Records** | Archivist, Data analyst | `agents/records.py`; `office.file_document, close_sale`; new `web/records.html` |
 
-**Shared by everyone** (small additions only, commit only your own hunks, one line in the changelog below):
-`app.py, events.py, graph.py, people.py, demo.py, config.py, pack.py, agents/charters.py, agents/runner.py, agents/lessons.py, providers/chat.py, providers/tape.py, web/app.js, web/app.css, web/office3d.html`.
-`office.py` belongs to Back office; the others may add a method there but not change the correction engine.
+**Shared by everyone** (small additions only): `app.py, events.py, graph.py, people.py, demo.py, config.py, pack.py,
+agents/charters.py, agents/runner.py, agents/lessons.py, providers/chat.py, providers/tape.py, web/app.js, web/app.css,
+web/office3d.html`.
 
-## Marketing session: make the studio start working for real
+## 1. Marketing
 
-**Goal:** on the main demo database, through the screens, a person can run the whole studio with the live model and
-it is right every time.
+**Goal:** on the main demo database, a person runs the whole studio through the screens with the live model, and it is right every time.
 
-Definition of done (checked in the browser, with screenshots):
 - [ ] Brand: learn Diwan Realty from the demo profile, confirm the cards, save the brand; it shows in the Brand brain and the memory graph.
-- [ ] Run a listing: research (trend cards with sources; competitors from the spreadsheet import), an idea, 3 scripts on different angles, each passing review, all in the brand's voice and sign-off.
+- [ ] Run a listing: trend cards with sources, competitors from the spreadsheet import, an idea, 3 scripts on different angles, each passing review, in the brand's voice and sign-off.
 - [ ] Ask for a change to one script; only it is rewritten; pick it.
-- [ ] Production: film list task to the broker; upload a take; take check; captions burned in; post text with the permit and brand hashtags; covers.
-- [ ] Publish request reaches the owner; with Instagram connected, approving publishes (otherwise it says what it needs).
-- [ ] A comment on the post reaches Rania with `source: post <id>, angle` (needs the Front office session's intake; agree the event shape with them).
-- [ ] Strategy ranks angles by enquiries per post once Front desk reports leads per post (rooms.md, "hands back").
+- [ ] Production and editing: film-list task to the broker; upload a take; take check; captions burned in; post text with the permit and brand hashtags; covers.
+- [ ] Publish request reaches the owner; with Instagram connected approving publishes, otherwise it says what it needs.
+- [ ] A comment on a post reaches Rania tagged with the post and angle (event shape agreed with session 2 in the changelog).
+- [ ] Strategy ranks angles by enquiries per post once session 2 reports them.
 - [ ] Every 3D view and the Studio page: no overlaps, no sample data, works at 1280 wide.
-- [ ] Spend for one full run is measured and shown; the model runs at the cheapest reasoning level that keeps quality.
+- [ ] One full run's spend measured and shown.
 
-Open items it inherits (handoff.md section 7): trend cards not linked to the scripts that use them; near-duplicate
-hook lines; web search cost unverified.
+## 2. Front desk & Sales
 
-**Paste this to start it:**
-> You are the Marketing session for Diwan. Read docs/handoff.md, docs/rooms.md and docs/sessions.md. You own the
-> Marketing row in docs/sessions.md; don't edit the Front desk & Sales or Back office sessions' files. Build the Marketing definition of
-> done in docs/sessions.md, one item at a time, checking each in the browser with screenshots and reporting item by
-> item. Follow "Rules for both sessions" exactly: nothing outside the checklist without my OK, work top to bottom, and
-> send me the end-of-day report. Run repeated tests offline (DIWAN_OFFLINE=1); use the live model only for a final
-> pass, and tell me the cost.
+**Goal:** a customer on the sandbox WhatsApp line or an Instagram DM is answered, qualified, assigned, briefed and
+booked correctly, from the knowledge store and catalog, with people in control; Nova runs the office's day.
 
-## Front desk & Sales session: front desk and sales working end to end
-
-**Goal:** a customer on the sandbox WhatsApp line (and Instagram DMs) is answered, qualified, assigned, briefed and
-booked correctly, from the knowledge store and catalog, with people in control.
-
-Definition of done (checked in the browser, with screenshots):
 - [ ] **Fix first:** Rania uses `knowledge.search()` only, so internal-only items never reach a customer (handoff.md issue 1).
-- [ ] **Fix first:** the feed sync keeps a listing's status and shows an accepted price as "waiting for the portal" instead of reverting (issue 2).
+- [ ] **Fix first:** the feed sync keeps a listing's status; an accepted price shows "waiting for the portal" instead of reverting (issue 2).
 - [ ] Knowledge and catalog: the header search box on every screen; pages work at phone width; then commit the knowledge work.
-- [ ] Intake: duplicates ignored, bursts merged, spam to "not a lead", source tagged (including posts from Marketing).
+- [ ] Intake: duplicates ignored, bursts merged, spam to "not a lead", source tagged (including Marketing posts).
 - [ ] Profiler: tags with quotes, persona checklists, Qualified only when complete and the customer agreed.
 - [ ] Rania's three stages: discovery, one question at a time, waiting for the broker; booking in free slots; handover on everything that isn't hers.
-- [ ] Dispatcher, Briefer, Lead desk: assignment, a 5-line brief, cards with due times, overdue, the Pool, notices.
-- [ ] Nova: the morning briefing, questions answered with citations, Lobby jobs with read-back.
-- [ ] Reports leads and viewings per Marketing post and angle (rooms.md, "hands back").
+- [ ] Dispatcher, Briefer, Lead desk, Follow-up: assignment, a 5-line brief, cards with due times, overdue, the Pool, nudges.
+- [ ] Nova: the morning briefing, questions answered with citations, Lobby jobs with read-back and chasing.
+- [ ] Reports leads and viewings per Marketing post and angle.
 
-**Paste this to start it:**
-> You are the Front desk & Sales session for Diwan. Read docs/handoff.md, docs/rooms.md, docs/sessions.md,
-> docs/front-office.md and docs/knowledge.md. You own the Front desk & Sales row in docs/sessions.md; don't edit the
-> Marketing or Back office sessions' files. Fix the two "fix first" items, then build the Front office definition of done in
-> docs/sessions.md, one item at a time, checking each in the browser with screenshots and reporting item by item.
-> Follow "Rules for both sessions" exactly: nothing outside the checklist without my OK, work top to bottom, and send
-> me the end-of-day report. Run repeated tests offline (DIWAN_OFFLINE=1); never loop tests against the live model.
+## 3. Deal desk (Review, Compliance, Finance, Operations)
 
-## Back office session: the correction moment and the money trail
+**Goal:** the correction moment works every time, and every deal's money and paperwork rest on the customer's live words.
 
-**Goal:** the moment the whole demo rests on works every time, and each back-office room produces exactly its
-`docs/rooms.md` output.
+- [ ] **The correction end to end:** "Actually, forget my brother. I'll pay it all myself." → the fact is replaced (history kept) → Compliance flagged first with both quotes → the brother's payment and screening withdrawn → an approval resting on the old fact refused and turned into a decision → executing it blocked → the deck slide sent back → Nova explains who pays, citing the live fact.
+- [ ] Split by department inside the session, not across sessions: move the compliance rules to `agents/compliance.py`, payments to `agents/finance.py`, Form F to `agents/operations.py`, send-backs to `agents/review.py`; the correction engine in `office.py` calls them. Behaviour unchanged, tests green.
+- [ ] Compliance: every party screened, including a third-party payer; a source-of-funds view with the missing proof; a cash-report draft at AED 55,000 or more, waiting for the officer.
+- [ ] Finance: expected payments per deal, each with its quote; a person marks received; overdue flagged; releasing money always needs a person.
+- [ ] Operations: Form F filled from live facts, stopping before Submit; a replaced fact blocks it with the reason; the transfer checklist with who is waiting.
+- [ ] Review: no draft resting on a replaced fact reaches a person; each send-back names the fact and its replacement.
+- [ ] A Deal desk screen (one deal: checks, payments, paperwork, send-backs); each department's 3D floor shows its work.
 
-Definition of done (checked in the browser, with screenshots):
-- [ ] The correction: "Actually, forget my brother. I'll pay it all myself." in a meeting or on WhatsApp → Compliance is flagged first with both quotes → the brother's expected payment is withdrawn → the approval resting on it is refused and becomes a decision → Review sends back the deck slide → Nova explains who pays, citing the live fact.
-- [ ] Compliance: every party screened, including a third-party payer; a source-of-funds view with what proof is missing; a cash-report draft at AED 55,000 or more, waiting for the officer.
-- [ ] Review: no draft that rests on a replaced fact reaches a person; each returned draft names the fact and the replacement.
-- [ ] Operations: Form F filled from live facts only, stopping before Submit; a stale fact blocks it with the reason.
-- [ ] Finance: expected payments listed, each tied to the exact words; withdrawn on correction, with history.
-- [ ] Records: "what did we sell last month", commission and pipeline answered from records, never estimated; documents filed and found again.
-- [ ] Each of the five departments shows its work on its 3D floor and in the memory graph's deal view.
+## 4. Records
 
-**Paste this to start it:**
-> You are the Back office session for Diwan. Read docs/handoff.md, docs/rooms.md and docs/sessions.md. You own the
-> Back office row in docs/sessions.md (the correction engine in office.py and agents/records.py); don't edit the
-> Marketing or Front desk & Sales sessions' files. Build the Back office definition of done in docs/sessions.md, one
-> item at a time, checking each in the browser with screenshots and reporting item by item. Follow "Rules for every
-> session" exactly: nothing outside the checklist without my OK, work top to bottom, and send me the end-of-day report.
-> Run tests offline (DIWAN_OFFLINE=1).
+**Goal:** every number Nova or the owner asks for is computed from records, and every document can be found.
 
-## Where the sessions meet
+- [ ] "What did we sell last month", commission, pipeline and top broker answered from records, never estimated, citing sale ids.
+- [ ] Documents filed against the right deal and found again by kind, party, date or deal.
+- [ ] Answers Nova delegates come back with their records; a question the records can't answer says so.
+- [ ] A Records screen (archive and ledger); the Records floor shows it.
 
-| Meeting point | Marketing produces | Front desk & Sales produces |
+## Starting message (paste into a new chat in the diwan-hackathon folder, with the session name filled in)
+
+> You are the **<session name>** session for Diwan. Read docs/handoff.md, docs/rooms.md and docs/sessions.md (for
+> Front desk & Sales also docs/front-office.md and docs/knowledge.md). You own that session's row in
+> docs/sessions.md; don't edit other sessions' files, and treat shared files as rule 5 says. Build your checklist in
+> docs/sessions.md top to bottom, checking each item in the browser with screenshots and reporting item by item.
+> Follow "Rules for every session" exactly: nothing outside the checklist without my OK, tests offline, and send me
+> the end-of-day report.
+
+## Where sessions meet (the only links between them)
+
+| From → to | Through | Meaning |
 |---|---|---|
-| A post's comments and DMs | the post with its listing ref and angle | a lead tagged with that post and angle |
-| Lead attribution | — | leads and viewings per post and angle |
-| Listings | reads them (permit, features, price) | masters them (feed, proposals) |
-| Brand | masters it (voice, sign-off, never-use words) | Rania signs off in it and avoids its never-use words |
-| Knowledge | proposes cards learned from documents | owns the store, confirmation and `knowledge.search()` |
+| Marketing → Front desk & Sales | `content.made` published (listing ref, angle) | comments and DMs on it open leads tagged with the post |
+| Front desk & Sales → Marketing | lead and viewing counts per post and angle | the strategy ranks angles by enquiries |
+| Front desk & Sales → Deal desk | `fact.created`, `fact.superseded` from the Scribe | the correction engine runs; Compliance hears money facts first |
+| Front desk & Sales → Deal desk | a deal reaching Offer accepted | Form F starts |
+| Deal desk → everyone | `check.raised`, `decision.needed`, `review.returned` | money-related work waits for the officer; stale work goes back |
+| Front desk & Sales ↔ Records | `records.delegate()` from Nova | numbers and documents answered from records only |
 
-Front desk & Sales ↔ Back office: the Scribe's money facts reach Compliance first (Back office reacts to `fact.created`
-and `fact.superseded`); an accepted offer opens Form F; Nova reads Records for numbers. Marketing and the Back office
-do not meet.
+A new event shape at a meeting point is written in the changelog before either side builds it.
 
-Agree any new event shape at a meeting point in the changelog below before building it.
+## Changelog (one line per shared change or new event shape)
 
-## Changelog (append one line per shared change)
-
-- 29 Oct: split into three sessions (Marketing; Front desk & Sales; Back office); rules for every session added (no feature without a reason, priority order, end-of-day report).
+- 29 Oct: four sessions by how the code is linked: Marketing; Front desk & Sales; Deal desk (Review, Compliance, Finance, Operations); Records. All four can run in parallel.
