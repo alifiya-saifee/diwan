@@ -13,10 +13,9 @@ if TYPE_CHECKING:
 
 def payment_rules(office: Office, deal: str, cause: int) -> None:
     """The Payment tracker's rules: every live payment promise has one open expectation resting on the promise and
-    on who pays. A third-party payer is screened. Nobody named as payer: one question to the broker."""
+    on who pays (Compliance screens a third-party payer). Nobody named as payer: one question to the broker."""
     g = office.graph()
     payers = g.facts(deal, "payer")
-    customer = g.nodes[f"deal:{deal}"].props["customer"]
     if len(payers) > 1:
         return  # a contradiction about who pays is open; nothing is expected from anyone until the broker decides
     for p in g.facts(deal, "payment_promise"):
@@ -32,6 +31,4 @@ def payment_rules(office: Office, deal: str, cause: int) -> None:
         who = payer.props["payer"]
         office.add_task(deal, "pay", f"Expect AED {p.props['amount_aed']:,} by {p.props.get('method') or 'a method not yet stated'} from {who}",
                         rests_on=rests, caused_by=cause)
-        if who.lower() != customer.lower():
-            office.add_task(deal, "screen", f"Screen {who}, who will pay for {customer}", rests_on=[payer.id], caused_by=cause)
         g = office.graph()

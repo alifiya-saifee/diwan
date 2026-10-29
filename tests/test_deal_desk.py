@@ -25,7 +25,7 @@ def test_one_deal_shows_each_department_and_the_replaced_words(client):
     f = {x["id"]: x for x in v["said"]}
     assert f["F3"]["status"] == "superseded" and f["F3"]["replaced_by"] == "F7" and f["F7"]["replaces"] == ["F2", "F3"]
     assert [c["dept"] for c in v["cards"]][:2] == ["comp", "review"]
-    assert {t["id"]: t["status"] for t in v["tasks"]} == {"T1": "withdrawn", "T2": "withdrawn", "T3": "queued"}
+    assert {t["id"]: t["status"] for t in v["tasks"]} == {"T1": "queued", "T2": "withdrawn", "T3": "withdrawn", "T5": "queued"}
     assert v["approvals"][0]["stale"] == ["F3"] and v["drafts"][0]["status"] == "sent_back"
     assert client.get("/api/desk/deals/nope").status_code == 404
 
@@ -64,5 +64,68 @@ def test_deals_list_searches_filters_and_pages(client):
     r = client.get("/api/desk/deals").json()
     assert r["total"] == 122 and r["pages"] == 3 and len(r["rows"]) == 50
     assert [d["deal"] for d in client.get("/api/desk/deals?q=karim").json()["rows"]] == ["marina-1204"]
-    assert [d["deal"] for d in client.get("/api/desk/deals?needs=true").json()["rows"]] == ["marina-1204"]
+    assert {d["deal"] for d in client.get("/api/desk/deals?needs=true").json()["rows"]} == {"marina-1204", "jvc-88"}
     assert client.get("/api/desk/deals?q=nobody").json()["total"] == 0
+
+
+# ---------- Compliance ----------
+
+@pytest.fixture
+def office():
+    o = Office(EventLog())
+    demo.seed(o)
+    return o
+
+
+def screens(o, deal="marina-1204"):
+    return {t.props["person"]: t.status for t in o.graph().of("task", deal) if t.props["agent"] == "screen"}
+
+
+def test_every_party_is_put_up_for_screening_once_and_withdrawn_with_the_words(office):
+    assert screens(office) == {"Karim Haddad": "queued", "Tariq Haddad": "queued"}
+    assert screens(office, "jvc-88") == {"Sara Malik": "queued"}
+    demo.correction(office)
+    assert screens(office) == {"Karim Haddad": "queued", "Tariq Haddad": "withdrawn"}
+
+
+def test_a_payer_in_dispute_is_not_screened_until_the_broker_decides(office):
+    office.record_fact("marina-1204", "payer", "My cousin covers it.", "Karim Haddad", payer="Sami")
+    assert "Sami" not in screens(office)
+
+
+def test_only_priya_records_a_result_and_a_possible_match_needs_its_entry(client):
+    t = next(t for t in client.get("/api/desk/deals/marina-1204").json()["tasks"] if t["person"] == "Karim Haddad")
+    assert client.post(f"/api/desk/tasks/{t['id']}/screen", json={"by": "ahmed", "result": "clear"}).status_code == 403
+    assert client.post(f"/api/desk/tasks/{t['id']}/screen", json={"by": "priya", "result": "possible match"}).status_code == 400
+    assert client.post(f"/api/desk/tasks/{t['id']}/screen", json={"by": "priya", "result": "clear", "note": "UN, UAE lists"}).json()["ok"]
+    t = next(x for x in client.get("/api/desk/deals/marina-1204").json()["tasks"] if x["id"] == t["id"])
+    assert t["status"] == "done" and t["result"] == "clear" and t["reason"] == "Clear: UN, UAE lists"
+    assert client.post(f"/api/desk/tasks/{t['id']}/screen", json={"by": "priya", "result": "clear"}).status_code == 400
+
+
+def test_source_of_funds_lays_out_the_numbers_and_the_missing_proof(client):
+    f = client.get("/api/desk/deals/marina-1204").json()["funds"]
+    assert [n["what"] for n in f["numbers"]] == ["Price", "Deposit", "Paid by", "Stated income", "Price in years of stated income"]
+    assert f["numbers"][2]["value"] == "Karim Haddad" and f["numbers"][4]["value"] == "4.8"
+    assert [p["kind"] for p in f["proof"]] == ["bank statement", "salary certificate", "balance funding"] and f["missing"] == 3
+    assert client.post("/api/desk/deals/marina-1204/proof", json={"by": "omar", "kind": "bank statement"}).status_code == 403
+    doc = client.post("/api/desk/deals/marina-1204/proof", json={"by": "priya", "kind": "bank statement"}).json()["document"]
+    f = client.get("/api/desk/deals/marina-1204").json()["funds"]
+    assert f["proof"][0]["have"] == doc and f["missing"] == 2
+    assert client.post("/api/desk/deals/marina-1204/proof", json={"by": "priya", "kind": "bank statement"}).status_code == 409
+
+
+def test_cash_at_the_threshold_drafts_a_report_for_priya_and_a_correction_sends_it_back(office):
+    m = "marina-1204"
+    cash = office.record_fact(m, "payment_promise", "I'll bring the deposit in cash, two hundred sixty thousand.", "Karim Haddad",
+                              amount_aed=260_000, method="cash", replaces="F4")
+    g = office.graph()
+    draft = next(d for d in g.of("draft", m) if d.props["kind"] == "cash report")
+    task = next(t for t in g.of("task", m) if t.props["agent"] == "report")
+    assert task.props["needs_person"] == "priya" and cash in task.props["rests_on"] and draft.status == "live"
+    office.record_fact(m, "payment_promise", "No, the deposit goes by bank transfer after all.", "Karim Haddad",
+                       amount_aed=260_000, method="bank transfer", replaces=cash)
+    g = office.graph()
+    assert g.nodes[draft.id].status == "sent_back" and g.nodes[task.id].status == "withdrawn"
+    office.record_fact("jvc-88", "payment_promise", "Fifty thousand cash as the booking deposit.", "Sara Malik", amount_aed=50_000, method="cash")
+    assert not [d for d in office.graph().of("draft", "jvc-88") if d.props["kind"] == "cash report"]

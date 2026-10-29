@@ -174,7 +174,7 @@ def eval_engine() -> list[dict]:
     demo.correction(o)
     g = o.graph()
     checks = [("compliance hears first", [e["type"] for e in o.log.list()].index("check.raised") < [e["type"] for e in o.log.list()].index("fact.superseded")),
-              ("only dependent tasks withdrawn", {t.id for t in g.of("task", status="withdrawn")} == {"T1", "T2"}),
+              ("only dependent tasks withdrawn", {t.id for t in g.of("task", status="withdrawn")} == {"T2", "T3"}),
               ("new expectation from the new payer", any("Karim Haddad" in t.props["action"] for t in g.of("task", status="queued"))),
               ("stale approval refused", not o.execute("A1", "k")["ok"]),
               ("deck sent back", g.nodes["D1"].status == "sent_back")]

@@ -61,7 +61,7 @@ with sync_playwright() as p:
     shot("2-meeting")
     heard = pg.locator("#heard").inner_text()
     check("1b", "meeting: Compliance raised, tasks withdrawn, card, deck sent back",
-          all(s in heard for s in ("Payment arrangement changed", "withdrew T1", "withdrew T2", "sent back D1")))
+          all(s in heard for s in ("Payment arrangement changed", "withdrew T2", "withdrew T3", "sent back D1")))
 
     # the Deal desk after: order of events, the replaced words, each department
     pg.goto(f"{BASE}/web/deal.html?deal=marina-1204")
@@ -126,6 +126,62 @@ with sync_playwright() as p:
     shot("6-nova", full=False)
     ans = pg.locator(".answer").inner_text()
     check("1m", "Nova: Karim pays, citing F7 and F3 since replaced", "(F7)" in ans and "(F3), since replaced" in ans)
+
+    # ---------- 3. Compliance, on a fresh demo office, as Priya ----------
+    api.post(f"{BASE}/api/demo/reset")
+
+    def meeting(*lines):
+        pg.goto(f"{BASE}/web/meeting.html")
+        pg.select_option("#deal", "marina-1204")
+        pg.click("#start")
+        pg.click("#consent")
+        for t in lines:
+            n = pg.locator("#heard .ev").count()
+            pg.fill("#text", t)
+            pg.click("#say")
+            pg.wait_for_function(f"document.querySelectorAll('#heard .ev').length > {n}", timeout=6000)
+
+    def desk(who="priya"):
+        pg.goto(f"{BASE}/web/deal.html?deal=marina-1204")
+        pg.wait_for_selector("#dept-comp .card")
+        acting(who)
+        return pg.locator("#dept-comp")
+
+    comp = desk()
+    shot("8-compliance")
+    t = comp.inner_text()
+    check("3a", "every party up for screening: Karim (buyer) and Tariq (brother)", "Screen Karim Haddad, the buyer" in t and "Screen Tariq Haddad, Karim Haddad's brother" in t)
+    check("3b", "source of funds: numbers with quotes, 4 proof missing (Tariq still pays)", "4.8" in t and "4 proof missing" in t and "Bank statement of Tariq Haddad's account" in t)
+    acting("ahmed")
+    check("3c", "Ahmed cannot record a screening", "Only Priya records a screening result" in comp.inner_text())
+    acting("priya")
+    k = comp.locator(".card", has_text="Screen Karim Haddad")
+    clear()
+    k.get_by_role("button", name="Possible match").click()
+    check("3d", "a possible match needs the entry", "Say which list" in toast())
+    k.locator("input").fill("UN consolidated and UAE local lists: no entry")
+    k.get_by_role("button", name="Clear").click()
+    pg.wait_for_timeout(700)
+    check("3e", "Karim recorded clear by Priya, with her note", "Clear: UN consolidated and UAE local lists: no entry" in comp.inner_text())
+    comp.locator(".card", has_text="Source of funds").get_by_role("button", name="Received").first.click()
+    pg.wait_for_timeout(700)
+    t = comp.inner_text()
+    check("3f", "bank statement received: filed with Records, 3 missing", "3 proof missing" in t and "Received: DOC" in t)
+
+    meeting("Actually, I'll bring the deposit in cash, two hundred sixty thousand.")
+    comp = desk()
+    shot("9-cash-report")
+    t = comp.inner_text()
+    check("3g", "cash AED 260,000 → report draft and a filing task for Priya", "cash report v1" in t and "File the cash report" in t and "I filed it" in t)
+    clear()
+    comp.get_by_role("button", name="I filed it").click()
+    check("3h", "filing needs the goAML reference", "goAML reference" in toast())
+    meeting("Actually, the deposit of two hundred sixty thousand goes by bank transfer.")
+    comp = desk()
+    shot("10-cash-sent-back")
+    t = comp.inner_text()
+    check("3i", "a correction sends the report back and withdraws the filing task",
+          "SENT BACK" in t.upper() and "still says what" in t and comp.locator(".card", has_text="File the cash report").get_by_text("withdrawn").count() == 1)
 
     # widths: no sideways scroll at 1280 or on a phone
     for w, hgt in ((1280, 900), (390, 844)):

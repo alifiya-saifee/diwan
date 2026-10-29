@@ -34,18 +34,18 @@ def test_graph_links_who_said_what_and_who_pays(office):
     g = office.graph()
     assert [n.id for n in g.out("person:karim-haddad", "said")] == ["F1", "F2", "F3", "F4", "F5"]
     assert g.out("person:karim-haddad", "brother")[0].label == "Tariq Haddad"
-    assert {n.id for n in g.impact("F3")} == {"T1", "T2", "A1", "D1/3", "D1"}
+    assert {n.id for n in g.impact("F3")} == {"T3", "A1", "D1/3", "D1"} and [n.id for n in g.impact("F2")] == ["T2"]
     assert g.impact("F1") == [g.nodes["D1/1"], g.nodes["D1"]]
 
 
 def test_correction_tells_compliance_first_and_touches_only_what_rested_on_it(office):
     n = office.log.list()[-1]["id"]
     demo.correction(office)
-    assert types(office, n) == ["fact.created", "check.raised", "fact.superseded", "fact.superseded", "task.withdrawn",
+    assert types(office, n) == ["fact.created", "check.raised", "fact.superseded", "task.withdrawn", "fact.superseded",
                                 "task.withdrawn", "decision.needed", "review.returned", "task.created"]
     g = office.graph()
-    assert g.nodes["T1"].status == g.nodes["T2"].status == "withdrawn"
-    assert g.nodes["T3"].props["action"] == "Expect AED 260,000 by bank transfer from Karim Haddad"
+    assert g.nodes["T2"].status == g.nodes["T3"].status == "withdrawn" and g.nodes["T1"].status == "queued"
+    assert g.nodes["T5"].props["action"] == "Expect AED 260,000 by bank transfer from Karim Haddad"
     assert g.nodes["D1"].status == "sent_back" and not g.stale("D1/1")
     assert g.history("F7") == [g.nodes["F7"], g.nodes["F2"], g.nodes["F3"]]
 
@@ -79,14 +79,14 @@ def test_answer_cites_the_exact_words_and_the_history(corrected):
     r = nova.ask(corrected, "Who is paying the deposit for Karim?")
     assert r["kind"] == "answer" and r["by"] == "rules"
     assert '"Actually, forget my brother. I\'ll pay it all myself." (F7)' in r["text"] and "(F3), since replaced" in r["text"]
-    assert {"F7", "F3", "T3"} <= set(r["cites"])
+    assert {"F7", "F3", "T5"} <= set(r["cites"])
     pack = [e for e in corrected.log.list() if e["type"] == "agent.pack"][-1]["content"]["pack"]
     assert [e["source"] for e in pack["evidence"]] == ["F7", "F2", "F3", "F4"] and not pack["rejected_quotes"]
 
 
 def test_what_changed_follows_the_graph_to_everything_it_touched(corrected):
     r = nova.ask(corrected, "What changed on the Marina deal?")
-    assert {"F3", "F7", "T1", "T2", "A1", "D1/3"} <= set(r["cites"])
+    assert {"F3", "F7", "T2", "T3", "A1", "D1/3"} <= set(r["cites"])
 
 
 def test_business_words_find_facts_that_never_use_them(corrected):
@@ -165,7 +165,7 @@ def test_unbuilt_specialist_keeps_the_task_and_says_so(corrected):
 def test_each_person_hears_what_needs_them_with_records(corrected):
     morning = datetime(2026, 10, 28, 9, 0, tzinfo=nova.DUBAI)
     priya, ahmed, omar = (nova.brief(corrected, p, now=morning) for p in ("priya", "ahmed", "omar"))
-    assert priya["text"].startswith("Good morning, Priya. 1 thing needs you. Payment arrangement changed")
+    assert priya["text"].startswith("Good morning, Priya. 3 things need you. Payment arrangement changed")
     assert {"A1", "F3", "F7"} <= set(ahmed["lines"][0]["refs"])
     assert omar["text"].startswith("Good morning, Omar. Nothing needs you.") and "took back" in omar["text"]
 

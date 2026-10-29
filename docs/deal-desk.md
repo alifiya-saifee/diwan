@@ -36,8 +36,8 @@ card waiting for me; mark a payment received; open the Form F plan and see which
    cash report), `agents/finance.py` (payment rules, received, overdue), `agents/operations.py` (Form F, transfer),
    `agents/review.py` (send-backs, draft review). `office.py` keeps the engine and calls them. Same event order, all tests
    green. *Code only* (nothing changes on screen).
-3. **Compliance.** Every party is screened: the customer when the deal opens, any named party or third-party payer when
-   said. A screening card shows name, role, the quote that named them, and what is missing (date of birth,
+3. **Compliance.** Every party is screened: the customer once money is first discussed (not on every enquiry, since every
+   WhatsApp lead opens a deal), any named party or third-party payer when said; a payer in dispute waits for the broker. A screening card shows name, role, the quote that named them, and what is missing (date of birth,
    nationality); Priya records "clear" or "possible match" with a note; the agent never clears anyone. The
    source-of-funds view puts the deal size, deposit and stated income side by side with their quotes and lists the proof
    still missing (filed documents count as received). A cash payment promise of AED 55,000 or more drafts a cash report

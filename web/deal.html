@@ -144,11 +144,46 @@ function approvalEl(a) {
   return el;
 }
 
+const OPEN = ["open", "queued", "working", "waiting"];
+async function send(path, body, ok) {
+  try { await post(path, { by: me(), ...body }); toast(ok); await open(deal); } catch (e) { toast(e.message); }
+}
+
 function taskEl(t) {
-  return h("div", { class: `card ${["withdrawn", "done"].includes(t.status) ? "done" : ""}` },
-    h("div", { class: "top" }, h("strong", {}, t.action), h("span", {}, h("span", { class: "chip" }, t.id), chip(t.status))),
-    h("div", { class: "small muted" }, t.agent_name || t.agent, t.needs_person ? ` · waits for ${NAMES[t.needs_person] || t.needs_person}` : ""),
-    rests(t.rests_on), t.reason && t.status !== "queued" ? h("div", { class: "small", style: "margin-top:6px" }, t.reason) : null);
+  const live = OPEN.includes(t.status), officer = me() === "priya";
+  const el = h("div", { class: `card ${live ? "" : "done"} ${live && t.needs_person === me() ? "mine" : ""}` },
+    h("div", { class: "top" }, h("strong", {}, t.action), h("span", {}, h("span", { class: "chip" }, t.id),
+      chip(t.result === "possible match" ? "possible match" : t.status))),
+    h("div", { class: "small muted" }, t.agent_name || t.agent, t.needs_person && live ? ` · waits for ${NAMES[t.needs_person] || t.needs_person}` : ""),
+    rests(t.rests_on), t.reason && !live ? h("div", { class: "small", style: "margin-top:6px" }, t.reason) : null);
+  if (live && t.agent === "screen") {
+    el.append(h("div", { class: "small", style: "margin-top:6px" },
+      "No sanctions list is connected and the date of birth and nationality are not on file: check the UN, UAE, US, UK and EU lists and record what you found."));
+    const note = h("input", { placeholder: "Lists checked, or the entry it may match", "aria-label": "Screening note" });
+    el.append(officer ? h("div", { class: "acts" }, note,
+      h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/screen`, { result: "clear", note: note.value }, `${t.person} recorded as clear`) }, "Clear"),
+      h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/screen`, { result: "possible match", note: note.value }, `${t.person}: possible match recorded`) }, "Possible match"))
+      : h("div", { class: "acts small muted" }, "Only Priya records a screening result."));
+  }
+  if (live && t.agent === "report") {
+    const ref = h("input", { placeholder: "goAML reference", "aria-label": "goAML reference" });
+    el.append(officer ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/filed`, { reference: ref.value }, "Filing recorded") }, "I filed it"))
+      : h("div", { class: "acts small muted" }, "Only Priya files reports with the FIU."));
+  }
+  return el;
+}
+
+function fundsEl(f) {
+  if (!f.numbers.length && !f.proof.length) return null;
+  return h("div", { class: "card" }, h("div", { class: "top" }, h("strong", {}, "Source of funds"),
+      f.proof.length ? h("span", { class: `chip ${f.missing ? "warn" : "ok"}` }, f.missing ? `${f.missing} proof missing` : "all proof in") : null),
+    h("table", { class: "small", style: "margin-top:6px" }, ...f.numbers.map((n) => h("tr", {}, h("td", { style: "width:34%" }, n.what), h("td", {}, h("strong", {}, n.value),
+      n.quote ? h("div", { class: "muted" }, `${n.fact} "${n.quote}"`) : null)))),
+    f.proof.length ? h("div", { style: "margin-top:10px" }, h("div", { class: "small muted" }, "Proof"), ...f.proof.map((p) => h("div", { class: "acts", style: "margin-top:4px" },
+      h("span", { style: "flex:1 1 300px" }, p.have ? "✓ " : "", p.text, p.facts.length ? h("span", { class: "small muted" }, ` (${p.facts.join(", ")})`) : null,
+        p.have ? h("div", { class: "small muted" }, `Received: ${p.have} ${p.have_title}`) : null),
+      !p.have && me() === "priya" ? h("button", { onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/proof`, { kind: p.kind }, `${p.kind} filed with Records`) }, "Received") : null))) : null,
+    h("div", { class: "small muted", style: "margin-top:8px" }, "Numbers and words only. Whether anything is suspicious is Priya's call."));
 }
 
 function draftEl(d) {
@@ -171,9 +206,9 @@ function render() {
     : [h("div", { class: "empty" }, "Nothing recorded from the customer yet.")]));
   const sections = DEPTS.map(([k, label]) => {
     const cards = v.cards.filter(by(k)), tasks = v.tasks.filter(by(k));
-    const appr = k === "fin" ? v.approvals : [], drafts = k === "review" ? v.drafts : [];
+    const appr = k === "fin" ? v.approvals : [], drafts = v.drafts.filter(by(k));
     const open = cards.filter((c) => c.status === "open").length;
-    const kids = [...cards.map(cardEl), ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)];
+    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
     return h("section", { class: "dept", id: `dept-${k}` }, h("h2", {}, label, open ? h("span", { class: "chip warn" }, `${open} open`) : null),
       ...(kids.length ? kids : [h("div", { class: "empty" }, `Nothing for ${label} on this deal.`)]));
   });

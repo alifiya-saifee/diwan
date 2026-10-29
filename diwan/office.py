@@ -88,6 +88,8 @@ class Office:
             self._replace(deal, olds, fid, ev["id"])
         else:
             self._contradictions(deal, fid, ev["id"])
+        compliance.screen_parties(self, deal, ev["id"])
+        compliance.cash_rules(self, deal, ev["id"])
         finance.payment_rules(self, deal, ev["id"])
         return fid
 
@@ -125,12 +127,12 @@ class Office:
                                          "question": f'These can\'t both be true: "{old.props["quote"]}" ({old.id}) and "{new.props["quote"]}" ({fid}). Which stands?'})
 
     def add_task(self, deal: str | None, agent: str, action: str, *, rests_on: list[str] | None = None, needs_person: str | None = None,
-                 by: str | None = None, caused_by: int | None = None, request: str | None = None) -> str:
+                 by: str | None = None, caused_by: int | None = None, request: str | None = None, props: dict | None = None) -> str:
         c = get(agent)
         tid = self._next(self.graph(), "task", "T")
         self.log.append("task.created", actor=by or agent, agent=agent, deal=deal, caused_by=caused_by, request=request,
                         content={"id": tid, "agent": agent, "agent_name": c.name, "team": c.parent, "action": action,
-                                 "rests_on": rests_on or [], "needs_person": needs_person, "by": by or agent})
+                                 "rests_on": rests_on or [], "needs_person": needs_person, "by": by or agent, **(props or {})})
         return tid
 
     def finish_task(self, tid: str, reason: str, *, caused_by: int | None = None) -> None:

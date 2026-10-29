@@ -79,7 +79,7 @@ def test_rounds_visit_every_lead_and_the_briefing_uses_their_reports(office):
     assert all(e["caused_by"] == evs[0]["id"] for e in evs[1:])
     b = talk(office, "play the briefing")
     assert b["kind"] == "brief" and b["text"].startswith("Good morning, Layla.")
-    assert "Compliance: Priya to review: payment arrangement changed." in b["text"]
+    assert "Compliance: Priya to review: payment arrangement changed" in b["text"]
     assert [d["lead"] for d in nova.brief(office, "priya", now=NOW)["departments"]] == ["comp"]
 
 

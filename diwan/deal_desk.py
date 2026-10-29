@@ -4,10 +4,12 @@ answer a card, carry out an approval.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from diwan.agents import review
+from diwan.agents import compliance, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
 from diwan.people import name, pid
@@ -15,6 +17,7 @@ from diwan.people import name, pid
 router = APIRouter()
 PAGE = 50
 DEPTS = {"comp": "Compliance", "fin": "Finance", "ops": "Paperwork", "review": "Review"}
+DRAFT_DEPT = {"cash report": "comp", "Form F": "ops"}  # any other draft (the deck) is Review's
 
 
 def _office():
@@ -61,12 +64,13 @@ def deal_view(g: Graph, deal: str) -> dict:
         raise KeyError(deal)
     tasks = [{"id": t.id, "agent": t.props["agent"], "agent_name": t.props.get("agent_name"), "dept": dept(t.props["agent"]),
               "action": t.props["action"], "status": t.status, "reason": t.props.get("reason"), "at": t.at,
-              "needs_person": t.props.get("needs_person"), "rests_on": _facts_on(g, t.props.get("rests_on", []))}
+              "needs_person": t.props.get("needs_person"), "rests_on": _facts_on(g, t.props.get("rests_on", [])),
+              "person": t.props.get("person"), "result": t.props.get("result"), "draft": t.props.get("draft")}
              for t in g.of("task", deal)]
     approvals = [{"id": a.id, "approver": a.props["approver"], "approver_name": name(a.props["approver"]), "action": a.props["action"],
                   "status": a.status, "because": a.props.get("because"), "stale": [f.id for f in g.stale(a.id)],
                   "rests_on": _facts_on(g, a.props.get("rests_on", []))} for a in g.of("approval", deal)]
-    drafts = [{"id": x.id, "kind": x.props["kind"], "version": x.props.get("version", 1), "status": x.status, "reason": x.props.get("reason"),
+    drafts = [{"id": x.id, "kind": x.props["kind"], "dept": DRAFT_DEPT.get(x.props["kind"], "review"), "version": x.props.get("version", 1), "status": x.status, "reason": x.props.get("reason"),
                "slides": [{"n": s.props["n"], "text": s.props["text"], "facts": s.props.get("facts", []), "stale": [f.id for f in g.stale(s.id)]}
                           for s in sorted(g.into(x.id, "part_of"), key=lambda s: s.props["n"])]}
               for x in g.of("draft", deal)]
@@ -74,7 +78,7 @@ def deal_view(g: Graph, deal: str) -> dict:
     cards.sort(key=lambda c: c["at"])
     return {"deal": deal, "property": d.props.get("property"), "customer": d.props.get("customer"), "broker": d.props.get("broker"),
             "broker_name": name(d.props.get("broker")), "stage": d.props.get("stage"),
-            "said": [_fact(g, f) for f in g.of("fact", deal)], "cards": cards, "tasks": tasks, "approvals": approvals, "drafts": drafts}
+            "said": [_fact(g, f) for f in g.of("fact", deal)], "cards": cards, "funds": compliance.source_of_funds(g, deal), "tasks": tasks, "approvals": approvals, "drafts": drafts}
 
 
 def waiting(g: Graph, deal: str) -> list[str]:
@@ -159,3 +163,61 @@ def execute(aid: str, body: Run):
     if pid(body.by) != a.props["approver"]:
         raise HTTPException(403, f"Only {name(a.props['approver'])} can carry out {aid}.")
     return o.execute(aid, aid)
+
+
+class Screen(BaseModel):
+    by: str
+    result: str
+    note: str = ""
+
+
+def _act(fn, *a):
+    try:
+        fn(*a)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except KeyError as e:
+        raise HTTPException(404, f"There is no {e.args[0]} to do that to.") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    return {"ok": True}
+
+
+@router.post("/api/desk/tasks/{tid}/screen")
+def screen(tid: str, body: Screen):
+    return _act(compliance.record_screening, _office(), tid, pid(body.by), body.result, body.note)
+
+
+class Filed(BaseModel):
+    by: str
+    reference: str = ""
+
+
+@router.post("/api/desk/tasks/{tid}/filed")
+def filed(tid: str, body: Filed):
+    return _act(compliance.record_filing, _office(), tid, pid(body.by), body.reference)
+
+
+class Proof(BaseModel):
+    by: str
+    kind: str
+    title: str = ""
+
+
+@router.post("/api/desk/deals/{deal}/proof")
+def proof(deal: str, body: Proof):
+    """Priya has the proof in hand: it is filed with Records against the deal, so it counts as received."""
+    o = _office()
+    g = o.graph()
+    if f"deal:{deal}" not in g.nodes:
+        raise HTTPException(404, f"There is no deal {deal!r}.")
+    if pid(body.by) != compliance.OFFICER:
+        raise HTTPException(403, "Only Priya marks compliance proof as received.")
+    need = next((p for p in compliance.source_of_funds(g, deal)["proof"] if p["kind"] == body.kind), None)
+    if not need:
+        raise HTTPException(400, f"{body.kind!r} is not asked for on this deal.")
+    if need["have"]:
+        raise HTTPException(409, f"Already received: {need['have']} {need['have_title']}.")
+    customer = g.nodes[f"deal:{deal}"].props["customer"]
+    return {"document": o.file_document(kind=body.kind, title=body.title.strip() or need["text"], date=date.today().isoformat(),
+                                        by=pid(body.by), deal=deal, party=customer)}

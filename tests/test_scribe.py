@@ -39,12 +39,13 @@ def test_meeting_becomes_facts_and_one_correction_replaces_everything_it_takes_b
         "Two hundred sixty thousand deposit, by bank transfer, next week.")
     g = office.graph()
     assert [f.props["kind"] for f in g.of("fact")] == ["deal_term", "party", "payer", "payment_promise"]
-    assert [t.props["action"] for t in g.of("task")] == ["Expect AED 260,000 by bank transfer from Tariq", "Screen Tariq, who will pay for Karim Haddad"]
+    assert [t.props["action"] for t in g.of("task")] == ["Screen Karim Haddad, the buyer", "Screen Tariq, Karim Haddad's brother",
+                                                  "Expect AED 260,000 by bank transfer from Tariq"]
     r = say(office, "Actually, forget my brother. I'll pay it all myself.")[0]
     g = office.graph()
     new = g.nodes[r["facts"][0]]
     assert new.props["quote"] == "I'll pay it all myself." and set(new.props["replaces"]) == {"F2", "F3"}
-    assert [t.status for t in g.of("task")] == ["withdrawn", "withdrawn", "queued"]
+    assert [t.status for t in g.of("task")] == ["queued", "withdrawn", "withdrawn", "queued"]
 
 
 def test_maybe_is_kept_but_changes_nothing(office):

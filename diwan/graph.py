@@ -212,6 +212,8 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
             n = g.nodes[c["id"]]
             n.status = t.split(".")[1]
             n.props["reason"] = c.get("reason")
+            if c.get("result"):
+                n.props["result"] = c["result"]
         elif t == "approval.given":
             n = g.add(c["id"], "approval", c["action"], e, deal=deal, status="given", props=dict(c))
             for f in c.get("rests_on", []):
