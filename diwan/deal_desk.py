@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from diwan import agency_forms, desk_kpis, desk_rules, desk_stages, roles, signing
+from diwan import agency_forms, desk_kpis, desk_rules, desk_stages, documents, roles, signing
 from diwan.agents import compliance, finance, operations, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
@@ -215,6 +215,9 @@ class Ledger:
                     late = t.props.get("due", "9") < self.today.isoformat()
                     items.append(base | {"id": t.id, "who": who, "kind": "After closing", "sev": "bad" if late else "info", "title": t.props["action"],
                                          "at": t.at, "act": "after", "due": t.props.get("due")})
+                elif who and t.props["agent"] == "ops" and t.props.get("step") in ("doc", "docs_call"):
+                    items.append(base | {"id": t.id, "who": who, "kind": "Documents", "sev": "warn" if t.props["step"] == "doc" else "bad",
+                                         "title": t.props["action"], "at": t.at, "act": "open" if t.props["step"] == "doc" else "docscall"})
                 elif who and t.props["agent"] == "ops" and t.props.get("step") == "discount":
                     items.append(base | {"id": t.id, "who": who, "kind": "Discount", "sev": "warn", "title": t.props["action"], "at": t.at, "act": "discount"})
                 elif who and t.props["agent"] == "ops" and t.props.get("step") in ("sides", "sign"):
@@ -350,7 +353,8 @@ def deal(deal: str, request: Request):
                                      "commission": finance.commission(g, deal), "closing": operations.closing(g, deal),
                                      "terms": desk_rules.terms(g, deal), "developers": [x["name"] for x in desk_rules.rules(g)["developers"]],
                                      "schedule": dict(zip(("kind", "payee", "document"), finance.SCHEDULE[p["id"]])) if p["id"] in finance.SCHEDULE else None,
-                                     "stages": desk_stages.view(g, deal), "agency": _agency_view(g, deal, _base(request))}
+                                     "stages": desk_stages.view(g, deal), "agency": _agency_view(g, deal, _base(request)),
+                                     "documents": _docs_view(g, deal, _base(request))}
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
 
@@ -812,3 +816,53 @@ async def sign(token: str, request: Request, full_name: str = Form(""), id_no: s
     return _call(signing.sign, _office(), token, full_name=full_name, id_no=id_no, consent=consent in ("1", "true", "on", "yes"), image=data,
                  ip=request.client.host if request.client else "", device=request.headers.get("user-agent", ""), media=meta.MEDIA,
                  today=date.today(), missing="link")
+
+
+
+# ---------- the documents a client sends ----------
+
+def _docs_view(g: Graph, deal: str, base: str) -> dict:
+    evs = _office().log.list(deal=deal)
+    checks = {(t.props.get("token"), t.props.get("kind")): t.id for t in g.of("task", deal) if t.props.get("step") == "doc" and t.status in OPEN}
+    reqs = [{"party": r["party"], "name": r["name"], "url": f"{base}/web/docs.html?t={r['token']}", "expires": r["expires"],
+             "reminders": len(r["reminders"]), "phone": bool(r.get("phone")),
+             "docs": [{"kind": k, "label": documents.KINDS[k], "status": "confirmed" if k in r["confirmed"] else "to check" if k in r["got"] else "needed",
+                       "fields": r["got"][k]["fields"] if k in r["got"] else None, "flags": r["got"][k]["flags"] if k in r["got"] else [],
+                       "file": f"/media/{r['got'][k]['file']}" if k in r["got"] else None, "check": checks.get((r["token"], k)),
+                       "turned": r["turned"][k]["reason"] if k in r["turned"] and k not in r["got"] else None} for k in r["kinds"]]}
+            for r in documents.requests(evs, deal)]
+    return {"requests": reqs, "profile": documents.profile(evs, deal)}
+
+
+@router.get("/api/docs/{token}")
+def docs_page(token: str):
+    return _call(documents.page, _office(), token, missing="link", today=date.today())
+
+
+@router.post("/api/docs/{token}")
+async def docs_upload(token: str, kind: str = Form(...), fields: str = Form("{}"), file: UploadFile = File(...)):
+    import json
+    from diwan.providers import meta
+    data = await file.read()
+    try:
+        f = json.loads(fields or "{}")
+    except ValueError:
+        f = {}
+    return _call(documents.upload, _office(), token, kind, data, f if isinstance(f, dict) else {}, media=meta.MEDIA, today=date.today(), missing="link")
+
+
+class DocCheck(BaseModel):
+    by: str
+    ok: bool
+    note: str = ""
+
+
+@router.post("/api/desk/tasks/{tid}/doc")
+def doc_checked(tid: str, body: DocCheck):
+    return {"document": _call(documents.confirm, _office(), tid, pid(body.by) or body.by, body.ok, body.note, today=date.today())}
+
+
+@router.post("/api/desk/tasks/{tid}/docscall")
+def docs_called(tid: str, body: Tick):
+    _call(documents.call_done, _office(), tid, pid(body.by) or body.by, body.note)
+    return {"ok": True}

@@ -416,6 +416,7 @@ function qrow(x) {
   else if (x.act === "invoiced") { const i = inp("Invoice number"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/invoiced`, { number: i.value }, "Invoice sent; collecting it next") }, "I sent it")]; }
   else if (x.act === "commission") { const i = inp("Bank reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/commission`, { reference: i.value }, "Commission received; receipt filed") }, "Received")]; }
   else if (x.act === "tick") acts = [h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/tick`, {}, "Ticked") }, "Done")];
+  else if (x.act === "docscall") { const i = inp("What the client said"); acts = [openBtn(), i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/docscall`, { note: i.value }, "Noted") }, "Done")]; }
   else if (x.act === "discount") { const i = inp("Why (needed to refuse)"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/discount`, { approve: true, note: i.value }, "Discount approved; the deal converts") }, "Approve"),
     h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/discount`, { approve: false, note: i.value }, "Refused; the broker is told") }, "Refuse")]; }
   else if (x.act === "sign") {
@@ -535,7 +536,7 @@ async function send(path, body, ok) {
 }
 
 function taskEl(t) {
-  if (t.agent === "ops" && ["sides", "sign"].includes(t.step)) return null;  // the agency forms card shows these
+  if (t.agent === "ops" && ["sides", "sign", "doc", "docs_call", "discount"].includes(t.step)) return null;  // their own cards show these
   const live = OPEN.includes(t.status), officer = holds("compliance");
   const el = h("div", { class: `card ${live ? "" : "done"} ${live && t.needs_person === me() ? "mine" : ""}` },
     h("div", { class: "top" }, h("strong", {}, t.action), h("span", {}, h("span", { class: "chip" }, t.id),
@@ -744,6 +745,35 @@ async function upload(tid, file) {
   return j;
 }
 
+// the documents each party on our side sends through their link; the compliance officer checks each against what they typed
+function documentsEl(v) {
+  const D = v.documents;
+  if (!D.requests.length) return null;
+  const officer = holds("compliance");
+  const ST = { confirmed: "ok", "to check": "warn", needed: "" };
+  return h("div", { class: "card", id: "documents" }, h("div", { class: "top" }, h("strong", {}, "Documents from the client"),
+      h("span", { class: "small muted" }, "checked at upload; confirmed by " + rname("compliance"))),
+    ...D.requests.map((r) => h("div", { style: "margin-top:10px" },
+      h("div", { class: "acts", style: "margin-top:0" }, h("span", { style: "flex:1 1 220px" }, h("strong", {}, r.name), ` · ${r.party}`,
+        h("span", { class: "small muted" }, ` · ${r.reminders} reminder${r.reminders === 1 ? "" : "s"}${r.phone ? "" : " · no WhatsApp on file"}`)),
+        h("button", { "data-url": r.url, onclick: async () => { try { await navigator.clipboard.writeText(r.url); toast(`Link for ${r.name} copied`); } catch { prompt("Copy this link", r.url); } } }, "Copy link")),
+      ...r.docs.map((d) => {
+        const note = h("input", { placeholder: "What the client should fix (they see it)", "aria-label": `Fix ${d.label}`, style: "flex:1 1 220px" });
+        return h("div", { class: "rstep", style: "grid-template-columns:minmax(0,1fr) auto;margin-top:6px" },
+          h("div", {}, h("div", {}, d.label, " ", h("span", { class: `chip ${ST[d.status]}` }, d.status)),
+            d.fields ? h("div", { class: "small muted" }, Object.entries(d.fields).map(([k, x]) => `${k}: ${x}`).join(" · ")) : null,
+            d.flags.length ? h("div", { class: "small", style: "color:var(--warn)" }, `Look at: ${d.flags.join("; ")}`) : null,
+            d.turned ? h("div", { class: "small", style: "color:var(--bad)" }, `Turned away: ${d.turned}`) : null,
+            d.check && officer ? h("div", { class: "acts" }, note,
+              h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${d.check}/doc`, { ok: true }, `${d.label} confirmed; saved to the client's file`) }, "It matches"),
+              h("button", { onclick: () => send(`/api/desk/tasks/${d.check}/doc`, { ok: false, note: note.value }, `${d.label} sent back to the client`) }, "Send back")) : null),
+          d.file ? h("a", { class: "btn", href: d.file, target: "_blank" }, "View") : h("span", {}));
+      }))),
+    Object.keys(D.profile).some((p) => Object.keys(D.profile[p].details).length) ? h("div", { style: "margin-top:12px" }, h("div", { class: "small muted" }, "The client's file (confirmed)"),
+      ...Object.entries(D.profile).flatMap(([p, x]) => Object.entries(x.details).map(([doc, f]) => h("div", { class: "small" },
+        `${x.name} · ${doc}: ${Object.entries(f).filter(([k]) => !["confirmed_by", "file"].includes(k)).map(([k, val]) => `${k} ${val}`).join(", ")} · confirmed by ${f.confirmed_by}`)))) : null);
+}
+
 // the agency forms: who is on the other side, then each form as a PDF to share and its signed copy back
 function agencyEl(v) {
   const a = v.agency, may = me() === v.broker || holds("transactions") || me() === OWNER;
@@ -869,7 +899,7 @@ function render() {
     const cards = v.cards.filter(by(k)), tasks = v.tasks.filter(by(k));
     const appr = k === "fin" ? v.approvals : [], drafts = v.drafts.filter(by(k));
     const open = cards.filter((c) => c.status === "open").length;
-    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "ops" ? closingEl(v) : null, k === "ops" ? pathEl(v) : null, k === "ops" ? formfEl(v) : null, k === "ops" ? agencyEl(v) : null, k === "ops" ? termsEl(v) : null, k === "fin" ? scheduleEl(v) : null, k === "fin" ? commissionEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
+    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "comp" ? documentsEl(v) : null, k === "ops" ? closingEl(v) : null, k === "ops" ? pathEl(v) : null, k === "ops" ? formfEl(v) : null, k === "ops" ? agencyEl(v) : null, k === "ops" ? termsEl(v) : null, k === "fin" ? scheduleEl(v) : null, k === "fin" ? commissionEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
     return h("section", { class: "dept", id: `dept-${k}` }, h("h2", {}, label, open ? h("span", { class: "chip warn" }, `${open} open`) : null),
       ...(kids.length ? kids : [h("div", { class: "empty" }, `Nothing for ${label} on this deal.`)]));
   });

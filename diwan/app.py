@@ -60,6 +60,8 @@ async def morning_loop():
             nova.rounds(S.office, now)
             S.last_brief = now.date().isoformat()
         lobby.chase(S.office, now)
+        from diwan import documents
+        documents.sweep(S.office, now)  # the Deal desk: remind clients of documents still missing
         from diwan.agents import rhythm, studio
         if (ref := rhythm.due(S.office)):  # the studio's automatic run, when the Marketing manager turned it on
             asyncio.create_task(studio.run(S.office, ref))

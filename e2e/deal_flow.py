@@ -879,6 +879,65 @@ with sync_playwright() as p:
     check("17d", "both signed: the form is signed and filed, with the signatures and the signing record on the PDF",
           "signed" in fb.inner_text() and pdf.startswith(b"%PDF") and pdf.count(b"/DCTDecode") == 2 and b"Signing record" in pdf and b"784-1990-1234567-1" in pdf)
 
+    # ---------- 18. the documents a client sends, from a phone (spec item 14) ----------
+    import random
+    from PIL import ImageFilter
+
+    def card(seed=1, blur=0):
+        rnd = random.Random(seed)
+        c = Image.new("RGB", (1000, 630), (232, 236, 240))
+        dr = ImageDraw.Draw(c)
+        for i in range(14):
+            dr.rectangle([40, 40 + i * 40, 40 + rnd.randint(200, 900), 54 + i * 40], fill=(30, 30, 60))
+        dr.rectangle([740, 60, 940, 300], outline=(10, 10, 10), width=4)
+        c = c.filter(ImageFilter.GaussianBlur(blur)) if blur else c
+        out = io.BytesIO()
+        c.save(out, "JPEG", quality=90)
+        return out.getvalue()
+
+    pg.goto(f"{BASE}/web/deal.html?deal=marina-1204")
+    pg.wait_for_selector("#documents")
+    as_and_wait("omar")
+    docs = pg.locator("#documents")
+    durl = docs.locator("button[data-url]").first.get_attribute("data-url")
+    check("18a", "conversion asked Karim and the seller for their documents, each with a link", "Karim Haddad" in docs.inner_text() and "the seller" in docs.inner_text()
+          and docs.locator("button[data-url]").count() == 2 and "Emirates ID, front" in docs.inner_text())
+    phone = b.new_page(viewport={"width": 390, "height": 844})
+    phone.on("pageerror", lambda e: errors.append(str(e)))
+    phone.goto(durl)
+    phone.wait_for_selector("section[data-kind=eid_front]")
+    sec = phone.locator("section[data-kind=eid_front]")
+    sec.locator("[data-f=number]").fill("784-1990-1234567-6")
+    sec.locator("[data-f=name]").fill("Karim Haddad")
+    sec.locator("[data-f=expiry]").fill("2029-05-01")
+    sec.locator("input[type=file]").set_input_files({"name": "id.jpg", "mimeType": "image/jpeg", "buffer": card(blur=6)})
+    sec.get_by_role("button", name="Send").click()
+    phone.wait_for_timeout(900)
+    blurred = sec.locator(".err").inner_text()
+    phone.screenshot(path=str(OUT / "42-docs-blurry.png"), full_page=True)
+    sec.locator("input[type=file]").set_input_files({"name": "id.jpg", "mimeType": "image/jpeg", "buffer": card()})
+    sec.get_by_role("button", name="Send").click()
+    phone.wait_for_timeout(1200)
+    got = phone.locator("section[data-kind=eid_front]").inner_text()
+    phone.screenshot(path=str(OUT / "43-docs-received.png"), full_page=True)
+    check("18b", "a blurry photo is turned away with what to do; a clear one is received", "blurry" in blurred and "Received" in got
+          and "1 of 4 received" in phone.locator("main").inner_text() and phone.evaluate("document.documentElement.scrollWidth") <= 390, blurred)
+    phone.close()
+    pg.goto(f"{BASE}/web/deal.html?deal=marina-1204")
+    pg.wait_for_selector("#documents")
+    as_and_wait("priya")
+    docs = pg.locator("#documents")
+    check("18c", "Priya sees what Karim typed beside the photo, to check", "number: 784-1990-1234567-6" in docs.inner_text() and "to check" in docs.inner_text())
+    clear()
+    docs.get_by_role("button", name="It matches").click()
+    msg = toast()
+    pg.wait_for_timeout(900)
+    docs = pg.locator("#documents")
+    shot("44-docs-confirmed")
+    filed = [e for e in api.get(f"{BASE}/api/events?deal=marina-1204").json() if e["type"] == "document.filed" and e["content"]["kind"] == "Emirates ID, front"]
+    check("18d", "confirmed: in the client's file and archived with Records", "saved to the client's file" in msg and "The client's file (confirmed)" in docs.inner_text()
+          and "confirmed by Priya" in docs.inner_text() and len(filed) == 1, msg)
+
     # a view that can't load says so instead of going blank
     pg.route("**/api/desk/overview", lambda r: r.fulfill(status=502, body="{}"))
     pg.goto(f"{BASE}/web/deal.html#overview")

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Send your documents</title>
+<style>
+  /* the page a client opens from their link: each document they're asked for, sent one at a time and checked at once */
+  :root { --bg: #f6f5f1; --panel: #fff; --ink: #1d2228; --muted: #5d6670; --line: #dcd9d0; --accent: #9a6b12; --ok: #1f7a5a; --bad: #b3261e; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #15181c; --panel: #1d2127; --ink: #e9e6df; --muted: #9aa3ad; --line: #30363e; --accent: #e0b45c; --ok: #5fcf9f; --bad: #f28b82; color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px 60px; display: grid; gap: 14px; }
+  .who { font-size: 13px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+  h1 { font: 600 24px/1.25 Georgia, serif; margin: 0; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; }
+  .top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .top b { font-size: 17px; }
+  .st { font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .st.ok { color: var(--ok); } .st.bad { color: var(--bad); } .st.need { color: var(--muted); }
+  label { display: grid; gap: 4px; font-size: 14px; }
+  input[type=text], input[type=date] { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); }
+  button { font: 600 16px system-ui, sans-serif; padding: 12px; border-radius: 12px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .6; }
+  .msg { padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+  .msg.bad { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
+  .msg.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+  .small { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main id="main"><p class="small">Loading…</p></main>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const token = new URLSearchParams(location.search).get("t") || "";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function load() {
+  const r = await fetch(`/api/docs/${encodeURIComponent(token)}`);
+  if (!r.ok) { $("#main").innerHTML = `<div class="msg bad">This link isn't valid. Ask your broker for a new one.</div>`; return; }
+  const p = await r.json();
+  const head = `<div><div class="who">${esc(p.agency)} · for ${esc(p.name)}</div><h1>Your documents</h1></div>`;
+  if (p.expired) { $("#main").innerHTML = head + `<div class="msg bad">This link has expired. Ask your broker for a new one.</div>`; return; }
+  const got = p.docs.filter((d) => d.status === "received").length;
+  $("#main").innerHTML = head + (p.done ? `<div class="msg ok">Everything is in. Thank you: your broker will be in touch.</div>` :
+    `<p class="small">${got} of ${p.docs.length} received. Take each photo flat, in good light, showing the whole document. Your link works until ${esc(p.expires)}.</p>`) +
+    p.docs.map((d) => `<section data-kind="${d.kind}" aria-label="${esc(d.label)}"><div class="top"><b>${esc(d.label)}</b>
+      <span class="st ${d.status === "received" ? "ok" : d.status === "again" ? "bad" : "need"}">${d.status === "received" ? "✓ Received" : d.status === "again" ? "Send again" : "Needed"}</span></div>
+      ${d.status === "received" ? "" : `${d.reason ? `<div class="msg bad">${esc(d.reason)}</div>` : ""}
+      ${d.fields.map((f) => `<label>${esc(f.label)}<input type="${f.key === "expiry" ? "date" : "text"}" data-f="${f.key}" autocomplete="off"></label>`).join("")}
+      <label>Photo or PDF<input type="file" accept="image/jpeg,image/png,application/pdf"></label>
+      <div class="msg bad err" hidden></div><button>Send</button>`}</section>`).join("");
+  document.querySelectorAll("section[data-kind] button").forEach((b) => b.onclick = async () => {
+    const sec = b.closest("section"), file = $("input[type=file]", sec).files[0], err = $(".err", sec);
+    if (!file) { err.hidden = false; err.textContent = "Choose the photo or PDF first."; return; }
+    const fields = Object.fromEntries([...sec.querySelectorAll("[data-f]")].map((i) => [i.dataset.f, i.value]));
+    const fd = new FormData(); fd.append("kind", sec.dataset.kind); fd.append("fields", JSON.stringify(fields)); fd.append("file", file);
+    b.disabled = true;
+    const res = await fetch(`/api/docs/${encodeURIComponent(token)}`, { method: "POST", body: fd });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { err.hidden = false; err.textContent = j.detail || "That didn't work; try again."; b.disabled = false; return; }
+    load();
+  });
+}
+load();
+</script>
+</body>
+</html>

@@ -626,3 +626,128 @@ def test_a_replaced_or_expired_link_cannot_be_signed(office, monkeypatch, tmp_pa
     assert c.get(f"/api/sign/{tok[0]}").json()["status"] == "replaced"
     with pytest.raises(ValueError, match="replaced"):
         signing.sign(office, tok[0], full_name="K", id_no="1", consent=True, image=_png(), ip="", device="", media=tmp_path, today=date.today())
+
+
+# ---------- the documents a client sends (spec item 14) ----------
+
+def _card(w=1000, h=630, blur=0, dark=False, seed=1):
+    import io
+    import random
+    from PIL import Image, ImageDraw, ImageFilter
+    rnd = random.Random(seed)
+    im = Image.new("RGB", (w, h), (20, 20, 20) if dark else (232, 236, 240))
+    d = ImageDraw.Draw(im)
+    for i in range(14):
+        y = 40 + i * 40
+        d.rectangle([40, y, 40 + rnd.randint(200, 900), y + 14], fill=(30, 30, 60) if not dark else (35, 35, 35))
+    d.rectangle([w - 260, 60, w - 60, 300], outline=(10, 10, 10), width=4)
+    if blur:
+        im = im.filter(ImageFilter.GaussianBlur(blur))
+    b = io.BytesIO()
+    im.save(b, "JPEG", quality=90)
+    return b.getvalue()
+
+
+def _eid(body="78419901234567"):
+    from diwan.documents import _luhn
+    d = next(str(c) for c in range(10) if _luhn(body + str(c)))
+    return f"{body[:3]}-{body[3:7]}-{body[7:14]}-{d}"
+
+
+def _docs(office, c):
+    _convert(office, c)
+    c.post("/api/desk/deals/marina-1204/sides", json={"by": "omar", "sides": "both"})
+    from diwan import documents
+    return {r["party"]: r for r in documents.requests(office.log.list(), "marina-1204")}
+
+
+def test_conversion_asks_each_party_on_our_side_for_their_documents(office, monkeypatch):
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    reqs = _docs(office, c)
+    assert set(reqs) == {"buyer", "seller"} and reqs["buyer"]["kinds"] == ["eid_front", "eid_back", "passport", "visa"] and "title_deed" in reqs["seller"]["kinds"]
+    p = c.get(f"/api/docs/{reqs['buyer']['token']}").json()
+    assert p["name"] == "Karim Haddad" and [d["status"] for d in p["docs"]] == ["needed"] * 4 and not p["done"]
+
+
+def test_a_bad_upload_is_turned_away_with_the_reason_and_never_kept(office, monkeypatch, tmp_path):
+    from diwan.providers import meta
+    monkeypatch.setattr(appmod.S, "office", office)
+    monkeypatch.setattr(meta, "MEDIA", tmp_path)
+    c = TestClient(appmod.app)
+    tok = _docs(office, c)["buyer"]["token"]
+    good = {"number": _eid(), "name": "Karim Haddad", "expiry": "2029-05-01"}
+    up = lambda data, fields=good, kind="eid_front": c.post(f"/api/docs/{tok}", data={"kind": kind, "fields": __import__("json").dumps(fields)},  # noqa: E731
+                                                          files={"file": ("id.jpg", data)})
+    for data, fields, why in [(b"hello", good, "photo (JPEG or PNG) or a PDF"), (_card(300, 200), good, "too small"), (_card(blur=8), good, "blurry"),
+                              (_card(dark=True), good, "too dark"), (_card(), good | {"number": "123"}, "starts with 784"),
+                              (_card(), good | {"expiry": "2020-01-01"}, "expired")]:
+        r = up(data, fields)
+        assert r.status_code == 400 and why in r.json()["detail"], (why, r.json())
+    assert not list(tmp_path.iterdir())  # nothing turned away was kept
+    assert up(_card()).status_code == 200
+    r = up(_card(), kind="eid_back", fields={})
+    assert r.status_code == 400 and "same file as your emirates id, front" in r.json()["detail"]
+    assert up(_card(seed=2), kind="eid_back", fields={}).json()["left"] == ["Passport photo page", "Residence visa"]
+
+
+def test_the_compliance_officer_confirms_into_the_clients_file_and_the_archive(office, monkeypatch, tmp_path):
+    from diwan import documents
+    from diwan.providers import meta
+    monkeypatch.setattr(appmod.S, "office", office)
+    monkeypatch.setattr(meta, "MEDIA", tmp_path)
+    c = TestClient(appmod.app)
+    tok = _docs(office, c)["buyer"]["token"]
+    c.post(f"/api/docs/{tok}", data={"kind": "eid_front", "fields": __import__("json").dumps({"number": _eid(), "name": "K. Haddad Sr", "expiry": "2029-05-01"})},
+           files={"file": ("id.jpg", _card())})
+    t = next(t for t in office.graph().of("task", "marina-1204") if t.props.get("step") == "doc")
+    assert "the name on the card (K. Haddad Sr) differs from the deal's (Karim Haddad)" in t.props["action"]  # for Priya to look at, not a refusal
+    assert any(x["id"] == t.id for x in c.get("/api/desk/work?person=priya").json()["items"])
+    assert c.post(f"/api/desk/tasks/{t.id}/doc", json={"by": "omar", "ok": True}).status_code == 403
+    assert c.post(f"/api/desk/tasks/{t.id}/doc", json={"by": "priya", "ok": False}).status_code == 400  # say what to fix
+    doc = c.post(f"/api/desk/tasks/{t.id}/doc", json={"by": "priya", "ok": True}).json()["document"]
+    g = office.graph()
+    assert g.nodes[doc].props["kind"] == "Emirates ID, front" and g.nodes[doc].props["deal"] == "marina-1204"
+    prof = documents.profile(office.log.list(), "marina-1204")
+    assert prof["buyer"]["details"]["Emirates ID, front"]["number"] == _eid() and prof["buyer"]["details"]["Emirates ID, front"]["confirmed_by"] == "Priya"
+
+
+def test_a_sent_back_document_shows_the_client_why_and_can_be_sent_again(office, monkeypatch, tmp_path):
+    from diwan.providers import meta
+    monkeypatch.setattr(appmod.S, "office", office)
+    monkeypatch.setattr(meta, "MEDIA", tmp_path)
+    c = TestClient(appmod.app)
+    tok = _docs(office, c)["buyer"]["token"]
+    c.post(f"/api/docs/{tok}", data={"kind": "passport", "fields": '{"number": "N1234567", "expiry": "2030-01-01"}'}, files={"file": ("p.jpg", _card())})
+    t = next(t for t in office.graph().of("task", "marina-1204") if t.props.get("step") == "doc")
+    c.post(f"/api/desk/tasks/{t.id}/doc", json={"by": "priya", "ok": False, "note": "The photo page is cut off at the bottom"})
+    d = next(x for x in c.get(f"/api/docs/{tok}").json()["docs"] if x["kind"] == "passport")
+    assert d["status"] == "again" and d["reason"] == "The photo page is cut off at the bottom"
+    assert c.post(f"/api/docs/{tok}", data={"kind": "passport", "fields": '{"number": "N1234567", "expiry": "2030-01-01"}'},
+                  files={"file": ("p.jpg", _card(seed=3))}).status_code == 200
+
+
+def test_rania_reminds_every_two_days_in_the_daytime_then_the_broker_calls(office, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from diwan import documents
+    sent = []
+    monkeypatch.setattr("diwan.agents.reception._send", lambda office, phone, deal, text, refs, **kw: sent.append((phone, text)))
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://diwan.example")
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    _docs(office, c)
+    office.log.append("docs.requested", actor="ops", deal="jvc-88", content={"token": "tok-sara", "party": "tenant", "name": "Sara Malik",
+                                                                           "kinds": ["eid_front"], "phone": "971500000088", "expires": "2099-01-01"})
+    dubai = timezone(timedelta(hours=4))
+    start = (datetime.now(dubai) + timedelta(days=1)).replace(hour=10)  # the morning after the links were made
+    assert documents.sweep(office, start) == 0  # just asked
+    assert documents.sweep(office, start.replace(hour=23) + timedelta(days=3)) == 0  # never at night
+    for day in (2, 4, 6):
+        documents.sweep(office, start + timedelta(days=day, minutes=1))
+    sara = [t for _, t in sent if "Hi Sara" in t]
+    assert len(sara) == 3 and "https://diwan.example/web/docs.html?t=tok-sara" in sara[0] and "screen" not in sara[0].lower()
+    documents.sweep(office, start + timedelta(days=8, minutes=1))
+    call = [t for t in office.graph().of("task", "jvc-88") if t.props.get("step") == "docs_call"]
+    assert len(call) == 1 and call[0].props["needs_person"] == "omar" and "3 reminders" in call[0].props["action"]
+    karim = [t for t in office.graph().of("task", "marina-1204") if t.props.get("step") == "docs_call"]
+    assert len(karim) == 2 and all("no WhatsApp on file" in t.props["action"] for t in karim)  # the demo deal has no chat: the broker sends it

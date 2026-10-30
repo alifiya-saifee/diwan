@@ -186,6 +186,20 @@ the same deals and one deal opens in a side panel:
     fingerprint of the form's lines) go on the PDF, which is filed with Records like an uploaded copy. Printing and
     uploading the signed copy stays available. Links reach a client's phone only when `PUBLIC_BASE_URL` is set.
 
+14. **The documents a client sends** (approved by the product owner 30 Oct). At conversion each party on our side (the
+    buyer, the seller, the tenant) gets one link for the documents the owner lists for them (buyer and tenant: Emirates
+    ID front and back, passport, visa; seller: the same with the title deed; a company: its trade licence). The broker
+    copies the link. Each upload is checked at once and a bad one is turned away with what to do and never kept: a real
+    JPEG, PNG or PDF under 8 MB; a photo big, light and sharp enough to read; not the same file as another document; the
+    details typed well formed (an Emirates ID number 784-YYYY-NNNNNNN-N, an expiry in the future). Things a person should
+    look at are flagged, not refused: a check digit that doesn't add up, an expiry within 60 days, a name on the card
+    unlike the deal's. The compliance officer compares each photo with what was typed: "It matches" saves the details
+    to the client's file and archives the document with Records; "Send back" shows the client the reason on their link.
+    Rania reminds the client on WhatsApp every 2 days in the daytime (9:00 to 20:00 Dubai) while anything is missing,
+    never mentioning checks; after 3 reminders, or with no WhatsApp on file or no public address for the link, the
+    broker is asked to call. Reading the card itself needs a vision provider the owner approves for real IDs; until
+    then the client types the details and a person checks them.
+
 ## States every section must handle
 
 Empty (no deals; a deal with no money facts; nothing to screen), errors (an action by the wrong person is refused with

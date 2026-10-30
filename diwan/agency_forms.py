@@ -152,6 +152,8 @@ def make_forms(office: Office, deal: str) -> list[str]:
         office.add_task(deal, "ops", f"Share Form {form} ({did}) with {who} for signature, then upload the signed copy",
                         rests_on=[price.id] if price else [], needs_person=d["broker"], props={"step": "sign", "form": form, "draft": did})
         made.append(did)
+    from diwan import documents
+    documents.request_all(office, deal, "ops")  # the documents each party on our side sends, one link each
     return made
 
 
