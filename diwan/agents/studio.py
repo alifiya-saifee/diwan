@@ -37,7 +37,7 @@ from pathlib import Path
 import httpx
 
 from diwan import brand
-from diwan import business
+from diwan import business, products, topics
 from diwan.agents import runner
 from diwan.agents.charters import get
 from diwan.config import env
@@ -188,14 +188,48 @@ def _made(office: Office, agent: str, kind: str, ref: str, data: dict, cause: in
 
 
 def _brief(office: Office, ref: str) -> str:
-    """The listing as the writers see it: the record plus every feature, so a script has real things to say."""
+    """What a reel is for, as the writers see it: the record plus every feature, so a script has real things to say."""
     lst = _listing(office, ref)
+    if lst["item"] == "topic":
+        return topics.record(lst)
+    if lst["item"] == "product":
+        return products.record(lst)
     feats = "; ".join(lst.get("features") or []) or "none recorded"
     return office.graph().record(f"listing:{ref}") + f" · features: {feats}"
 
 
 def _listing(office: Office, ref: str) -> dict:
-    return office.graph().nodes[f"listing:{ref}"].props
+    """What a reel is for: a listing from the CRM, or one of our confirmed products or services. Both come with `item`,
+    `title`, `features`, `price_aed` (the price, in the item's own currency for a product) and `permit`."""
+    n = office.graph().nodes.get(f"listing:{ref}")
+    if n:
+        return n.props | {"item": "listing", "currency": "AED"}
+    p = products.get(office, ref)
+    if p:
+        return p | {"item": "product", "price_aed": p.get("price"), "permit": p.get("permit")}
+    if t := topics.get(office, ref):  # a topic to explain: no price, no permit
+        return t | {"item": "topic", "price_aed": None, "permit": None, "currency": ""}
+    raise KeyError(f"no listing, product or topic {ref}")
+
+
+def _key(office: Office, ref: str) -> str:
+    """The source id writers cite: listing:REF or product:REF."""
+    return f"{_listing(office, ref)['item']}:{ref}"
+
+
+def _price(lst: dict) -> str:
+    """The price as shown in a post ("AED 2,600,000"), or "" when it is not public."""
+    v = lst.get("price_aed")
+    return f"{lst.get('currency') or ''} {v:,}".strip() if isinstance(v, (int, float)) else ""
+
+
+def _what(lst: dict) -> str:
+    """A few words for what it is: "2 bed apartment", or the product's own description."""
+    if lst["item"] == "listing":
+        return f"{lst['beds']} bed {lst['type']}"
+    if lst["item"] == "topic":
+        return "a topic"
+    return (lst.get("what") or lst.get("kind") or "product")[:60]
 
 
 def _ffmpeg(*args: str) -> None:
@@ -239,6 +273,61 @@ CSV_COLUMNS = ["source", "account", "followers", "url", "type", "caption", "like
 CSV_TEMPLATE = ",".join(CSV_COLUMNS) + "\ncompetitor,their.account,12000,https://www.instagram.com/p/XXXX/,REELS,\"The first line of the caption\",950,40,2026-10-20 19:30\n"
 
 
+CSV_SAMPLE = [  # what each column takes, and one filled-in row, shown on the Setup tab
+    {"column": "source", "takes": "competitor or own", "example": "competitor"},
+    {"column": "account", "takes": "their Instagram handle (required)", "example": "their.account"},
+    {"column": "followers", "takes": "a whole number, or empty", "example": "12000"},
+    {"column": "url", "takes": "the post's Instagram link, or empty", "example": "https://www.instagram.com/p/XXXX/"},
+    {"column": "type", "takes": "REELS, VIDEO, IMAGE or CAROUSEL_ALBUM, or empty", "example": "REELS"},
+    {"column": "caption", "takes": "the caption, in quotes if it has commas", "example": "\"The first line of the caption\""},
+    {"column": "likes", "takes": "a whole number (required)", "example": "950"},
+    {"column": "comments", "takes": "a whole number (required)", "example": "40"},
+    {"column": "posted_at", "takes": "YYYY-MM-DD HH:MM in your time zone, or empty", "example": "2026-10-20 19:30"},
+]
+TYPES = {"REELS": "REELS", "REEL": "REELS", "VIDEO": "VIDEO", "IMAGE": "IMAGE", "PHOTO": "IMAGE", "CAROUSEL_ALBUM": "CAROUSEL_ALBUM", "CAROUSEL": "CAROUSEL_ALBUM"}
+
+
+def check_import(header: list[str], rows: list[dict]) -> list[str]:
+    """Everything wrong with a filled-in template, each with its row and column, so the person can fix the file.
+    Empty when it can be imported."""
+    head = [h.strip().lower() for h in header or []]
+    if not head:
+        return ["The file is empty, or not a CSV. Save the spreadsheet as CSV (comma separated) and try again."]
+    missing = [c for c in ("account", "likes", "comments") if c not in head]
+    unknown = [h for h in head if h and h not in CSV_COLUMNS]
+    out = []
+    if missing:
+        out.append(f"The first row must be the column names. Missing: {', '.join(missing)}. Expected: {','.join(CSV_COLUMNS)}")
+    if unknown:
+        out.append(f"Columns not in the template: {', '.join(unknown)}.")
+    if out:
+        return out
+    if not rows:
+        return ["There are no posts under the column names."]
+    whole = lambda v: re.fullmatch(r"\d+", (v or "").replace(",", "").strip() or "0")  # noqa: E731
+    for i, r in enumerate(rows, 2):
+        r = {k.strip().lower(): (v or "").strip() for k, v in r.items() if k}
+        if not r["account"]:
+            out.append(f"Row {i}, account: empty. Put the Instagram handle, e.g. their.account.")
+        elif not re.fullmatch(r"@?[A-Za-z0-9_.]{1,30}", r["account"]):
+            out.append(f"Row {i}, account: \"{r['account']}\" is not an Instagram handle (letters, numbers, dots, underscores).")
+        for c in ("likes", "comments", "followers"):
+            if c in r and not whole(r[c]):
+                out.append(f"Row {i}, {c}: \"{r[c]}\" is not a whole number.")
+        if r.get("source") and r["source"].lower() not in ("competitor", "own"):
+            out.append(f"Row {i}, source: \"{r['source']}\" must be competitor or own.")
+        if r.get("type") and r["type"].upper() not in TYPES:
+            out.append(f"Row {i}, type: \"{r['type']}\" must be REELS, VIDEO, IMAGE or CAROUSEL_ALBUM.")
+        if r.get("url") and not re.match(r"https?://(www\.)?instagram\.com/", r["url"]):
+            out.append(f"Row {i}, url: not an Instagram link.")
+        if r.get("posted_at"):
+            try:
+                datetime.fromisoformat(r["posted_at"].replace(" ", "T"))
+            except ValueError:
+                out.append(f"Row {i}, posted_at: \"{r['posted_at']}\" must look like 2026-10-20 19:30.")
+    return out
+
+
 def import_posts(office: Office, rows: list[dict], *, by: str) -> dict:
     """Real posts someone copied from Instagram into the template. Scored against each account's own median, the
     same as fetched posts, and the outliers are pinned on the research board with their links."""
@@ -252,12 +341,12 @@ def import_posts(office: Office, rows: list[dict], *, by: str) -> dict:
             iso = None
             if at:
                 dt = datetime.fromisoformat(at.replace(" ", "T"))
-                iso = (dt if dt.tzinfo else dt.replace(tzinfo=timezone(timedelta(hours=4)))).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+0000")
+                iso = (dt if dt.tzinfo else dt.replace(tzinfo=business.tz(office))).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+0000")
             url = (r.get("url") or "").strip()
             clean.append({"id": url or f"{acc}-{i}", "account": acc, "source": "own" if (r.get("source") or "").strip().lower() == "own" else "competitor",
-                          "followers": int(float(r["followers"])) if (r.get("followers") or "").strip() else None, "permalink": url,
-                          "type": (r.get("type") or "").strip().upper() or None, "caption": (r.get("caption") or "")[:600],
-                          "likes": int(float(r.get("likes") or 0)), "comments": int(float(r.get("comments") or 0)), "at": iso})
+                          "followers": int(r["followers"].replace(",", "").strip()) if (r.get("followers") or "").strip() else None, "permalink": url,
+                          "type": TYPES.get((r.get("type") or "").strip().upper()) or None, "caption": (r.get("caption") or "")[:600],
+                          "likes": int((r.get("likes") or "0").replace(",", "")), "comments": int((r.get("comments") or "0").replace(",", "")), "at": iso})
         except (ValueError, KeyError) as e:
             errors.append(f"row {i}: {e}")
     by_acc: dict[str, list] = {}
@@ -388,6 +477,47 @@ def trends(office: Office, cause: int | None) -> list[dict]:
     return cards
 
 
+import threading
+
+_REFRESHING = threading.Lock()
+
+
+def refresh_competitors(office: Office, *, by: str, auto: bool = False) -> dict:
+    """Re-read every competitor's recent posts (new posts, and the likes and comments of the old ones), have Muse Spark
+    read the new ones, and redo the patterns. Says what changed, and records it (competitors.refreshed). Instagram
+    does not tell us when someone else posts, so this is a check on a schedule or on a button, not a notification."""
+    from diwan.agents import reader
+    if not _REFRESHING.acquire(blocking=False):
+        return {"ok": False, "needs": "A refresh is already running."}
+    try:
+        names = competitors(office.graph())
+        why = None if names and instagram.ready() else (
+            "Add competitor accounts first." if not names else "Connect Instagram in Settings: competitor posts are read through it.")
+        if why:
+            if auto:
+                office.log.append("competitors.refreshed", actor=by, content={"ok": False, "auto": True, "error": why, "accounts": len(names)})
+            return {"ok": False, "needs": why}
+        last = (office.log.list() or [{"id": 0}])[-1]["id"]
+        before = {p["id"]: p["likes"] + p["comments"] for p in posts(office, "competitor")}
+        watch(office, None)
+        checked = [e["content"] for e in office.log.list() if e["id"] > last and e["type"] == "competitor.checked"]
+        after = posts(office, "competitor")
+        fresh = {p["id"] for p in after if p["id"] not in before}
+        changed = [p for p in after if p["id"] in before and p["likes"] + p["comments"] != before[p["id"]]]
+        read_posts(office, None)
+        reader.pin(office)
+        winners = [{"account": a, "hook": (p.get("caption") or "").strip().split("\n")[0][:100], "score": p["score"], "kind": p["kind"], "url": p.get("permalink"),
+                    "engagement": p["engagement"]}
+                   for a, ps in reader._saved_posts(office).items() for p in ps if p["id"] in fresh and is_outlier(p)]
+        winners.sort(key=lambda w: -(w["score"] or 0))
+        out = {"ok": True, "auto": auto, "accounts": len(names), "reached": sum(1 for c in checked if c.get("ok")), "new": len(fresh), "changed": len(changed),
+               "winners": winners[:5], "errors": [f"@{c['account']}: {c.get('error')}" for c in checked if not c.get("ok")][:5]}
+        office.log.append("competitors.refreshed", actor=by, agent="mrival", content=out)
+        return out
+    finally:
+        _REFRESHING.release()
+
+
 def read_posts(office: Office, cause: int | None) -> None:
     """Muse Spark reads the competitor posts not read yet, so "Why they win" and the board's patterns are current."""
     from diwan.agents import reader
@@ -493,10 +623,11 @@ def ideas(office: Office, ref: str, cards: list[dict], cause: int | None, feedba
     ids = {c["id"] for c in cards}
     c = get("midea")
     system = runner.instructions(c, office.log)
-    user = runner.user_message(f"Three short-video ideas for listing {ref}. Each title is the hook a viewer would see, naming the building or area and one "
-                               "real feature; list the card ids an idea builds on (an empty list if none). Use only facts from the listing."
-                               + (f"\n\n{feedback}" if feedback else ""),
-                               {f"listing:{ref}": _brief(office, ref), "brand": brand.brief(office), **{x["id"]: f"{x['title']} ({x['why']})" for x in cards}})
+    what = "listing" if lst["item"] == "listing" else lst.get("kind") or "product"
+    user = runner.user_message(f"Three short-video ideas for {what} {ref}. Each title is the hook a viewer would see, naming "
+                               + ("the building or area" if lst["item"] == "listing" else "it") + (" and one real fact" if lst["item"] == "topic" else " and one real feature") + "; list the card ids an idea "
+                               f"builds on (an empty list if none). Use only facts from the {what}." + (f"\n\n{feedback}" if feedback else ""),
+                               {_key(office, ref): _brief(office, ref), "brand": brand.brief(office), **{x["id"]: f"{x['title']} ({x['why']})" for x in cards}})
     out, by = [], "rules"
     if runner.has_model(c, system, user, schema=IDEAS_SCHEMA):
         office.log.append("agent.started", actor="midea", agent="midea", caused_by=cause, content={"task": f"Writing ideas for {ref} with the model"})
@@ -507,10 +638,10 @@ def ideas(office: Office, ref: str, cards: list[dict], cause: int | None, feedba
         except Exception as e:
             _blocked(office, "midea", f"Muse Spark failed, using plain ideas: {str(e)[:120]}", cause=cause)
     if not out:
-        feats = ", ".join(lst.get("features") or []) or f"{lst['beds']} bed {lst['type']}"
-        out = [{"title": f"{lst['title']}: {feats}, price at the end", "angle": "walk-through ending on the price", "cards": []}]
+        feats = ", ".join(lst.get("features") or []) or _what(lst)
+        out = [{"title": f"{lst['title']}: {feats}" + (", price at the end" if _price(lst) else ""), "angle": "walk-through ending on the price", "cards": []}]
         out += [{"title": f"{lst['title']} in the structure of @{x.get('account', 'a source')}'s {x['kind']}", "angle": x["title"], "cards": [x["id"]]} for x in cards[:2]]
-    out = [i | {"from": i["cards"] or [f"listing:{ref}"]} for i in out]  # every idea names what it came from
+    out = [i | {"from": i["cards"] or [_key(office, ref)]} for i in out]  # every idea names what it came from
     pick = out[0]
     m = _made(office, "midea", "ideas", ref, {"ideas": out, "pick": pick, "via": by}, cause)
     _pack(office, "midea", f"Idea: \"{pick['title']}\"" + (f" (from {', '.join(pick['cards'])})" if pick["cards"] else " (from the listing)"), cause=cause,
@@ -535,6 +666,12 @@ def lanes(office: Office, cause: int | None) -> dict:
     return m
 
 
+def _end_shot(office: Office, lst: dict) -> str:
+    """The last shot: the price card (with the permit when the business needs one), or the end card when no price is public."""
+    card = "End on the price card" if _price(lst) else "End on the end card"
+    return card + (" with the permit number" if business.permit_needed(office) and lst["item"] != "topic" else "")
+
+
 def film_list(office: Office, ref: str, idea: dict, cause: int | None, feedback: str | None = None, sc: dict | None = None) -> dict:
     """What to film: the approved script's video plan, shot by shot, with the line said over each; else from the features."""
     g = office.graph()
@@ -542,10 +679,13 @@ def film_list(office: Office, ref: str, idea: dict, cause: int | None, feedback:
     feats = lst.get("features") or []
     if sc and sc.get("shots"):
         shots = [f"{r['show']} (while saying: \"{r['say']}\")" for r in sc["shots"] if "price card" not in r["show"].lower() and "end card" not in r["show"].lower()]
-        shots.append("End on the price card with the permit number (added in editing)")
+        shots.append(_end_shot(office, lst) + " (added in editing)")
+    elif lst["item"] == "topic":
+        shots = ["You to camera, eye level, looking at the lens, a quiet well-lit spot", *[f"Say it again to camera, or cut away to show: {f[:60]}" for f in feats[:3]],
+                 "A short cut-away that shows the point (optional)", _end_shot(office, lst)]
     else:
         shots = [f"Open on the strongest view{(': ' + feats[0]) if feats else ''}"] + [f"Show the {f}" for f in feats[1:3]] + \
-                [f"Walk the {lst['beds']} bedroom{'s' if lst['beds'] != 1 else ''}", "End on the price card with the permit number"]
+                ([f"Walk the {lst['beds']} bedroom{'s' if lst['beds'] != 1 else ''}"] if lst["item"] == "listing" else [f"Show {lst['title']} at work"]) + [_end_shot(office, lst)]
     viewing = next((v for v in g.of("viewing", status="booked") if v.props["listing"] == ref), None)
     when = f"at the viewing {g.record(viewing.id).split(', ', 1)[1]}" if viewing else "at the next daylight visit (no viewing booked yet)"
     broker = viewing.props["broker"] if viewing else lst.get("agent")  # the viewing's broker, else the listing's own agent
@@ -575,6 +715,7 @@ def video_plan(data: dict, lst: dict) -> list[dict]:
     from the line and the listing's features. Timing always comes from the words."""
     said = [data["hook_en"], *data["lines_en"]]
     given = data.get("shots") or []
+    cam = lst.get("item") == "topic"  # a person talking to camera: the speaker is the picture, not the rooms
     feats = lst.get("features") or []
     rows, t = [], 0.0
     for i, line in enumerate(said):
@@ -582,10 +723,15 @@ def video_plan(data: dict, lst: dict) -> list[dict]:
         if len(given) == len(said) and given[i].get("show"):
             g = given[i]
             show, text, cut = g["show"], g.get("text", ""), g.get("cut", "")
+        elif cam:
+            end = i == len(said) - 1 and re.search(r"\b(message|dm|call|whatsapp|book|contact|ask)\b", low)
+            show = "You to camera, or the brand's end card" if end else "You to camera, eye level, looking at the lens" if i % 2 == 0 else "You to camera, or a short cut-away that shows the point"
+            text = "Message us" if end else (" ".join(line.split()[:5]) if i == 0 else "")
+            cut = "Fade to the end card" if end else "Open tight on the face, no intro" if i == 0 else "Jump cut on the beat"
         elif i == 0:
             show, text, cut = f"The strongest view{': ' + feats[0] if feats else ''}, moving", line, "Open on movement: a slow push-in"
-        elif re.search(r"\bpermit\b|aed|price", low):
-            show, text, cut = "The price card", f"AED {lst['price_aed']:,} · Permit {lst.get('permit')}", "Hard cut, hold 2 seconds"
+        elif re.search(r"\bpermit\b|\blicen[cs]e\b|price", low) or (_price(lst) and str(lst.get("price_aed")) in low.replace(",", "")):
+            show, text, cut = "The price card", " · ".join(x for x in (_price(lst), f"Permit {lst['permit']}" if lst.get("permit") else "") if x), "Hard cut, hold 2 seconds"
         elif re.search(r"\b(message|dm|call|whatsapp|book|contact)\b", low):
             show, text, cut = "You to camera, or the brand's end card", "Message us", "Fade to the end card"
         elif (f := next((f for f in feats if f.lower() in low or any(len(w) > 3 and re.search(rf"\b{re.escape(w)}\b", low) for w in f.lower().split())), None)):
@@ -607,8 +753,12 @@ def _amounts(text: str) -> set[int]:
     return {int(a) for m in MONEY.finditer(text) for a in scribe.amounts(m.group(0))}
 
 
-def _template(lst: dict, angle: str, sign_off: str = "Message us to book a viewing.") -> dict:
+def _template(lst: dict, angle: str, sign_off: str = "Message us to find out more.") -> dict:
     """A plain script for each angle, from the listing's own facts, for when no model is connected or it fails."""
+    if lst["item"] == "topic":
+        return _topic_template(lst, angle, sign_off)
+    if lst["item"] == "product":
+        return _product_template(lst, angle, sign_off)
     price, feats = f"AED {lst['price_aed']:,}", lst.get("features") or []
     cap = lambda f: f"{f[:1].upper()}{f[1:]}."  # noqa: E731
     home = f"{lst['beds']} bedroom {lst['type']}"
@@ -633,6 +783,32 @@ def _template(lst: dict, angle: str, sign_off: str = "Message us to book a viewi
             "lines_en": [f"This is {lst['title']}.", *[cap(f) for f in feats[:3]], f"{home}.", *close]}
 
 
+def _product_template(p: dict, angle: str, sign_off: str) -> dict:
+    """The same, for a product or service: what it is, what it does, its features, its price if public, the sign-off."""
+    feats, price, name = p.get("features") or [], _price(p), p["title"]
+    cap = lambda f: f"{f[:1].upper()}{f[1:]}."  # noqa: E731
+    close = [f"{price}." if price else "", f"Permit {p['permit']}." if p.get("permit") else "", sign_off]
+    hooks = {"price-reveal": f"What does {price} get you?" if price else f"What can {name} do for you?",
+             "walkthrough": f"See {name} at work.", "lifestyle": f"A day with {name}.",
+             "investor": f"The facts buyers ask first about {name}.", "market-check": f"{name}, or doing it the old way?"}
+    lines = [f"This is {name}" + (f": {p['what']}." if p.get("what") else "."), *[cap(f) for f in feats[:4]], *[c for c in close if c]]
+    return {"hook_en": hooks.get(angle, f"Meet {name}."), "hook_ar": "", "lines_en": lines}
+
+
+def _topic_template(t: dict, angle: str, sign_off: str) -> dict:
+    """A plain script for a topic, spoken to camera: its own facts, one per line, then the sign-off. For when no model is connected."""
+    cap = lambda f: f"{f[:1].upper()}{f[1:]}" if f.endswith((".", "!", "?")) else f"{f[:1].upper()}{f[1:]}."  # noqa: E731
+    short = " ".join(t["title"].split()[:6])
+    hooks = {"explainer": f"{short}, in plain words.", "myth-vs-fact": f"What people get wrong about {short.lower()}.", "question": f"Ever wondered about {short.lower()}?",
+             "checklist": f"What to check about {short.lower()}.", "why-it-matters": f"Why {short.lower()} matters to you."}
+    lines = [*[cap(f) for f in (t.get("features") or [])[:5]]]
+    for pad in ("It is worth knowing before you decide.", "Ask us anything about it.", "We are happy to walk you through it."):
+        if len(lines) >= 4:
+            break
+        lines.append(pad)
+    return {"hook_en": hooks.get(angle, f"{short}, in plain words."), "hook_ar": "", "lines_en": [*lines, sign_off]}
+
+
 def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: int | None, feedback: str | None = None,
            angle: str = "price-reveal", why: str = "", base: dict | None = None) -> dict:
     """One script on one angle. `base` is a draft to revise (a person's change request or a supervisor's return): the
@@ -641,19 +817,25 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
     lst = _listing(office, ref)
     rec = _brief(office, ref)
     c = get("mscript")
-    system = runner.instructions(c, office.log) + ("\nWrite in the `script` format: about 30 seconds, 5 to 7 lines. Use only facts and amounts from "
-                                                   "the listing, and build the lines from its features. Every line says something new; never repeat a "
-                                                   "line or the unit name. No placeholders or brackets: if a fact is missing, leave it out. The last "
-                                                   "line invites the viewer to get in touch, in the brand's own sign-off if it has one. lines_ar translates lines_en.")
+    arabic = "Arabic" in business.languages(office)
+    system = runner.instructions(c, office.log) + (f"\nWrite in the `script` format: about 30 seconds, 5 to 7 lines. Use only facts and amounts from "
+                                                   f"the {lst['item']}, and build the lines from its features. Every line says something new; never repeat a "
+                                                   "line or the name. No placeholders or brackets: if a fact is missing, leave it out. The last "
+                                                   "line invites the viewer to get in touch, in the brand's own sign-off if it has one. "
+                                                   + ("hook_ar and lines_ar are the Arabic of hook_en and lines_en." if arabic else "hook_ar and lines_ar are empty.")
+                                                   + (" This is an informational video about a topic, not an ad for a property: a person speaks it to camera. Write the hook and "
+                                                      "lines as natural first-person speech, each short enough to say in one breath; no price, no permit, no property tour. In "
+                                                      "shots, one per spoken line: `show` is what the viewer sees (the speaker, or a short cut-away that shows the point), "
+                                                      "`text` a caption of 2 to 6 words or empty, `cut` how it moves." if lst["item"] == "topic" else ""))
     built = built_like(office, idea["pick"].get("cards", []))
-    task = (f"Script for: {idea['pick']['title']}. Angle: {strategy.ANGLES[angle][0]}. Borrow the structure, never the words, of the hook card if given."
+    task = (f"Script for: {idea['pick']['title']}. Angle: {(topics.ANGLES if lst['item'] == 'topic' else {k: v[0] for k, v in strategy.ANGLES.items()}).get(angle, angle)}. Borrow the structure, never the words, of the hook card if given."
             + (" Some competitor posts below worked; borrow only why they worked (format, hook, who is on screen). Never use their words, "
                "numbers, awards, sales or partners, and claim nothing about us that the listing and the brand do not say." if built else "")
             + (f"\n\nRevise this draft; change only what is asked, keep everything else:\n{json.dumps({k: base[k] for k in ('hook_en', 'hook_ar', 'lines_en')}, ensure_ascii=False)}" if base else "")
             + (f"\n\n{feedback}" if feedback else ""))
     from diwan.agents import style
     notes = style.brief(office)
-    user = runner.user_message(task, {f"listing:{ref}": rec, "brand": brand.brief(office), **({"hook": hook_card["hook"]} if hook_card else {}),
+    user = runner.user_message(task, {_key(office, ref): rec, "brand": brand.brief(office), **({"hook": hook_card["hook"]} if hook_card else {}),
                                       **{f"worked{i + 1}": b for i, b in enumerate(built)}, **({"style": notes} if notes else {})})
     data, by = None, "template"
     if runner.has_model(c, system, user, schema=SCRIPT_SCHEMA):
@@ -674,13 +856,14 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
         data = _apply_rules(data, feedback or "", lst)
     data = data | {"shots": video_plan(data, lst)}
     m = _made(office, "mscript", "script", ref, data | {"via": by, "angle": angle, "why": why, "idea": idea.get("id"), "cards": idea["pick"].get("cards", []),
-                                                       "built_like": built, "listing_was": _facts(lst), **({"revises": base["id"]} if base else {})}, cause)
+                                                       "built_like": built, "listing_was": _facts(lst), "format": topics.format_for(lst), **({"revises": base["id"]} if base else {})}, cause)
     _pack(office, "mscript", f"{angle} script{' (revised from ' + base['id'] + ')' if base else ''}: \"{data['hook_en']}\" · {len(data['lines_en'])} lines ({by}).",
           cause=cause, usage={"provider": by})
     return m
 
 
-FACTS = {"price_aed": "the price", "permit": "the permit", "status": "the status", "beds": "the bedrooms", "features": "the features", "title": "the name"}
+FACTS = {"price_aed": "the price", "permit": "the permit", "status": "the status", "beds": "the bedrooms", "features": "the features", "title": "the name",
+         "what": "what it is"}
 
 
 def _facts(lst: dict) -> dict:
@@ -691,11 +874,14 @@ def stale(office: Office, sc: dict) -> list[str]:
     """What changed on the listing since the script was written, one sentence each; [] when it is still current
     (or the script is older than this check and has no record of the listing)."""
     was, ref = sc.get("listing_was"), sc.get("ref")
-    if not was or f"listing:{ref}" not in office.graph().nodes:
+    try:
+        now = _facts(_listing(office, ref)) if was else None
+    except KeyError:
+        return []  # the listing or product is gone
+    if not now:
         return []
-    now = _facts(_listing(office, ref))
     show = lambda k, v: f"AED {v:,}" if k == "price_aed" and isinstance(v, int) else ", ".join(v) if isinstance(v, list) else str(v or "none")  # noqa: E731
-    return [f"{FACTS[k].capitalize()} was {show(k, was[k])}, now {show(k, now[k])}." for k in FACTS if was.get(k) != now.get(k)]
+    return [f"{FACTS[k].capitalize()} was {show(k, was[k])}, now {show(k, now[k])}." for k in FACTS if k in was and was.get(k) != now.get(k)]
 
 
 def _shorter(hook: str) -> str:
@@ -737,7 +923,8 @@ def variants(office: Office, ref: str, idea: dict, tr: dict | None, cause: int |
     """Up to n scripts on different angles, each checked by the Copywriter, chosen by the strategy."""
     from diwan.agents import strategy
     from diwan.agents import rhythm
-    picks = strategy.pick(office, n, avoid=rhythm.recent_angles(office, business.local(_now(), office).date()))
+    avoid = rhythm.recent_angles(office, business.local(_now(), office).date())
+    picks = topics.pick_angles(n, avoid) if _listing(office, ref)["item"] == "topic" else strategy.pick(office, n, avoid=avoid)
     _pack(office, "mcopy", "Scripting " + "; ".join(f"{p['angle']} ({p['slot']}: {p['why']})" for p in picks), cause=cause, kind="assign")
     out = []
     for p in picks:
@@ -885,13 +1072,16 @@ def remix(office: Office, ref: str, tr: dict | None, film: dict, cause: int | No
 def post_text(office: Office, ref: str, sc: dict, cause: int | None, feedback: str | None = None) -> dict:
     lst = _listing(office, ref)
     feats = ", ".join(lst.get("features") or [])
-    base = (f"{sc['hook_en']}\n\n{lst['title']}, {lst['community']} · {lst['beds']} bed {lst['type']}{' · ' + feats if feats else ''} · "
-            f"AED {lst['price_aed']:,}\nPermit {lst.get('permit')}\n\n{brand.cta(office)}")
+    where = f", {lst['community']}" if lst.get("community") else ""
+    facts = " · ".join(x for x in (f"{lst['title']}{where}", _what(lst), feats, _price(lst)) if x) if lst["item"] != "topic" else \
+        f"{lst['title']}: " + " ".join(f if f.endswith((".", "!", "?")) else f + "." for f in (lst.get("features") or [])[:2])
+    permit = f"\nPermit {lst['permit']}" if business.permit_needed(office) and lst.get("permit") else ""
+    base = f"{sc['hook_en']}\n\n{facts}{permit}\n\n{brand.cta(office)}"
     ar = f"\n\n{sc['hook_ar']}" if sc.get("hook_ar") else ""
-    tags = " " + " ".join(dict.fromkeys(brand.hashtags(office) + ["#" + re.sub(r"\W", "", lst["community"])]))
-    m = _made(office, "mwriter", "post text", ref, {"text": base + ar + tags}, cause)
-    _pack(office, "mwriter", f"Post text ready with permit {lst.get('permit')} ({len(m['text'])} characters).", cause=cause,
-          evidence=[Evidence(str(lst.get("permit")), f"listing:{ref}")], sources={f"listing:{ref}": office.graph().record(f"listing:{ref}")})
+    tags = " " + " ".join(dict.fromkeys(brand.hashtags(office) + (["#" + re.sub(r"\W", "", lst["community"])] if lst.get("community") else [])))
+    m = _made(office, "mwriter", "post text", ref, {"text": base + ar + tags.rstrip()}, cause)
+    _pack(office, "mwriter", f"Post text ready{' with permit ' + str(lst.get('permit')) if permit else ''} ({len(m['text'])} characters).", cause=cause,
+          evidence=[Evidence(str(lst.get("permit") or lst["title"]), _key(office, ref))], sources={_key(office, ref): _brief(office, ref)})
     return m
 
 
@@ -929,15 +1119,15 @@ def cover(office: Office, ref: str, sc: dict, cause: int | None) -> dict | None:
 def permit_check(office: Office, ref: str, text: dict, cause: int | None, findings: list | None = None) -> bool:
     lst = _listing(office, ref)
     t = text["text"]
-    fails = []
-    if not lst.get("permit") or lst["permit"] not in t:
+    fails, needed = [], business.permit_needed(office) and lst["item"] != "topic"  # a topic sells no one thing, so it has no permit
+    if needed and (not lst.get("permit") or lst["permit"] not in t):
         fails.append("permit number missing")
-    stray = _amounts(t) - {lst["price_aed"]} - {0}
+    stray = _amounts(t) - {lst["price_aed"]} - {0} - (_amounts(_brief(office, ref)) if lst["item"] == "topic" else set())
     if stray:
-        fails.append(f"amounts not on the listing: {', '.join(f'{a:,}' for a in stray)}")
+        fails.append(f"amounts not on the {lst['item']}: {', '.join(f'{a:,}' for a in stray)}")
     if m := re.search(BANNED, t, re.I):
         fails.append(f"banned promise \"{m.group(0)}\"")
-    _pack(office, "mpermit", f"Pass: permit {lst['permit']}, price matches {ref}, no banned promises." if not fails else "Held: " + "; ".join(fails) + ".",
+    _pack(office, "mpermit", (f"Pass: {'permit ' + str(lst['permit']) + ', ' if needed else ''}price matches {ref}, no banned promises.") if not fails else "Held: " + "; ".join(fails) + ".",
           cause=cause, kind=None if not fails else "hold")
     if findings is not None:
         findings.extend(fails)
@@ -1046,8 +1236,9 @@ def permit_gate(office: Office, ref: str, sc: dict, text: dict, cause: int | Non
 async def run(office: Office, ref: str, pause: float = .6) -> None:
     step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
     lst = _listing(office, ref)
-    start = _pack(office, "mkt", f"New reel for {lst['title']} ({ref}): permit {lst.get('permit') or 'MISSING'}.", kind="assign")
-    if not lst.get("permit"):
+    needed = business.permit_needed(office) and lst["item"] != "topic"
+    start = _pack(office, "mkt", f"New {'informational video' if lst['item'] == 'topic' else 'reel'} for {lst['title']} ({ref})" + (f": permit {lst.get('permit') or 'MISSING'}." if needed else "."), kind="assign")
+    if needed and not lst.get("permit"):
         _blocked(office, "mkt", f"{ref} has no permit number: nothing is made for it", cause=start)
         return
     top = await step(watch, office, start); await asyncio.sleep(pause)
@@ -1104,7 +1295,7 @@ def own_script(office: Office, ref: str, text: str, *, by: str) -> dict:
     fb = (f"Tell the same message as this script, written by the Marketing manager, on this angle instead. Keep its facts and its point; "
           f"change the angle and the structure, never invent anything:\n{text}")
     alts = []
-    for p in [x for x in strategy.pick(office, 3) if x["angle"] != mine][:2]:
+    for p in [x for x in (topics.pick_angles(3, set()) if lst["item"] == "topic" else strategy.pick(office, 3)) if x["angle"] != mine][:2]:
         sc = reviewed(office, "script", ref, lambda f, p=p: script(office, ref, idea, None, start, "\n".join(x for x in (fb, f) if x), angle=p["angle"],
                                                                    why=f"another way to tell your script ({p['angle']})"), start)
         if sc:

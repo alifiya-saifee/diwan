@@ -74,3 +74,19 @@ def test_every_brain_shows_records_not_samples():
     mk = client.get("/api/brain/mkt").json()
     assert {s["title"] for s in mk["sections"]} >= {"Brand profile", "Company knowledge", "Lessons people taught", "Script library", "What to post next"}
     assert client.get("/api/brain/nowhere").status_code == 404
+
+
+def test_adding_two_competitors_at_once_keeps_both():
+    """Two quick clicks on suggestions used to save the list twice, the second without the first."""
+    from fastapi.testclient import TestClient
+    from diwan import app as appmod
+    c = TestClient(appmod.app)
+    c.post("/api/demo/reset")
+    c.post("/api/studio/competitors", json={"usernames": ""})
+    c.post("/api/studio/competitors", json={"add": "@alpha_rival"})
+    c.post("/api/studio/competitors", json={"add": "beta.rival"})
+    c.post("/api/studio/competitors", json={"add": "alpha_rival"})  # already there: no duplicate
+    from diwan.agents import studio
+    assert studio.competitors(appmod.S.office.graph()) == ["alpha_rival", "beta.rival"]
+    c.post("/api/studio/competitors", json={"remove": "@alpha_rival"})
+    assert studio.competitors(appmod.S.office.graph()) == ["beta.rival"]

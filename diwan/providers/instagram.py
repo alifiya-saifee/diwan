@@ -102,6 +102,24 @@ def competitor_posts(username: str, limit: int = 25) -> dict:
             "posts": [_post_row(m, bd.get("username", username)) for m in (bd.get("media") or {}).get("data", [])]}
 
 
+def posts_between(username: str, since: str | None = None, until: str | None = None, pages: int = 8) -> dict:
+    """An account's posts between two dates (YYYY-MM-DD, either may be empty), newest first, paging back 25 at a time
+    through business discovery as far as Instagram allows (at most `pages` pages). Says how far back it got."""
+    rows, after, acc = [], None, {}
+    for _ in range(pages):
+        media = f"media.after({after}).limit(25)" if after else "media.limit(25)"
+        bd = _get(env("IG_USER_ID"), {"fields": f"business_discovery.username({username}){{username,followers_count,{media}{{{MEDIA_FIELDS}}}}}"}).get("business_discovery", {})
+        acc = acc or {"username": bd.get("username", username), "followers": bd.get("followers_count")}
+        got = [_post_row(m, acc["username"]) for m in (bd.get("media") or {}).get("data", [])]
+        rows += got
+        after = ((bd.get("media") or {}).get("paging") or {}).get("cursors", {}).get("after")
+        if not got or not after or (since and min((r["at"] or "")[:10] for r in got) < since):
+            break
+    keep = [r for r in rows if (not since or (r["at"] or "")[:10] >= since) and (not until or (r["at"] or "")[:10] <= until)]
+    oldest = min(((r["at"] or "")[:10] for r in rows), default=None)
+    return acc | {"posts": keep, "read": len(rows), "oldest": oldest}
+
+
 def publish_reel(video_url: str, caption: str, *, wait: float = 120) -> str:
     box = _post(f"{env('IG_USER_ID')}/media", {"media_type": "REELS", "video_url": video_url, "caption": caption})["id"]
     t0 = time.monotonic()

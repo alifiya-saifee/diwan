@@ -27,7 +27,8 @@ TYPES = {
     # the Deal desk's links to clients: signing a form, and the documents they send
     "sign.link", "sign.signed", "docs.requested", "docs.received", "docs.rejected", "docs.reminded", "docs.confirmed",
     # the content studio: what it saw, what it pinned, what it made, and footage people uploaded
-    "post.seen", "post.read", "photos.added", "plan.made", "plan.started", "competitor.checked", "board.pinned", "board.unpinned", "content.made", "footage.added", "step.blocked",
+    "post.seen", "post.read", "product.saved", "mchat.said", "mchat.upload", "mchat.analysed", "photos.added", "plan.made", "plan.started", "competitor.checked", "board.pinned", "board.unpinned", "content.made", "footage.added", "step.blocked",
+    "listings.found", "topic.saved", "competitors.refreshed",
     "qa.passed", "qa.failed", "qa.escalated",
     "lobby.posted", "lobby.seen", "lobby.reminded", "lobby.late", "lobby.done", "lobby.cancelled",
     "chat.received", "chat.sent", "chat.suggested", "chat.handover", "appointment.booked", "appointment.cancelled",

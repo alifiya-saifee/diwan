@@ -32,7 +32,18 @@ class Check:
 
 
 def _listing(o: Office, ref: str) -> dict:
-    return o.graph().nodes[f"listing:{ref}"].props
+    from diwan.agents.studio import _listing as item
+    return item(o, ref)
+
+
+def _brief(o: Office, ref: str) -> str:
+    from diwan.agents.studio import _brief as brief
+    return brief(o, ref)
+
+
+def _needed(o: Office) -> bool:
+    from diwan import business
+    return business.permit_needed(o)
 
 
 GENERIC = {"unit", "apartment", "villa", "townhouse", "flat", "dubai", "with", "the", "and"}
@@ -57,7 +68,7 @@ def _script_text(item: dict) -> str:
 CHECKS: dict[str, list[Check]] = {
     "ideas": [
         Check("idea-no-notes", "The idea title reads as a hook, with no internal notes.", "midea",
-              lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(re.search(r"\bno cards?\b|\bcard ids?\b|\bTBD\b|\[[^\]]*\]", it["pick"]["title"], re.I)),
+              lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(re.search(r"\bno cards?\b|\bcard ids?\b|\bTBD\b|\[[^\]]*\]|\bK\d+\b|\bT-[A-Z0-9-]{3,}\b", it["pick"]["title"], re.I)),
               "Write the title as the hook a viewer would see."),
         Check("idea-names-listing", "The chosen idea is about this listing (names its building, title or ref).", "midea",
               lambda o, ref, it: (_names_listing(o, ref, it["pick"]["title"]), it["pick"]["title"][:80]),
@@ -68,8 +79,10 @@ CHECKS: dict[str, list[Check]] = {
     ],
     "film list": [
         Check("film-enough-shots", "At least 4 shots.", "mfilm", lambda o, ref, it: (len(it["shots"]) >= 4, f"{len(it['shots'])} shots"), "Add shots until there are at least 4."),
-        Check("film-ends-on-price", "The last shot shows the price and the permit number.", "mfilm",
-              lambda o, ref, it: ("price" in it["shots"][-1].lower() and "permit" in it["shots"][-1].lower(), it["shots"][-1][:80]), "End on the price card with the permit number."),
+        Check("film-ends-on-price", "The last shot is the price card (or the end card when no price is public), with the permit number when one is needed.", "mfilm",
+              lambda o, ref, it: (("price card" in it["shots"][-1].lower() or ("end card" in it["shots"][-1].lower() and _listing(o, ref).get("price_aed") is None))
+                                  and (not _needed(o) or _listing(o, ref)["item"] == "topic" or "permit" in it["shots"][-1].lower()), it["shots"][-1][:80]),
+              "End on the price card, with the permit number when one is needed."),
     ],
     "script": [
         Check("script-hook-short", "The hook is 12 words or fewer.", "mscript",
@@ -77,7 +90,7 @@ CHECKS: dict[str, list[Check]] = {
         Check("script-length", "5 to 8 lines, about 30 seconds.", "mscript",
               lambda o, ref, it: (5 <= len(it["lines_en"]) <= 8, f"{len(it['lines_en'])} lines"), "Write 5 to 8 lines."),
         Check("script-real-amounts", "Every amount is on the listing.", "mscript",
-              lambda o, ref, it: (lambda stray: (not stray, ", ".join(f"AED {a:,}" for a in stray)))(_money(_script_text(it)) - {_listing(o, ref)["price_aed"], 0}),
+              lambda o, ref, it: (lambda stray: (not stray, ", ".join(f"AED {a:,}" for a in stray)))(_money(_script_text(it)) - {_listing(o, ref)["price_aed"], 0} - (_money(_brief(o, ref)) if _listing(o, ref)["item"] == "topic" else set())),
               "Use only the listing's price; remove every other amount."),
         Check("script-no-promises", "No promised returns or guarantees.", "mscript",
               lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(re.search(BANNED, _script_text(it), re.I)), "Remove the promise; describe the property instead."),
@@ -88,14 +101,15 @@ CHECKS: dict[str, list[Check]] = {
               lambda o, ref, it: (lambda ls: (len(ls) == len(set(ls)), "a repeated line"))([re.sub(r"[^a-z0-9]", "", l.lower()) for l in [it["hook_en"], *it["lines_en"]]]),
               "Make every line say something new; the hook is said once, then the lines move on."),
         Check("script-call-to-action", "The script ends by asking the viewer to get in touch.", "mscript",
-              lambda o, ref, it: (bool(re.search(r"\b(message|dm|call|whatsapp|book|contact|enquire|inquire|link in bio)\b", (it["lines_en"] or [""])[-1], re.I)),
+              lambda o, ref, it: (bool(re.search(r"\b(message|dm|call|whatsapp|book|contact|enquire|inquire|link in bio|get in touch|reach out|speak to|talk to)\b", (it["lines_en"] or [""])[-1], re.I)),
                                   (it["lines_en"] or [""])[-1][:80]),
-              "End with a line inviting the viewer to message us to book a viewing."),
+              "End with a line inviting the viewer to get in touch, in the brand's own sign-off."),
         Check("script-brand", "No word the brand never uses, no claim it never makes.", "mscript",
               lambda o, ref, it: (lambda w: (not w, w or ""))(__import__("diwan.brand", fromlist=["broken"]).broken(o, _script_text(it))),
               "Rewrite without that word; the brand profile lists what we never say."),
         Check("script-arabic", "The hook is also written in Arabic.", "mscript",
-              lambda o, ref, it: (bool(re.search(r"[؀-ۿ]", it.get("hook_ar", ""))), "no Arabic hook"), "Add the hook in Arabic."),
+              lambda o, ref, it: ("Arabic" not in __import__("diwan.business", fromlist=["languages"]).languages(o)
+                                  or bool(re.search(r"[؀-ۿ]", it.get("hook_ar", ""))), "no Arabic hook"), "Add the hook in Arabic."),
         Check("script-not-repeated", "It is not the same as a script already used.", "mscript",
               lambda o, ref, it: (lambda old: (not old, f"too close to {old['id']}: \"{old['hook_en'][:60]}\"" if old else ""))(
                   __import__("diwan.agents.style", fromlist=["too_close"]).too_close(o, it)),
@@ -105,7 +119,7 @@ CHECKS: dict[str, list[Check]] = {
     ],
     "post text": [
         Check("post-permit", "The permit number is in the post.", "mwriter",
-              lambda o, ref, it: (bool(_listing(o, ref).get("permit")) and _listing(o, ref)["permit"] in it["text"], "permit missing"), "Add the permit number."),
+              lambda o, ref, it: (not _needed(o) or _listing(o, ref)["item"] == "topic" or (bool(_listing(o, ref).get("permit")) and _listing(o, ref)["permit"] in it["text"]), "permit missing"), "Add the permit number."),
         Check("post-length", "2,200 characters or fewer (Instagram's limit).", "mwriter", lambda o, ref, it: (len(it["text"]) <= 2200, f"{len(it['text'])} characters"),
               "Shorten to 2,200 characters."),
         Check("post-hashtags", "10 hashtags or fewer.", "mwriter", lambda o, ref, it: (it["text"].count("#") <= 10, f"{it['text'].count('#')} hashtags"), "Keep the 10 best hashtags."),

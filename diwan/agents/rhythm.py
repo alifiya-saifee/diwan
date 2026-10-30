@@ -14,13 +14,18 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-from diwan import business
+import re
+
+from diwan import business, topics
 from diwan.office import Office
 
-DEFAULTS = {"auto": "off", "at": "09:00", "rhythm": "daily", "repeat_angle_days": "3", "repeat_listing_days": "7"}
+DEFAULTS = {"auto": "off", "at": "09:00", "rhythm": "daily", "repeat_angle_days": "3", "repeat_listing_days": "7", "compare_months": "12",
+            "refresh": "off", "refresh_at": "07:00", "topic_share": "50", "repeat_topic_days": "14"}
 EVERY = {"daily": 1, "every 2 days": 2, "weekly": 7}
 LABELS = {"auto": "Automatic", "at": "Start at", "rhythm": "Rhythm", "repeat_angle_days": "Don't repeat an angle within (days)",
-          "repeat_listing_days": "Don't repeat a listing within (days)"}
+          "repeat_listing_days": "Don't repeat a listing within (days)", "compare_months": "Compare posts from the last (months)",
+          "refresh": "Refresh competitor posts every day", "refresh_at": "Refresh at",
+          "topic_share": "Informational videos, as a share of all (%)", "repeat_topic_days": "Don't repeat a topic within (days)"}
 
 
 class Invalid(ValueError):
@@ -42,17 +47,21 @@ def save(office: Office, values: dict, *, by: str) -> list[str]:
         if k not in DEFAULTS:
             continue
         v = str(v).strip()
-        if k == "auto" and v not in ("on", "off"):
-            raise Invalid("Automatic is on or off.")
+        if k in ("auto", "refresh") and v not in ("on", "off"):
+            raise Invalid(f"{LABELS[k]} is on or off.")
         if k == "rhythm" and v not in EVERY:
             raise Invalid(f"Rhythm is one of: {', '.join(EVERY)}.")
-        if k == "at":
+        if k in ("at", "refresh_at"):
             try:
                 datetime.strptime(v, "%H:%M")
             except ValueError:
-                raise Invalid("Start at is a time like 09:00.") from None
+                raise Invalid(f"{LABELS[k]} is a time like 09:00.") from None
         if k.startswith("repeat_") and not (v.isdigit() and 0 <= int(v) <= 60):
             raise Invalid("Days are a whole number from 0 to 60.")
+        if k == "topic_share" and not (v.isdigit() and 0 <= int(v) <= 100):
+            raise Invalid("The share is a whole number from 0 to 100.")
+        if k == "compare_months" and not (v.isdigit() and 1 <= int(v) <= 60):
+            raise Invalid("Months are a whole number from 1 to 60.")
         if v != cur[k]:
             new[k] = v
     for k, v in new.items():
@@ -105,8 +114,12 @@ def started(office: Office) -> set[str]:
 
 
 def listings(office: Office) -> list[dict]:
-    """Listings a video can be made for: with a permit, not sold or let."""
-    return [n.props for n in office.graph().of("listing") if n.props.get("permit") and n.status not in ("sold", "let", "withdrawn", "retired")]
+    """What a video can be made for: our confirmed products and services, and listings that are not sold or let; with a
+    permit when the business needs one."""
+    from diwan import products
+    need = business.permit_needed(office)
+    own = [p for p in products.items(office).values() if not need or p.get("permit")]
+    return own + [n.props for n in office.graph().of("listing") if (not need or n.props.get("permit")) and n.status not in ("sold", "let", "withdrawn", "retired")]
 
 
 def _pick(office: Office, day: date, taken: dict[str, date]) -> tuple[str | None, str]:
@@ -128,16 +141,75 @@ def _pick(office: Office, day: date, taken: dict[str, date]) -> tuple[str | None
     return ref, f"used {(day - last[ref]).days} days ago: only {len(pool)} listing{'s' if len(pool) != 1 else ''} with a permit, fewer than your {days}-day rule needs"
 
 
+def _recent_types(office: Office, today: date) -> list[str]:
+    """What the last 7 days' runs were about: "topic" or "listing" (a property or a product)."""
+    return ["topic" if e["content"].get("ref") and topics.get(office, e["content"]["ref"]) else "listing"
+            for e in office.log.list() if e["type"] == "plan.started" and (today - date.fromisoformat(e["content"]["date"])).days < 7]
+
+
+def _type_for(office: Office, today: date, planned: list[str]) -> str:
+    """Listing or topic, to keep the share the Marketing manager set: a topic when topics are below it."""
+    share = int(settings(office)["topic_share"])
+    if share <= 0 or not topics.items(office):
+        return "listing"
+    if share >= 100:
+        return "topic"
+    seen = _recent_types(office, today) + planned
+    return "topic" if seen and seen.count("topic") / len(seen) < share / 100 else "listing"
+
+
+def _market_words(office: Office) -> dict[str, str]:
+    """Words of the topics that win for competitors (Why they win), with who: a topic that shares them is worth making now."""
+    from diwan.agents import reader
+    out: dict[str, str] = {}
+    try:
+        for a in reader.patterns(office)["accounts"]:
+            for f in a["patterns"]:
+                if f["dim"] == "topic":
+                    for w in re.findall(r"[a-z]{4,}", f["value"].lower()):
+                        out.setdefault(w, a["account"])
+    except Exception:  # noqa: BLE001  the plan never waits on the analysis
+        pass
+    return out
+
+
+def _pick_topic(office: Office, day: date, taken: dict[str, date]) -> tuple[str | None, str]:
+    """The topic for a day: one not covered within the no-repeat window; those matching what wins for competitors first,
+    then the ones a person typed, then the least recently covered."""
+    days = int(settings(office)["repeat_topic_days"])
+    last = dict(taken)
+    for u in used(office):
+        d = date.fromisoformat(u["at"])
+        if u["ref"] not in last or d > last[u["ref"]]:
+            last[u["ref"]] = d
+    pool = list(topics.items(office).values())
+    if not pool:
+        return None, "No topic to make a video about yet."
+    market = _market_words(office)
+    hit = lambda t: sorted({market[w] for w in re.findall(r"[a-z]{4,}", f"{t['title']} {t['what']}".lower()) if w in market})  # noqa: E731
+    free = [t for t in pool if t["ref"] not in last or (day - last[t["ref"]]).days >= days]
+    ranked = sorted(free or pool, key=lambda t: (-len(hit(t)), t["source"] != "typed", -min(len(t["features"]), 5), last.get(t["ref"], date.min)))
+    t = ranked[0]
+    if not free:
+        return t["ref"], f"covered {(day - last[t['ref']]).days} days ago: only {len(pool)} topic{'s' if len(pool) != 1 else ''}, fewer than your {days}-day rule needs"
+    why = "not covered for " + (f"{(day - last[t['ref']]).days} days" if t["ref"] in last else "a video yet")
+    return t["ref"], why + (f"; the topic wins for @{hit(t)[0]}" if hit(t) else "") + f" ({t['from']})"
+
+
 def make_plan(office: Office, today: date, *, auto: bool, by: str = "mkt") -> dict:
-    """One day (daily, every 2 days) or the next 7 (weekly), each with its listing and why."""
+    """One day (daily, every 2 days) or the next 7 (weekly), each with its subject (a listing or a topic) and why."""
     n = 7 if settings(office)["rhythm"] == "weekly" else 1
-    days, taken = [], {}
+    days, taken, types = [], {}, []
     for i in range(n):
         d = today + timedelta(days=i)
-        ref, why = _pick(office, d, taken)
+        typ = _type_for(office, today, types)
+        ref, why = _pick_topic(office, d, taken) if typ == "topic" else _pick(office, d, taken)
+        if typ == "topic" and not ref:
+            typ, (ref, why) = "listing", _pick(office, d, taken)
         if ref:
             taken[ref] = d
-        days.append({"date": d.isoformat(), "ref": ref, "why": why})
+        types.append(typ)
+        days.append({"date": d.isoformat(), "ref": ref, "why": why, "type": typ})
     content = {"rhythm": settings(office)["rhythm"], "auto": auto, "days": days}
     office.log.append("plan.made", actor=by, agent="plan", content=content)
     return content
@@ -156,6 +228,8 @@ def move(office: Office, day: str, step: int, *, by: str) -> dict:
     if {ds[i]["date"], ds[j]["date"]} & started(office):
         raise Invalid("A day whose scripts are written can't move.")
     ds[i]["ref"], ds[j]["ref"] = ds[j]["ref"], ds[i]["ref"]
+    if "type" in ds[i] and "type" in ds[j]:
+        ds[i]["type"], ds[j]["type"] = ds[j]["type"], ds[i]["type"]
     ds[i]["why"] = ds[j]["why"] = "moved by hand"
     content = {**{k: p[k] for k in ("rhythm", "auto")}, "days": ds, "moved_by": by}
     office.log.append("plan.made", actor=by, agent="plan", content=content)
@@ -199,3 +273,33 @@ def next_run(office: Office, now: datetime | None = None) -> str | None:
         d += timedelta(days=1)
     when = "today" if d == today else "tomorrow" if d == today + timedelta(days=1) else d.strftime("%A %d %b")
     return f"Next automatic run: {when} at {s['at']} {business.tz_label(office)} ({s['rhythm']})."
+
+
+# ---------- the daily refresh of competitor posts ----------
+
+def last_refresh(office: Office) -> dict | None:
+    return next(({**e["content"], "at": e["at"]} for e in reversed(office.log.list()) if e["type"] == "competitors.refreshed"), None)
+
+
+def refresh_due(office: Office, now: datetime | None = None) -> bool:
+    """At the hour, once a day (in the business's time zone), when the daily refresh is on. A refresh that failed counts as
+    the day's try: it is not repeated every minute."""
+    s = settings(office)
+    if s["refresh"] != "on":
+        return False
+    local = business.local(now or datetime.now(timezone.utc), office)
+    if local.strftime("%H:%M") < s["refresh_at"]:
+        return False
+    last = last_refresh(office)
+    return not (last and business.local(datetime.fromisoformat(last["at"]), office).date() == local.date())
+
+
+def next_refresh(office: Office, now: datetime | None = None) -> str | None:
+    s = settings(office)
+    if s["refresh"] != "on":
+        return None
+    local = business.local(now or datetime.now(timezone.utc), office)
+    last = last_refresh(office)
+    done = bool(last and business.local(datetime.fromisoformat(last["at"]), office).date() == local.date())
+    when = "tomorrow" if done else "today"
+    return f"Next refresh: {when} at {s['refresh_at']} {business.tz_label(office)}."

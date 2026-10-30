@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, UploadFile, WebSocket
 from pydantic import BaseModel
 
 from diwan import brand
@@ -64,7 +65,7 @@ async def learn_company(body: LearnIn):
     from diwan import learn
     try:
         docs = {body.document_name or "company profile": body.document} if body.document.strip() else {}
-        return await asyncio.to_thread(learn.learn, _office(), body.urls[:6], documents=docs, by=body.by, company=body.company)
+        return await asyncio.to_thread(learn.learn, _office(), body.urls[:learn.SITE_PAGES], documents=docs, by=body.by, company=body.company)
     except Exception as e:
         return {"needs": f"Reading the pages failed: {str(e)[:160]}"}
 
@@ -142,7 +143,8 @@ def restore_note(body: NoteIn):
 @router.get("/api/studio/rhythm")
 def get_rhythm():
     from diwan.agents import rhythm
-    return {"settings": rhythm.settings(_office()), "labels": rhythm.LABELS, "rhythms": list(rhythm.EVERY), "next": rhythm.next_run(_office())}
+    return {"settings": rhythm.settings(_office()), "labels": rhythm.LABELS, "rhythms": list(rhythm.EVERY),
+            "next": rhythm.next_run(_office()), "next_refresh": rhythm.next_refresh(_office())}
 
 
 class RhythmIn(BaseModel):
@@ -154,7 +156,7 @@ class RhythmIn(BaseModel):
 def save_rhythm(body: RhythmIn):
     from diwan.agents import rhythm
     try:
-        return {"ok": True, "changed": rhythm.save(_office(), body.values, by=body.by), "next": rhythm.next_run(_office())}
+        return {"ok": True, "changed": rhythm.save(_office(), body.values, by=body.by), "next": rhythm.next_run(_office()), "next_refresh": rhythm.next_refresh(_office())}
     except rhythm.Invalid as e:
         return {"ok": False, "error": str(e)}
 
@@ -213,3 +215,196 @@ def save_approvers(body: ApproversIn):
         return {"ok": True, "changed": approvers.save(_office(), body.values, by=body.by)}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
+
+
+# ---------- talking to the Marketing lead ----------
+
+class ChatIn(BaseModel):
+    session: str
+    text: str
+    ref: str | None = None
+    by: str = "maya"
+
+
+@router.post("/api/marketing/chat")
+async def chat_say(body: ChatIn):
+    from diwan.agents import lead_chat
+    try:
+        return await asyncio.to_thread(lead_chat.say, _office(), body.session, body.text, by=body.by, ref=body.ref)
+    except ValueError as e:
+        return {"reply": str(e), "action": "none"}
+    except Exception as e:  # noqa: BLE001  the model failed: say so, keep the conversation
+        return {"reply": f"I couldn't answer that just now ({str(e)[:120]}). Try again in a moment.", "action": "none"}
+
+
+@router.get("/api/marketing/chat/{session}")
+def chat_history(session: str):
+    from diwan.agents import lead_chat
+    o = _office()
+    return {"messages": [m for m in lead_chat.history(o, session) if m.get("who") in ("person", "lead")],
+            "uploads": lead_chat.uploads(o, session), "pending": lead_chat.pending(o, session)}
+
+
+@router.post("/api/marketing/chat/upload")
+async def chat_upload(session: str = Form(...), files: list[UploadFile] = File(...), ref: str = Form(""), kind: str = Form(""),
+                      whose: str = Form(""), likes: str = Form(""), comments: str = Form(""), by: str = Form("maya")):
+    """Files for the Marketing lead to read: a reel, a post, or a screenshot of its comments. Each is analysed, then the
+    lead answers (and asks for what it still needs)."""
+    from pathlib import Path
+    from diwan.agents import lead_chat
+    from diwan.providers import meta
+    meta.MEDIA.mkdir(exist_ok=True)
+    names = []
+    for i, f in enumerate(files):
+        mime = f.content_type or ""
+        if not mime.startswith(("video/", "image/")):
+            return {"reply": f"{f.filename} is not a video or a picture.", "action": "none"}
+        path = meta.MEDIA / f"chat-{session[:12]}-{len(lead_chat.uploads(_office(), session)) + i + 1}{Path(f.filename or 'f').suffix or ('.mp4' if mime.startswith('video') else '.jpg')}"
+        path.write_bytes(await f.read())
+        facts = {"kind": kind, "whose": whose, "likes": likes, "comments": comments}
+        await asyncio.to_thread(lead_chat.add_upload, _office(), session, path, f.filename or path.name, mime, by=by, facts=facts)
+        names.append(f.filename or path.name)
+    told = ", ".join(f"{k} {v}" for k, v in (("a", kind), ("by", whose), ("likes:", likes), ("comments:", comments)) if v)
+    try:
+        return await asyncio.to_thread(lead_chat.say, _office(), session, f"I uploaded {', '.join(names)}" + (f" ({told})" if told else "") + ".", by=by, ref=ref or None)
+    except Exception as e:  # noqa: BLE001
+        return {"reply": f"I read {', '.join(names)} but couldn't answer just now ({str(e)[:120]}).", "action": "none"}
+
+
+@router.websocket("/api/marketing/chat/audio")
+async def chat_audio(ws: WebSocket, session: str, ref: str = "", by: str = "maya"):
+    """A spoken conversation: the browser streams the microphone (PCM16, 16 kHz) until the person stops. Each finished
+    sentence goes to the Marketing lead; its answer comes back to be spoken, and listening goes on."""
+    from diwan.agents import lead_chat
+    from diwan.providers import voice
+    await ws.accept()
+    if not voice.available():
+        await ws.close(4001, "Listening needs Muse Voice Transcribe (the Meta key in .env). You can type instead.")
+        return
+    q: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    async def chunks():
+        while (c := await q.get()) is not None:
+            yield c
+
+    async def answer(text: str):
+        await ws.send_json({"heard": text})
+        if text.lower().strip(" .!?") in ("stop", "stop talking", "that's all", "that is all", "bye", "goodbye"):
+            await ws.send_json({"stop": True, "reply": "Okay, stopping. Type or press Talk when you need me.", "action": "none"})
+            return
+        try:
+            r = await asyncio.to_thread(lead_chat.say, _office(), session, text, by=by, ref=ref or None)
+        except Exception as e:  # noqa: BLE001
+            r = {"reply": f"I couldn't answer that just now ({str(e)[:100]}).", "action": "none"}
+        await ws.send_json(r)
+
+    def on_turn(t: dict):
+        loop.create_task(answer(t["final"]) if "final" in t else ws.send_json(t))
+
+    relay = asyncio.create_task(voice.stream(chunks(), on_turn))
+    try:
+        while True:
+            msg = await ws.receive()
+            if msg.get("bytes"):
+                await q.put(msg["bytes"])
+            elif msg.get("type") == "websocket.disconnect" or msg.get("text") == "end":
+                break
+    finally:
+        await q.put(None)
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(relay, 15)
+
+
+
+# ---------- our products and services ----------
+
+@router.get("/api/products")
+def list_products():
+    from diwan import products
+    return {"products": list(products.items(_office(), all_=True).values()), "kinds": list(products.KINDS)}
+
+
+class ProductIn(BaseModel):
+    values: dict
+    ref: str | None = None
+    by: str = "maya"
+
+
+@router.post("/api/products")
+def save_product(body: ProductIn):
+    from diwan import products
+    try:
+        return {"ok": True, "ref": products.save(_office(), body.values, by=body.by, ref=body.ref)}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+
+class CrawlIn(BaseModel):
+    url: str
+
+
+@router.post("/api/brand/crawl")
+async def crawl_site(body: CrawlIn):
+    """The pages of the company's own site, found from its home page, for the person to choose before anything is read."""
+    from diwan import learn
+    try:
+        return await asyncio.to_thread(learn.crawl, body.url)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+
+class FindListingsIn(BaseModel):
+    url: str = ""
+    by: str = "maya"
+
+
+@router.post("/api/brand/find-listings")
+async def find_listings(body: FindListingsIn):
+    """The properties on the company's own website, read in code (the model only fills what the code could not read,
+    each value checked against its page), and added to the listings unless they are there already."""
+    from diwan import business, sitelistings
+    url = body.url.strip() or business.get(_office())["website"]
+    try:
+        return await asyncio.to_thread(sitelistings.run, _office(), url, by=body.by)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/api/studio/competitors/refresh")
+async def refresh_now(by: str = "maya"):
+    """Re-read the competitors' posts now (new posts, changed likes), read the new ones, redo the patterns."""
+    from diwan.agents import studio
+    return await asyncio.to_thread(studio.refresh_competitors, _office(), by=by)
+
+
+class TopicIn(BaseModel):
+    values: dict
+    ref: str | None = None
+    by: str = "maya"
+
+
+@router.post("/api/topics")
+def save_topic(body: TopicIn):
+    """A topic typed in Setup (the facts a video may use), or one changed or removed."""
+    from diwan import topics
+    try:
+        return {"ok": True, "ref": topics.save(_office(), body.values, by=body.by, ref=body.ref)}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+
+class TopicUseIn(BaseModel):
+    ref: str
+    use: bool
+    by: str = "maya"
+
+
+@router.post("/api/topics/use")
+def topic_use(body: TopicUseIn):
+    """Stop (or resume) making videos about a Knowledge card or a service. It stays in Knowledge for the agents."""
+    from diwan import topics
+    if body.ref not in topics.items(_office(), all_=True):
+        return {"ok": False, "error": f"No topic {body.ref}."}
+    topics.exclude(_office(), body.ref, by=body.by, on=not body.use)
+    return {"ok": True}

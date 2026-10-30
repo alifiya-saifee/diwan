@@ -264,7 +264,7 @@ def test_suggestions_and_trends_wait_for_the_business(office, monkeypatch):
     monkeypatch.setattr(meta, "search", lambda q, **k: asked.append((q, k)) or {"text": "@one.co https://instagram.com/two.co", "sources": [], "cited": [], "queries": []})
     assert "Set your industry and country" in analysis.suggest(office)["needs"] and not asked
     set_business(office)
-    assert analysis.suggest(office)["suggestions"] == ["two.co", "one.co"]
+    assert [s["handle"] for s in analysis.suggest(office)["suggestions"]] == ["two.co", "one.co"]  # unchecked while Instagram is not connected
     q, k = asked[0]
     assert "Real estate brokerage businesses in Dubai, United Arab Emirates" in q and k["country"] == "AE"
 
@@ -306,7 +306,7 @@ def test_why_they_win_reads_each_post_once_and_shows_only_real_patterns(connecte
     acc = reader.patterns(connected)["accounts"][0]
     assert acc["winners"] == 3 and not acc["need"]
     by = {f["dim"]: f for f in acc["patterns"]}
-    assert by["topic"]["finding"] == "3 of their 3 best posts are about price reveal; 0 of their 7 ordinary posts do."
+    assert by["topic"]["finding"] == "3 of their 3 best posts are about price reveal; 0 of their 7 ordinary posts do (best: 905 likes + comments against their usual 678 for a reel)."
     assert acc["for_us"] == ["a 30-second price reveal of one of our listings, on camera", "a short video showing a person talking to camera",
                              "open the first line with a question", "end by asking people to send a message"]
     assert [p["permalink"] for p in acc["best"]] == ["https://instagram.com/p/p1", "https://instagram.com/p/p3", "https://instagram.com/p/p2"]  # each post once
@@ -466,6 +466,7 @@ def test_supervisor_accepts_the_building_name_and_returns_work_that_misses_the_l
 
 def test_a_script_that_keeps_failing_goes_to_a_person_with_the_reasons(office):
     from diwan.agents import qa
+    business.save(office, {"languages": "English, Arabic"}, by="maya")  # the Arabic hook is checked only when Arabic is a language we post in
     bad = {"id": "C9", "hook_en": "This apartment is a guaranteed investment that will double in value very soon for sure", "hook_ar": "", "lines_en": ["one"]}
     item = studio.reviewed(office, "script", "MC-1204", lambda fb: bad, None)
     assert item is None
@@ -573,7 +574,7 @@ def test_the_automatic_run_starts_at_the_hour_once_and_follows_the_rhythm(office
 def test_a_weekly_plan_spreads_listings_by_the_no_repeat_rule_and_can_be_reordered(office):
     from datetime import date
     from diwan.agents import rhythm
-    rhythm.save(office, {"rhythm": "weekly", "repeat_listing_days": "7"}, by="maya")
+    rhythm.save(office, {"rhythm": "weekly", "repeat_listing_days": "7", "topic_share": "0"}, by="maya")
     p = rhythm.make_plan(office, date(2026, 11, 2), auto=False)
     pool = {x["ref"] for x in rhythm.listings(office)}
     refs = [d["ref"] for d in p["days"]]
@@ -656,7 +657,7 @@ def test_our_own_posts_are_read_too_and_each_weak_one_gets_advice_from_what_wins
     reader.read(connected)
     assert any("our own account" in x["system"] for x in seen)
     o = reader.patterns(connected)["ours"]
-    assert o["read"] == 5 and o["winners"] == 3 and o["patterns"][0]["finding"] == "3 of our 3 best posts are about price reveal; 0 of our 2 ordinary posts do."
+    assert o["read"] == 5 and o["winners"] == 3 and o["patterns"][0]["finding"] == "3 of our 3 best posts are about price reveal; 0 of our 2 ordinary posts do (best: 905 likes + comments against our usual 553 for a reel)."
     assert len(o["weak"]) == 2 and o["weak"][0]["advice"][0].startswith("A 30-second price reveal") and o["weak"][0]["from"] == "our best posts"
     assert any(c["kind"] == "pattern" and c["account"] == "us" for c in studio.board(connected))
 
@@ -665,3 +666,227 @@ def test_a_shot_matches_a_feature_by_its_words_not_a_number_in_the_line():
     lst = {"features": ["sea view", "balcony", "2 parking"], "price_aed": 2_600_000, "permit": "P1"}
     rows = studio.video_plan({"hook_en": "What does it buy?", "lines_en": ["This is Unit 1204.", "Sea view.", "2 bedroom apartment.", "Two parking spaces."]}, lst)
     assert [r["show"] for r in rows[1:]] == ["A wide shot of the main room", "Close-up of the sea view", "A wide shot of the main room", "Close-up of the 2 parking"]
+
+
+def test_a_wrong_spreadsheet_is_refused_with_each_problem_and_nothing_imported(office):
+    cols = studio.CSV_COLUMNS
+    assert "Missing: likes, comments" in studio.check_import(["account", "caption"], [{"account": "a"}])[0]
+    assert studio.check_import([], [])[0].startswith("The file is empty, or not a CSV")
+    bad = [dict(zip(cols, ["competitor", "rival one", "", "http://example.com/x", "STORY", "Hi", "lots", "5", "20/10/2026"]))]
+    problems = studio.check_import(cols, bad)
+    assert problems == ['Row 2, account: "rival one" is not an Instagram handle (letters, numbers, dots, underscores).',
+                        'Row 2, likes: "lots" is not a whole number.', 'Row 2, type: "STORY" must be REELS, VIDEO, IMAGE or CAROUSEL_ALBUM.',
+                        "Row 2, url: not an Instagram link.", 'Row 2, posted_at: "20/10/2026" must look like 2026-10-20 19:30.']
+    good = [dict(zip(cols, ["competitor", "@rival.one", "12,000", "https://www.instagram.com/p/A/", "reel", "Hi", "1,200", "5", "2026-10-20 19:30"]))]
+    assert studio.check_import(cols, good) == []
+    r = studio.import_posts(office, good, by="maya")
+    p = studio.posts(office, "competitor")[0]
+    assert r["imported"] == 1 and p["likes"] == 1200 and p["type"] == "REELS"
+
+
+def test_suggest_keeps_only_named_accounts_that_exist_and_fit_the_industry(office, monkeypatch):
+    set_business(office)
+    monkeypatch.setattr(meta, "ready", lambda: True)
+    monkeypatch.setattr(meta, "search", lambda q, **k: {"text": "1. @realbroker.one (https://a.com) 2. instagram.com/carhire.dxb 3. @gone.account 4. @handle",
+                                                        "sources": [{"url": "https://www.instagram.com/directory.link/"}], "cited": [], "queries": []})
+    monkeypatch.setattr(instagram, "ready", lambda: True)
+    def fetch(u, limit=25):
+        if u == "gone.account":
+            raise instagram.InstagramError("Invalid user id")
+        return {"username": u, "name": u.title(), "followers": 900, "media_count": 40, "avatar": None, "bio": "", "posts": []}
+    monkeypatch.setattr(instagram, "competitor_posts", fetch)
+    monkeypatch.setattr(reader, "fits", lambda o, acc: {"fits": acc["username"] != "carhire.dxb", "fit_why": "Bio says car rental." if acc["username"] == "carhire.dxb" else "Bio says brokerage."})
+    r = analysis.suggest(office)
+    assert [s["handle"] for s in r["suggestions"]] == ["realbroker.one"] and r["suggestions"][0]["why"] == "Bio says brokerage."
+    assert [s["handle"] for s in r["maybe_not"]] == ["carhire.dxb"]  # set apart, with the reason
+    assert r["not_found"] == ["gone.account"]
+    assert "directory.link" not in str(r) and "handle" not in [s["handle"] for s in r["suggestions"]]  # a link on a page it opened is not a suggestion
+
+
+def test_a_typed_handle_is_previewed_before_it_is_added(monkeypatch):
+    from fastapi.testclient import TestClient
+    from diwan import app as appmod
+    c = TestClient(appmod.app)
+    assert c.get("/api/studio/competitors/lookup", params={"u": "bad name!"}).json()["ok"] is False
+    monkeypatch.setattr(instagram, "ready", lambda: True)
+    monkeypatch.setattr(instagram, "competitor_posts", lambda u, limit=25: {"username": u, "name": "Rival", "followers": 1200, "media_count": 80, "avatar": None, "bio": "Homes in Dubai"})
+    r = c.get("/api/studio/competitors/lookup", params={"u": "@Rival.One"}).json()
+    assert r == {"ok": True, "handle": "rival.one", "name": "Rival", "followers": 1200, "posts": 80, "avatar": None, "bio": "Homes in Dubai"}
+    def missing(u, limit=25):
+        raise instagram.InstagramError("Invalid user id")
+    monkeypatch.setattr(instagram, "competitor_posts", missing)
+    assert "personal account" in c.get("/api/studio/competitors/lookup", params={"u": "nobody.here"}).json()["why"]
+
+
+def test_a_win_must_beat_the_usual_by_more_than_chance_and_only_recent_posts_count():
+    mk = lambda i, e, kind="post", at="2026-10-10": {"id": f"x{i}", "engagement": e, "kind": kind, "at": f"{at}T10:00:00+0000"}  # noqa: E731
+    small = [mk(1, 8), mk(2, 6), mk(3, 3), mk(4, 2), mk(5, 1), mk(6, 2)]  # usual 3.7: chance swings it by about 4
+    j = reader.judge(small, "2025-10-30")
+    assert j["wins"] == {"x1"} and j["usual"]["post"] == 4  # 8 is just past chance; 6 is not
+    big = [mk(1, 905, "reel"), mk(2, 855, "reel"), mk(3, 885, "reel"), mk(4, 65, "reel")]
+    assert reader.judge(big, "2025-10-30")["wins"] == {"x1", "x2", "x3"}
+    old = small + [mk(9, 500, at="2022-03-16")]
+    j = reader.judge(old, "2025-10-30")
+    assert j["old"] == 1 and "x9" not in j["wins"]  # a 2022 post is not compared with this year's
+    assert "Too small to tell" in reader._need([], [], reader.judge(small, "2025-10-30"))
+    gone = [mk(i, 5, at="2022-03-16") for i in range(4)]
+    assert reader._need([], [], reader.judge(gone, "2025-10-30")).startswith("Nothing recent to compare: all 4 of their posts are older than 2025-10-30 (the latest is 2022-03-16)")
+
+
+def test_seasonal_winners_are_set_apart_and_a_shared_offer_becomes_a_business_suggestion(connected, monkeypatch):
+    monkeypatch.setattr(instagram, "TRANSPORT", fake_instagram(WINNERS, []))
+    connected.log.append("setting.changed", actor="layla", content={"person": "studio", "key": "competitors", "value": "@rival.one"})
+    studio.watch(connected, None)
+    set_business(connected)
+    monkeypatch.setattr(meta, "ready", lambda: True)
+    monkeypatch.setattr(reader, "_cover", lambda url: None)
+    base = reading([])
+    def look(*a, **k):
+        out = base(*a, **k)
+        for r in out["posts"]:
+            r["offer"] = "a discount or deal" if r["topic"] == "Price reveal" else "no offer"
+        return out
+    monkeypatch.setattr(meta, "look", look)
+    reader.read(connected)
+    acc = reader.patterns(connected)["accounts"][0]
+    offer = next(f for f in acc["patterns"] if f["dim"] == "offer")
+    assert offer["value"] == "a discount or deal" and acc["business"][0].startswith("Their best posts carry a discount or deal") and "owner" in acc["business"][0]
+    assert offer["for_us"] == "a short video that shows a discount or deal"  # the winners were reels
+    # the same posts, one of them read as a Ramadan offer: it is set apart as seasonal, not a year-round pattern
+    office = connected
+    rd = reader.reads(office)
+    pid = next(i for i, r in rd.items() if r["topic"] == "price reveal")
+    office.log.append("post.read", actor="mrival", content=rd[pid] | {"seasonal": "Ramadan"})
+    acc = reader.patterns(office)["accounts"][0]
+    assert [x["season"] for x in acc["seasonal"]] == ["Ramadan"] and acc["need"].startswith("Not enough posts yet")
+
+
+def test_suggest_says_how_many_survived_each_step_and_looks_from_a_new_angle(office, monkeypatch):
+    set_business(office)
+    asked = []
+    monkeypatch.setattr(meta, "ready", lambda: True)
+    monkeypatch.setattr(meta, "search", lambda q, **k: asked.append(q) or {"text": "@old.one @shown.one @fresh.one @fresh.two", "cited": [], "sources": [], "queries": []})
+    monkeypatch.setattr(instagram, "ready", lambda: True)
+    monkeypatch.setattr(instagram, "competitor_posts", lambda u, limit=25: {"username": u, "name": u, "followers": 5, "media_count": 1, "avatar": None, "bio": "", "posts": []})
+    monkeypatch.setattr(reader, "fits", lambda o, acc: {"fits": True, "fit_why": ""})
+    monkeypatch.setattr(studio, "competitors", lambda g: ["old.one"])
+    first = analysis.suggest(office)
+    assert first["steps"] == {"named": 4, "already_saved": 1, "already_shown": 0, "checked": 3, "on_instagram": 3, "fit": 3, "may_not_fit": 0, "not_found": 0}
+    more = analysis.suggest(office, exclude=("shown.one",), round=1)
+    assert [s["handle"] for s in more["suggestions"]] == ["fresh.one", "fresh.two"] and more["steps"]["already_shown"] == 1
+    assert more["angle"] and more["angle"] in analysis.angles(office) and more["angle"] in asked[1] and "@shown.one" in asked[1]  # a different angle, and it is told what to leave out
+    assert asked[0] != asked[1]
+
+
+def test_the_daily_refresh_picks_up_new_posts_and_changed_likes_once_a_day(office, monkeypatch):
+    from datetime import datetime, timezone
+    from diwan.agents import rhythm
+    set_business(office)
+    monkeypatch.setattr(instagram, "ready", lambda: True)
+    monkeypatch.setattr(instagram, "own_posts", lambda: [])
+    monkeypatch.setattr(reader, "fits", lambda o, acc: {})
+    monkeypatch.setattr(studio, "read_posts", lambda o, c: None)
+    monkeypatch.setattr(reader, "pin", lambda o, c=None: None)
+    monkeypatch.setattr(studio, "competitors", lambda g: ["rival.one"])
+    row = lambda i, likes, typ="IMAGE", cap="c": {"id": f"p{i}", "account": "rival.one", "likes": likes, "comments": 0, "caption": cap, "type": typ, "permalink": f"u{i}", "at": "2026-10-30T00:00:00+0000"}
+    day = {"posts": [row(i, 10) for i in range(4)]}
+    monkeypatch.setattr(instagram, "competitor_posts", lambda u, limit=25: {"username": u, "followers": 100, "media_count": 9, "posts": day["posts"]})
+    first = studio.refresh_competitors(office, by="maya")
+    assert (first["ok"], first["new"], first["changed"]) == (True, 4, 0)
+    day["posts"] = [row(0, 40)] + day["posts"][1:] + [row(9, 900, "VIDEO", "new reel")]
+    second = studio.refresh_competitors(office, by="maya")
+    assert (second["new"], second["changed"]) == (1, 1)  # one new post, one whose likes moved
+    assert rhythm.last_refresh(office)["new"] == 1
+
+
+def test_the_refresh_is_due_at_the_hour_once_a_day_and_only_when_on(office):
+    from datetime import datetime, timezone
+    from diwan.agents import rhythm
+    set_business(office)
+    now = datetime.now(timezone.utc)
+    assert not rhythm.refresh_due(office, now)  # off until turned on
+    rhythm.save(office, {"refresh": "on", "refresh_at": "00:00"}, by="maya")
+    assert rhythm.refresh_due(office, now)  # on, past the hour, nothing refreshed today
+    office.log.append("competitors.refreshed", actor="mrival", content={"ok": False, "auto": True, "error": "x", "accounts": 0})
+    assert not rhythm.refresh_due(office, now)  # a try today, even a failed one, is not repeated every minute
+    assert rhythm.next_refresh(office, now).startswith("Next refresh: tomorrow at 00:00")
+    import pytest
+    with pytest.raises(rhythm.Invalid):
+        rhythm.save(office, {"refresh_at": "7am"}, by="maya")
+
+
+def test_our_own_lone_post_of_a_kind_has_no_score_and_is_not_judged(office):
+    """A reel with no other reel to compare to has no score; reading our posts must not fail on it."""
+    for i, (typ, likes) in enumerate([("VIDEO", 50), ("IMAGE", 10), ("IMAGE", 30)]):
+        office.log.append("post.seen", actor="mrival", content={"id": f"o{i}", "account": "us", "source": "own", "type": typ, "likes": likes, "comments": 0,
+                                                                "caption": "c", "permalink": f"u{i}", "at": "2026-10-20T00:00:00+0000"})
+    assert reader.ours(office)["weak"] is not None
+
+
+def test_a_topic_comes_from_confirmed_facts_and_a_typed_one_needs_facts(office):
+    pytest.importorskip("diwan.knowledge")  # topics also come from Knowledge cards
+    from diwan import topics
+    found = topics.items(office)
+    assert found and all(t["features"] and t["source"] in ("card", "product", "typed") for t in found.values())
+    with pytest.raises(ValueError, match="facts"):
+        topics.save(office, {"title": "Mortgages"}, by="maya")  # a title alone is never enough to write from
+    ref = topics.save(office, {"title": "Why a permit matters", "what": "Every ad needs a permit number. The permit shows the property is registered for sale."}, by="maya")
+    t = studio._listing(office, ref)
+    assert (t["item"], t["price_aed"], t["permit"], t["currency"]) == ("topic", None, None, "")
+    topics.save(office, {"status": "removed"}, by="maya", ref=ref)
+    assert ref not in topics.items(office)
+
+
+def test_a_topic_script_is_spoken_to_camera_and_needs_no_price_or_permit(office):
+    from diwan import topics
+    from diwan.agents import qa
+    set_business(office)
+    ref = topics.save(office, {"title": "Why a permit matters", "what": "Every ad needs a permit number. The permit shows the property is registered for sale. "
+                                                                         "Ask the broker for it before you book a viewing."}, by="maya")
+    assert business.permit_needed(office)  # permits are needed for properties, and still not for a topic
+    sc = studio.script(office, ref, {"pick": {"title": "Why a permit matters"}}, None, None, angle="explainer")
+    assert sc["format"] == "to camera" and sc["angle"] == "explainer"
+    assert all(r["show"].startswith("You to camera") for r in sc["shots"]) and not any("price" in r["show"].lower() for r in sc["shots"])
+    assert 5 <= len(sc["lines_en"]) <= 8 and "AED" not in " ".join(sc["lines_en"])
+    for c in qa.CHECKS["script"]:
+        ok, found = c.test(office, ref, sc)
+        assert ok, (c.id if hasattr(c, "id") else c.rule, found)
+    text = studio.post_text(office, ref, sc, None)
+    assert "Permit" not in text["text"] and studio.permit_check(office, ref, text, None) is True  # no permit held it
+    film = studio.film_list(office, ref, {}, None, sc=sc)
+    assert film["shots"][0].startswith("You to camera") and "permit" not in film["shots"][-1].lower()
+    assert all(c.test(office, ref, film)[0] for c in qa.CHECKS["film list"])
+    assert [p["angle"] for p in topics.pick_angles(3, {"explainer"})][:1] != ["explainer"]  # an angle used lately waits
+
+
+def test_the_plan_keeps_the_share_of_informational_videos_and_says_why(office):
+    pytest.importorskip("diwan.knowledge")  # topics also come from Knowledge cards
+    from datetime import date
+    from diwan import topics
+    from diwan.agents import rhythm
+    set_business(office)
+    assert topics.items(office)
+    kinds_of = lambda p: [d["type"] for d in p["days"]]  # noqa: E731
+    rhythm.save(office, {"rhythm": "weekly", "topic_share": "100"}, by="maya")
+    assert set(kinds_of(rhythm.make_plan(office, date(2026, 11, 2), auto=False))) == {"topic"}
+    rhythm.save(office, {"topic_share": "0"}, by="maya")
+    assert set(kinds_of(rhythm.make_plan(office, date(2026, 11, 2), auto=False))) == {"listing"}
+    rhythm.save(office, {"topic_share": "50"}, by="maya")
+    mix = rhythm.make_plan(office, date(2026, 11, 2), auto=False)
+    assert kinds_of(mix) == ["listing", "topic", "listing", "topic", "listing", "topic", "listing"]  # spread, not four in a row
+    topic_days = [d for d in mix["days"] if d["type"] == "topic"]
+    assert all(d["ref"] in topics.items(office) and d["why"].startswith("not covered") for d in topic_days)
+    assert len({d["ref"] for d in topic_days}) == len(topic_days)  # no topic twice in the week
+    with pytest.raises(rhythm.Invalid):
+        rhythm.save(office, {"topic_share": "half"}, by="maya")
+
+
+def test_a_card_can_be_left_out_of_the_topics_without_leaving_knowledge(office):
+    pytest.importorskip("diwan.knowledge")  # topics also come from Knowledge cards
+    from diwan import topics
+    ref = next(iter(topics.items(office)))
+    topics.exclude(office, ref, by="maya")
+    assert ref not in topics.items(office) and topics.items(office, all_=True)[ref]["excluded"] and not topics.typed(office)
+    assert office.graph().nodes[ref].status == "confirmed"  # the agents still answer from it
+    topics.exclude(office, ref, by="maya", on=False)
+    assert ref in topics.items(office)

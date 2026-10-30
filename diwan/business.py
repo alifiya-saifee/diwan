@@ -20,6 +20,9 @@ FIELDS = {  # key: (label, what to write)
     "city": ("City or market", "Optional: the city or region it serves"),
     "timezone": ("Time zone", "Set from the country; pick one if the country has several"),
     "platforms": ("Where we post", "The platforms the studio writes versions for; all of them until some are picked"),
+    "permit": ("Do our posts need a permit or licence number?", "yes or no: when yes, every post shows it and is held without it"),
+    "languages": ("Languages we post in", "e.g. English, Arabic: scripts carry the hook in each"),
+    "website": ("Our website", "The home page; the studio reads it to learn the company and its products"),
 }
 NEEDED = ("industry", "country")
 ZONEINFO = Path("/usr/share/zoneinfo")
@@ -85,6 +88,9 @@ def save(office: Office, values: dict, *, by: str) -> list[str]:
     cur = get(office)
     new = {k: str(values.get(k, cur[k]) or "").strip() for k in FIELDS}
     new["country"] = new["country"].upper()
+    if new["permit"].lower() not in ("", "yes", "no"):
+        raise Invalid("Answer the permit question with yes or no.")
+    new["permit"] = new["permit"].lower()
     if new["country"]:
         c = country(new["country"])
         if not c:
@@ -99,6 +105,17 @@ def save(office: Office, values: dict, *, by: str) -> list[str]:
             office.log.append("setting.changed", actor=by, content={"person": "business", "key": k, "value": v})
             changed.append(k)
     return changed
+
+
+def languages(office: Office) -> list[str]:
+    """The languages posts are written in, as set; [] when not set (then English only)."""
+    import re
+    return [x.strip().capitalize() for x in re.split(r"[,/;]| and ", get(office)["languages"]) if x.strip()]
+
+
+def permit_needed(office: Office) -> bool:
+    """Whether a post must carry a permit or licence number. Until the question is answered, yes (the safer choice)."""
+    return get(office)["permit"].strip().lower() != "no"
 
 
 def platforms(office: Office) -> list[str]:

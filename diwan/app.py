@@ -65,6 +65,8 @@ async def morning_loop():
         from diwan.agents import rhythm, studio
         if (ref := rhythm.due(S.office)):  # the studio's automatic run, when the Marketing manager turned it on
             asyncio.create_task(studio.run(S.office, ref))
+        if rhythm.refresh_due(S.office):  # the daily refresh of competitor posts, when the Marketing manager turned it on
+            asyncio.create_task(asyncio.to_thread(studio.refresh_competitors, S.office, by="mrival", auto=True))
         await asyncio.sleep(60)
 
 
@@ -120,8 +122,9 @@ def roster():
 async def marketing_run(ref: str = "MC-1204"):
     """Run a listing through the studio for real; steps that lack a connection say what they need."""
     from diwan.agents import studio
-    if f"listing:{ref}" not in g().nodes:
-        raise HTTPException(404, "no such listing")
+    from diwan import products, topics
+    if f"listing:{ref}" not in g().nodes and ref not in products.items(S.office) and ref not in topics.items(S.office):
+        raise HTTPException(404, "no such listing, product or topic")
     asyncio.create_task(studio.run(S.office, ref))
     return {"started": ref}
 
@@ -148,10 +151,11 @@ def studio_view(ref: str = "MC-1204"):
             "ads": [b for b in studio.board(S.office) if b["kind"] == "ad"],
             "ad_library": {n.lower(): studio.ad_library_url(n, business.get(S.office)["country"]) for n in studio.competitors(g())},
             "business": business.get(S.office) | {"missing": business.missing(S.office), "platforms_known": list(studio.LIMITS)},
+            "refresh": {"last": rhythm.last_refresh(S.office), "next": rhythm.next_refresh(S.office)},
             "rhythm": {"settings": rhythm.settings(S.office), "next": rhythm.next_run(S.office), "plan": rhythm.current(S.office),
                        "started": sorted(rhythm.started(S.office))},
             "footage": studio.footage(S.office, ref), "approvals": [{"id": n.id, "text": n.props["text"], "kind": n.props.get("kind"),
-                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises", "cards", "built_like", "own", "problems", "shots")} | {"stale": studio.stale(S.office, x)}
+                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises", "cards", "built_like", "own", "problems", "shots", "format")} | {"stale": studio.stale(S.office, x)}
                                        for x in studio.script_options(S.office, n.props["text"])] if n.props.get("kind") == "use_script" else []} for n in reqs],
             "strategy": strategy.report(S.office), "costs": costs.summary(),
             "script_approved": bool(studio.approved_script(S.office, ref)), "heygen": heygen.ready(),
@@ -159,11 +163,20 @@ def studio_view(ref: str = "MC-1204"):
             "brand_voice": __import__("diwan.brand", fromlist=["profile"]).profile(S.office)["voice"]["value"],
             "approvers": {r: {"id": w, "label": approvers.label(S.office, r)} for r, w in approvers.get(S.office).items()},
             "free_video": {"missing": freevideo.missing(), "photos": len(freevideo.photos(S.office, ref)), "voice": freevideo.voice()},
-            "listings": [{"ref": n.props["ref"], "title": n.props["title"], "permit": n.props.get("permit")} for n in g().of("listing")]}
+            "listings": [{"ref": p["ref"], "title": p["title"], "permit": p.get("permit"), "kind": p.get("kind")} for p in __import__("diwan.products", fromlist=["items"]).items(S.office).values()]
+            + [{"ref": t["ref"], "title": t["title"], "permit": None, "kind": "topic"} for t in __import__("diwan.topics", fromlist=["items"]).items(S.office).values()]
+            + [{"ref": n.props["ref"], "title": n.props["title"], "permit": n.props.get("permit"), "kind": "listing"} for n in g().of("listing")],
+            "permit_needed": business.permit_needed(S.office),
+            "topics": {"typed": __import__("diwan.topics", fromlist=["typed"]).typed(S.office),
+                       "available": {k: sum(1 for t in __import__("diwan.topics", fromlist=["items"]).items(S.office).values() if t["source"] == k) for k in ("card", "product", "typed")},
+                       "derived": [{"ref": t["ref"], "title": t["title"], "source": t["source"], "facts": len(t["features"]), "used": not t.get("excluded")}
+                                   for t in __import__("diwan.topics", fromlist=["items"]).items(S.office, all_=True).values() if t["source"] != "typed"]}}
 
 
 class NamesIn(BaseModel):
-    usernames: str
+    usernames: str = ""     # the whole list (Undo puts a list back)
+    add: str | None = None  # or one account to add, or one to remove: two quick clicks never overwrite each other
+    remove: str | None = None
     by: str = "layla"
 
 
@@ -177,8 +190,9 @@ class OwnScriptIn(BaseModel):
 async def own_script(body: OwnScriptIn):
     """The Marketing manager's own script: checked, then told two other ways; all three wait to be picked."""
     from diwan.agents import studio
-    if f"listing:{body.ref}" not in g().nodes:
-        raise HTTPException(404, f"no listing {body.ref}")
+    from diwan import products, topics
+    if f"listing:{body.ref}" not in g().nodes and body.ref not in products.items(S.office) and body.ref not in topics.items(S.office):
+        raise HTTPException(404, f"no listing, product or topic {body.ref}")
     try:
         r = await asyncio.to_thread(studio.own_script, S.office, body.ref, body.text, by=body.by)
     except ValueError as e:
@@ -226,7 +240,14 @@ def set_competitors(body: NamesIn):
     from diwan.agents import studio
     from diwan.providers import instagram
     before = set(studio.competitors(g()))
-    S.office.log.append("setting.changed", actor=body.by, content={"person": "studio", "key": "competitors", "value": body.usernames})
+    names = studio.competitors(g())
+    if body.add:
+        u = body.add.strip().lstrip("@").lower()
+        names = names if u in {n.lower() for n in names} else [*names, u]
+    elif body.remove:
+        names = [n for n in names if n.lower() != body.remove.strip().lstrip("@").lower()]
+    value = ", ".join("@" + n for n in names) if (body.add or body.remove) else body.usernames
+    S.office.log.append("setting.changed", actor=body.by, content={"person": "studio", "key": "competitors", "value": value})
     new = [u for u in studio.competitors(g()) if u not in before]
     if not new or not instagram.ready():
         return {"ok": True, "new": new, "fetched": False}
@@ -239,11 +260,30 @@ def set_competitors(body: NamesIn):
                                           else checks.get(u, {}).get("error", "not checked")) for u in new)}
 
 
-@app.post("/api/studio/competitors/suggest")
-def suggest_competitors():
-    from diwan.agents import analysis
+@app.get("/api/studio/competitors/lookup")
+def lookup_competitor(u: str):
+    """A preview of an exact Instagram handle while it is typed: who it is, or why it can't be read. Free (no model)."""
+    import re as _re
+    from diwan.providers import instagram
+    h = u.strip().lstrip("@").lower()
+    if not _re.fullmatch(r"[a-z0-9_.]{1,30}", h):
+        return {"ok": False, "why": "Letters, numbers, dots and underscores only, up to 30."}
+    if not instagram.ready():
+        return {"ok": None, "why": "Instagram is not connected, so it can't be checked yet."}
     try:
-        return analysis.suggest(S.office)
+        acc = instagram.competitor_posts(h, limit=1)
+    except instagram.InstagramError:
+        return {"ok": False, "why": "Not found, or a personal account (Instagram only shares business and creator accounts)."}
+    return {"ok": True, "handle": acc["username"], "name": acc.get("name"), "followers": acc.get("followers"), "posts": acc.get("media_count"),
+            "avatar": acc.get("avatar"), "bio": (acc.get("bio") or "")[:160]}
+
+
+@app.post("/api/studio/competitors/suggest")
+def suggest_competitors(body: dict | None = None):
+    from diwan.agents import analysis
+    body = body or {}
+    try:
+        return analysis.suggest(S.office, exclude=tuple(str(x) for x in body.get("exclude", []))[:60], round=max(0, int(body.get("round", 0))))
     except Exception as e:  # the search failed: say so
         return {"ok": False, "needs": f"Search failed: {str(e)[:160]}"}
 
@@ -259,12 +299,22 @@ async def import_posts(file: UploadFile = File(...), by: str = Form("layla")):
     import csv
     import io
     from diwan.agents import studio
-    text = (await file.read()).decode("utf-8-sig", errors="replace")
-    rows = list(csv.DictReader(io.StringIO(text)))
-    missing = [c for c in ("account", "likes", "comments") if rows and c not in rows[0]]
-    if not rows or missing:
-        raise HTTPException(422, f"Use the template: missing columns {', '.join(missing) or 'all'}")
-    return studio.import_posts(S.office, rows, by=by)
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return {"ok": False, "problems": ["This is not a CSV file. In your spreadsheet, choose Save as / Download → CSV, then import that file."]}
+    reader = csv.DictReader(io.StringIO(text))
+    rows = [{(k or "").strip().lower(): v for k, v in r.items()} for r in reader]
+    if (problems := studio.check_import(reader.fieldnames or [], rows)):
+        return {"ok": False, "problems": problems[:20], "more": max(0, len(problems) - 20)}  # nothing is imported until the file is right
+    return {"ok": True} | studio.import_posts(S.office, rows, by=by)
+
+
+@app.get("/api/studio/import-sample")
+def import_sample():
+    from diwan.agents import studio
+    return {"columns": studio.CSV_SAMPLE}
 
 
 class AIVideoIn(BaseModel):

@@ -145,9 +145,9 @@ function deptOf(agent) {
   return "front";
 }
 const TEAM_LINE = { mprod: "Production turns the approved script into footage: the broker films it, or an AI presenter reads it.", research: "Research finds what is working.", plan: "Planning picks what to film and when.", mcopy: "Scripting writes it in our voice.",
-  mart: "Editing cuts the takes into reels.", mpub: "Publishing checks the permit and posts it everywhere.", inbox: "The inbox answers every comment and enquiry." };
-const TEAM_NAME = { research: "Research", plan: "Planning", mcopy: "Scripting", mprod: "Production", mart: "Editing", mpub: "Publishing", inbox: "Inbox" };
-const TICKET = { mprod: "Shoot", research: "Research", plan: "Plan", mcopy: "Script", mart: "Edit", mpub: "Post", inbox: "Reply" };
+  mart: "Editing cuts the takes into reels.", mpub: "Publishing checks the permit and posts it everywhere." };
+const TEAM_NAME = { research: "Research", plan: "Planning", mcopy: "Scripting", mprod: "Production", mart: "Editing", mpub: "Publishing" };
+const TICKET = { mprod: "Shoot", research: "Research", plan: "Plan", mcopy: "Script", mart: "Edit", mpub: "Post" };
 
 // the teams on a department's own floor
 function teamsOf(dept) {
@@ -156,7 +156,6 @@ function teamsOf(dept) {
   const ks = kids(d.lead);
   if (ks.some((k) => k.level === "room")) {
     const rooms = ks.filter((k) => k.id !== "mlib").map((r) => ({ id: r.id, name: TEAM_NAME[r.id] || r.role, agents: [r.id, ...kids(r.id).map((c) => c.id)], line: TEAM_LINE[r.id] || r.job }));
-    if (dept === "mkt") rooms.push({ id: "inbox", name: "Inbox", agents: ["rania"], line: TEAM_LINE.inbox });
     return rooms;
   }
   return ks.map((k) => ({ id: k.id, name: k.name, agents: [k.id], line: k.job }));
@@ -748,7 +747,9 @@ function renderSide() {
   if (where === "hq" || tab === "talk" && zone === "nova") { $("ztitle").textContent = "Nova"; $("zsub").textContent = "Chief of staff · the front desk"; return renderNova(); }
   const d = DEPTS[where];
   $("ztitle").textContent = d.name; $("zsub").textContent = `${deptAgents(where).length} agents · ${d.about}`;
-  $("zbody").replaceChildren(h("button", { class: "bigbtn", onclick: () => { zone = "nova"; tab = "talk"; renderSide(); } }, "Talk to Nova"),
+  $("zbody").replaceChildren(where === "mkt"  // the Marketing floor talks to its own lead, about marketing only
+      ? h("button", { class: "bigbtn", onclick: () => import("./mchat.js").then((m) => m.openChat()) }, "Talk to the Marketing lead")
+      : h("button", { class: "bigbtn", onclick: () => { zone = "nova"; tab = "talk"; renderSide(); } }, "Talk to Nova"),
     ...floor.teams.map((t) => {
       const states = t.agents.map(agentState), st = states.includes("working") ? "working" : states.includes("waiting") ? "waiting" : "idle";
       return h("div", { class: "team" }, h("div", { class: "tn" }, h("i", { style: `background:${hex(d.color)}` }), t.name, h("span", { class: `state ${st}` }, st === "waiting" ? "needs you" : st)),

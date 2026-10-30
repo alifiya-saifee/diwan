@@ -20,9 +20,20 @@ UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit
 MAX_CHARS = 12_000   # per page: enough for a profile page, bounded so one call stays cheap
 TOPICS = ["about", "services", "areas", "people", "contact", "track record", "policies"]
 
-SCHEMA = {"name": "company", "strict": True, "schema": {"type": "object", "additionalProperties": False, "required": ["company", "cards", "brand"],
+SITE_PAGES = 20      # pages read from one site at most
+BUDGET = 60_000      # characters sent in one call, shared by the pages
+PRIORITY = re.compile(r"about|product|service|solution|pricing|price|contact|team|compan|faq|case|industr|what-we|who-we", re.I)
+SKIP = re.compile(r"\.(pdf|jpe?g|png|gif|svg|webp|zip|mp4|mov|docx?|xlsx?)$|/(login|signin|cart|checkout|account|wp-admin|feed)\b", re.I)
+
+SCHEMA = {"name": "company", "strict": True, "schema": {"type": "object", "additionalProperties": False, "required": ["company", "cards", "brand", "products"],
           "properties": {
               "company": {"type": "string"},
+              "products": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                                                      "required": ["title", "kind", "what", "features", "price", "currency", "quote", "source"],
+                                                      "properties": {"title": {"type": "string"}, "kind": {"type": "string", "enum": ["product", "service"]},
+                                                                     "what": {"type": "string"}, "features": {"type": "array", "items": {"type": "string"}},
+                                                                     "price": {"type": "string"}, "currency": {"type": "string"},
+                                                                     "quote": {"type": "string"}, "source": {"type": "string"}}}},
               "cards": {"type": "array", "items": {"type": "object", "additionalProperties": False,
                                                    "required": ["topic", "title", "text", "quote", "source"],
                                                    "properties": {"topic": {"type": "string", "enum": TOPICS}, "title": {"type": "string"},
@@ -38,6 +49,68 @@ def page_text(html: str) -> str:
     text = re.sub(r"&nbsp;|&#160;", " ", text)
     text = re.sub(r"&amp;", "&", text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _host(u: str) -> str:
+    return urlparse(u).netloc.lower().removeprefix("www.")
+
+
+def crawl(url: str, limit: int = SITE_PAGES) -> dict:
+    """The company's own pages, found by following links from its home page: same site only, the site's robots.txt
+    respected, the pages a company profile usually lives on (about, products, services, contact...) first. Nothing is
+    read for knowledge here; the person picks from this list. {ok, pages: [{url, title}], refused}."""
+    from urllib.robotparser import RobotFileParser
+    from urllib.parse import urldefrag, urljoin
+    url = url.strip()
+    if not url:
+        raise ValueError("Give the website's address.")
+    if not url.startswith("http"):
+        url = "https://" + url
+    host = _host(url)
+    if not host or "." not in host:
+        raise ValueError(f"{url} is not a web address.")
+    robots = RobotFileParser()
+    with httpx.Client(transport=TRANSPORT, timeout=15, follow_redirects=True, headers=UA) as c:
+        try:
+            r = c.get(f"{urlparse(url).scheme}://{urlparse(url).netloc}/robots.txt")
+            robots.parse(r.text.splitlines() if r.status_code == 200 else [])
+        except httpx.HTTPError:
+            robots.parse([])
+        from concurrent.futures import ThreadPoolExecutor
+
+        def get(u: str):
+            try:
+                return c.get(u)
+            except httpx.HTTPError:
+                return None
+
+        seen, queue, pages, refused, found = set(), [url], [], [], set()
+        with ThreadPoolExecutor(6) as pool:
+            while queue and len(pages) < limit:
+                queue.sort(key=lambda u: (not PRIORITY.search(urlparse(u).path), len(urlparse(u).path)))
+                batch = []
+                while queue and len(batch) < 6:  # six pages at a time, the profile pages first
+                    u = queue.pop(0)
+                    if u in seen:
+                        continue
+                    seen.add(u)
+                    (batch if robots.can_fetch("*", u) else refused).append(u)
+                for u, r in zip(batch, pool.map(get, batch)):
+                    if r is None or r.status_code >= 400 or "html" not in r.headers.get("content-type", "html") or len(pages) >= limit:
+                        continue
+                    final = str(r.url).rstrip("/")
+                    if final in found:
+                        continue  # a redirect to a page already read
+                    found.add(final)
+                    title = re.search(r"<title[^>]*>(.*?)</title>", r.text, re.S | re.I)
+                    pages.append({"url": str(r.url), "title": re.sub(r"\s+", " ", title.group(1)).strip()[:90] if title else urlparse(u).path or "/"})
+                    for href in re.findall(r"""<a[^>]+href=["']([^"'#]+)""", r.text, re.I):
+                        nxt = urldefrag(urljoin(str(r.url), href))[0].split("?")[0].rstrip("/")
+                        if nxt.startswith("http") and _host(nxt) == host and not SKIP.search(nxt) and nxt not in seen:
+                            queue.append(nxt)
+    if not pages:
+        raise ValueError(f"Nothing could be read at {url}: the site refused, or it is built in the browser. Paste the pages' text instead.")
+    return {"ok": True, "pages": pages, "refused": refused[:10]}
 
 
 def fetch(urls: list[str]) -> tuple[dict[str, str], list[str]]:
@@ -56,7 +129,7 @@ def fetch(urls: list[str]) -> tuple[dict[str, str], list[str]]:
             except httpx.HTTPError as e:
                 problems.append(f"{u}: could not connect ({type(e).__name__})")
                 continue
-            text = page_text(r.text)[:MAX_CHARS]
+            text = page_text(r.text)[:max(2_000, min(MAX_CHARS, BUDGET // max(1, len(urls))))]  # many pages share one call's budget
             if r.status_code >= 400:
                 problems.append(f"{u}: the site refused ({r.status_code})")
             elif len(text) < 200:
@@ -84,7 +157,10 @@ def learn(office: Office, urls: list[str] | None = None, *, documents: dict[str,
         "cards: 8 to 15 facts about this company only (pages may also list other agencies or listings: ignore those). Each card has a "
         "short title, one or two plain sentences, `quote`: 5 to 25 words copied exactly, character for character, from the page that "
         "supports it, and `source`: that page's address or document name exactly as given. Never state anything the pages do not say.\n"
-        "brand: the brand profile drawn from how the company describes itself; leave a field empty when the pages say nothing about it.")
+        "brand: the brand profile drawn from how the company describes itself; leave a field empty when the pages say nothing about it.\n"
+        "products: each product or service this company itself sells, as the pages describe it: title, kind, what it is in one sentence, "
+        "its features as the pages list them, price and currency only when a page shows them (else empty), a 5 to 25 word quote copied "
+        "exactly from the page that describes it, and that page as source. None that the pages do not describe.")
     user = runner.user_message(f"Learn about {company or 'the company these pages describe'}.", pages)
     if not runner.has_model(c, system, user, schema=SCHEMA):
         return {"needs": "A model (META_API_KEY), or this month's budget, to read the pages.", "problems": problems}
@@ -108,5 +184,17 @@ def learn(office: Office, urls: list[str] | None = None, *, documents: dict[str,
                                       evidence=[Evidence(k["quote"], next(u for u in pages if u.rstrip('/') == k["source"].rstrip('/'))) for k in kept],
                                       actions=[Action("draft", "Knowledge cards to confirm")]),
                   sources=pages)
-    return {"company": data.get("company") or company, "pages": list(pages), "problems": problems, "proposed": kept, "dropped": dropped,
+    from diwan import products
+    found, nope = [], []
+    for item in data.get("products", []):
+        src = next((u for u in pages if u.rstrip("/") == item["source"].rstrip("/")), None)
+        if not src or not item["quote"].strip() or norm(item["quote"]) not in norm(pages[src]):
+            nope.append({"title": item["title"], "why": "its quote is not on the page it cites" if src else "it cites a page that was not read"})
+            continue
+        price = re.sub(r"[^\d.]", "", item.get("price") or "")
+        found.append({"title": item["title"], "kind": item["kind"], "what": item["what"], "features": item["features"],
+                      "price": price if price and price.replace(".", "", 1).isdigit() else "", "currency": item.get("currency", ""), "page": src})
+    new = products.propose(office, found, by="mbrand")
+    return {"company": data.get("company") or company, "pages": list(pages), "problems": problems, "proposed": kept, "dropped": dropped + nope,
+            "products": [products.get(office, r) for r in new],
             "brand": {k: (data.get("brand", {}).get(k) or "").strip() for k in brand.FIELDS}, "by": "Brand brain (Muse Spark)"}

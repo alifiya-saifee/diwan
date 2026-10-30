@@ -83,7 +83,7 @@ def brief(office: Office) -> str:
     return "\n".join(lines) + "\nWrite in this voice. Never use the words or make the claims listed above."
 
 
-def cta(office: Office, default: str = "Message us to book a viewing.") -> str:
+def cta(office: Office, default: str = "Message us to find out more.") -> str:
     return profile(office)["cta"]["value"] or default
 
 

@@ -151,6 +151,16 @@
   .readbar span { flex: 1 1 260px; }
   .warnline { color: var(--warn); font-size: 12px; }
   .builtlike { font-size: 13px; color: var(--gold); margin: 4px 0; }
+  .fromsite { display: flex; gap: var(--s2); align-items: flex-start; margin-top: 4px; font-size: 12.5px; color: var(--gold); } .fromsite span { flex: 1; min-width: 0; }
+  .learnout { border: 1px solid var(--green); border-radius: 10px; padding: var(--s2) var(--s3); margin-top: var(--s2); font-size: 13.5px; } .learnout p { margin: 4px 0; }
+  .busy { color: var(--gold); }
+  .prod { display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s2) 0; border-bottom: 1px solid var(--line); font-size: 13.5px; } .prod.proposed { border-left: 3px solid var(--gold); padding-left: var(--s2); }
+  .prod .acts { display: flex; gap: var(--s1); align-items: center; } .site { margin: var(--s2) 0; } .site .pages { display: flex; flex-direction: column; gap: 2px; margin: var(--s1) 0; max-height: 260px; overflow-y: auto; }
+  .biz { border: 1px solid var(--gold); border-radius: 10px; padding: var(--s2) var(--s3); margin: var(--s2) 0; font-size: 13.5px; display: flex; flex-direction: column; gap: 4px; }
+  .pv { display: flex; gap: var(--s2); align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: var(--s2); margin-top: var(--s1); font-size: 13.5px; }
+  .pv.ok { border-color: var(--green); } .pv.bad { border-color: var(--bad); color: var(--bad); } .pv .av, .sugg .av { width: 36px; height: 36px; border-radius: 50%; flex: none; }
+  .sugg .who { display: flex; gap: var(--s1); align-items: center; min-width: 0; } .sugg .who > span { display: flex; flex-direction: column; min-width: 0; }
+  .sugg .why { font-size: 12px; margin: 4px 0; } .maybe { margin-top: var(--s2); }
   .weak { margin-top: var(--s2); font-size: 13.5px; } .weakrow { padding: var(--s1) 0; border-top: 1px solid var(--line); } .weakrow p { margin: 2px 0; } .weakrow ul { margin: 2px 0; padding-left: 18px; }
   .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3); margin-top: var(--s2); } @media (max-width: 800px) { .two { grid-template-columns: minmax(0, 1fr); } }
   .way { border: 1px solid var(--line); border-radius: 10px; padding: var(--s2) var(--s3); min-width: 0; } .way input[type=file] { min-width: 0; max-width: 100%; }
@@ -196,6 +206,8 @@
   .undo { position: fixed; left: 50%; bottom: var(--s4); transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: var(--s2);
           padding: var(--s2) var(--s3); border-radius: 12px; background: var(--panel-solid); border: 1px solid var(--line-2); font-size: 13px; }
   .importrow { flex-wrap: wrap; }
+  .sample { margin-top: var(--s2); font-size: 13px; } .sample summary { cursor: pointer; color: var(--muted); }
+  #impres ul { margin: 4px 0; padding-left: 18px; }
   .importrow .note { flex: 1 1 260px; }
   #csv { flex: 0 1 220px; }
 </style>
@@ -240,6 +252,8 @@
         <span class="tip" role="tooltip" id="viewsnote">Likes and comments only: Instagram does not give other accounts' views, reach or stories. A best post is one with more likes + comments than its account's average, reels compared with reels and other posts with other posts.</span></span></h2>
       <div id="compempty" class="empty" hidden></div>
       <div id="compbody">
+        <div class="row" style="margin:0 0 10px;gap:12px"><button id="refreshnow2">Refresh now</button><span class="note" id="refreshnote2"></span></div>
+        <div id="refreshres2"></div>
         <nav class="tabs sub" role="tablist" aria-label="Competitors" id="subtabs">
           <button role="tab" id="s-overview" aria-controls="sub-overview" data-sub="overview">Overview</button>
           <button role="tab" id="s-top" aria-controls="sub-top" data-sub="top">Top posts</button>
@@ -287,6 +301,13 @@
         <div><label for="bz-country">Country</label><select id="bz-country"></select></div>
         <div id="bz-tzbox"><label for="bz-timezone">Time zone</label><select id="bz-timezone"></select></div>
         <div><label for="bz-city">City or market (optional)</label><input id="bz-city" autocomplete="off"></div>
+        <div><label for="bz-permit">Do our posts need a permit or licence number?</label><select id="bz-permit"><option value="">Not answered yet (treated as yes)</option><option value="yes">Yes: every post shows it, and is held without it</option><option value="no">No</option></select></div>
+        <div><label for="bz-languages">Languages we post in</label><input id="bz-languages" placeholder="e.g. English, Arabic" autocomplete="off"></div>
+        <div class="wide site"><label for="siteurl">Our website</label>
+          <div class="row"><input id="siteurl" placeholder="Your home page, e.g. yourcompany.com" autocomplete="off"><button id="sitefind">Read our website</button><button id="sitelist">Find properties on our website</button></div>
+          <p class="note">Diwan finds the pages of your own site (up to 20, free), you untick any, then the Brand brain reads them and proposes knowledge cards and your products or services, each quoted from its page (about $0.02 to $0.05).</p>
+          <p class="note">Find properties reads each property page on your site in code (free) and adds the ones not in Diwan to your listings; the model only fills what a page doesn't label (community, type), about $0.01 per 8 pages, and anything it gives that isn't on the page is dropped. Ones already here are not added twice; one that differs is shown to you, not changed.</p>
+          <div id="sitepages" class="note"></div><div id="sitelistings" class="note"></div></div>
         <div class="wide"><label>Where we post</label><div class="checks" id="bz-platforms"></div></div>
       </div>
       <div class="savebar"><span id="bizmsg"></span><button class="primary" id="bizsave">Save</button></div>
@@ -296,8 +317,8 @@
       <p class="note" id="brandnote"></p>
       <p class="note"><a href="graph.html?view=marketing">See it in the memory graph →</a></p>
       <details class="learn" id="learnbox"><summary>Learn our company from its pages or a document</summary>
-        <p class="note">Paste up to 6 public pages about the company (its own site, and its profiles on the sites where it is listed). The Brand brain reads them and
-          proposes knowledge cards, each with a quote copied from its page; a card whose quote is not on the page is dropped. Nothing is used until you confirm it on the Knowledge page.</p>
+        <p class="note">To read your whole website, put its address under Our business above. Or paste up to 20 public pages about the company (its own site, and its profiles on the sites where it is listed). The Brand brain reads them and
+          proposes knowledge cards and our products or services, each with a quote copied from its page; anything whose quote is not on the page is dropped. Nothing is used until you confirm it: cards on the Knowledge page, products below.</p>
         <div class="row"><input id="learnco" placeholder="Company name"><textarea id="learnurls" rows="2" placeholder="Web pages: https://… one per line"></textarea></div>
         <textarea id="learndoc" rows="4" placeholder="…or paste a company profile, brochure or about-us text"></textarea>
         <div class="row"><button id="learndemo">Use the demo company profile</button><span class="grow"></span><button id="learngo">Read and propose</button></div>
@@ -305,6 +326,36 @@
       </details>
       <div class="bgrid" id="brandform"></div>
       <div class="savebar"><span id="brandmsg"></span><button id="branddraft">Draft it for me</button><button class="primary" id="brandsave">Save</button></div>
+    </section>
+
+    <section class="panel" id="productpanel"><h2>Our products and services</h2>
+      <p class="note">What the studio writes reels for, besides any listings from the CRM. Found on your website (each with the page it came from), or added here. Only confirmed ones are used.</p>
+      <div id="prodlist"></div>
+      <details class="addprod"><summary>Add one</summary>
+        <div class="adform">
+          <div><label for="pr-title">Name</label><input id="pr-title" autocomplete="off"></div>
+          <div><label for="pr-kind">Kind</label><select id="pr-kind"><option value="product">Product</option><option value="service">Service</option></select></div>
+          <div class="wide"><label for="pr-what">What it is, in one sentence</label><input id="pr-what" autocomplete="off"></div>
+          <div class="wide"><label for="pr-features">Features, comma-separated</label><input id="pr-features" autocomplete="off"></div>
+          <div><label for="pr-price">Price (empty if not public)</label><input id="pr-price" inputmode="decimal" autocomplete="off"></div>
+          <div><label for="pr-currency">Currency</label><input id="pr-currency" placeholder="e.g. AED" autocomplete="off"></div>
+          <div class="wide row"><span class="fieldmsg grow" id="prmsg" role="status"></span><button class="primary" id="prsave">Add</button></div>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel" id="topicpanel"><h2>Topics to cover</h2>
+      <p class="note">What the studio explains, when a video is not about one property or product: how buying works, what a permit is, what a service covers. It also uses, on its own, your confirmed Knowledge cards (company, approved answers, projects, areas) and your confirmed products and services. A topic's script is written only from the facts you give here, spoken to camera.</p>
+      <p class="note" id="topicsrc"></p>
+      <div id="topiclist"></div>
+      <details class="addprod"><summary id="derivedsum">From your cards and services</summary><div id="derivedlist" style="margin-top:8px"></div></details>
+      <details class="addprod"><summary>Add a topic</summary>
+        <div class="adform">
+          <div class="wide"><label for="tp-title">Topic</label><input id="tp-title" placeholder="e.g. What to check before buying off-plan" autocomplete="off"></div>
+          <div class="wide"><label for="tp-what">The facts a video may use</label><textarea id="tp-what" rows="4" placeholder="One fact per sentence. The script uses only these."></textarea></div>
+          <div class="wide row"><span class="fieldmsg grow" id="tpmsg" role="status"></span><button class="primary" id="tpsave">Add</button></div>
+        </div>
+      </details>
     </section>
 
     <section class="panel" id="approvalpanel"><h2>Approvals</h2>
@@ -322,6 +373,12 @@
         <div></div>
         <div><label for="rh-angle">Don't repeat an angle within (days)</label><input type="number" min="0" max="60" id="rh-angle"></div>
         <div><label for="rh-listing">Don't repeat a listing within (days)</label><input type="number" min="0" max="60" id="rh-listing"></div>
+        <div><label for="rh-months">Why they win compares posts from the last (months)</label><input type="number" min="1" max="60" id="rh-months"></div>
+        <div><label for="rh-share">Informational videos, as a share of all (%)</label><input type="number" min="0" max="100" id="rh-share"></div>
+        <div><label for="rh-topic">Don't repeat a topic within (days)</label><input type="number" min="0" max="60" id="rh-topic"></div>
+        <div class="wide"><label class="check" for="rh-refresh"><input type="checkbox" id="rh-refresh"> Refresh competitor posts every day</label>
+          <p class="note">Instagram doesn't say when a competitor posts, so Diwan checks: once a day at this hour it re-reads their recent posts (new ones, and the likes and comments of the old), has the model read the new ones, and updates Why they win. Instagram reads cost nothing; the model reading is cents.</p></div>
+        <div><label for="rh-refresh-at">Refresh at</label><input type="time" id="rh-refresh-at"></div>
       </div>
       <div class="savebar"><span id="rhmsg"></span><button class="primary" id="rhsave">Save</button></div>
     </section>
@@ -337,8 +394,11 @@
         <label class="prefix" for="addname"><span aria-hidden="true">@</span><input id="addname" placeholder="Add an Instagram business account" autocomplete="off" spellcheck="false"></label>
         <button class="primary" id="addbtn">Add</button><button id="suggest">Suggest</button>
       </div>
+      <div id="preview" aria-live="polite"></div>
       <div class="fieldmsg" id="addmsg" role="status"></div>
       <div id="sugg"></div>
+      <div class="row" id="refreshbar" style="margin:14px 0 6px;gap:12px"><button id="refreshnow">Refresh now</button><span class="note" id="refreshnote"></span></div>
+      <div id="refreshres"></div>
       <div class="accounts" id="acclist"></div>
     </section>
 
@@ -346,16 +406,18 @@
       <div class="row importrow"><span class="note">For when Instagram can't be read: copy real posts into the
         <a href="/api/studio/import-template">spreadsheet template</a> (likes, comments, caption, link, date) and import it.</span>
         <input type="file" id="csv" accept=".csv,text/csv"><button class="primary" id="imp">Import posts</button></div>
-      <div id="impres" class="note"></div>
+      <details class="sample" id="impsample" open><summary>The format, with one example row</summary><div class="scroll" id="impcols"></div></details>
+      <div id="impres" class="fieldmsg" role="status"></div>
     </section>
   </section>
   <div class="undo" id="undo" role="status" hidden><span id="undotext"></span><button id="undobtn">Undo</button></div>
 </main>
 <script type="module">
 import { h, api, post, header, follow, toast, NAMES } from "./app.js";
+import { openChat } from "./mchat.js";
 header("studio.html");
 const $ = (id) => document.getElementById(id);
-let ref = new URLSearchParams(location.search).get("ref") || "MC-1204", data;
+let ref = new URLSearchParams(location.search).get("ref") || "", data;  // empty: the first product or listing, once loaded
 const ROOMS = [["Research", ["mrival", "mtrend", "mtrans", "research"]], ["Planning", ["midea", "mlane", "mfilm"]], ["Scripting", ["mscript", "mcheck", "mplay", "mcopy"]],
   ["Production", ["mshoot", "mvideo"]],
   ["Editing", ["mcap", "mremix", "mwriter"]], ["Publishing", ["mthumb", "mpermit", "msched", "mcross", "mpub"]]];
@@ -366,7 +428,7 @@ const NAME = { mrival: "Competitor watch", mtrend: "Trend scout", mtrans: "Trans
 const BRAND_GROUPS = [["Who we are", ["name", "positioning", "audience"]], ["How we sound", ["voice", "say"]], ["Rules", ["avoid", "never_claim"]],
   ["Sign-off & hashtags", ["cta", "hashtags"]]];
 let last = {}, lastAt = {};
-const fromText = (ids) => (ids || []).map((x) => x.startsWith("listing:") ? `the listing ${x.slice(8)}` : `${x} "${data.board.find((b) => b.id === x)?.title || "card not on the board"}"`).join("; ");
+const fromText = (ids) => (ids || []).map((x) => x.startsWith("listing:") ? `the listing ${x.slice(8)}` : x.startsWith("product:") ? `the product ${x.slice(8)}` : `${x} "${data.board.find((b) => b.id === x)?.title || "card not on the board"}"`).join("; ");
 
 // ---------- tabs ----------
 function tabs(navId, attr, panelPrefix, initial, onShow) {
@@ -396,6 +458,7 @@ const days = (from, to) => Math.max(0, Math.round((new Date((to || new Date().to
 
 async function load() {
   data = await api(`/api/studio?ref=${ref}`);
+  if (data.listings.length && !data.listings.some((l) => l.ref === ref)) { ref = data.listings[0].ref; data = await api(`/api/studio?ref=${ref}`); }
   const evs = await api("/api/events");
   last = {}; lastAt = {};
   for (const e of evs) {
@@ -415,9 +478,10 @@ function render() {
     `Estimated from tokens; a repeated request is answered from the cache at no cost (saved $${k$.saved_usd.toFixed(2)}, ${k$.cached_calls}/${k$.calls} calls).`;
   $("top").replaceChildren(
     h("div", { class: "left" }, h("h1", {}, "The ", h("em", {}, "studio")),
-      h("select", { "aria-label": "Listing", onchange: (e) => { ref = e.target.value; load(); } }, data.listings.map((l) => h("option", { value: l.ref, selected: l.ref === ref }, `${l.ref} · ${l.title}${l.permit ? "" : " (no permit)"}`))),
-      h("button", { class: "primary", id: "runbtn", onclick: async () => { await post(`/api/marketing/run?ref=${ref}`); showTab("run"); toast("Running: watch it here or on the Marketing floor"); } }, "Run this listing"),
-      h("a", { class: "btn", href: "office3d.html?enter=mkt" }, "Watch on the floor")),
+      h("select", { "aria-label": "Listing", onchange: (e) => { ref = e.target.value; load(); } }, data.listings.map((l) => h("option", { value: l.ref, selected: l.ref === ref }, `${l.kind === "listing" ? "" : l.kind === "service" ? "Service · " : l.kind === "topic" ? "Topic · " : "Product · "}${l.kind === "topic" ? "" : l.ref + " · "}${l.title}${data.permit_needed && !l.permit ? " (no permit)" : ""}`))),
+      h("button", { class: "primary", id: "runbtn", onclick: async () => { await post(`/api/marketing/run?ref=${ref}`); showTab("run"); toast("Running: watch it here or on the Marketing floor"); } }, (() => { const k = (data.listings.find((l) => l.ref === ref) || {}).kind; return k === "listing" ? "Run this listing" : k === "topic" ? "Make an informational video" : "Make a reel for this"; })()),
+      h("a", { class: "btn", href: "office3d.html?enter=mkt" }, "Watch on the floor"),
+      h("button", { id: "talkbtn", onclick: () => openChat({ ref: () => ref }) }, "Talk to the Marketing lead")),
     h("div", { class: "right" },
       pill(c.instagram, c.instagram ? "Instagram connected" : (c.instagram_why || "").startsWith("Instagram refused") ? "Instagram refuses the token" : "Connect Instagram",
         c.instagram ? `Reading as @${c.instagram_user}` : c.instagram_why, !c.instagram && !!c.instagram_why),
@@ -428,7 +492,7 @@ function render() {
   if (miss.length) $("bizbanner").replaceChildren(h("span", {}, `Set your ${miss.join(" and ").toLowerCase()} in Setup first: the trend search, competitor suggestions and Why they win wait for them.`),
     h("button", { onclick: () => { showTab("setup"); $("bz-industry").focus(); } }, "Open Setup"));
   $("compnote").textContent = `Instagram business or creator accounts of ${industryWords()} you compete with. Each one is checked as you add it; their public posts are read with our own account. They never see it.`;
-  renderPlan(); renderChain(); renderRun(); renderCompetitors(c); renderAccounts();
+  renderPlan(); renderChain(); renderRun(); renderCompetitors(c); renderAccounts(); renderRefresh(); renderTopics();
 }
 
 // ---------- run tab ----------
@@ -481,7 +545,7 @@ function scriptCard(r) {
     h("b", {}, `Pick a script: ${r.options.length} checked by the Copywriter, waiting for ${data.approvers.script.label}`),
     h("p", { class: "note" }, "Filming, AI video, editing and covers start only after you pick one. Ask for a change in plain words and only that script is rewritten."),
     h("div", { class: "opts" }, ...r.options.map((o, i) => h("div", { class: "opt", "data-script": o.id },
-      h("div", {}, h("span", { class: "tag" }, `${i + 1} · ${o.angle}`), h("span", { class: "note" }, `${o.why || ""} · ${o.via}${o.revises ? ` · revised from ${o.revises}` : ""}`)),
+      h("div", {}, h("span", { class: "tag" }, `${i + 1} · ${o.angle}`), h("span", { class: "note" }, `${o.why || ""} · ${o.via}${o.format ? ` · ${o.format}` : ""}${o.revises ? ` · revised from ${o.revises}` : ""}`)),
       h("pre", {}, [o.hook_en, o.hook_ar, "", ...o.lines_en].join("\n")),
       o.shots && o.shots.length ? h("details", { class: "vplan" }, h("summary", {}, `Video plan: ${o.shots.length} shots, about ${Math.round(o.shots[o.shots.length - 1].at + 3)} seconds`),
         h("div", { class: "scroll" }, h("table", { class: "kpi" }, h("tr", {}, ...["At", "On screen", "Words on screen", "Said", "Cut"].map((x) => h("th", {}, x))),
@@ -569,21 +633,28 @@ function renderWhy() {
       : u.posts ? h("button", { class: "primary", id: "readbtn", onclick: readPosts }, "Read them") : "");
   const accs = w.accounts.filter((x) => x.read), o = w.ours;
   const us = o.read ? h("div", { class: "wacc us" }, h("h3", {}, "Us", h("span", { class: "note" }, ` · ${o.read} of ${o.posts} posts read · ${o.winners} above our average`)),
+    o.old ? h("p", { class: "note" }, `${o.old} of our posts are older than ${w.since} and not compared.`) : "",
     o.tone ? h("p", { class: "note" }, `Tone of our best posts: ${o.tone}. Our brand voice in Setup: ${data.brand_voice || "not set"}.`) : "",
     o.patterns.length ? h("ul", { class: "findings" }, ...o.patterns.map((f) => h("li", {}, f.finding))) : h("p", { class: "note" }, o.need),
     o.weak.length ? h("div", { class: "weak" }, h("b", {}, "Our weak posts, and what to change"),
       ...o.weak.map((p) => h("div", { class: "weakrow" }, h("a", { href: p.permalink, target: "_blank", rel: "noopener" }, p.hook || "(no caption)"),
         h("p", { class: "note" }, p.why + "."),
         p.advice.length ? h("ul", {}, ...p.advice.map((t) => h("li", {}, `Next time: ${t}`))) : h("p", { class: "note" }, "No pattern yet to compare it with: it needs 3 winning posts that share something.")))) : "") : "";
-  $("why").replaceChildren(bar, ...(us ? [us] : []), ...(accs.length ? accs.map((x) => h("div", { class: "wacc" },
+  const market = (w.business || []).length ? h("div", { class: "biz" }, h("b", {}, "For the business, across competitors: "), ...w.business.map((t) => h("span", {}, t))) : "";
+  $("why").replaceChildren(bar, ...(market ? [market] : []), ...(us ? [us] : []), ...(accs.length ? accs.map((x) => h("div", { class: "wacc" },
     h("h3", {}, h("a", { href: `https://www.instagram.com/${x.account}/`, target: "_blank", rel: "noopener" }, "@" + x.account),
-      h("span", { class: "note" }, ` · ${x.read} of ${x.posts} posts read · ${x.winners} above their average${x.skipped.length ? ` (${x.skipped.length} set aside)` : ""}`)),
+      h("span", { class: "note" }, ` · ${x.read} recent posts read · ${x.winners} clearly above their usual${x.skipped.length ? ` (${x.skipped.length} set aside)` : ""}${x.old ? ` · ${x.old} older than ${x.since} not compared` : ""}`)),
     x.tone ? h("p", { class: "note" }, `Tone of their best posts: ${x.tone}. A suggestion only: our voice stays the one in Setup.`) : "",
     x.patterns.length ? h("div", { class: "pattern" },
       h("ul", { class: "findings" }, ...x.patterns.map((f) => h("li", {}, f.finding))),
       x.for_us.length ? h("div", { class: "forus" }, "So for us: ", h("ul", {}, ...x.for_us.map((t) => h("li", {}, t[0].toUpperCase() + t.slice(1) + ".")))) : "",
       h("div", { class: "why-posts", "aria-label": `The posts behind these patterns` }, ...x.best.map((p) => whyCard(x.account, p)))) : "",
     x.need ? h("p", { class: "note" }, x.need) : "",
+    (x.top || []).length ? h("div", { class: "pattern" }, h("p", { class: "note" }, `Couldn't find one clear reason these did well, so here ${x.top.length === 1 ? "is their top post" : `are their top ${x.top.length}`} to look at yourself (${x.top[0].why}). Instagram only shares an account's posts and reels, not stories.`),
+      h("div", { class: "why-posts" }, ...x.top.map((p) => whyCard(x.account, p)))) : "",
+    x.business && x.business.length ? h("div", { class: "biz" }, h("b", {}, "For the business: "), ...x.business.map((t) => h("span", {}, t))) : "",
+    x.seasonal && x.seasonal.length ? h("div", { class: "skip" }, h("b", {}, "Seasonal, worth repeating at that time next year: "),
+      ...x.seasonal.map((p, i) => h("span", {}, i ? " · " : "", h("a", { href: p.permalink, target: "_blank", rel: "noopener" }, p.hook.slice(0, 50) || "(no caption)"), ` (${p.season})`))) : "",
     x.skipped.length ? h("div", { class: "skip" }, h("b", {}, "Set aside, because it doesn't carry over to us: "),
       ...x.skipped.map((p, i) => h("span", {}, i ? " · " : "", h("a", { href: p.permalink, target: "_blank", rel: "noopener" }, p.hook.slice(0, 50) || "(no caption)"), ` (${p.why_not})`))) : ""))
     : [h("p", { class: "note" }, "Nothing read yet. Once their posts are read, each competitor shows what its best posts share that its ordinary posts don't: a pattern needs at least 3 winning posts.")]));
@@ -684,15 +755,10 @@ const handle = (raw) => {
 };
 const saved = () => data.analysis.accounts.map((x) => x.account);
 let undoTimer;
-function offerUndo(text, before) {
+function offerUndo(text, undo) {
   $("undotext").textContent = text; $("undo").hidden = false;
-  $("undobtn").onclick = async () => { $("undo").hidden = true; await saveNames(before); $("addmsg").textContent = "Undone."; $("addmsg").className = "fieldmsg"; };
+  $("undobtn").onclick = async () => { $("undo").hidden = true; await undo(); await load(); $("addmsg").textContent = "Undone."; $("addmsg").className = "fieldmsg"; };
   clearTimeout(undoTimer); undoTimer = setTimeout(() => { $("undo").hidden = true; }, 8000);
-}
-async function saveNames(names) {
-  const r = await post("/api/studio/competitors", { usernames: names.map((n) => "@" + n).join(", "), by: me() });
-  await load();
-  return r;
 }
 async function addAccount(raw) {
   const msg = $("addmsg"), hnd = handle(raw);
@@ -700,25 +766,50 @@ async function addAccount(raw) {
   if (!raw.trim()) { msg.textContent = "Type an Instagram handle."; return; }
   if (!hnd) { msg.textContent = `"${raw.trim()}" is not an Instagram handle: letters, numbers, dots and underscores only, up to 30.`; return; }
   if (saved().includes(hnd)) { msg.textContent = `@${hnd} is already on the list.`; return; }
-  const before = saved();
-  msg.className = "fieldmsg"; msg.textContent = `Checking @${hnd} on Instagram…`; $("addbtn").disabled = true;
+  msg.className = "fieldmsg"; msg.textContent = `Checking @${hnd} on Instagram…`;
   try {
-    const r = await saveNames([...before, hnd]);
-    const acc = data.analysis.accounts.find((x) => x.account === hnd);
-    $("addname").value = "";
-    if (!r.fetched) { msg.className = "fieldmsg"; msg.textContent = `@${hnd} added. It will be checked once Instagram is connected.`; }
-    else if (acc && acc.status === "fetched" && acc.fits === false) { msg.className = "fieldmsg bad"; msg.textContent = `⚠ @${hnd} added (${(acc.followers ?? 0).toLocaleString()} followers), but it may not be in ${data.business.industry.toLowerCase()}: ${acc.fit_why} Keep it only if they really compete with you; remove it with ×.`; }
-    else if (acc && acc.status === "fetched") { msg.className = "fieldmsg ok"; msg.textContent = `✓ @${hnd} added: ${(acc.followers ?? 0).toLocaleString()} followers, ${acc.posts_read} recent posts read. See them under Competitors.`; }
-    else { msg.className = "fieldmsg bad"; msg.textContent = `✗ @${hnd} added, but Instagram could not read it: ${acc?.error || r.says}. Check the spelling; it must be a business or creator account.`; }
-    offerUndo(`Added @${hnd}.`, before);
-  } finally { $("addbtn").disabled = false; }
+    // only this account is added on the server, so quick clicks on several suggestions never undo each other
+    const r = await post("/api/studio/competitors", { add: hnd, by: me() });
+    await load();
+    const acc = data.analysis.accounts.find((x) => x.account === hnd), read = (r.reached || []).includes(hnd);
+    if ($("addname").value.trim().replace(/^@/, "").toLowerCase() === hnd) $("addname").value = "";
+    if (!r.fetched && !r.new.length) { msg.className = "fieldmsg"; msg.textContent = `@${hnd} is already on the list.`; }
+    else if (!r.fetched) { msg.className = "fieldmsg"; msg.textContent = `@${hnd} added. It will be checked once Instagram is connected.`; }
+    else if (!read) { msg.className = "fieldmsg bad"; msg.textContent = `✗ @${hnd} added, but Instagram could not read it: ${acc?.error || r.says}. Check the spelling; it must be a business or creator account.`; }
+    else if (acc && acc.fits === false) { msg.className = "fieldmsg bad"; msg.textContent = `⚠ @${hnd} added (${(acc.followers ?? 0).toLocaleString()} followers), but it may not be in ${data.business.industry.toLowerCase()}: ${acc.fit_why} Keep it only if they really compete with you; remove it with ×.`; }
+    else { msg.className = "fieldmsg ok"; msg.textContent = `✓ ${r.says}. See them under Competitors.`; }
+    offerUndo(`Added @${hnd}.`, () => post("/api/studio/competitors", { remove: hnd, by: me() }));
+  } catch (e) { msg.className = "fieldmsg bad"; msg.textContent = `@${hnd} could not be added: ${e.message}`; }
 }
 async function removeAccount(hnd) {
-  const before = saved();
-  await saveNames(before.filter((x) => x !== hnd));
+  await post("/api/studio/competitors", { remove: hnd, by: me() });
+  await load();
   $("addmsg").className = "fieldmsg"; $("addmsg").textContent = `Removed @${hnd}. Its fetched posts stay in the history.`;
-  offerUndo(`Removed @${hnd}.`, before);
+  offerUndo(`Removed @${hnd}.`, () => post("/api/studio/competitors", { add: hnd, by: me() }));
 }
+function renderRefresh() {
+  const r = data.refresh || {}, l = r.last;
+  const when = (t) => new Date(t).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  $("refreshnote").textContent = $("refreshnote2").textContent = [l ? (l.ok ? `Last refreshed ${when(l.at)} (${l.auto ? "automatic" : "by hand"}): ${l.new} new post${l.new === 1 ? "" : "s"}, likes changed on ${l.changed}.` : `Last try ${when(l.at)} didn't run: ${l.error}`) : "Not refreshed yet.",
+    r.next || "The daily refresh is off: turn it on in Setup → Rhythm."].filter(Boolean).join(" ");
+  for (const id of ["refreshres", "refreshres2"]) if (l && l.ok && ((l.winners || []).length || (l.errors || []).length) && !$(id).children.length) $(id).replaceChildren(refreshedNode(l));
+}
+function refreshedNode(l) {
+  return h("div", { class: "learnout" }, ...((l.winners || []).length ? [h("b", {}, "New posts that are clearly above their account's usual:"),
+    ...l.winners.map((w) => h("div", { class: "learnrow" }, `@${w.account} · `, h("a", { href: w.url, target: "_blank", rel: "noopener" }, w.hook || "(no caption)"), ` · ${w.engagement.toLocaleString()} likes + comments, ${w.score}x their average ${w.kind}`))] : []),
+    ...(l.errors || []).map((e) => h("div", { class: "learnrow note" }, `Could not read ${e}`)));
+}
+async function refreshNow(btn, out) {
+  btn.disabled = true; out.replaceChildren(h("p", { class: "busy" }, "Re-reading the competitors' recent posts… this can take a minute."));
+  try {
+    const r = await post("/api/studio/competitors/refresh", {});
+    if (!r.ok) { out.replaceChildren(h("p", { class: "fieldmsg bad" }, r.needs)); return; }
+    out.replaceChildren(h("p", {}, h("b", {}, `✓ ${r.reached} of ${r.accounts} accounts read: ${r.new} new post${r.new === 1 ? "" : "s"}, likes changed on ${r.changed}.`)), refreshedNode(r));
+    await load();
+  } finally { btn.disabled = false; }
+}
+$("refreshnow").onclick = (e) => refreshNow(e.target, $("refreshres"));
+$("refreshnow2").onclick = (e) => refreshNow(e.target, $("refreshres2"));
 function renderAccounts() {
   const list = data.analysis.accounts;
   if (!list.length) {
@@ -741,21 +832,74 @@ function renderAccounts() {
 }
 $("addbtn").onclick = () => addAccount($("addname").value);
 $("addname").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addAccount($("addname").value); } };
-$("suggest").onclick = async () => {
-  $("sugg").replaceChildren(h("p", { class: "note" }, `Searching the web for ${industryWords()} on Instagram… (a paid web search, from Marketing's budget)`));
-  const r = await post("/api/studio/competitors/suggest");
-  if (!r.ok) { $("sugg").replaceChildren(h("p", { class: "note" }, r.needs)); return; }
-  $("sugg").replaceChildren(h("p", { class: "note" }, "Suggested from a web search: check each one before adding."),
-    h("div", { class: "suggs" }, ...r.suggestions.map((s) => h("div", { class: "sugg" },
-      h("a", { href: `https://www.instagram.com/${s}/`, target: "_blank", rel: "noopener" }, "@" + s),
-      saved().includes(s) ? h("span", { class: "note" }, "On the list") : h("button", { onclick: (e) => { e.target.disabled = true; addAccount(s); } }, "+ Add")))));
-};
+let suggRound = 0;
+const suggShown = new Set();  // every handle suggested so far this visit, so "Suggest more" brings new ones
+async function suggest(more) {
+  if (!more) { suggRound = 0; suggShown.clear(); }
+  const box = $("sugg"), round = suggRound + (more ? 1 : 0);
+  const busy = h("p", { class: "note busy" }, more ? "Searching again from another angle… (a paid web search, from Marketing's budget)" : `Searching the web for ${industryWords()} on Instagram… (a paid web search, from Marketing's budget)`);
+  if (more) box.querySelector(".moreline")?.replaceWith(busy); else box.replaceChildren(busy);
+  let r;
+  try { r = await post("/api/studio/competitors/suggest", { round, exclude: [...suggShown] }); } catch (e) { busy.replaceWith(h("p", { class: "note" }, `Search failed: ${e.message}`)); return; }
+  if (!r.ok) { busy.replaceWith(h("p", { class: "note" }, r.needs)); return; }
+  suggRound = round;
+  const card = (s) => { suggShown.add(s.handle);
+    const el = h("div", { class: "sugg", "data-handle": s.handle },
+      h("div", { class: "who" }, s.avatar ? h("img", { class: "av", src: s.avatar, alt: "", referrerpolicy: "no-referrer", onerror: (e) => e.target.remove() }) : "",
+        h("span", {}, h("a", { href: `https://www.instagram.com/${s.handle}/`, target: "_blank", rel: "noopener" }, "@" + s.handle),
+          h("span", { class: "note" }, [s.name, s.followers != null ? `${s.followers.toLocaleString()} followers` : ""].filter(Boolean).join(" · ")))),
+      s.why ? h("p", { class: "note why" }, s.why) : "",
+      h("button", { onclick: async (e) => { e.target.disabled = true; await addAccount(s.handle); if (saved().includes(s.handle)) el.remove(); else e.target.disabled = false; } }, "+ Add"));
+    return el; };
+  const st = r.steps, ind = data.business.industry.toLowerCase();
+  const funnel = [`the search named ${st.named}`, st.already_saved ? `${st.already_saved} already on your list` : "", st.already_shown ? `${st.already_shown} already shown` : "", `${st.checked} checked on Instagram`,
+    `${st.on_instagram} are business or creator accounts`, `${st.fit} in ${ind}`].filter(Boolean).join(" → ");
+  const fresh = r.suggestions.filter((x) => !saved().includes(x.handle));
+  const round_el = h("div", { class: "sround" },
+    h("p", { class: "note" }, h("b", {}, r.angle ? `Another look, ${r.angle}: ` : "Search: "), fresh.length ? `${fresh.length} new to look at.` : "nothing new that is on Instagram and in your industry.", " ", h("span", { class: "steps" }, funnel + ".")),
+    h("div", { class: "suggs" }, ...fresh.map(card)),
+    r.maybe_not.length ? h("details", { class: "maybe" }, h("summary", { class: "note" }, `${r.maybe_not.length} more that may not be ${ind}`),
+      h("div", { class: "suggs" }, ...r.maybe_not.map(card))) : "",
+    r.not_found.length ? h("p", { class: "note" }, `Not on Instagram as business accounts, so left out: ${r.not_found.map((x) => "@" + x).join(", ")}.`) : "");
+  const line = h("p", { class: "moreline" }, h("button", { onclick: () => suggest(true) }, "Suggest more"), h("span", { class: "note" }, ` looks from a different angle each time, leaving out the ones above (another paid web search).`));
+  if (more) { busy.remove(); box.querySelector(".moreline")?.remove(); box.append(round_el, line); } else box.replaceChildren(round_el, line);
+}
+$("suggest").onclick = () => suggest(false);
+let lookT = 0, lookFor = "";
+$("addname").addEventListener("input", () => {
+  clearTimeout(lookT);
+  const hnd = handle($("addname").value);
+  if (!hnd) { $("preview").replaceChildren(); return; }
+  lookT = setTimeout(async () => {  // after a pause in typing: one exact-handle check (Instagram can't search by part of a name)
+    lookFor = hnd;
+    $("preview").replaceChildren(h("span", { class: "note" }, `Looking up @${hnd}…`));
+    const r = await api(`/api/studio/competitors/lookup?u=${encodeURIComponent(hnd)}`);
+    if (lookFor !== hnd) return;  // they kept typing
+    $("preview").replaceChildren(r.ok ? h("div", { class: "pv ok" },
+        r.avatar ? h("img", { class: "av", src: r.avatar, alt: "", referrerpolicy: "no-referrer", onerror: (e) => e.target.remove() }) : "",
+        h("span", { class: "grow" }, h("b", {}, `@${r.handle}`), r.name ? ` · ${r.name}` : "",
+          h("span", { class: "note" }, ` · ${(r.followers ?? 0).toLocaleString()} followers · ${(r.posts ?? 0).toLocaleString()} posts`), r.bio ? h("div", { class: "note" }, r.bio) : ""),
+        saved().includes(r.handle.toLowerCase()) ? h("span", { class: "note" }, "On the list") : h("button", { class: "primary", onclick: () => addAccount(r.handle) }, "+ Add"))
+      : h("div", { class: `pv ${r.ok === false ? "bad" : ""}` }, h("span", {}, r.ok === false ? `✗ @${hnd}: ${r.why}` : r.why)));
+  }, 600);
+});
+api("/api/studio/import-sample").then((s) => $("impcols").replaceChildren(h("table", { class: "kpi" },
+  h("tr", {}, ...s.columns.map((c) => h("th", {}, c.column))),
+  h("tr", {}, ...s.columns.map((c) => h("td", { class: "note" }, c.takes))),
+  h("tr", {}, ...s.columns.map((c) => h("td", {}, c.example))))));
 $("imp").onclick = async () => {
-  const f = $("csv").files[0]; if (!f) return toast("Pick the filled-in template");
+  const f = $("csv").files[0], res = $("impres");
+  if (!f) { res.className = "fieldmsg bad"; res.textContent = "Pick the filled-in template first."; return; }
+  if (!/\.csv$/i.test(f.name)) { res.className = "fieldmsg bad"; res.textContent = `"${f.name}" is not a CSV file. In your spreadsheet, choose Save as / Download → CSV, then pick that file.`; return; }
   const fd = new FormData(); fd.append("file", f);
-  const r = await fetch("/api/studio/import", { method: "POST", body: fd });
-  const d = await r.json();
-  $("impres").textContent = r.ok ? `Imported ${d.imported} posts, ${d.outliers} outliers.${d.errors.length ? " Skipped: " + d.errors.slice(0, 3).join("; ") : ""}` : d.detail;
+  const d = await (await fetch("/api/studio/import", { method: "POST", body: fd })).json();
+  if (!d.ok) {
+    res.className = "fieldmsg bad";
+    res.replaceChildren(h("b", {}, "Wrong format: nothing was imported. Fix these and import again:"), h("ul", {}, ...d.problems.map((p) => h("li", {}, p))),
+      d.more ? h("p", {}, `…and ${d.more} more.`) : "");
+    return;
+  }
+  res.className = "fieldmsg ok"; res.textContent = `✓ Imported ${d.imported} posts; ${d.outliers} above their account's average.`;
   load();
 };
 
@@ -775,6 +919,89 @@ $("oursload").onclick = async (e) => {
   } finally { e.target.disabled = false; }
 };
 
+// ---------- products and the website ----------
+function renderDerived() {
+  const d = (data.topics || {}).derived || [], off = d.filter((x) => !x.used).length;
+  $("derivedsum").textContent = `From your cards and services: ${d.length - off} used${off ? `, ${off} left out` : ""}`;
+  $("derivedlist").replaceChildren(...(d.length ? d.map((x) => h("div", { class: `prod ${x.used ? "" : "removed"}` },
+    h("div", { class: "grow" }, h("b", {}, x.title), h("span", { class: "note" }, ` · ${x.source === "card" ? "Knowledge card " + x.ref : "service"} · ${x.facts} fact${x.facts === 1 ? "" : "s"}`)),
+    h("div", { class: "acts" }, h("button", { onclick: async () => { await post("/api/topics/use", { ref: x.ref, use: !x.used, by: me() }); await load(); } }, x.used ? "Don't make videos about this" : "Use again"))))
+    : [h("p", { class: "note" }, "None yet: confirm Knowledge cards, or products and services above.")]));
+}
+function renderTopics() {
+  renderDerived();
+  const t = data.topics || { typed: [], available: {} }, a = t.available;
+  $("topicsrc").textContent = `Used now: ${a.card || 0} Knowledge card${a.card === 1 ? "" : "s"}, ${a.product || 0} product or service explainer${a.product === 1 ? "" : "s"}, ${a.typed || 0} typed here.`;
+  $("topiclist").replaceChildren(...(t.typed.length ? t.typed.map((x) => h("div", { class: "prod" },
+    h("div", { class: "grow" }, h("b", {}, x.title), h("div", { class: "note" }, x.what.length > 220 ? x.what.slice(0, 220) + "…" : x.what)),
+    h("div", { class: "acts" }, h("button", { "aria-label": `Remove ${x.title}`, onclick: async () => { await post("/api/topics", { ref: x.ref, values: { status: "removed" }, by: me() }); await load(); } }, "×"))))
+    : [h("p", { class: "note" }, "None typed yet: the ones above come from your Knowledge cards and services.")]));
+}
+$("tpsave").onclick = async () => {
+  const r = await post("/api/topics", { values: { title: $("tp-title").value, what: $("tp-what").value }, by: me() });
+  $("tpmsg").className = r.ok ? "fieldmsg ok" : "fieldmsg bad"; $("tpmsg").textContent = r.ok ? `✓ Added ${$("tp-title").value}.` : r.error;
+  if (r.ok) { $("tp-title").value = ""; $("tp-what").value = ""; await load(); }
+};
+async function loadProducts() {
+  const r = await api("/api/products"), list = r.products.filter((p) => p.status !== "removed");
+  const save = (ref, values) => async () => { const x = await post("/api/products", { ref, values, by: me() }); if (!x.ok) toast(x.error); await loadProducts(); await load(); };
+  const price = (p) => p.price != null ? `${p.currency || ""} ${Number(p.price).toLocaleString()}`.trim() : "price not public";
+  $("prodlist").replaceChildren(...(list.length ? list.map((p) => h("div", { class: `prod ${p.status}` },
+    h("div", { class: "grow" }, h("b", {}, p.title), h("span", { class: "note" }, ` · ${p.kind} · ${price(p)}${p.status === "proposed" ? " · proposed: check it" : ""}`),
+      p.what ? h("div", {}, p.what) : "", (p.features || []).length ? h("div", { class: "note" }, p.features.join(" · ")) : "",
+      p.page ? h("a", { href: p.page, target: "_blank", rel: "noopener", class: "note" }, "From this page ↗") : ""),
+    h("div", { class: "acts" }, p.status === "proposed" ? h("button", { class: "primary", onclick: save(p.ref, { status: "confirmed" }) }, "Confirm") : h("span", { class: "note ok" }, "✓ confirmed"),
+      h("button", { "aria-label": `Remove ${p.title}`, onclick: save(p.ref, { status: "removed" }) }, "×"))))
+    : [h("p", { class: "note" }, "None yet. Read your website above, or add one.")]));
+}
+$("prsave").onclick = async () => {
+  const values = { title: $("pr-title").value, kind: $("pr-kind").value, what: $("pr-what").value, features: $("pr-features").value, price: $("pr-price").value, currency: $("pr-currency").value };
+  const r = await post("/api/products", { values, by: me() });
+  $("prmsg").className = r.ok ? "fieldmsg ok" : "fieldmsg bad"; $("prmsg").textContent = r.ok ? `✓ Added ${values.title}.` : r.error;
+  if (r.ok) { for (const k of ["title", "what", "features", "price", "currency"]) $(`pr-${k}`).value = ""; await loadProducts(); await load(); }
+};
+$("sitefind").onclick = async (e) => {
+  const out = $("sitepages"); e.target.disabled = true; out.textContent = "Finding the pages of the site (free: no model)…";
+  try {
+    const r = await post("/api/brand/crawl", { url: $("siteurl").value });
+    if (!r.ok) { out.textContent = r.error; return; }
+    out.replaceChildren(h("p", {}, `${r.pages.length} page${r.pages.length === 1 ? "" : "s"} found on the site${r.refused.length ? `; ${r.refused.length} the site asks robots not to read, left out` : ""}. Untick any you don't want read:`),
+      h("div", { class: "pages" }, ...r.pages.map((p) => h("label", { class: "check" }, h("input", { type: "checkbox", value: p.url, checked: true }), `${p.title} `, h("span", { class: "note" }, p.url)))),
+      h("button", { class: "primary", onclick: () => { $("learnurls").value = [...out.querySelectorAll("input:checked")].map((i) => i.value).join("\n");
+        learnNow("site"); } }, "Read these pages"));
+  } finally { e.target.disabled = false; }
+};
+
+$("sitelist").onclick = async (e) => {
+  const out = $("sitelistings"); e.target.disabled = true;
+  out.replaceChildren(h("p", { class: "busy" }, "Finding and reading the property pages of the site… about 1 to 3 minutes."));
+  out.scrollIntoView({ behavior: "smooth", block: "center" });
+  try {
+    const r = await post("/api/brand/find-listings", { url: $("siteurl").value, by: me() });
+    if (!r.ok) { out.replaceChildren(h("p", { class: "fieldmsg bad" }, r.error)); return; }
+    if (r.note) { out.replaceChildren(h("p", {}, r.note)); return; }
+    const money = (x) => `${x.currency || ""} ${Number(x.price).toLocaleString()}`.trim();
+    const link = (x, text) => h("a", { href: x.url, target: "_blank", rel: "noopener" }, text || x.title);
+    const noPermit = r.added.filter((x) => !x.permit).length;
+    out.replaceChildren(h("div", { class: "learnout" },
+      h("p", {}, h("b", {}, `✓ ${r.found} propert${r.found === 1 ? "y" : "ies"} found on the site: ${r.added.length} new, added to your listings; ${r.same.length} already in Diwan; ${r.differs.length} in Diwan but different.`)),
+      noPermit ? h("p", { class: "note" }, `${noPermit} of the new ones show no permit number on their page: they are kept, and can't be advertised until one is added.`) : "",
+      r.differs.length ? h("div", {}, h("b", {}, "Different here and on the site (nothing changed, you decide):"),
+        ...r.differs.map((x) => h("div", { class: "learnrow" }, `${x.ref} · `, link(x), ": ",
+          Object.entries(x.fields).map(([k, v]) => `${k} ${Number.isFinite(+v.diwan) ? Number(v.diwan).toLocaleString() : v.diwan} in Diwan, ${Number.isFinite(+v.website) ? Number(v.website).toLocaleString() : v.website} on the site`).join("; ")))) : "",
+      (r.shared || []).length ? h("div", {}, h("b", {}, "Added, but their page shows a permit another listing has (check the permit):"),
+        ...r.shared.map((x) => h("div", { class: "learnrow" }, `${x.ref} · `, link(x), ` · permit ${x.permit}, also on ${x.with.join(", ")}`))) : "",
+      r.added.length ? h("details", {}, h("summary", {}, `The ${r.added.length} added`),
+        ...r.added.map((x) => h("div", { class: "learnrow" }, `${x.ref} · `, link(x), ` · ${money(x)}${x.empty.length ? ` · not on its page: ${x.empty.join(", ")}` : ""}`))) : "",
+      r.same.length ? h("details", {}, h("summary", {}, `The ${r.same.length} already in Diwan`),
+        ...r.same.map((x) => h("div", { class: "learnrow" }, `${x.ref} · `, link(x)))) : "",
+      r.skipped.length ? h("details", {}, h("summary", {}, `${r.skipped.length} not added`),
+        ...r.skipped.map((x) => h("div", { class: "learnrow" }, link(x), `: ${x.why}`))) : "",
+      h("p", { class: "note" }, `Read ${r.read} pages to find them${r.model.calls ? `; the model filled gaps on ${r.model.calls} call${r.model.calls > 1 ? "s" : ""}${r.model.dropped ? `, ${r.model.dropped} value${r.model.dropped > 1 ? "s" : ""} it gave were not on the page and were dropped` : ""}` : ""}.`)));
+    await load();
+  } finally { e.target.disabled = false; }
+};
+
 // ---------- approvals ----------
 async function loadApprovers() {
   const r = await api("/api/studio/approvers");
@@ -791,15 +1018,15 @@ $("apsave").onclick = async () => {
 };
 
 // ---------- rhythm and the plan ----------
-const RH = { auto: "rh-auto", at: "rh-at", rhythm: "rh-rhythm", repeat_angle_days: "rh-angle", repeat_listing_days: "rh-listing" };
-const rhValues = () => Object.fromEntries(Object.entries(RH).map(([k, id]) => [k, k === "auto" ? ($(id).checked ? "on" : "off") : $(id).value]));
+const RH = { auto: "rh-auto", at: "rh-at", rhythm: "rh-rhythm", repeat_angle_days: "rh-angle", repeat_listing_days: "rh-listing", compare_months: "rh-months", refresh: "rh-refresh", refresh_at: "rh-refresh-at", topic_share: "rh-share", repeat_topic_days: "rh-topic" };
+const rhValues = () => Object.fromEntries(Object.entries(RH).map(([k, id]) => [k, k === "auto" || k === "refresh" ? ($(id).checked ? "on" : "off") : $(id).value]));
 let rhSaved = "";
 function rhState(text, cls) { const dirty = JSON.stringify(rhValues()) !== rhSaved; $("rhmsg").className = cls || (dirty ? "state-dirty" : "state-ok"); $("rhmsg").textContent = text || (dirty ? "Unsaved changes" : "Saved ✓"); }
 async function loadRhythm() {
   const r = await api("/api/studio/rhythm");
   $("rh-rhythm").replaceChildren(...r.rhythms.map((x) => h("option", { value: x, selected: x === r.settings.rhythm }, x[0].toUpperCase() + x.slice(1))));
-  for (const [k, id] of Object.entries(RH)) if (k === "auto") $(id).checked = r.settings.auto === "on"; else if (k !== "rhythm") $(id).value = r.settings[k];
-  rhSaved = JSON.stringify(rhValues()); rhState(r.next ? `Saved ✓ · ${r.next}` : "Saved ✓ · automatic is off: runs start only when you press Run this listing.");
+  for (const [k, id] of Object.entries(RH)) if (k === "auto" || k === "refresh") $(id).checked = r.settings[k] === "on"; else if (k !== "rhythm") $(id).value = r.settings[k];
+  rhSaved = JSON.stringify(rhValues()); rhState([r.next ? `Saved ✓ · ${r.next}` : "Saved ✓ · automatic is off: runs start only when you press Run this listing.", r.next_refresh].filter(Boolean).join(" "));
 }
 for (const id of Object.values(RH)) $(id).oninput = () => rhState();
 $("rhsave").onclick = async () => {
@@ -819,7 +1046,7 @@ function renderPlan() {
   const day = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
   const move = (d, step) => async () => { const r = await post("/api/studio/plan/move", { day: d, step, by: me() }); if (!r.ok) toast(r.error); await load(); };
   $("plan").replaceChildren(...(p ? [h("ol", { class: "days" }, ...p.days.map((d, i) => h("li", { class: done.has(d.date) ? "done" : "" },
-      h("span", { class: "d" }, day(d.date)), h("span", { class: "grow" }, h("b", {}, d.ref ? `${d.ref} · ${title(d.ref)}` : "Nothing to make"), h("span", { class: "note" }, ` · ${d.why}`)),
+      h("span", { class: "d" }, day(d.date)), h("span", { class: "grow" }, h("b", {}, d.ref ? `${d.type === "topic" ? "Topic" : d.ref} · ${title(d.ref)}` : "Nothing to make"), h("span", { class: "note" }, ` · ${d.type === "topic" ? "informational, to camera · " : ""}${d.why}`)),
       done.has(d.date) ? h("span", { class: "note ok" }, "scripts written") : h("span", { class: "moves" },
         h("button", { "aria-label": `Move ${day(d.date)} earlier`, disabled: i === 0, onclick: move(d.date, -1) }, "↑"),
         h("button", { "aria-label": `Move ${day(d.date)} later`, disabled: i === p.days.length - 1, onclick: move(d.date, 1) }, "↓")))))]
@@ -841,6 +1068,7 @@ async function loadStyle() {
 // ---------- setup: business ----------
 let biz = null, bizSaved = "";
 const bizValues = () => ({ industry: $("bz-industry").value.trim(), country: $("bz-country").value, city: $("bz-city").value.trim(), timezone: $("bz-timezone").value || "",
+  permit: $("bz-permit").value, languages: $("bz-languages").value.trim(), website: $("siteurl").value.trim(),
   platforms: [...document.querySelectorAll("#bz-platforms input:checked")].map((i) => i.value).join(", ") });
 function bizState(text, cls) {
   const dirty = JSON.stringify(bizValues()) !== bizSaved;
@@ -855,7 +1083,7 @@ function zones(sel) {
 async function loadBusiness() {
   biz = await api("/api/business");
   const v = Object.fromEntries(Object.entries(biz.profile).map(([k, f]) => [k, f.value]));
-  $("bz-industry").value = v.industry; $("bz-city").value = v.city;
+  $("bz-industry").value = v.industry; $("bz-city").value = v.city; $("bz-permit").value = v.permit || ""; $("bz-languages").value = v.languages || ""; $("siteurl").value = v.website || "";
   $("bz-country").replaceChildren(h("option", { value: "" }, "Pick a country"), ...biz.countries.map((c) => h("option", { value: c.code, selected: c.code === v.country }, c.name)));
   zones(v.timezone);
   const on = v.platforms ? v.platforms.split(",").map((x) => x.trim()) : biz.platforms_known;
@@ -864,7 +1092,8 @@ async function loadBusiness() {
   $("bizstate").textContent = biz.missing.length ? "· not set yet" : "· saved";
   bizState();
 }
-for (const id of ["bz-industry", "bz-city"]) $(id).oninput = () => bizState();
+for (const id of ["bz-industry", "bz-city", "bz-languages", "siteurl"]) $(id).oninput = () => bizState();
+$("bz-permit").onchange = () => bizState();
 $("bz-timezone").onchange = () => bizState();
 $("bz-country").onchange = () => { zones(); bizState(); };
 $("bizsave").onclick = async () => {
@@ -897,6 +1126,7 @@ async function loadBrand() {
   $("brandform").replaceChildren(...BRAND_GROUPS.map(([title, keys]) => h("div", { class: "bcard" }, h("h3", {}, title), ...keys.filter((k) => byKey[k]).map((k) => {
     const f = byKey[k], v = b.profile[k];
     return h("div", {}, h("label", { for: `b-${k}` }, f.label), h("textarea", { id: `b-${k}`, placeholder: f.hint, rows: 2, oninput: () => brandState() }, v.value),
+      h("div", { class: "fromsite", id: `fs-${k}`, hidden: true }),
       v.by ? h("div", { class: "who" }, `saved by ${NAMES[v.by] || v.by} · ${v.at.slice(0, 10)}${v.via && v.via !== "typed" ? " · " + v.via : ""}`) : "");
   }))));
 }
@@ -914,29 +1144,54 @@ $("branddraft").onclick = async () => {
   drafted = true;
   brandState(`Unsaved changes · draft filled into the empty fields from ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}. Read it, change anything, then Save.`);
 };
-$("learngo").onclick = async () => {
+let siteSays = {};
+function showSiteSays() {  // what the pages say for each brand field, beside it, when it differs from what is saved
+  for (const [k, v] of Object.entries(siteSays)) {
+    const t = $(`b-${k}`), box = $(`fs-${k}`);
+    if (!t || !box) continue;
+    const differs = v && v.trim() !== t.value.trim();
+    box.hidden = !differs;
+    if (differs) box.replaceChildren(h("span", {}, h("b", {}, "From the site: "), v), h("button", { onclick: () => { t.value = v; drafted = true; box.hidden = true; brandState(); } }, "Use this"));
+  }
+}
+async function learnNow(origin) {
   const urls = $("learnurls").value.split(/\s+/).filter((u) => u.startsWith("http")), document = $("learndoc").value;
-  if (!urls.length && !document.trim()) return toast("Give a web address or paste a document");
-  $("learnres").textContent = "The Brand brain is reading… (one model call)";
-  const r = await post("/api/brand/learn", { urls, document, document_name: $("learndoc").dataset.name || "company profile", company: $("learnco").value, by: me() });
-  if (r.needs) { $("learnres").textContent = r.needs; return; }
-  for (const [k, v] of Object.entries(r.brand || {})) { const t = $(`b-${k}`); if (t && v && !t.value.trim()) t.value = v; }
-  drafted = true; brandState();
-  $("learnres").replaceChildren(
-    h("div", {}, h("b", {}, `${r.proposed.length} knowledge cards proposed`), ` about ${r.company}, from ${r.pages.length} source${r.pages.length > 1 ? "s" : ""}. `,
-      h("a", { href: "knowledge.html" }, "Confirm them on the Knowledge page →")),
-    ...r.proposed.map((k) => h("div", { class: "learnrow" }, `${k.id} · ${k.title}: “${k.quote}”`)),
-    r.dropped.length ? h("div", { class: "learnrow" }, `Dropped ${r.dropped.length}: ${r.dropped.map((d) => `${d.title} (${d.why})`).join("; ")}`) : "",
-    r.problems.length ? h("div", { class: "learnrow" }, "Could not read: " + r.problems.join("; ")) : "",
-    h("div", { class: "learnrow" }, "Brand fields it could support were filled into the empty boxes below; check them, then Save."));
-};
+  const out = origin === "site" ? $("sitepages") : $("learnres");
+  if (!urls.length && !document.trim()) { out.textContent = "Give a web address or paste a document."; return; }
+  for (const b of [$("learngo"), $("sitefind"), ...$("sitepages").querySelectorAll("button")]) b.disabled = true;  // one reading at a time
+  out.replaceChildren(h("p", { class: "busy" }, `The Brand brain is reading ${urls.length > 1 ? urls.length + " pages" : "it"}… about 20 seconds (one model call, about $0.02 to $0.05).`));
+  out.scrollIntoView({ behavior: "smooth", block: "center" });
+  try {
+    const r = await post("/api/brand/learn", { urls, document, document_name: $("learndoc").dataset.name || "company profile", company: $("learnco").value, by: me() });
+    if (r.needs) { out.replaceChildren(h("p", { class: "fieldmsg bad" }, r.needs)); return; }
+    loadProducts();
+    let filled = 0;
+    for (const [k, v] of Object.entries(r.brand || {})) { const t = $(`b-${k}`); if (t && v && !t.value.trim()) { t.value = v; filled++; } }
+    siteSays = r.brand || {}; showSiteSays();
+    const differ = Object.entries(siteSays).filter(([k, v]) => v && $(`b-${k}`) && v.trim() !== $(`b-${k}`).value.trim()).length;
+    drafted = true; brandState();
+    out.replaceChildren(h("div", { class: "learnout" },
+      h("p", {}, h("b", {}, `✓ Read ${r.pages.length} page${r.pages.length > 1 ? "s" : ""} about ${r.company}.`)),
+      (r.products || []).length ? h("p", {}, h("b", {}, `${r.products.length} new product${r.products.length > 1 ? "s" : ""} or service${r.products.length > 1 ? "s" : ""}: `), r.products.map((x) => x.title).join(", "),
+        " ", h("a", { href: "#", onclick: (e) => { e.preventDefault(); $("productpanel").scrollIntoView({ behavior: "smooth" }); } }, "Confirm them under Our products and services ↓")) : h("p", { class: "note" }, "No new products or services (any it found were already there)."),
+      h("p", {}, h("b", {}, `${r.proposed.length} new knowledge card${r.proposed.length === 1 ? "" : "s"}`), r.proposed.length ? " · " : " (the rest were already known) · ", h("a", { href: "knowledge.html" }, "Confirm them on the Knowledge page →")),
+      ...r.proposed.map((k) => h("div", { class: "learnrow" }, `${k.id} · ${k.title}: “${k.quote}”`)),
+      h("p", {}, h("b", {}, "Brand: "), filled ? `${filled} empty box${filled > 1 ? "es" : ""} filled. ` : "", differ ? `${differ} field${differ > 1 ? "s" : ""} where the site says something else are shown beside the box, with Use this. ` : "",
+        differ ? h("button", { onclick: () => { for (const [k, v] of Object.entries(siteSays)) { const t = $(`b-${k}`); if (t && v) t.value = v; } showSiteSays(); drafted = true; brandState(); toast("Filled from the site: check it, then Save"); } }, "Use all from the site") : "",
+        " Nothing is saved until you press Save."),
+      r.dropped.length ? h("div", { class: "learnrow note" }, `Dropped ${r.dropped.length} the pages didn't prove: ${r.dropped.map((d) => d.title).join("; ")}`) : "",
+      r.problems.length ? h("div", { class: "learnrow note" }, "Could not read: " + r.problems.join("; ")) : ""));
+    out.scrollIntoView({ behavior: "smooth", block: "center" });
+  } finally { for (const b of [$("learngo"), $("sitefind"), ...$("sitepages").querySelectorAll("button")]) b.disabled = false; }
+}
+$("learngo").onclick = () => learnNow("box");
 $("learndemo").onclick = async () => {
   const d = await api("/api/brand/demo-profile");
   $("learndoc").value = d.text; $("learndoc").dataset.name = d.name; $("learnco").value = "Diwan Realty";
   toast("Demo profile loaded: everything in it is fictional");
 };
 loadBrand().then(() => brandState());
-load().then(loadBusiness); loadStyle(); loadRhythm(); loadApprovers();
+load().then(loadBusiness); loadStyle(); loadRhythm(); loadApprovers(); loadProducts();
 follow((evs) => { if (evs.some((e) => ["agent.pack", "content.made", "step.blocked", "post.seen", "competitor.checked", "decision.made"].includes(e.type))) { clearTimeout(load.t); load.t = setTimeout(load, 400); } });
 </script>
 </body>

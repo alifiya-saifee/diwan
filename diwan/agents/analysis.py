@@ -146,22 +146,81 @@ def report(office: Office) -> dict:
             "names": studio.competitors(office.graph()), "accounts": saved_accounts(office)}
 
 
-def suggest(office: Office) -> dict:
-    """Candidate competitors from a web search, for a person to confirm. Nothing is watched until they do."""
+SKIP = {"p", "reel", "reels", "explore", "stories", "accounts", "tv", "handle", "username", "user", "account", "yourhandle", "example"}  # links and placeholders
+
+
+GENERIC_ANGLES = ("with the most followers", "run by one named person (an agent, a founder, a creator) rather than a company",
+                  "small and local, with an engaged audience")
+
+
+def angles(office: Office) -> list[str]:
+    """Different ways to look for the same kind of business, from our own data: the places, kinds, offers and stages of
+    our listings (most common first), then a few that fit any trade. Nothing here is one industry's words."""
+    from collections import Counter
+    ls = [n.props for n in office.graph().of("listing")]
+    out = [f"serving {c}" for c, _ in Counter(l["community"].split(",")[0].strip() for l in ls if l.get("community")).most_common(6)]
+    out += [f"selling {t}s" for t, _ in Counter((l.get("type") or "").strip().lower() for l in ls if l.get("type")).most_common(3)]
+    out += [f"for {o}" for o, _ in Counter(l["offering"] for l in ls if l.get("offering")).most_common(2)]
+    out += [f"in the {c.replace('-', ' ')} stage" for c, _ in Counter((l.get("completion") or "").strip().lower().replace("_", "-").replace(" ", "-")
+                                                                         for l in ls if l.get("completion")).most_common(2)]
+    return list(dict.fromkeys(out + list(GENERIC_ANGLES)))
+
+
+def suggest(office: Office, *, exclude: tuple[str, ...] = (), round: int = 0) -> dict:
+    """Candidate competitors for a person to confirm; nothing is watched until they add one. Only accounts the search's
+    own answer names are kept (not every Instagram link on the pages it opened), each is looked up on Instagram (it must
+    exist and be a business or creator account), and each gets the industry check, so one that does not fit is set
+    apart with the reason. `round` 0 is the plain search; each later round looks from a different angle (angles()), and
+    `exclude` are accounts already shown, so repeated clicks bring new ones. `steps` says how many survived each stage."""
+    from concurrent.futures import ThreadPoolExecutor
+    from diwan.providers import instagram
     if not meta.ready():
         return {"ok": False, "needs": "Suggestions need Muse Spark web search (META_API_KEY). You can type the accounts yourself."}
     if (why := business.needs(office, "the suggestions are businesses like yours")):
         return {"ok": False, "needs": why}
     b, areas = business.get(office), sorted({n.props["community"] for n in office.graph().of("listing") if n.props.get("community")})
+    pool_of_angles = angles(office)
+    angle = pool_of_angles[(round - 1) % len(pool_of_angles)] if round > 0 else ""
     r = meta.search(f"Which {b['industry']} businesses in {business.place(office)} post the most on Instagram"
-                    + (f", especially about {', '.join(areas)}" if areas else "") + "? Use at most two searches. "
-                    "List their Instagram usernames (the @handle), with the page where you found each.", country=b["country"], agent="mrival")
-    handles = re.findall(r"instagram\.com/([A-Za-z0-9_.]{3,30})", " ".join([r["text"], *[s.get("url") or "" for s in r["sources"]]]))
-    handles += re.findall(r"@([A-Za-z0-9_.]{3,30})", r["text"])
-    skip = {"p", "reel", "reels", "explore", "stories", "accounts", "tv"}
-    seen = []
-    for h in handles:
+                    + (f", especially about {', '.join(areas)}" if areas and not angle else "")
+                    + (f", the ones {angle}" if angle else "") + f"? Use at most two searches. Only businesses that are "
+                    f"{b['industry']} themselves, not directories, media or other trades. List each one's Instagram username (the @handle), "
+                    "with the page where you found it." + (f" Not these, already known: {', '.join('@' + x for x in exclude)}." if exclude else ""),
+                    country=b["country"], agent="mrival")
+    named = re.findall(r"instagram\.com/([A-Za-z0-9_.]{3,30})", r["text"]) + re.findall(r"@([A-Za-z0-9_.]{3,30})", r["text"])
+    saved, seen, skipped = {n.lower() for n in studio.competitors(office.graph())}, [], {"saved": 0, "shown": 0}
+    known = {x.lower() for x in exclude}
+    for h in named:
         h = h.strip(".").lower()
-        if h not in skip and h not in seen:
+        if h in SKIP or h in seen:
+            continue
+        if h in saved:
+            skipped["saved"] += 1
+        elif h in known:
+            skipped["shown"] += 1
+        else:
             seen.append(h)
-    return {"ok": True, "suggestions": seen[:10], "sources": [c["url"] for c in r["cited"]][:5]}
+    seen = list(dict.fromkeys(seen))[:10]
+    steps = {"named": len({h.strip(".").lower() for h in named} - set(SKIP)), "already_saved": skipped["saved"], "already_shown": skipped["shown"],
+             "checked": len(seen)}
+
+    def look(h: str) -> dict:
+        try:
+            acc = instagram.competitor_posts(h, limit=6)
+        except instagram.InstagramError as e:
+            return {"handle": h, "found": False, "why": str(e)[:120]}
+        fit = reader.fits(office, acc)
+        return {"handle": h, "found": True, "name": acc.get("name"), "followers": acc.get("followers"), "posts": acc.get("media_count"),
+                "avatar": acc.get("avatar"), "fits": fit.get("fits"), "why": fit.get("fit_why", "")}
+
+    if instagram.ready():
+        with ThreadPoolExecutor(5) as pool:
+            got = list(pool.map(look, seen))
+    else:  # not connected: shown unchecked, and said so
+        got = [{"handle": h, "found": None, "why": "not checked: Instagram is not connected"} for h in seen]
+    good = [g for g in got if g["found"] is not False and g.get("fits") is not False]
+    maybe = [g for g in got if g["found"] and g.get("fits") is False]
+    lost = [g["handle"] for g in got if g["found"] is False]
+    steps |= {"on_instagram": len(got) - len(lost), "fit": len(good), "may_not_fit": len(maybe), "not_found": len(lost)}
+    return {"ok": True, "suggestions": good, "maybe_not": maybe, "not_found": lost, "steps": steps, "angle": angle, "round": round,
+            "more": len(pool_of_angles), "sources": [c["url"] for c in r["cited"]][:5]}
