@@ -8,14 +8,13 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from diwan import roles
+from diwan import desk_rules, roles
 from diwan.graph import OPEN, Graph, Node
 
 if TYPE_CHECKING:
     from diwan.office import Office
 
 MONEY_KINDS = {"payer", "payment_promise", "income_claim"}
-CASH_REPORT_AED = 55_000  # a real-estate cash payment at or above this is reported to the FIU (goAML)
 
 
 def money_changed(office: Office, deal: str, olds: list[Node], new: Node, cause: int) -> None:
@@ -165,7 +164,7 @@ def cash_rules(office: Office, deal: str, cause: int | None) -> None:
     payer = (g.facts(deal, "payer") or [None])[-1]
     customer = g.nodes[f"deal:{deal}"].props["customer"]
     for p in g.facts(deal, "payment_promise"):
-        if (p.props.get("method") or "") != "cash" or (p.props.get("amount_aed") or 0) < CASH_REPORT_AED:
+        if (p.props.get("method") or "") != "cash" or (p.props.get("amount_aed") or 0) < desk_rules.rules(g)["cash_report_aed"]:
             continue
         if any(t.props["agent"] == "report" and p.id in t.props.get("rests_on", []) and t.status in OPEN | {"done"} for t in g.of("task", deal)):
             continue

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from diwan import roles
+from diwan import desk_rules, roles
 from diwan.agents import runner
 from diwan.agents.charters import get
 from diwan.graph import OPEN, Graph
@@ -14,13 +14,6 @@ from diwan.pack import Action, Evidence, Pack
 
 if TYPE_CHECKING:
     from diwan.office import Office
-
-TRANSFER = [("Form F signed by buyer, seller and both brokers", "the buyer and the seller"),
-            ("Developer NOC for the transfer", "the seller and the developer"),
-            ("Manager's cheques for the seller and the DLD fee", "the buyer"),
-            ("Trustee office appointment booked", "the transactions officer"),
-            ("Title deed issued to the buyer", "the Dubai Land Department")]
-
 
 def _evidence(g: Graph, ids: list[str]) -> list[Evidence]:
     return [Evidence(g.nodes[i].props["quote"], i) for i in ids if g.nodes[i].type == "fact"]
@@ -97,7 +90,7 @@ def submitted(office: Office, tid: str, by: str, reference: str) -> None:
     for r in g.of("request", t.deal, "open"):  # the clerk's "only a person submits" request is answered by this
         if r.props.get("kind") == "submit" and r.props.get("agent") == "formf":
             office.log.append("decision.made", actor=by, deal=t.deal, content={"card": r.id, "answer": f"Submitted, reference {reference.strip()}"})
-    for step, who in TRANSFER:
+    for step, who in desk_rules.path(g, t.deal)["steps"]:  # the owner's steps for this deal's path
         office.add_task(t.deal, "transfer", step, needs_person=roles.holder(g, "transactions"), props={"waiting_on": who})
 
 

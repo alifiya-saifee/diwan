@@ -113,6 +113,14 @@
   .slides li.stale { color: var(--bad); }
   .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
   .head h1 { font-size: 30px; margin: 0 40px 0 0; overflow-wrap: anywhere; }
+  .rgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 18px; margin-top: 12px; }
+  label.rule { display: grid; gap: 4px; font-size: 12px; color: var(--muted); margin: 0; }
+  label.rule strong { color: var(--ink); font-size: 14px; }
+  .rsteps { display: flex; flex-direction: column; gap: 6px; }
+  .rstep { display: grid; grid-template-columns: 18px minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+  .rstep input { padding: 6px 10px; font-size: 13px; }
+  .rstep button { padding: 4px 10px; }
+  @media (max-width: 640px) { .rstep { grid-template-columns: 18px minmax(0, 1fr); } .rstep > :nth-child(3), .rstep > :nth-child(4) { grid-column: 2; } }
   details.quiet > summary { cursor: pointer; color: var(--muted); font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 600; margin-top: 18px; }
 </style>
 </head>
@@ -165,7 +173,7 @@ addEventListener("hashchange", () => { scrollTo(0, 0); show(); });
 const goDeals = (f = "", s = "") => { filter = f; stage = s; page = 1; location.hash === "#deals" ? show() : (location.hash = "#deals"); };
 const goWork = (p) => { $("as").value = p; store.set("desk.as", p); group = "all"; location.hash === "#my-work" ? show() : (location.hash = "#my-work"); };
 
-async function overview() {
+async function overview() {  // the rules panel loads its own data
   const o = await api("/api/desk/overview"), c = o.corrections[0];
   const row = (label, n, onclick) => h("div", { class: `r ${n ? "" : "zero"}`, role: "button", tabindex: n ? 0 : -1, onclick: n ? onclick : null }, h("span", {}, label), h("b", {}, n));
   const tile = (k, big, ...rows) => h("section", { class: "panel tile" }, h("span", { class: "k" }, k), h("span", { class: "big num" }, big), h("div", {}, ...rows));
@@ -207,7 +215,48 @@ async function overview() {
           h("span", { class: "v" }, `${s.deals} · ${aed(s.value)}`));
       }) : [h("div", { class: "empty" }, "No deals yet.")]),
         h("div", { class: "legend" }, h("span", {}, h("i", { style: "background:var(--gold)" }), "Waiting for someone"), h("span", {}, h("i", { style: "background:var(--gold);opacity:.35" }), "Moving")))),
-    rolesPanel());
+    rolesPanel(), await rulesPanel());
+}
+
+// the rules the desk follows: the owner edits them; everyone else reads them
+const PATHNAMES = { ready: "Ready home", offplan: "Off-plan", rent: "Rental" };
+let rulesDraft = null, rulesPath = "ready";
+async function rulesPanel() {
+  const r = await api("/api/desk/rules"), owner = me() === OWNER;
+  if (!rulesDraft || !owner) rulesDraft = structuredClone(r.rules);
+  const d = rulesDraft, P = d.paths[rulesPath];
+  const num = (obj, key, label, suffix, attrs = {}) => h("label", { class: "rule" }, label,
+    owner ? h("input", { type: "number", min: 0, step: "any", value: obj[key], "aria-label": label, ...attrs, oninput: (e) => { obj[key] = e.target.value === "" ? "" : Number(e.target.value); } })
+      : h("strong", {}, `${obj[key]}${suffix}`));
+  const steps = h("div", { class: "rsteps" }, ...P.steps.map((st, i) => h("div", { class: "rstep" },
+    h("span", { class: "small muted" }, i + 1),
+    owner ? h("input", { value: st[0], "aria-label": `Step ${i + 1}`, oninput: (e) => { st[0] = e.target.value; } }) : h("span", {}, st[0]),
+    owner ? h("input", { value: st[1], "aria-label": `Step ${i + 1} waits on`, oninput: (e) => { st[1] = e.target.value; } }) : h("span", { class: "small muted" }, `waits on ${st[1]}`),
+    owner ? h("button", { "aria-label": `Remove step ${i + 1}`, onclick: () => { P.steps.splice(i, 1); show(); } }, "✕") : null)),
+    owner ? h("button", { onclick: () => { P.steps.push(["", ""]); show(); } }, "+ Add a step") : null);
+  const closing = h("div", { class: "rsteps" }, ...P.closing.map((c) => h("div", { class: "rstep" }, h("span", { class: "small muted" }, "✓"),
+    owner ? h("input", { value: c[1], "aria-label": `Closing: ${c[0]}`, oninput: (e) => { c[1] = e.target.value; } }) : h("span", {}, c[1]),
+    h("span", { class: "small muted" }, r.roles[c[2]]))));
+  return h("details", { class: "panel", style: "margin-top:18px", id: "rules", open: owner || null },
+    h("summary", { style: "cursor:pointer" }, h("h2", { style: "display:inline-flex;margin:0" }, "The rules this desk follows"),
+      h("span", { class: "small muted", style: "margin-left:8px" }, r.changed_by ? `last changed by ${r.changed_by} ${ago(r.changed_at)}` : "Dubai's usual practice, unchanged")),
+    h("div", { class: "rgrid" }, num(d, "cash_report_aed", "Report cash at or above (AED)", " AED"), num(d, "vat_pct", "VAT on our fees (%)", "%")),
+    h("div", { class: "groups", style: "margin:14px 0 10px" }, ...Object.keys(PATHNAMES).map((k) => h("button", { class: rulesPath === k ? "on" : "", onclick: () => { rulesPath = k; show(); } }, PATHNAMES[k]))),
+    h("div", { class: "small muted", style: "margin-bottom:8px" }, `${P.name}: a deal follows this path when its sales desk is ${rulesPath === "rent" ? "for rent" : rulesPath === "offplan" ? "for off-plan sales" : "any other desk"}.`),
+    h("div", { class: "rgrid" }, num(P, "commission_pct", "Our commission (%)", "%"),
+      h("label", { class: "rule" }, "Paid by", owner ? h("select", { "aria-label": "Commission paid by", onchange: (e) => { P.commission_from = e.target.value; } },
+        ...r.payers.map((x) => h("option", { value: x, selected: x === P.commission_from }, x))) : h("strong", {}, P.commission_from)),
+      num(P, "deposit_pct", rulesPath === "rent" ? "Security deposit, unfurnished (%)" : "Deposit (%)", "%"),
+      rulesPath === "rent" ? num(P, "deposit_pct_furnished", "Security deposit, furnished (%)", "%") : null),
+    h("h2", { style: "margin-top:14px" }, "Paperwork steps, in order"), steps,
+    h("h2", { style: "margin-top:14px" }, "Closing checklist"), closing,
+    owner ? h("div", { class: "row", style: "margin-top:14px;gap:10px" },
+      h("button", { class: "primary", id: "saverules", onclick: async () => {
+        try { await post("/api/desk/rules", { by: me(), rules: rulesDraft }); rulesDraft = null; toast("Rules saved; new work follows them"); show(); }
+        catch (e) { toast(e.message); } } }, "Save the rules"),
+      h("button", { onclick: () => { rulesDraft = null; show(); } }, "Discard changes"),
+      h("span", { class: "small muted" }, "A new step reaches deals that start this path from now on; deals already past it keep theirs."))
+      : h("div", { class: "small muted", style: "margin-top:10px" }, `Only ${TEAM[OWNER]?.name || "the owner"} changes these.`));
 }
 
 function rolesPanel() {
@@ -484,7 +533,7 @@ function render() {
   const other = v.cards.filter((c) => !DEPTS.some(([k]) => k === c.dept));
   const s = v.summary, box = (k, x) => h("div", { class: { ok: "ok", warn: "warn", bad: "bad" }[x[0]] || "" }, h("b", {}, k), x[1]);
   $("main").replaceChildren(
-    h("div", { class: "head" }, h("div", { class: "small muted" }, `${v.deal} · broker ${v.broker_name} · stage ${s.stage}`), h("h1", {}, v.customer),
+    h("div", { class: "head" }, h("div", { class: "small muted" }, `${v.deal} · broker ${v.broker_name} · stage ${s.stage} · ${v.path.name}`), h("h1", {}, v.customer),
       h("div", { class: "muted" }, `${v.property}${s.value ? ` · AED ${s.value.toLocaleString()}` : ""}`)),
     h("div", { class: "strip" }, box("Compliance", s.comp), box("Money", s.money), box("Paperwork", s.paper), box("Review", s.review)),
     s.waiting.length ? h("div", {}, "Waiting for ", ...s.waiting.map((p) => h("span", { class: `chip ${p === me() ? "warn" : ""}` }, NAMES[p] || p))) : null,

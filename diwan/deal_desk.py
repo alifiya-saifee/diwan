@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from diwan import roles
+from diwan import desk_rules, roles
 from diwan.agents import compliance, finance, operations, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
@@ -320,7 +320,9 @@ def overview():
 def deal(deal: str):
     try:
         g = _office().graph()
-        return deal_view(g, deal) | {"summary": Ledger(g, date.today()).summary(deal), "roles": roles.table(g)}
+        p = desk_rules.path(g, deal)
+        return deal_view(g, deal) | {"summary": Ledger(g, date.today()).summary(deal), "roles": roles.table(g),
+                                     "path": {"id": p["id"], "name": p["name"]}}
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
 
@@ -531,3 +533,28 @@ class RoleIn(BaseModel):
 def set_role(body: RoleIn):
     _call(roles.assign, _office(), body.role, pid(body.person) or body.person, missing="role", by=pid(body.by) or body.by)
     return roles.table(_office().graph())
+
+
+# ---------- the owner's rules (cash limit, VAT, each path's steps, deposit, commission and closing) ----------
+
+def _rules_view(g):
+    last = next((e for e in reversed(_office().log.list()) if e["type"] == "setting.changed"
+                 and e["content"].get("person") == "desk" and e["content"].get("key") == "rules"), None)
+    return {"rules": desk_rules.rules(g), "defaults": desk_rules.DEFAULTS, "roles": desk_rules.ROLES, "payers": desk_rules.PAYERS,
+            "changed_by": name(last["actor"]) if last else None, "changed_at": last["at"] if last else None}
+
+
+@router.get("/api/desk/rules")
+def get_rules():
+    return _rules_view(_office().graph())
+
+
+class RulesIn(BaseModel):
+    by: str
+    rules: dict
+
+
+@router.post("/api/desk/rules")
+def set_rules(body: RulesIn):
+    _call(desk_rules.save, _office(), body.rules, missing="rule", by=pid(body.by) or body.by)
+    return _rules_view(_office().graph())

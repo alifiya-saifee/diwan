@@ -180,7 +180,7 @@ def test_a_release_approved_before_a_correction_is_refused_after_it(office):
 # ---------- Operations and Review ----------
 
 def test_form_f_plan_is_sent_back_by_a_correction_and_remade_from_the_live_words(office, monkeypatch):
-    from diwan.agents import operations
+    from diwan import desk_rules
     monkeypatch.setattr(appmod.S, "office", office)
     c = TestClient(appmod.app)
     assert "5 of 7 fields" in c.post("/api/desk/deals/marina-1204/formf", json={"by": "joseph"}).json()["text"]
@@ -202,7 +202,7 @@ def test_form_f_plan_is_sent_back_by_a_correction_and_remade_from_the_live_words
     assert c.post(f"/api/desk/tasks/{sub2.id}/submitted", json={"by": "joseph", "reference": "DLD-88123"}).json()["ok"]
     assert not [r for r in office.graph().of("request", "marina-1204", "open") if r.props.get("kind") == "submit"]
     steps = [t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "transfer"]
-    assert [t.props["action"] for t in steps] == [s for s, _ in operations.TRANSFER] and all(t.props["needs_person"] == "joseph" for t in steps)
+    assert [t.props["action"] for t in steps] == [s for s, _ in desk_rules.DEFAULTS["paths"]["ready"]["steps"]] and all(t.props["needs_person"] == "joseph" for t in steps)
     assert c.post(f"/api/desk/tasks/{steps[0].id}/tick", json={"by": "omar"}).status_code == 403
     assert c.post(f"/api/desk/tasks/{steps[0].id}/tick", json={"by": "joseph"}).json()["ok"]
     assert office.graph().nodes[steps[0].id].status == "done"
