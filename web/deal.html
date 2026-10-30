@@ -323,6 +323,8 @@ function qrow(x) {
   else if (x.act === "filed") { const i = inp("goAML reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/filed`, { reference: i.value }, "Filing recorded") }, "I filed it")]; }
   else if (x.act === "received") { const i = inp("Bank reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/received`, { reference: i.value }, "Marked received; receipt filed") }, "Received")]; }
   else if (x.act === "submitted") { const i = inp("Portal reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/submitted`, { reference: i.value }, "Form F submitted") }, "I submitted it")]; }
+  else if (x.act === "invoiced") { const i = inp("Invoice number"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/invoiced`, { number: i.value }, "Invoice sent; collecting it next") }, "I sent it")]; }
+  else if (x.act === "commission") { const i = inp("Bank reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/commission`, { reference: i.value }, "Commission received; receipt filed") }, "Received")]; }
   else if (x.act === "tick") acts = [h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/tick`, {}, "Ticked") }, "Done")];
   else acts = [openBtn()];
   row.append(h("span", { class: "sev", style: `background:${SEV[x.sev]}` }),
@@ -427,6 +429,7 @@ function approvalEl(a) {
 }
 
 const OPEN = ["open", "queued", "working", "waiting"];
+const sendIt = (...a) => send(...a);
 async function send(path, body, ok) {
   try { await post(path, { by: me(), ...body }); toast(ok); await open(deal); show(); } catch (e) { toast(e.message); }
 }
@@ -473,6 +476,14 @@ function taskEl(t) {
     if (live) el.append(isTransactions ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/tick`, {}, "Ticked") }, "Done"))
       : h("div", { class: "acts small muted" }, `Only ${rname("transactions")} ticks the checklist.`));
   }
+  if (t.agent === "inv" && live) {
+    const send = t.step === "send" || /^Send /.test(t.action), fin = holds("finance");
+    const ref = h("input", { placeholder: send ? "Invoice number" : "Bank reference", "aria-label": send ? "Invoice number" : "Bank reference" });
+    el.append(fin ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send
+      ? sendIt(`/api/desk/tasks/${t.id}/invoiced`, { number: ref.value }, "Invoice sent; collecting it next")
+      : sendIt(`/api/desk/tasks/${t.id}/commission`, { reference: ref.value }, "Commission received; receipt filed") }, send ? "I sent it" : "Received"))
+      : h("div", { class: "acts small muted" }, `Only ${rname("finance")} sends invoices and marks commission received.`));
+  }
   if (live && t.agent === "report") {
     const ref = h("input", { placeholder: "goAML reference", "aria-label": "goAML reference" });
     el.append(officer ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/filed`, { reference: ref.value }, "Filing recorded") }, "I filed it"))
@@ -488,6 +499,21 @@ function formfEl(v) {
     h("div", { class: "small", style: "margin-top:4px" }, due ? `The stage is ${v.stage}: the Form F clerk can fill the plan from the live facts.`
       : "No Form F plan yet. The Form F clerk fills it from the live facts and stops before Submit."),
     h("div", { class: "acts" }, h("button", { class: due ? "primary" : "", onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/formf`, {}, "Form F plan ready") }, "Prepare Form F")));
+}
+
+function commissionEl(v) {
+  const c = v.commission, live = v.drafts.some((d) => d.kind === "commission invoice" && d.status !== "sent_back");
+  const aed = (n) => `AED ${Number(n).toLocaleString()}`;
+  return h("div", { class: "card" }, h("div", { class: "top" }, h("strong", {}, "Commission"), h("span", { class: "small muted" }, `${v.path.name} · paid by the ${c.payer}`)),
+    c.missing ? h("div", { class: "small", style: "margin-top:6px" }, c.missing)
+      : h("table", { class: "small", style: "margin-top:6px" },
+        h("tr", {}, h("td", { style: "width:40%" }, c.base_label), h("td", {}, h("strong", {}, aed(c.base)), h("div", { class: "muted" }, `${c.fact} "${c.quote}"`))),
+        h("tr", {}, h("td", {}, `Commission ${c.pct}%`), h("td", {}, aed(c.amount))),
+        h("tr", {}, h("td", {}, `VAT ${c.vat_pct}%`), h("td", {}, aed(c.vat))),
+        h("tr", {}, h("td", {}, h("strong", {}, "Total")), h("td", {}, h("strong", {}, aed(c.total))))),
+    !c.missing && !live ? (holds("finance") ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/invoice`, {}, "Invoice drafted; checked by Review") }, "Draft the invoice"))
+      : h("div", { class: "acts small muted" }, `${rname("finance")} drafts the invoice.`)) : null,
+    h("div", { class: "small muted", style: "margin-top:8px" }, "Worked out from the price the client said and the owner's rate. If the client changes the price, the invoice goes back."));
 }
 
 function fundsEl(f) {
@@ -526,7 +552,7 @@ function render() {
     const cards = v.cards.filter(by(k)), tasks = v.tasks.filter(by(k));
     const appr = k === "fin" ? v.approvals : [], drafts = v.drafts.filter(by(k));
     const open = cards.filter((c) => c.status === "open").length;
-    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "ops" ? formfEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
+    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "ops" ? formfEl(v) : null, k === "fin" ? commissionEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
     return h("section", { class: "dept", id: `dept-${k}` }, h("h2", {}, label, open ? h("span", { class: "chip warn" }, `${open} open`) : null),
       ...(kids.length ? kids : [h("div", { class: "empty" }, `Nothing for ${label} on this deal.`)]));
   });

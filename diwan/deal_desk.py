@@ -19,7 +19,7 @@ from diwan.people import name, pid
 router = APIRouter()
 PAGE = 50
 DEPTS = {"comp": "Compliance", "fin": "Finance", "ops": "Paperwork", "review": "Review"}
-DRAFT_DEPT = {"cash report": "comp", "Form F": "ops"}  # any other draft (the deck) is Review's
+DRAFT_DEPT = {"cash report": "comp", "Form F": "ops", "commission invoice": "fin"}  # any other draft (the deck) is Review's
 
 
 def _office():
@@ -71,7 +71,7 @@ def deal_view(g: Graph, deal: str, today: date | None = None) -> dict:
               "action": t.props["action"], "status": t.status, "reason": t.props.get("reason"), "at": t.at,
               "needs_person": roles.current(g, t), "rests_on": _facts_on(g, t.props.get("rests_on", [])),
               "person": t.props.get("person"), "result": t.props.get("result"), "draft": t.props.get("draft"),
-              "waiting_on": t.props.get("waiting_on"),
+              "waiting_on": t.props.get("waiting_on"), "step": t.props.get("step"), "amount_aed": t.props.get("amount_aed"),
               **(finance.expected(g, t, today or date.today()) if t.props["agent"] == "pay" else {})}
              for t in g.of("task", deal)]
     approvals = [{"id": a.id, "approver": a.props["approver"], "approver_name": name(a.props["approver"]), "action": a.props["action"],
@@ -207,9 +207,10 @@ class Ledger:
                     items.append(base | {"id": t.id, "who": roles.holder(self.g, "finance"), "kind": "Overdue" if e.get("overdue") else "Due soon" if soon else "Expected",
                                          "sev": "bad" if e.get("overdue") else "warn" if soon else "info", "title": t.props["action"],
                                          "at": t.at, "act": "received", "due": e.get("due")})
-                elif who and ag in ("screen", "report", "formf", "transfer"):
+                elif who and ag in ("screen", "report", "formf", "transfer", "inv"):
                     kind, sev, act = {"screen": ("Screening", "warn", "screen"), "report": ("Cash report", "bad", "filed"),
-                                      "formf": ("Form F", "warn", "submitted"), "transfer": ("Transfer", "info", "tick")}[ag]
+                                      "formf": ("Form F", "warn", "submitted"), "transfer": ("Transfer", "info", "tick"),
+                                      "inv": ("Commission", "warn", "invoiced" if t.props.get("step") == "send" else "commission")}[ag]
                     if ag == "formf" and not t.props.get("draft"):
                         continue
                     items.append(base | {"id": t.id, "who": who, "kind": kind, "sev": sev, "title": t.props["action"], "at": t.at, "act": act,
@@ -322,7 +323,7 @@ def deal(deal: str):
         g = _office().graph()
         p = desk_rules.path(g, deal)
         return deal_view(g, deal) | {"summary": Ledger(g, date.today()).summary(deal), "roles": roles.table(g),
-                                     "path": {"id": p["id"], "name": p["name"]}}
+                                     "path": {"id": p["id"], "name": p["name"]}, "commission": finance.commission(g, deal)}
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
 
@@ -558,3 +559,27 @@ class RulesIn(BaseModel):
 def set_rules(body: RulesIn):
     _call(desk_rules.save, _office(), body.rules, missing="rule", by=pid(body.by) or body.by)
     return _rules_view(_office().graph())
+
+
+# ---------- commission: draft the invoice, send it, collect it (Finance) ----------
+
+@router.post("/api/desk/deals/{deal}/invoice")
+def draft_invoice(deal: str, body: Run):
+    if f"deal:{deal}" not in _office().graph().nodes:
+        raise HTTPException(404, f"There is no deal {deal!r}.")
+    return {"draft": _call(finance.draft_invoice, _office(), deal, pid(body.by), missing="deal")}
+
+
+class InvoiceIn(BaseModel):
+    by: str
+    number: str = ""
+
+
+@router.post("/api/desk/tasks/{tid}/invoiced")
+def invoiced(tid: str, body: InvoiceIn):
+    return {"task": _call(finance.invoice_sent, _office(), tid, pid(body.by), body.number)}
+
+
+@router.post("/api/desk/tasks/{tid}/commission")
+def commission_in(tid: str, body: Received):
+    return {"document": _call(finance.commission_received, _office(), tid, pid(body.by), body.reference, today=date.today())}

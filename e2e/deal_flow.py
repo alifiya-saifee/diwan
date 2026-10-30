@@ -414,6 +414,44 @@ with sync_playwright() as p:
     shot("23-cash-under-new-limit")
     check("10c", "AED 52,000 in cash is now reported under the AED 50,000 limit", "cash report v1" in pg.locator("#dept-comp").inner_text())
 
+
+    # ---------- 11. commission: worked out, invoiced, collected (plan R15) ----------
+    api.post(f"{BASE}/api/demo/reset")
+    pg.set_viewport_size({"width": 1440, "height": 1000})
+    pg.goto(f"{BASE}/web/deal.html?deal=marina-1204")
+    pg.wait_for_selector("#dept-fin .card")
+    acting("ahmed")
+    pg.wait_for_timeout(600)
+    card = pg.locator("#dept-fin .card", has_text="Commission").first
+    t = card.inner_text()
+    check("11a", "commission worked out from Karim's price and the owner's 2% + 5% VAT",
+          all(x in t for x in ("AED 2,600,000", "AED 52,000", "AED 2,600", "AED 54,600", "paid by the buyer", 'F1 "We\'re looking at two point six million')), t.replace("\n", " | ")[:160])
+    clear()
+    card.get_by_role("button", name="Draft the invoice").click()
+    msg = toast()
+    pg.wait_for_timeout(700)
+    fin = pg.locator("#dept-fin")
+    check("11b", "invoice drafted and passed by Review", "Invoice drafted" in msg and "commission invoice v1" in fin.inner_text() and "PASSED REVIEW" in fin.inner_text().upper())
+    task = fin.locator(".card", has_text="Send commission invoice")
+    clear()
+    task.get_by_role("button", name="I sent it").click()
+    check("11c", "sending needs the invoice number", "invoice number" in toast())
+    task.locator("input").fill("INV-0042")
+    task.get_by_role("button", name="I sent it").click()
+    pg.wait_for_timeout(900)
+    shot("24-commission")
+    check("11d", "sent; collecting it is next", "Collect commission AED 54,600 from the buyer (invoice INV-0042)" in pg.locator("#dept-fin").inner_text())
+    pg.goto(f"{BASE}/web/deal.html#my-work")
+    pg.wait_for_selector(".person")
+    acting("ahmed")
+    pg.wait_for_timeout(800)
+    row = pg.locator(".q", has_text="Collect commission")
+    row.locator("input").fill("ENBD 9001")
+    row.get_by_role("button", name="Received").click()
+    pg.wait_for_timeout(1200)
+    check("11e", "Ahmed marks it received from his queue; the row leaves", pg.locator(".q", has_text="Collect commission").count() == 0
+          and any(e["type"] == "document.filed" and "Commission received" in e["content"]["title"] for e in api.get(f"{BASE}/api/events?deal=marina-1204").json()))
+
     # widths: no sideways scroll at 1280 or on a phone
     for w, hgt in ((1280, 900), (390, 844)):
         pg.set_viewport_size({"width": w, "height": hgt})

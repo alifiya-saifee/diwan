@@ -85,3 +85,44 @@ def test_a_deals_path_comes_from_its_sales_desk(office):
     g.nodes["deal:marina-1204"].props["kind"] = "off_plan"
     assert desk_rules.path_of(g, "jvc-88") == "rent" and desk_rules.path_of(g, "marina-1204") == "offplan"
     assert desk_rules.path(g, "jvc-88")["commission_from"] == "tenant"
+
+
+# ---------- commission: worked out, invoiced, collected (plan R15, O8, L5) ----------
+
+def test_commission_is_worked_out_from_the_clients_price_and_the_owners_rate(office):
+    from diwan.agents import finance
+    c = finance.commission(office.graph(), "marina-1204")
+    assert (c["base"], c["fact"], c["pct"], c["amount"], c["vat"], c["total"], c["payer"]) == (2_600_000, "F1", 2, 52_000, 2_600, 54_600, "buyer")
+    desk_rules.save(office, edited(office, paths__ready__commission_pct=1.5, vat_pct=5), by="layla")
+    assert finance.commission(office.graph(), "marina-1204")["total"] == 40_950
+    office.open_deal("d-x", property="Apt 1, Bay Square", customer="Noor Saleh", broker="omar")
+    assert "No price" in finance.commission(office.graph(), "d-x")["missing"]
+
+
+def test_an_invoice_is_drafted_sent_and_collected_by_finance_only(office, monkeypatch):
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    assert c.post("/api/desk/deals/marina-1204/invoice", json={"by": "omar"}).status_code == 403
+    did = c.post("/api/desk/deals/marina-1204/invoice", json={"by": "ahmed"}).json()["draft"]
+    assert office.graph().nodes[did].status == "live"  # Review passed it: it rests on the live price
+    assert c.post("/api/desk/deals/marina-1204/invoice", json={"by": "ahmed"}).status_code == 400
+    send = next(t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "inv")
+    assert c.post(f"/api/desk/tasks/{send.id}/invoiced", json={"by": "ahmed"}).status_code == 400
+    collect = c.post(f"/api/desk/tasks/{send.id}/invoiced", json={"by": "ahmed", "number": "INV-0042"}).json()["task"]
+    assert "invoice INV-0042" in office.graph().nodes[collect].props["action"]
+    q = c.get("/api/desk/work?person=ahmed").json()["items"]
+    assert any(x["id"] == collect and x["act"] == "commission" for x in q)
+    doc = c.post(f"/api/desk/tasks/{collect}/commission", json={"by": "ahmed", "reference": "ENBD 9001"}).json()["document"]
+    g = office.graph()
+    assert g.nodes[collect].props["result"] == "received" and g.nodes[doc].props["amount_aed"] == 54_600
+
+
+def test_a_changed_price_sends_the_invoice_back_and_stops_it_being_sent(office, monkeypatch):
+    from diwan.agents import finance
+    did = finance.draft_invoice(office, "marina-1204", "ahmed")
+    send = next(t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "inv")
+    office.record_fact("marina-1204", "deal_term", "We agreed two point five in the end.", "Karim Haddad", amount_aed=2_500_000, replaces="F1")
+    g = office.graph()
+    assert g.nodes[did].status == "sent_back" and g.nodes[send.id].status == "withdrawn"
+    assert finance.commission(g, "marina-1204")["total"] == 52_500
+    assert finance.draft_invoice(office, "marina-1204", "ahmed") != did

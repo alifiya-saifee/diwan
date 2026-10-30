@@ -18,7 +18,7 @@ def holder(g: Graph, role: str) -> str | None:
 
 
 ROLE_WORK = {("task", "screen"): "compliance", ("task", "report"): "compliance", ("check", "comp"): "compliance",
-             ("task", "formf"): "transactions", ("task", "transfer"): "transactions"}
+             ("task", "formf"): "transactions", ("task", "transfer"): "transactions", ("task", "inv"): "finance"}
 
 
 def current(g: Graph, node) -> str | None:
