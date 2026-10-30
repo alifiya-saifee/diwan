@@ -28,5 +28,13 @@ charter -> instructions -> model (live, or a marked recording) -> pack -> quote 
 | Code | Payment tracker, Screening analyst, Report drafter, Fact checker, leads that only route |
 | Browser | Form F clerk (stops before Submit) |
 
+## The content studio
+
+The Marketing side turns what competitors post into reels for the business. It reads their real Instagram posts, says why
+the best ones worked, and writes three scripts for a listing, a product or service, or a topic to explain (an
+informational video, spoken to camera), each from its own facts. It can read the company's website for its products and
+properties, refresh competitor posts every day, and be talked to by text or voice. Everything starts in the Studio's Setup
+tab. A person approves every script and every post; nothing is published without that.
+
 Agents never hold portal or bank credentials. A person approves, submits, pays and files.
 All people and deals in demos are fictional.
