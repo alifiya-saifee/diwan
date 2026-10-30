@@ -37,6 +37,7 @@ from pathlib import Path
 import httpx
 
 from diwan import brand
+from diwan import business
 from diwan.agents import runner
 from diwan.agents.charters import get
 from diwan.config import env
@@ -73,11 +74,93 @@ def made(office: Office, kind: str, ref: str | None = None) -> dict | None:
 
 
 def board(office: Office) -> list[dict]:
-    return [e["content"] for e in office.log.list() if e["type"] == "board.pinned"]
+    """The research board: every pinned card that has not been taken off since."""
+    cards: dict[str, dict | None] = {}
+    for e in office.log.list():  # the latest pin or removal of each card wins
+        if e["type"] == "board.pinned":
+            cards.pop(e["content"]["id"], None)
+            cards[e["content"]["id"]] = e["content"]
+        elif e["type"] == "board.unpinned":
+            cards[e["content"]["id"]] = None
+    return [c for c in cards.values() if c]
+
+
+def ad_library_url(account: str, country: str = "") -> str:
+    """Meta's Ad Library, searched for the account in our country (every country until one is set): a person looks at
+    their ads there (no API returns them)."""
+    from urllib.parse import quote
+    return (f"https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country={quote(country or 'ALL')}&q={quote(account)}"
+            "&search_type=keyword_unordered")
+
+
+def pin_ad(office: Office, *, account: str, url: str, started: str, text: str, ended: str | None = None, by: str) -> dict:
+    """A competitor ad a person saw in the Ad Library, pinned on the research board like a post: its link, when it
+    started (and ended, if it has), and its copy. There are no numbers: Meta gives none for other advertisers."""
+    account, url, text = account.strip().lstrip("@").lower(), url.strip(), text.strip()
+    if account not in [c.lower() for c in competitors(office.graph())]:
+        raise ValueError(f"@{account} is not on the competitor list")
+    if not re.match(r"https://(www\.)?facebook\.com/ads/library/?\?(.*&)?id=\d+", url):
+        raise ValueError("Paste the ad's own Ad Library link: open the ad there, then See ad details, and copy the address (it has id=…)")
+    try:
+        start = datetime.fromisoformat(started).date()
+        end = datetime.fromisoformat(ended).date() if ended else None
+    except ValueError:
+        raise ValueError("Give the start date as it shows in the Ad Library, e.g. 2026-10-02")
+    if start > _now().date() or (end and (end < start or end > _now().date())):
+        raise ValueError("The start date can't be in the future, and the end date must be between the start and today")
+    if not text:
+        raise ValueError("Paste the ad's text, so the writers can see what it says")
+    card = {"id": _stable_id("B-ad", url), "kind": "ad", "account": account, "url": url, "started": start.isoformat(),
+            "ended": end.isoformat() if end else None, "text": text[:2000], "title": text.splitlines()[0][:90],
+            "why": f"@{account}'s ad, " + (f"ran {start.isoformat()} to {end.isoformat()}" if end else f"running since {start.isoformat()}"), "by": by}
+    if any(b["id"] == card["id"] for b in board(office)):
+        raise ValueError("This ad is already pinned")
+    office.log.append("board.pinned", actor=by, agent="mrival", content=card)
+    return card
+
+
+def unpin(office: Office, card: str, *, by: str) -> None:
+    if not any(b["id"] == card for b in board(office)):
+        raise ValueError(f"{card} is not on the research board")
+    office.log.append("board.unpinned", actor=by, agent="mrival", content={"id": card})
 
 
 def footage(office: Office, ref: str) -> dict | None:
     return next((e["content"] for e in reversed(office.log.list()) if e["type"] == "footage.added" and e["content"]["ref"] == ref), None)
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _posted(p: dict) -> datetime | None:
+    try:
+        return datetime.fromisoformat((p.get("at") or "").replace("+0000", "+00:00").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def kind(p: dict) -> str:
+    return "reel" if (p.get("type") or "").upper() in ("VIDEO", "REELS") else "post"
+
+
+def scored(ps: list[dict]) -> list[dict]:
+    """One account's posts, each with its likes + comments, the account's average for the same kind (reels with
+    reels, other posts with other posts) and `score`, how many times that average it got. One rule for the table, the
+    carousel, the board, why they win and the strategy: an outlier is a post above its average (score > 1)."""
+    out = [p | {"engagement": p["likes"] + p["comments"], "kind": kind(p)} for p in ps]
+    for k in ("reel", "post"):
+        group = [q for q in out if q["kind"] == k]
+        avg = statistics.mean(q["engagement"] for q in group) if len(group) >= 2 else None
+        for q in group:
+            q["avg"] = round(avg) if avg else None
+            q["score"] = round(q["engagement"] / avg, 1) if avg else None  # for showing; `above` compares the exact numbers
+            q["above"] = bool(avg) and q["engagement"] > avg
+    return out
+
+
+def is_outlier(p: dict) -> bool:
+    return p["above"] if "above" in p else bool(p.get("score")) and p["score"] > 1
 
 
 def competitors(g: Graph) -> list[str]:
@@ -121,6 +204,11 @@ def _ffmpeg(*args: str) -> None:
         raise RuntimeError(r.stderr[-300:] or "ffmpeg failed")
 
 
+def _width(path: Path) -> int:
+    return int(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width", "-of", "csv=p=0", str(path)],
+                              capture_output=True, text=True).stdout.strip() or 720)
+
+
 def _duration(path: Path) -> float:
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)], capture_output=True, text=True)
     return float(r.stdout.strip() or 0)
@@ -148,7 +236,7 @@ def _wav(src: Path) -> bytes:
 # ---------- posts brought in by hand (a spreadsheet), until Instagram is connected ----------
 
 CSV_COLUMNS = ["source", "account", "followers", "url", "type", "caption", "likes", "comments", "posted_at"]
-CSV_TEMPLATE = ",".join(CSV_COLUMNS) + "\ncompetitor,brokerage.one,12000,https://www.instagram.com/p/XXXX/,REELS,\"What does 2M buy in Dubai Marina?\",950,40,2026-10-20 19:30\n"
+CSV_TEMPLATE = ",".join(CSV_COLUMNS) + "\ncompetitor,their.account,12000,https://www.instagram.com/p/XXXX/,REELS,\"The first line of the caption\",950,40,2026-10-20 19:30\n"
 
 
 def import_posts(office: Office, rows: list[dict], *, by: str) -> dict:
@@ -177,29 +265,27 @@ def import_posts(office: Office, rows: list[dict], *, by: str) -> dict:
         by_acc.setdefault((p["source"], p["account"]), []).append(p)
     outliers = []
     for (_, _acc), ps in by_acc.items():
-        eng = [p["likes"] + p["comments"] for p in ps]
-        med = statistics.median(eng) if len(eng) >= 5 else None
-        for p, v in zip(ps, eng):
-            p.update(engagement=v, score=round(v / med, 1) if med else None)
-            office.log.append("post.seen", actor=by, agent="mrival", key=f"import:{p['id']}:{v}", content=p | {"imported": True})
-            if p["source"] == "competitor" and p["score"] and p["score"] >= 2:
+        for p in scored(ps):
+            office.log.append("post.seen", actor=by, agent="mrival", key=f"import:{p['id']}:{p['engagement']}", content=p | {"imported": True})
+            if p["source"] == "competitor" and is_outlier(p):
                 outliers.append(p)
     outliers.sort(key=lambda p: -p["score"])
     for p in outliers[:3]:
         office.log.append("board.pinned", actor="mrival", agent="mrival", key=f"pin:{p['id']}",
                           content={"id": _stable_id("B", p["id"]), "kind": "outlier", "title": (p["caption"] or "(no caption)")[:90], "account": p["account"],
-                                   "why": f"{p['score']}x @{p['account']}'s usual likes+comments", "url": p["permalink"], "post": p["id"], "type": p["type"]})
+                                   "why": f"{p['engagement']:,} likes+comments, {p['score']}x @{p['account']}'s average {p['kind']}", "url": p["permalink"], "post": p["id"], "type": p["type"]})
     comp = [p for p in clean if p["source"] == "competitor"]
-    _pack(office, "mrival", f"Imported {len(clean)} posts ({len(comp)} from {len({p['account'] for p in comp})} competitors): {len(outliers)} outliers at 2x or more their account's usual."
+    _pack(office, "mrival", f"Imported {len(clean)} posts ({len(comp)} from {len({p['account'] for p in comp})} competitors): {len(outliers)} above their account's average."
           + (f" Skipped: {'; '.join(errors[:3])}" if errors else ""), kind="draft")
     return {"imported": len(clean), "outliers": len(outliers), "errors": errors}
 
 
 # ---------- research ----------
 
-def watch(office: Office, cause: int | None) -> list[dict]:
-    """Competitor watch: score every competitor post against its own account's median; pin the outliers."""
-    names = competitors(office.graph())
+def watch(office: Office, cause: int | None, only: list[str] | None = None) -> list[dict]:
+    """Competitor watch: score every competitor post against its own account's median; pin the outliers. `only`
+    fetches just those accounts (a competitor that was just saved), without re-reading our own posts."""
+    names = only or competitors(office.graph())
     if not instagram.ready():
         pinned = [b for b in board(office) if b["kind"] == "outlier"]
         if pinned:
@@ -208,7 +294,7 @@ def watch(office: Office, cause: int | None) -> list[dict]:
         _blocked(office, "mrival", "Connect Instagram in Settings, or import posts from a spreadsheet in the Studio", cause=cause)
         return []
     if not names:
-        _blocked(office, "mrival", "Add competitor accounts in Settings → Content studio", cause=cause)
+        _blocked(office, "mrival", "Add competitor accounts in the Studio (Setup → Competitor accounts)", cause=cause)
         return []
     outliers, errors = [], []
     for u in names:
@@ -216,18 +302,29 @@ def watch(office: Office, cause: int | None) -> list[dict]:
             acc = instagram.competitor_posts(u)
         except instagram.InstagramError as e:
             errors.append(f"@{u}: {e}")
+            office.log.append("competitor.checked", actor="mrival", agent="mrival", caused_by=cause, content={"account": u, "ok": False, "error": str(e)[:200]})
             continue
-        eng = [p["likes"] + p["comments"] for p in acc["posts"]]
-        med = statistics.median(eng) if len(eng) >= 5 else None
-        for p, v in zip(acc["posts"], eng):
-            score = round(v / med, 1) if med else None
-            office.log.append("post.seen", actor="mrival", agent="mrival", key=f"post:{p['id']}:{v}",
-                              content={**p, "source": "competitor", "engagement": v, "score": score, "followers": acc.get("followers")})
-            if score and score >= 2:
-                outliers.append({**p, "score": score, "engagement": v})
+        fit = {}
+        if only:  # a just-added account: does it look like our industry? (a warning only; it is never refused)
+            from diwan.agents import reader
+            fit = reader.fits(office, acc)
+        office.log.append("competitor.checked", actor="mrival", agent="mrival", caused_by=cause,
+                          content={"account": u, "ok": True, "username": acc["username"], "followers": acc.get("followers"),
+                                   "media_count": acc.get("media_count"), "avatar": acc.get("avatar"), "posts_read": len(acc["posts"]), **fit})
+        for p in scored(acc["posts"]):
+            office.log.append("post.seen", actor="mrival", agent="mrival", key=f"post:{p['id']}:{p['engagement']}",
+                              content={**p, "source": "competitor", "followers": acc.get("followers")})
+            if is_outlier(p):
+                outliers.append(p)
+    reached = len(names) - len(errors)
+    if not reached and only:  # a just-added account that can't be read: its check says why; the studio's research is not blocked
+        return []
+    if not reached:  # nothing was read: say so, never "no outliers"
+        _blocked(office, "mrival", f"0 of {len(names)} competitors reached: {'; '.join(errors)}", cause=cause)
+        return []
     outliers.sort(key=lambda p: -p["score"])
     try:
-        for p in instagram.own_posts():
+        for p in ([] if only else instagram.own_posts()):
             office.log.append("post.seen", actor="mrival", agent="mrival", key=f"own:{p['id']}:{p['likes']}:{p['comments']}",
                               content={**p, "source": "own", "engagement": p["likes"] + p["comments"]})
     except instagram.InstagramError as e:
@@ -236,10 +333,10 @@ def watch(office: Office, cause: int | None) -> list[dict]:
     for p in top:
         office.log.append("board.pinned", actor="mrival", agent="mrival", key=f"pin:{p['id']}",
                           content={"id": f"B-{p['id']}", "kind": "outlier", "title": (p["caption"] or "(no caption)")[:90], "account": p["account"],
-                                   "why": f"{p['score']}x @{p['account']}'s usual likes+comments", "url": p["permalink"], "post": p["id"], "media_url": p.get("media_url"),
+                                   "why": f"{p['engagement']:,} likes+comments, {p['score']}x @{p['account']}'s average {p['kind']}", "url": p["permalink"], "post": p["id"], "media_url": p.get("media_url"),
                                    "type": p.get("type")})
-    verdict = (f"{len(outliers)} outliers across {len(names)} accounts. Top: @{top[0]['account']} at {top[0]['score']}x their usual." if top
-               else f"No post above 2x its account's usual across {len(names)} accounts.")
+    verdict = f"Reached {reached} of {len(names)} competitors. " + (f"{len(outliers)} posts above their account's average. Top: @{top[0]['account']} at {top[0]['score']}x their average." if top
+               else "No post above its account's average.")
     _pack(office, "mrival", verdict + (f" Not reached: {'; '.join(errors)}" if errors else ""), cause=cause,
           evidence=[Evidence(p["permalink"], f"post:{p['id']}") for p in top if p.get("permalink")],
           sources={f"post:{p['id']}": p["permalink"] for p in top if p.get("permalink")})
@@ -252,20 +349,25 @@ def _stable_id(prefix: str, key: str) -> str:
 
 
 def trends(office: Office, cause: int | None) -> list[dict]:
-    # trends move by the week, not the minute: one search a day is enough, and every run in between reuses it
-    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    # trends move by the week, not the minute: one search per rhythm (Setup: daily, every 2 days, weekly) is enough
+    from diwan.agents import rhythm
+    since = datetime.now(timezone.utc) - rhythm.every(office)
     recent = [e["content"] for e in office.log.list() if e["type"] == "board.pinned" and e["content"].get("kind") == "trend"
               and datetime.fromisoformat(e["at"]) >= since]
     if recent:
-        _pack(office, "mtrend", f"Using today's {len(recent)} trend card{'s' if len(recent) != 1 else ''} (one search a day).", cause=cause)
+        _pack(office, "mtrend", f"Using the {len(recent)} trend card{'s' if len(recent) != 1 else ''} already found ({rhythm.settings(office)['rhythm']} search).", cause=cause)
         return recent
     if not meta.ready():
         _blocked(office, "mtrend", "Trend research needs Muse Spark web search (META_API_KEY)", cause=cause)
         return []
+    if (why := business.needs(office, "the trend search is about your market")):
+        _blocked(office, "mtrend", why, cause=cause)
+        return []
+    b = business.get(office)
     try:
-        r = meta.search("What short-form video formats and hooks are performing for Dubai real-estate brokers on Instagram and TikTok "
-                        "in the last month? Use at most two searches. Answer with exactly three lines and nothing else, each in the form:\n"
-                        "1. <the format or hook, under 12 words> | <why it works, under 15 words> | <the URL of the page you saw it on>")
+        r = meta.search(f"What short-form video formats and hooks are performing for {b['industry']} businesses in {business.place(office)} "
+                        "on Instagram and TikTok in the last month? Use at most two searches. Answer with exactly three lines and nothing else, each in the form:\n"
+                        "1. <the format or hook, under 12 words> | <why it works, under 15 words> | <the URL of the page you saw it on>", country=b["country"])
     except meta.MetaError as e:
         _blocked(office, "mtrend", f"Web search failed: {e}", cause=cause)
         return []
@@ -284,6 +386,20 @@ def trends(office: Office, cause: int | None) -> list[dict]:
     _pack(office, "mtrend", f"{len(cards)} rising formats pinned, each with the page it came from.", cause=cause,
           evidence=[Evidence(c["url"], c["id"]) for c in cards], sources={c["id"]: c["url"] for c in cards}, usage={"queries": r["queries"]})
     return cards
+
+
+def read_posts(office: Office, cause: int | None) -> None:
+    """Muse Spark reads the competitor posts not read yet, so "Why they win" and the board's patterns are current."""
+    from diwan.agents import reader
+    if not reader.unread(office)["posts"]:
+        return
+    r = reader.read(office, cause)
+    if r.get("needs"):
+        _blocked(office, "mrival", f"Why they win is waiting: {r['needs']}", cause=cause)
+    elif r["read"] or r["errors"]:
+        n = sum(len(a["patterns"]) for a in reader.patterns(office)["accounts"])
+        _pack(office, "mrival", f"Read {r['read']} new competitor post{'s' if r['read'] != 1 else ''}; {n} pattern{'s' if n != 1 else ''} hold."
+              + (f" Not read: {'; '.join(r['errors'])}" if r["errors"] else ""), cause=cause)
 
 
 def transcript_of(office: Office, card: dict | None, cause: int | None) -> dict | None:
@@ -320,6 +436,50 @@ def transcript_of(office: Office, card: dict | None, cause: int | None) -> dict 
 
 # ---------- planning ----------
 
+def _post_read(office: Office, card: dict) -> tuple[dict | None, dict | None]:
+    """The competitor post behind an outlier card, and how Muse Spark read it (None when not read yet)."""
+    from diwan.agents import reader
+    pid = card.get("post")
+    post = next((p for p in posts(office, "competitor") if p["id"] == pid), None) if pid else None
+    return post, reader.reads(office).get(pid) if pid else None
+
+
+def usable(office: Office, cards: list[dict]) -> list[dict]:
+    """The board cards a script may build on: a competitor post about their own moment (an event, an award, a signing)
+    is left out, because it does not carry over to us."""
+    out = []
+    for c in cards:
+        if c.get("kind") == "outlier":
+            _, r = _post_read(office, c)
+            if r and not r["carries_over"]:
+                continue
+        out.append(c)
+    return out
+
+
+def worked_because(r: dict | None) -> str:
+    """Why a competitor post worked, from how it was read; never their numbers, words or claims."""
+    if not r:
+        return "the reason is not known yet (the post has not been read)"
+    return f"it is a {r['topic']} that opens with {r['hook']} and shows {r['on_screen']}"
+
+
+def built_like(office: Office, card_ids: list[str]) -> list[str]:
+    """One line per competitor card a script builds on: whose post, its numbers, and why it worked."""
+    on = {c["id"]: c for c in board(office)}
+    out = []
+    for cid in card_ids:
+        c = on.get(cid)
+        if not c:
+            continue
+        if c["kind"] == "outlier":
+            p, r = _post_read(office, c)
+            nums = f" ({p['engagement']:,} likes + comments, {p['score']}x their average {p['kind']})" if p else ""
+            out.append(f"Built like @{c['account']}'s {'reel' if (p or {}).get('kind') == 'reel' else 'post'}{nums}: it worked because {worked_because(r)}.")
+        elif c["kind"] == "pattern":
+            out.append(f"Built on what wins for {'our own posts' if c['account'] == 'us' else '@' + c['account']}: {c['why'].split(': ', 1)[-1]}")
+    return out
+
 IDEAS_SCHEMA = {"name": "ideas", "strict": True, "schema": {"type": "object", "additionalProperties": False, "required": ["ideas"],
                 "properties": {"ideas": {"type": "array", "items": {"type": "object", "additionalProperties": False,
                                                                     "required": ["title", "angle", "cards"],
@@ -329,6 +489,7 @@ IDEAS_SCHEMA = {"name": "ideas", "strict": True, "schema": {"type": "object", "a
 
 def ideas(office: Office, ref: str, cards: list[dict], cause: int | None, feedback: str | None = None) -> dict:
     lst = _listing(office, ref)
+    cards = usable(office, cards)
     ids = {c["id"] for c in cards}
     c = get("midea")
     system = runner.instructions(c, office.log)
@@ -349,6 +510,7 @@ def ideas(office: Office, ref: str, cards: list[dict], cause: int | None, feedba
         feats = ", ".join(lst.get("features") or []) or f"{lst['beds']} bed {lst['type']}"
         out = [{"title": f"{lst['title']}: {feats}, price at the end", "angle": "walk-through ending on the price", "cards": []}]
         out += [{"title": f"{lst['title']} in the structure of @{x.get('account', 'a source')}'s {x['kind']}", "angle": x["title"], "cards": [x["id"]]} for x in cards[:2]]
+    out = [i | {"from": i["cards"] or [f"listing:{ref}"]} for i in out]  # every idea names what it came from
     pick = out[0]
     m = _made(office, "midea", "ideas", ref, {"ideas": out, "pick": pick, "via": by}, cause)
     _pack(office, "midea", f"Idea: \"{pick['title']}\"" + (f" (from {', '.join(pick['cards'])})" if pick["cards"] else " (from the listing)"), cause=cause,
@@ -373,26 +535,66 @@ def lanes(office: Office, cause: int | None) -> dict:
     return m
 
 
-def film_list(office: Office, ref: str, idea: dict, cause: int | None, feedback: str | None = None) -> dict:
+def film_list(office: Office, ref: str, idea: dict, cause: int | None, feedback: str | None = None, sc: dict | None = None) -> dict:
+    """What to film: the approved script's video plan, shot by shot, with the line said over each; else from the features."""
     g = office.graph()
     lst = _listing(office, ref)
     feats = lst.get("features") or []
-    shots = [f"Open on the strongest view{(': ' + feats[0]) if feats else ''}"] + [f"Show the {f}" for f in feats[1:3]] + \
-            [f"Walk the {lst['beds']} bedroom{'s' if lst['beds'] != 1 else ''}", "End on the price card with the permit number"]
+    if sc and sc.get("shots"):
+        shots = [f"{r['show']} (while saying: \"{r['say']}\")" for r in sc["shots"] if "price card" not in r["show"].lower() and "end card" not in r["show"].lower()]
+        shots.append("End on the price card with the permit number (added in editing)")
+    else:
+        shots = [f"Open on the strongest view{(': ' + feats[0]) if feats else ''}"] + [f"Show the {f}" for f in feats[1:3]] + \
+                [f"Walk the {lst['beds']} bedroom{'s' if lst['beds'] != 1 else ''}", "End on the price card with the permit number"]
     viewing = next((v for v in g.of("viewing", status="booked") if v.props["listing"] == ref), None)
     when = f"at the viewing {g.record(viewing.id).split(', ', 1)[1]}" if viewing else "at the next daylight visit (no viewing booked yet)"
-    broker = viewing.props["broker"] if viewing else "omar"
+    broker = viewing.props["broker"] if viewing else lst.get("agent")  # the viewing's broker, else the listing's own agent
     m = _made(office, "mfilm", "film list", ref, {"shots": shots, "who": broker, "when": when}, cause)
-    _pack(office, "mfilm", f"Film list for {name(broker)} {when}: {len(shots)} shots, ending on the price and permit.", cause=cause)
+    _pack(office, "mfilm", f"Film list for {name(broker) if broker else 'nobody assigned yet'} {when}: {len(shots)} shots, ending on the price and permit.", cause=cause)
     return m
 
 
 # ---------- scripting ----------
 
 SCRIPT_SCHEMA = {"name": "script", "strict": True, "schema": {"type": "object", "additionalProperties": False,
-                 "required": ["hook_en", "hook_ar", "lines_en", "lines_ar"],
+                 "required": ["hook_en", "hook_ar", "lines_en", "lines_ar", "shots"],
                  "properties": {"hook_en": {"type": "string"}, "hook_ar": {"type": "string"},
-                                "lines_en": {"type": "array", "items": {"type": "string"}}, "lines_ar": {"type": "array", "items": {"type": "string"}}}}}
+                                "lines_en": {"type": "array", "items": {"type": "string"}}, "lines_ar": {"type": "array", "items": {"type": "string"}},
+                                "shots": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["show", "text", "cut"],
+                                                                     "properties": {"show": {"type": "string"}, "text": {"type": "string"}, "cut": {"type": "string"}}}}}}}
+
+
+def _secs(line: str) -> float:
+    """How long a line takes to say: about 2.5 words a second, never under 2 seconds."""
+    return max(2.0, round(len(line.split()) / 2.5 + 0.5, 1))
+
+
+def video_plan(data: dict, lst: dict) -> list[dict]:
+    """The script as a video: one row per spoken line (the hook first) with when it starts, what is on screen, the words
+    on screen and the cut into it. Rows the model gave are kept when there is one per line; else they are worked out
+    from the line and the listing's features. Timing always comes from the words."""
+    said = [data["hook_en"], *data["lines_en"]]
+    given = data.get("shots") or []
+    feats = lst.get("features") or []
+    rows, t = [], 0.0
+    for i, line in enumerate(said):
+        low = line.lower()
+        if len(given) == len(said) and given[i].get("show"):
+            g = given[i]
+            show, text, cut = g["show"], g.get("text", ""), g.get("cut", "")
+        elif i == 0:
+            show, text, cut = f"The strongest view{': ' + feats[0] if feats else ''}, moving", line, "Open on movement: a slow push-in"
+        elif re.search(r"\bpermit\b|aed|price", low):
+            show, text, cut = "The price card", f"AED {lst['price_aed']:,} · Permit {lst.get('permit')}", "Hard cut, hold 2 seconds"
+        elif re.search(r"\b(message|dm|call|whatsapp|book|contact)\b", low):
+            show, text, cut = "You to camera, or the brand's end card", "Message us", "Fade to the end card"
+        elif (f := next((f for f in feats if f.lower() in low or any(len(w) > 3 and re.search(rf"\b{re.escape(w)}\b", low) for w in f.lower().split())), None)):
+            show, text, cut = f"Close-up of the {f}", f[:1].upper() + f[1:], "Cut on the move"
+        else:
+            show, text, cut = "A wide shot of the main room", "", "Cut on the move"
+        rows.append({"at": round(t, 1), "say": line, "show": show, "text": text, "cut": cut})
+        t += _secs(line)
+    return rows
 
 
 MONEY = re.compile(r"(?:aed|dhs?|dirhams?|درهم)\s*[\d.,]+(?:\s*(?:k|m|mn|million|thousand)\b)?|[\d.,]+\s*(?:k|m|mn|million|thousand|aed|dirhams?|درهم)\b"
@@ -443,10 +645,16 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
                                                    "the listing, and build the lines from its features. Every line says something new; never repeat a "
                                                    "line or the unit name. No placeholders or brackets: if a fact is missing, leave it out. The last "
                                                    "line invites the viewer to get in touch, in the brand's own sign-off if it has one. lines_ar translates lines_en.")
+    built = built_like(office, idea["pick"].get("cards", []))
     task = (f"Script for: {idea['pick']['title']}. Angle: {strategy.ANGLES[angle][0]}. Borrow the structure, never the words, of the hook card if given."
+            + (" Some competitor posts below worked; borrow only why they worked (format, hook, who is on screen). Never use their words, "
+               "numbers, awards, sales or partners, and claim nothing about us that the listing and the brand do not say." if built else "")
             + (f"\n\nRevise this draft; change only what is asked, keep everything else:\n{json.dumps({k: base[k] for k in ('hook_en', 'hook_ar', 'lines_en')}, ensure_ascii=False)}" if base else "")
             + (f"\n\n{feedback}" if feedback else ""))
-    user = runner.user_message(task, {f"listing:{ref}": rec, "brand": brand.brief(office), **({"hook": hook_card["hook"]} if hook_card else {})})
+    from diwan.agents import style
+    notes = style.brief(office)
+    user = runner.user_message(task, {f"listing:{ref}": rec, "brand": brand.brief(office), **({"hook": hook_card["hook"]} if hook_card else {}),
+                                      **{f"worked{i + 1}": b for i, b in enumerate(built)}, **({"style": notes} if notes else {})})
     data, by = None, "template"
     if runner.has_model(c, system, user, schema=SCRIPT_SCHEMA):
         office.log.append("agent.started", actor="mscript", agent="mscript", caused_by=cause, content={"task": f"Writing the {angle} script for {ref} with the model"})
@@ -464,10 +672,30 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
         if base:
             data = {**{k: base[k] for k in ("hook_en", "hook_ar", "lines_en")}, "lines_ar": base.get("lines_ar", [])}
         data = _apply_rules(data, feedback or "", lst)
-    m = _made(office, "mscript", "script", ref, data | {"via": by, "angle": angle, "why": why, **({"revises": base["id"]} if base else {})}, cause)
+    data = data | {"shots": video_plan(data, lst)}
+    m = _made(office, "mscript", "script", ref, data | {"via": by, "angle": angle, "why": why, "idea": idea.get("id"), "cards": idea["pick"].get("cards", []),
+                                                       "built_like": built, "listing_was": _facts(lst), **({"revises": base["id"]} if base else {})}, cause)
     _pack(office, "mscript", f"{angle} script{' (revised from ' + base['id'] + ')' if base else ''}: \"{data['hook_en']}\" · {len(data['lines_en'])} lines ({by}).",
           cause=cause, usage={"provider": by})
     return m
+
+
+FACTS = {"price_aed": "the price", "permit": "the permit", "status": "the status", "beds": "the bedrooms", "features": "the features", "title": "the name"}
+
+
+def _facts(lst: dict) -> dict:
+    return {k: lst.get(k) for k in FACTS}
+
+
+def stale(office: Office, sc: dict) -> list[str]:
+    """What changed on the listing since the script was written, one sentence each; [] when it is still current
+    (or the script is older than this check and has no record of the listing)."""
+    was, ref = sc.get("listing_was"), sc.get("ref")
+    if not was or f"listing:{ref}" not in office.graph().nodes:
+        return []
+    now = _facts(_listing(office, ref))
+    show = lambda k, v: f"AED {v:,}" if k == "price_aed" and isinstance(v, int) else ", ".join(v) if isinstance(v, list) else str(v or "none")  # noqa: E731
+    return [f"{FACTS[k].capitalize()} was {show(k, was[k])}, now {show(k, now[k])}." for k in FACTS if was.get(k) != now.get(k)]
 
 
 def _shorter(hook: str) -> str:
@@ -508,7 +736,8 @@ def _apply_rules(data: dict, note: str, lst: dict) -> dict:
 def variants(office: Office, ref: str, idea: dict, tr: dict | None, cause: int | None, n: int = 3) -> list[dict]:
     """Up to n scripts on different angles, each checked by the Copywriter, chosen by the strategy."""
     from diwan.agents import strategy
-    picks = strategy.pick(office, n)
+    from diwan.agents import rhythm
+    picks = strategy.pick(office, n, avoid=rhythm.recent_angles(office, business.local(_now(), office).date()))
     _pack(office, "mcopy", "Scripting " + "; ".join(f"{p['angle']} ({p['slot']}: {p['why']})" for p in picks), cause=cause, kind="assign")
     out = []
     for p in picks:
@@ -619,8 +848,7 @@ def captions(office: Office, ref: str, check: dict | None, cause: int | None) ->
         _blocked(office, "mcap", "Captions need a transcript of the take or a script", cause=cause)
         return None
     rows = [blk.split("\n") for blk in srt.read_text().strip().split("\n\n") if "-->" in blk]
-    w = int(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width", "-of", "csv=p=0", str(src)],
-                           capture_output=True, text=True).stdout.strip() or 720)
+    w = _width(src)
     inputs, chain, last = ["-i", str(src)], [], "[0:v]"
     secs = lambda t: sum(float(x) * m for x, m in zip(t.replace(",", ".").split(":"), (3600, 60, 1)))  # noqa: E731
     for i, r in enumerate(rows):
@@ -660,7 +888,7 @@ def post_text(office: Office, ref: str, sc: dict, cause: int | None, feedback: s
     base = (f"{sc['hook_en']}\n\n{lst['title']}, {lst['community']} · {lst['beds']} bed {lst['type']}{' · ' + feats if feats else ''} · "
             f"AED {lst['price_aed']:,}\nPermit {lst.get('permit')}\n\n{brand.cta(office)}")
     ar = f"\n\n{sc['hook_ar']}" if sc.get("hook_ar") else ""
-    tags = " " + " ".join(dict.fromkeys(brand.hashtags(office) + ["#DubaiRealEstate", "#" + re.sub(r"\W", "", lst["community"])]))
+    tags = " " + " ".join(dict.fromkeys(brand.hashtags(office) + ["#" + re.sub(r"\W", "", lst["community"])]))
     m = _made(office, "mwriter", "post text", ref, {"text": base + ar + tags}, cause)
     _pack(office, "mwriter", f"Post text ready with permit {lst.get('permit')} ({len(m['text'])} characters).", cause=cause,
           evidence=[Evidence(str(lst.get("permit")), f"listing:{ref}")], sources={f"listing:{ref}": office.graph().record(f"listing:{ref}")})
@@ -670,30 +898,31 @@ def post_text(office: Office, ref: str, sc: dict, cause: int | None, feedback: s
 # ---------- publishing ----------
 
 def cover(office: Office, ref: str, sc: dict, cause: int | None) -> dict | None:
+    """Two cover options, each a frame of our own footage with the hook on it. Never a generated picture: it could show
+    a view the property does not have."""
     f = footage(office, ref)
-    out = {}
-    if f:
-        src = Path(f["path"])
-        meta.MEDIA.mkdir(parents=True, exist_ok=True)
-        frame = meta.MEDIA / f"frame-{ref}-{f['id']}.jpg"
-        try:
-            _ffmpeg("-ss", f"{max(0.5, _duration(src) * .3):.1f}", "-i", str(src), "-frames:v", "1", str(frame))
-            out["frame"] = f"/media/{frame.name}"
-        except Exception:
-            pass
-    if meta.ready():
-        lst = _listing(office, ref)
-        try:
-            out["generated"] = meta.image(f"Vertical cover for a property reel: {lst['title']} in {lst['community']}, {', '.join(lst.get('features') or [])}. "
-                                          f"Clean, bright, real-estate photography style, space at the top for the words \"{sc['hook_en']}\". No people, no text.",
-                                          f"cover-{ref}")
-        except meta.MetaError as e:
-            _blocked(office, "mthumb", f"Muse Image failed: {e}", cause=cause)
-    if not out:
-        _blocked(office, "mthumb", "A cover needs footage (a frame) or Muse Image (META_API_KEY)", cause=cause)
+    if not f:
+        _blocked(office, "mthumb", f"A cover needs footage of {ref}: the covers are frames of our own take", cause=cause)
         return None
-    m = _made(office, "mthumb", "cover", ref, out, cause)
-    _pack(office, "mthumb", f"{len(out)} cover option{'s' if len(out) > 1 else ''}: {', '.join(out)}.", cause=cause)
+    src = Path(f["path"])
+    dur = _duration(src)
+    meta.MEDIA.mkdir(parents=True, exist_ok=True)
+    hook = src.with_name(f"{src.stem}-hook.png")
+    _caption_png(sc["hook_en"], hook, _width(src))
+    options = []
+    for k, at in enumerate((.3, .6), 1):
+        sec = round(max(.5, dur * at), 1)
+        img = meta.MEDIA / f"cover-{ref}-{f['id']}-{k}.jpg"
+        try:
+            _ffmpeg("-ss", f"{sec}", "-i", str(src), "-i", str(hook), "-filter_complex", "[0:v][1:v]overlay=(W-w)/2:H*0.12", "-frames:v", "1", str(img))
+            options.append({"served": f"/media/{img.name}", "at": sec})
+        except Exception as e:
+            _blocked(office, "mthumb", f"ffmpeg could not make a cover at {sec}s: {str(e)[:160]}", cause=cause)
+    if not options:
+        return None
+    m = _made(office, "mthumb", "cover", ref, {"options": options, "footage": f["id"]}, cause)
+    _pack(office, "mthumb", f"{len(options)} cover option{'s' if len(options) > 1 else ''} from {f['id']} at "
+          + ", ".join(f"{o['at']}s" for o in options) + ", with the hook on them.", cause=cause)
     return m
 
 
@@ -720,13 +949,13 @@ def schedule(office: Office, cause: int | None) -> dict:
     if len(ours) >= 5:
         by_hour: dict[int, list[int]] = {}
         for p in ours:
-            hr = (datetime.fromisoformat(p["at"].replace("+0000", "+00:00")) + timedelta(hours=4)).hour
+            hr = business.local(datetime.fromisoformat(p["at"].replace("+0000", "+00:00")), office).hour
             by_hour.setdefault(hr, []).append(p["engagement"])
         hour = max(by_hour, key=lambda k: statistics.mean(by_hour[k]))
-        why = f"our posts at {hour}:00 Dubai did best ({len(ours)} posts)"
+        why = f"our posts at {hour}:00 {business.tz_label(office)} did best ({len(ours)} posts)"
     else:
         hour, why = 19, f"not enough history ({len(ours)} posts), so the evening default"
-    now = datetime.now(timezone(timedelta(hours=4)))
+    now = datetime.now(business.tz(office))
     when = (now + timedelta(days=1)).replace(hour=hour, minute=30, second=0, microsecond=0)
     m = _made(office, "msched", "slot", "next", {"at": when.isoformat(), "why": why}, cause)
     _pack(office, "msched", f"Slot: {when.strftime('%A %I:%M %p').replace(' 0', ' ')}, because {why}.", cause=cause)
@@ -735,8 +964,9 @@ def schedule(office: Office, cause: int | None) -> dict:
 
 def cross(office: Office, ref: str, text: dict, cause: int | None) -> dict:
     t = text["text"]
-    versions = {p: (t if len(t) <= n else t[:n - 1] + "…") for p, n in LIMITS.items()}
-    versions["YouTube Shorts"] = t.split("\n")[0][:100]
+    versions = {p: (t if len(t) <= n else t[:n - 1] + "…") for p, n in LIMITS.items() if p in (business.platforms(office) or LIMITS)}
+    if "YouTube Shorts" in versions:
+        versions["YouTube Shorts"] = t.split("\n")[0][:100]
     m = _made(office, "mcross", "versions", ref, {"versions": versions}, cause)
     _pack(office, "mcross", f"Versions for {', '.join(versions)}, each within its limit.", cause=cause)
     return m
@@ -821,6 +1051,7 @@ async def run(office: Office, ref: str, pause: float = .6) -> None:
         _blocked(office, "mkt", f"{ref} has no permit number: nothing is made for it", cause=start)
         return
     top = await step(watch, office, start); await asyncio.sleep(pause)
+    await step(read_posts, office, start); await asyncio.sleep(pause)
     tr_cards = await step(trends, office, start); await asyncio.sleep(pause)
     tr = await step(transcript_of, office, top[0] | {"post": top[0]["id"]} if top else None, start); await asyncio.sleep(pause)
     pins = board(office)
@@ -850,6 +1081,36 @@ def ask_script_approval(office: Office, ref: str, scs: list[dict] | dict, cause:
             office.log.append("decision.made", actor="mcopy", agent="mcopy", content={"card": n.id, "answer": "replaced by a newer draft"})
     opts = " | ".join(f"script {x['id']} [{x.get('angle', 'price-reveal')}] \"{x['hook_en']}\"" for x in scs)
     _pack(office, "mcopy", f"Pick a script for {ref} ({len(scs)} checked by the Copywriter): {opts}", cause=cause, kind="use_script")
+
+
+def own_script(office: Office, ref: str, text: str, *, by: str) -> dict:
+    """A script the Marketing manager wrote: checked like the Script writer's, every problem listed (nothing is fixed
+    behind their back), then told two other ways on angles the strategy picks. All three are offered to pick from."""
+    from diwan.agents import qa, strategy
+    lines = [x.strip() for x in text.splitlines() if x.strip()]
+    if len(lines) < 2:
+        raise ValueError("Write the hook on the first line and the script's lines below it.")
+    hook_ar = next((x for x in lines if re.search(r"[\u0600-\u06ff]", x)), "")
+    en = [x for x in lines if x != hook_ar]
+    lst = _listing(office, ref)
+    data = {"hook_en": en[0], "hook_ar": hook_ar, "lines_en": en[1:], "lines_ar": []}
+    start = _pack(office, "mcopy", f"{name(by)} wrote a script for {ref}: checking it, then telling it two other ways.", kind="assign")
+    fails = qa.review(office, "script", ref, data, cause=start, attempt=1)
+    mine = strategy.angle_of(text)
+    own = _made(office, "mcopy", "script", ref, data | {"shots": video_plan(data, lst), "via": f"written by {name(by)}", "angle": mine or "your own", "why": "your script", "own": True,
+                                                        "written_by": by, "cards": [], "built_like": [], "listing_was": _facts(lst),
+                                                        "problems": [f"{f['rule']} Found: {f['found']}. {f['fix']}" for f in fails]}, start)
+    idea = {"id": None, "pick": {"title": en[0], "cards": []}}
+    fb = (f"Tell the same message as this script, written by the Marketing manager, on this angle instead. Keep its facts and its point; "
+          f"change the angle and the structure, never invent anything:\n{text}")
+    alts = []
+    for p in [x for x in strategy.pick(office, 3) if x["angle"] != mine][:2]:
+        sc = reviewed(office, "script", ref, lambda f, p=p: script(office, ref, idea, None, start, "\n".join(x for x in (fb, f) if x), angle=p["angle"],
+                                                                   why=f"another way to tell your script ({p['angle']})"), start)
+        if sc:
+            alts.append(sc)
+    ask_script_approval(office, ref, [own, *alts], start)
+    return {"own": own, "others": alts}
 
 
 def script_options(office: Office, text: str) -> list[dict]:
@@ -897,7 +1158,7 @@ async def after_script(office: Office, ref: str, pause: float = .6) -> None:
         return
     idea = made(office, "ideas", ref)
     start = _pack(office, "mkt", f"Script {sc['id']} for {ref} approved: filming can start.", kind="assign")
-    film = await step(reviewed, office, "film list", ref, lambda fb: film_list(office, ref, idea, start, fb), start); await asyncio.sleep(pause)
+    film = await step(reviewed, office, "film list", ref, lambda fb: film_list(office, ref, idea, start, fb, sc), start); await asyncio.sleep(pause)
     if film:
         office.add_task(None, "mshoot", f"Film {ref}: " + "; ".join(film["shots"]) + f" ({film['when']})", needs_person=film["who"], by="mshoot", caused_by=start)
         _pack(office, "mshoot", f"Film list sent to {name(film['who'])} {film['when']}. Or make an AI presenter video from the studio.", cause=start)
@@ -973,6 +1234,26 @@ async def ai_video(office: Office, ref: str, *, by: str, consent: bool, poll: fl
     _pack(office, "mvideo", f"AI presenter video ready for {ref}: handed to editing.", cause=start)
     await after_footage(office, ref)
     return {"ok": True, "footage": f"F{n}"}
+
+
+def chain(office: Office, ref: str) -> list[dict]:
+    """Where this listing's reel is now, step by step, and who has it: [{step, state (done|waiting|working|not yet), who}]."""
+    from diwan.agents import approvers
+    g = office.graph()
+    open_ = [n for n in g.of("request", status="open") if ref in n.props.get("text", "")]
+    pick = next((n for n in open_ if n.props.get("kind") == "use_script"), None)
+    pub = next((n for n in open_ if n.props.get("agent") == "mpub"), None)
+    sc, film, foot, cut = approved_script(office, ref), made(office, "film list", ref), footage(office, ref), made(office, "cut", ref)
+    decided = next((e["actor"] for e in reversed(office.log.list()) if e["type"] == "decision.made" and e["content"].get("answer") == "approve"
+                    and sc and e["content"].get("choice") == sc["id"]), None)
+    steps = [{"step": "Pick a script", "state": "waiting" if pick else "done" if sc else "not yet",
+              "who": approvers.label(office, "script") if pick or not sc else f"picked by {name(decided)}" if decided else "picked"},
+             {"step": "Film it, or make the video", "state": "done" if foot else "waiting" if film else "not yet",
+              "who": (foot.get("source") or f"uploaded by {name(foot.get('by') or '')}".strip()) if foot else name(film["who"]) if film and film.get("who") else "nobody assigned yet"},
+             {"step": "Editing: take check, captions, cover", "state": "done" if cut else "working" if foot else "not yet", "who": "the studio's agents"},
+             {"step": "Approve publishing", "state": "done" if made(office, "published", ref) else "waiting" if pub else "not yet",
+              "who": approvers.label(office, "publish")}]
+    return steps
 
 
 def run_now(office: Office, ref: str) -> None:

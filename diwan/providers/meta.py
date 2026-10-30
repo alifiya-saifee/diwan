@@ -39,11 +39,11 @@ def _client(timeout: float) -> httpx.Client:
     return httpx.Client(transport=TRANSPORT, timeout=timeout, headers={"Authorization": f"Bearer {key()}"})
 
 
-def _guard(what: str) -> None:
-    """Every paid Meta service stops at the monthly budget, like the chat calls."""
+def _guard(what: str, agent: str) -> None:
+    """Every paid Meta service stops at its part's monthly budget, like the chat calls."""
     from diwan import costs
-    if not costs.allowed():
-        raise MetaError(f"this month's model budget (USD {costs.budget():g}) is used up, so no {what}")
+    if not costs.allowed(agent):
+        raise MetaError(f"this month's model budget (USD {costs.budget(costs.part_of(agent)):g}) is used up, so no {what}")
 
 
 def _usage(d: dict) -> dict:
@@ -53,13 +53,14 @@ def _usage(d: dict) -> dict:
             "reasoning_tokens": (u.get("output_tokens_details") or u.get("completion_tokens_details") or {}).get("reasoning_tokens")}
 
 
-def search(prompt: str, *, country: str = "AE", timeout: float = 120, agent: str = "mtrend") -> dict:
+def search(prompt: str, *, country: str = "", timeout: float = 120, agent: str = "mtrend") -> dict:
     """{text (the final answer only), sources[{title,url,snippet}], cited[{title,url}], queries} from Muse Spark with web search.
     Paid: the tokens plus a fee per search, written to the ledger and stopped at the budget."""
     from diwan import costs
-    _guard("web search")
+    _guard("web search", agent)
     body = {"model": env("META_MODEL_SPARK", "muse-spark-1.3"), "input": prompt, "include": ["web_search_call.results"],
-            "tools": [{"type": "web_search", "search_context_size": env("DIWAN_SEARCH_CONTEXT", "low"), "user_location": {"type": "approximate", "country": country}}]}
+            "tools": [{"type": "web_search", "search_context_size": env("DIWAN_SEARCH_CONTEXT", "low"),
+                       **({"user_location": {"type": "approximate", "country": country}} if country else {})}]}
     t0 = time.monotonic()
     with _client(timeout) as c:
         r = c.post(f"{_base()}/responses", json=body)
@@ -81,10 +82,32 @@ def search(prompt: str, *, country: str = "AE", timeout: float = 120, agent: str
             "latency_ms": round((time.monotonic() - t0) * 1000)}
 
 
+def look(system: str, text: str, images: list[bytes], schema: dict, *, agent: str, timeout: float = 180) -> dict:
+    """Muse Spark reads text plus pictures (JPEG bytes, sent as data URIs) and answers JSON matching `schema`
+    ({"name", "schema", "strict"}). Paid by tokens; stopped at the budget."""
+    from diwan import costs
+    from diwan.providers.chat import parse_json
+    _guard("image reading", agent)
+    content = [{"type": "text", "text": text}] + [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(b).decode()}}
+                                                 for b in images]
+    body = {"model": env("META_MODEL_SPARK", "muse-spark-1.3"), "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
+            "response_format": {"type": "json_schema", "json_schema": schema}, "reasoning_effort": "low", "max_tokens": 6000}
+    with _client(timeout) as c:
+        r = c.post(f"{_base()}/chat/completions", json=body)
+    if r.status_code != 200:
+        raise MetaError(f"Muse Spark returned {r.status_code}: {r.text[:200]}")
+    d = r.json()
+    costs.record(agent, _usage(d), what=f"read {len(images)} image{'s' if len(images) != 1 else ''}")
+    try:
+        return parse_json(d["choices"][0]["message"].get("content") or "")
+    except Exception as e:
+        raise MetaError(f"Muse Spark's answer was not the JSON asked for: {e}") from None
+
+
 def image(prompt: str, name: str, size: str = "1024x1792") -> str:
     """Generate with Muse Image, save under media/, return the served path. Paid per image; stopped at the budget."""
     from diwan import costs
-    _guard("image")
+    _guard("image", "mthumb")
     with _client(120) as c:
         r = c.post(f"{_base()}/images/generations", json={"model": env("META_MODEL_IMAGE", "muse-image-1.0"), "prompt": prompt[:3000],
                                                           "n": 1, "size": size, "response_format": "b64_json"})
@@ -100,7 +123,7 @@ def image(prompt: str, name: str, size: str = "1024x1792") -> str:
 def transcribe(wav: bytes, *, mode: str = "DIARIZATION") -> dict:
     """A recorded clip (mono 16-bit WAV) → {"text", "turns": [{"speaker","text","start","end"}]} as far as the API gives them."""
     from diwan import costs
-    _guard("transcription")
+    _guard("transcription", "mtrans")
     req = {"model": env("META_MODEL_VOICE", "muse-voice-transcribe-1.0"), "mode": mode, "audioEncoding": "WAV"}
     with _client(180) as c:
         r = c.post(f"{_base()}/asr/transcribe", files={"request": (None, json.dumps(req), "application/json"), "audio": ("clip.wav", wav, "audio/wav")})

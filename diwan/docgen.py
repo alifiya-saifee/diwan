@@ -42,7 +42,7 @@ STEPS = [
     ("Caption and cut", "mcap", "The footage and what was said", "Draws each caption and overlays it at the time it was said (ffmpeg); from the script if the audio cannot be transcribed.",
      "The captioned cut", "Art director"),
     ("Write the post", "mwriter", "The script and the listing", "Post text with the hook, the facts, the price and the permit number, in English and Arabic.", "Post text", "Art director"),
-    ("Make covers", "mthumb", "The footage, the hook", "A frame of the footage, and a Muse Image cover when the key is set.", "Cover options", "Publisher"),
+    ("Make covers", "mthumb", "The footage, the hook", "Two frames of our own footage with the hook on them; never a generated picture.", "Cover options", "Publisher"),
     ("Permit gate", "mpermit", "The post text and the listing", "Permit number present, only the listing's price, no banned promises. A hold is traced to whoever caused it, who fixes it.",
      "Pass, or held with each reason", "Publisher"),
     ("Schedule and format", "msched / mcross", "Our post history, the post text", "Picks the hour our posts did best (or the evening default, said so); cuts the text to each platform's limit.",
@@ -275,7 +275,7 @@ flowchart LR
 
 <section class="col"><p class="eyebrow">To go live</p><h2>What each connection unlocks</h2>
 <table class="kpi"><tr><th>Connection</th><th>Unlocks</th></tr>
-<tr><td>Meta Model API key</td><td>Trend research, transcripts of competitor videos and our takes, Muse Image covers, scripts and ideas on Muse Spark</td></tr>
+<tr><td>Meta Model API key</td><td>Trend research, transcripts of competitor videos and our takes, scripts and ideas on Muse Spark</td></tr>
 <tr><td>Instagram professional account</td><td>Competitor posts fetched automatically, our insights, publishing, comments to Rania</td></tr>
 <tr><td>Public address for the app</td><td>Instagram can fetch the reel when publishing</td></tr>
 <tr><td>HeyGen key, consented avatar and voice</td><td>AI presenter videos from approved scripts</td></tr>

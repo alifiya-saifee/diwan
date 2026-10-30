@@ -33,6 +33,27 @@ def ready() -> bool:
     return not missing()
 
 
+_CHECKED: dict[int, tuple[float, dict]] = {}
+
+
+def check(ttl: float = 600) -> dict:
+    """Does Instagram accept our token? {"ok": True, "username"} or {"ok": False, "why"}. One cheap call, remembered for
+    ttl seconds, so a page can show the truth without calling Instagram on every load."""
+    if not ready():
+        return {"ok": False, "why": "needs " + ", ".join(missing())}
+    key = hash((env("IG_ACCESS_TOKEN"), env("IG_USER_ID")))
+    hit = _CHECKED.get(key)
+    if hit and time.monotonic() - hit[0] < ttl:
+        return hit[1]
+    try:
+        out = {"ok": True, "username": _get(env("IG_USER_ID"), {"fields": "username"}).get("username")}
+    except (InstagramError, httpx.HTTPError) as e:
+        hint = " (this is an Instagram-login token; Diwan needs the Facebook Page token of a Page linked to the account)" if env("IG_ACCESS_TOKEN").startswith("IG") else ""
+        out = {"ok": False, "why": f"Instagram refused the token: {str(e)[:160]}{hint}"}
+    _CHECKED[key] = (time.monotonic(), out)
+    return out
+
+
 def _get(path: str, params: dict) -> dict:
     if not ready():
         raise InstagramError("needs " + ", ".join(missing()))
@@ -57,7 +78,7 @@ def _post(path: str, data: dict) -> dict:
 
 def _post_row(m: dict, account: str) -> dict:
     return {"id": m["id"], "account": account, "caption": (m.get("caption") or "")[:600], "type": m.get("media_type"),
-            "media_url": m.get("media_url"), "thumb": m.get("thumbnail_url") or (m.get("media_url") if m.get("media_type") == "IMAGE" else None),
+            "media_url": m.get("media_url"), "thumb": m.get("thumbnail_url") or (m.get("media_url") if m.get("media_type") in ("IMAGE", "CAROUSEL_ALBUM") else None),
             "permalink": m.get("permalink"), "at": m.get("timestamp"), "likes": m.get("like_count") or 0, "comments": m.get("comments_count") or 0}
 
 
@@ -74,9 +95,10 @@ def own_posts(limit: int = 30) -> list[dict]:
 
 
 def competitor_posts(username: str, limit: int = 25) -> dict:
-    fields = f"business_discovery.username({username}){{username,followers_count,media_count,media.limit({limit}){{{MEDIA_FIELDS}}}}}"
+    fields = f"business_discovery.username({username}){{username,name,biography,followers_count,media_count,profile_picture_url,media.limit({limit}){{{MEDIA_FIELDS}}}}}"
     bd = _get(env("IG_USER_ID"), {"fields": fields}).get("business_discovery", {})
-    return {"username": bd.get("username", username), "followers": bd.get("followers_count"),
+    return {"username": bd.get("username", username), "followers": bd.get("followers_count"), "media_count": bd.get("media_count"),
+            "avatar": bd.get("profile_picture_url"), "name": bd.get("name"), "bio": bd.get("biography"),
             "posts": [_post_row(m, bd.get("username", username)) for m in (bd.get("media") or {}).get("data", [])]}
 
 

@@ -25,7 +25,7 @@ TYPES = {
     "setting.changed", "rounds.started", "briefing.ready",
     "stage.changed", "autonomy.changed", "lesson.added", "lesson.removed",
     # the content studio: what it saw, what it pinned, what it made, and footage people uploaded
-    "post.seen", "board.pinned", "content.made", "footage.added", "step.blocked",
+    "post.seen", "post.read", "photos.added", "plan.made", "plan.started", "competitor.checked", "board.pinned", "board.unpinned", "content.made", "footage.added", "step.blocked",
     "qa.passed", "qa.failed", "qa.escalated",
     "lobby.posted", "lobby.seen", "lobby.reminded", "lobby.late", "lobby.done", "lobby.cancelled",
     "chat.received", "chat.sent", "chat.suggested", "chat.handover", "appointment.booked", "appointment.cancelled",

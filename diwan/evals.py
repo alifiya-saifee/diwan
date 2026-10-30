@@ -209,30 +209,30 @@ def eval_records() -> list[dict]:
 
 # ---------- the studio ----------
 
-POSTS = [("competitor", "rival.one", 12000, f"https://instagram.com/p/a{i}", "REELS" if i < 2 else "IMAGE",
+POSTS = [("competitor", "rival.one", 12000, f"https://instagram.com/p/a{i}", "REELS" if i < 3 else "IMAGE",  # a0 and a1 beat the weak reel a2
           "What does 2M buy in Dubai Marina? DM us" if i < 2 else "New listing in our portfolio with many features and long text " * 3,
           900 if i < 2 else 100, 10, "2026-10-20 19:30" if i < 2 else "2026-10-21 11:00") for i in range(8)] + \
         [("competitor", "rival.two", 5000, f"https://instagram.com/p/b{i}", "IMAGE", "Office day #a #b #c #d #e", 300 if i == 0 else 40, 5, "2026-10-19 10:00") for i in range(6)]
 
 
 def eval_studio() -> list[dict]:
+    from diwan import business
     from diwan.agents import analysis, studio
     out = []
     o = _office()
+    business.save(o, {"industry": "Real estate brokerage", "country": "AE", "city": "Dubai"}, by="eval")  # the fictional office's onboarding
     rows = [dict(zip(studio.CSV_COLUMNS, map(str, p))) for p in POSTS]
     r = studio.import_posts(o, rows, by="eval")
     found = {b["post"] for b in studio.board(o)}
     want = {"https://instagram.com/p/a0", "https://instagram.com/p/a1", "https://instagram.com/p/b0"}
-    out.append({"case": "Competitor watch finds every outlier (2x the account's median)", "pass": found == want, "why": "" if found == want else f"found {sorted(found)}"})
+    out.append({"case": "Competitor watch finds every post above its account's average for its kind", "pass": found == want, "why": "" if found == want else f"found {sorted(found)}"})
     out.append({"case": "No false outliers", "pass": r["outliers"] == 3, "why": f"{r['outliers']} outliers"})
     a = analysis.report(o)
     k = next(x for x in a["competitors"] if x["account"] == "rival.one")["kpis"]
     out.append({"case": "KPIs: engagement rate per follower", "pass": k["engagement_rate"] == round(100 * (910 * 2 + 110 * 6) / 8 / 12000, 2), "why": str(k.get("engagement_rate"))})
     out.append({"case": "KPIs: best hour from post times", "pass": k["best_hour"] == 19, "why": str(k.get("best_hour"))})
-    feats = {w["feature"] for w in a["why"]}
-    for f in ("open with a question", "are reels or videos", "were posted in the evening (6 to 11 PM Dubai)"):
-        out.append({"case": f"Finding measured: outliers {f}", "pass": f in feats, "why": "" if f in feats else f"findings: {sorted(feats)}"})
-    out.append({"case": "Every finding links example posts", "pass": all(w["examples"] for w in a["why"]), "why": ""})
+    claimed = [f for acc in a["why"]["accounts"] for f in acc["patterns"]]
+    out.append({"case": "Why they win claims no pattern from posts nobody has read", "pass": not claimed, "why": f"{len(claimed)} patterns"})
     studio.run_now(o, "MC-1204")
     out.append({"case": "Nothing costly before a person approves the script",
                 "pass": not studio.made(o, "film list", "MC-1204") and any(n.props.get("kind") == "use_script" for n in o.graph().of("request", status="open")), "why": ""})

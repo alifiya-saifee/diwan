@@ -81,10 +81,13 @@ def report(office: Office, now: datetime | None = None) -> dict:
     ours = _ours(office)
     med = statistics.median([_eng(p) for p in ours]) if len(ours) >= 3 else None
     market: dict[str, list[float]] = {}
+    big: dict[str, int] = {}  # outliers per angle: above their account's average
     for p in studio.posts(office, "competitor"):
         a = angle_of(p.get("caption") or "")
         if a and p.get("score"):
             market.setdefault(a, []).append(p["score"])
+            if studio.is_outlier(p):  # above its account's average, for its kind
+                big[a] = big.get(a, 0) + 1
     rows = []
     for a, (what, _) in ANGLES.items():
         mine = [p for p in ours if p["angle"] == a]
@@ -93,14 +96,14 @@ def report(office: Office, now: datetime | None = None) -> dict:
         m = market.get(a, [])
         rows.append({"angle": a, "what": what, "status": st, "posts": len(mine), "last": ratios[-3:],
                      "market_posts": len(m), "market_score": round(statistics.median(m), 1) if m else None,
-                     "market_outliers": sum(1 for s in m if s >= 2), "why": _why(st, ratios, m)})
+                     "market_outliers": big.get(a, 0), "why": _why(st, ratios, m)})
     return {"median": med, "own_posts": len(ours), "angles": rows,
             "note": None if med else "Fewer than 3 of our own posts are classified, so angles are chosen from the competitors' outliers and tested."}
 
 
 def _why(st: str, ratios: list[float], market: list[float]) -> str:
     last = ", ".join(f"{r}x" for r in ratios[-3:])
-    mk = f"; competitors' median {round(statistics.median(market), 1)}x their usual on {len(market)} posts" if market else ""
+    mk = f"; competitors' median {round(statistics.median(market), 1)}x their average on {len(market)} posts" if market else ""
     return {"winning": f"our last two did {last} our median: keep it",
             "fading": f"down each time ({last}), now under our median: shift away",
             "retired": f"our last two did {last}, both under {RETIRE}x: rest it for {REST_DAYS} days",
@@ -108,10 +111,15 @@ def _why(st: str, ratios: list[float], market: list[float]) -> str:
             "untested": "not proven on our account yet"}[st] + mk
 
 
-def pick(office: Office, n: int = 3, now: datetime | None = None) -> list[dict]:
-    """The angles to script this run: up to n-1 proven ones, then one to explore. Never a retired or fading one."""
+def pick(office: Office, n: int = 3, now: datetime | None = None, avoid: set[str] | None = None) -> list[dict]:
+    """The angles to script this run: up to n-1 proven ones, then one to explore. Never a retired or fading one.
+    `avoid` holds angles used too recently (the no-repeat setting); they are skipped while enough others are left."""
     r = report(office, now)
     rows = {x["angle"]: x for x in r["angles"]}
+    if avoid:
+        left = {k: v for k, v in rows.items() if k not in avoid}
+        if sum(1 for v in left.values() if v["status"] not in ("fading", "retired")) >= n:
+            rows = left
     mk = lambda x: (x["market_score"] or 0) * (1 + x["market_outliers"])  # noqa: E731
     proven = sorted([x for x in rows.values() if x["status"] == "winning"], key=lambda x: -x["last"][-1])
     proven += sorted([x for x in rows.values() if x["status"] == "steady"], key=lambda x: -(sum(x["last"]) / len(x["last"])))

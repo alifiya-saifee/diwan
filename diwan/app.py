@@ -60,6 +60,9 @@ async def morning_loop():
             nova.rounds(S.office, now)
             S.last_brief = now.date().isoformat()
         lobby.chase(S.office, now)
+        from diwan.agents import rhythm, studio
+        if (ref := rhythm.due(S.office)):  # the studio's automatic run, when the Marketing manager turned it on
+            asyncio.create_task(studio.run(S.office, ref))
         await asyncio.sleep(60)
 
 
@@ -123,8 +126,8 @@ async def marketing_run(ref: str = "MC-1204"):
 
 @app.get("/api/studio")
 def studio_view(ref: str = "MC-1204"):
-    from diwan import costs
-    from diwan.agents import analysis, strategy, studio
+    from diwan import business, costs
+    from diwan.agents import analysis, approvers, freevideo, rhythm, strategy, studio
     from diwan.providers import instagram, meta
     blocked = {}
     for e in S.office.log.list():
@@ -136,13 +139,24 @@ def studio_view(ref: str = "MC-1204"):
             for k in ("ideas", "lanes", "film list", "script", "take check", "playbook", "cut", "remix plan", "post text", "cover", "slot", "versions", "transcript", "published")}
     reqs = [n for n in g().of("request", status="open") if n.props.get("agent") in ("mpub", "mcopy")]
     from diwan.providers import heygen
-    return {"ref": ref, "connected": {"instagram": instagram.ready(), "meta": meta.ready(), "public_url": bool(env("PUBLIC_BASE_URL"))},
+    ig = instagram.check()  # green only when Instagram accepts the token, not merely when one is set
+    return {"ref": ref, "connected": {"instagram": ig["ok"], "instagram_user": ig.get("username"), "instagram_why": ig.get("why"),
+                                      "meta": meta.ready(), "public_url": bool(env("PUBLIC_BASE_URL"))},
             "analysis": analysis.report(S.office), "board": studio.board(S.office), "made": made, "blocked": blocked,
+            "ads": [b for b in studio.board(S.office) if b["kind"] == "ad"],
+            "ad_library": {n.lower(): studio.ad_library_url(n, business.get(S.office)["country"]) for n in studio.competitors(g())},
+            "business": business.get(S.office) | {"missing": business.missing(S.office), "platforms_known": list(studio.LIMITS)},
+            "rhythm": {"settings": rhythm.settings(S.office), "next": rhythm.next_run(S.office), "plan": rhythm.current(S.office),
+                       "started": sorted(rhythm.started(S.office))},
             "footage": studio.footage(S.office, ref), "approvals": [{"id": n.id, "text": n.props["text"], "kind": n.props.get("kind"),
-                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises")}
+                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises", "cards", "built_like", "own", "problems", "shots")} | {"stale": studio.stale(S.office, x)}
                                        for x in studio.script_options(S.office, n.props["text"])] if n.props.get("kind") == "use_script" else []} for n in reqs],
             "strategy": strategy.report(S.office), "costs": costs.summary(),
             "script_approved": bool(studio.approved_script(S.office, ref)), "heygen": heygen.ready(),
+            "chain": studio.chain(S.office, ref),
+            "brand_voice": __import__("diwan.brand", fromlist=["profile"]).profile(S.office)["voice"]["value"],
+            "approvers": {r: {"id": w, "label": approvers.label(S.office, r)} for r, w in approvers.get(S.office).items()},
+            "free_video": {"missing": freevideo.missing(), "photos": len(freevideo.photos(S.office, ref)), "voice": freevideo.voice()},
             "listings": [{"ref": n.props["ref"], "title": n.props["title"], "permit": n.props.get("permit")} for n in g().of("listing")]}
 
 
@@ -151,10 +165,76 @@ class NamesIn(BaseModel):
     by: str = "layla"
 
 
+class OwnScriptIn(BaseModel):
+    ref: str
+    text: str
+    by: str = "maya"
+
+
+@app.post("/api/studio/own-script")
+async def own_script(body: OwnScriptIn):
+    """The Marketing manager's own script: checked, then told two other ways; all three wait to be picked."""
+    from diwan.agents import studio
+    if f"listing:{body.ref}" not in g().nodes:
+        raise HTTPException(404, f"no listing {body.ref}")
+    try:
+        r = await asyncio.to_thread(studio.own_script, S.office, body.ref, body.text, by=body.by)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "problems": r["own"]["problems"], "others": len(r["others"])}
+
+
+class AdIn(BaseModel):
+    account: str
+    url: str
+    started: str
+    text: str
+    ended: str | None = None
+    by: str = "maya"
+
+
+@app.post("/api/studio/ads/pin")
+def pin_ad(body: AdIn):
+    """A competitor ad a person saw in the Ad Library, pinned on the research board (no numbers exist for it)."""
+    from diwan.agents import studio
+    try:
+        return {"ok": True, "card": studio.pin_ad(S.office, **body.model_dump())}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+
+class UnpinIn(BaseModel):
+    card: str
+    by: str = "maya"
+
+
+@app.post("/api/studio/ads/unpin")
+def unpin_ad(body: UnpinIn):
+    from diwan.agents import studio
+    try:
+        studio.unpin(S.office, body.card, by=body.by)
+        return {"ok": True}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.post("/api/studio/competitors")
 def set_competitors(body: NamesIn):
+    """Save the list; an account that was not on it before is fetched straight away (free: no model call)."""
+    from diwan.agents import studio
+    from diwan.providers import instagram
+    before = set(studio.competitors(g()))
     S.office.log.append("setting.changed", actor=body.by, content={"person": "studio", "key": "competitors", "value": body.usernames})
-    return {"ok": True}
+    new = [u for u in studio.competitors(g()) if u not in before]
+    if not new or not instagram.ready():
+        return {"ok": True, "new": new, "fetched": False}
+    after = S.office.log.list()[-1]["id"]
+    studio.watch(S.office, None, only=new)
+    checks = {e["content"]["account"]: e["content"] for e in S.office.log.list(after=after) if e["type"] == "competitor.checked"}
+    reached = [u for u in new if checks.get(u, {}).get("ok")]
+    return {"ok": True, "new": new, "fetched": True, "reached": reached, "not_reached": [u for u in new if u not in reached],
+            "says": "; ".join(f"@{u}: " + (f"{checks[u].get('followers') or 0:,} followers, {checks[u].get('posts_read')} posts read" if u in reached
+                                          else checks.get(u, {}).get("error", "not checked")) for u in new)}
 
 
 @app.post("/api/studio/competitors/suggest")
@@ -216,6 +296,39 @@ async def upload_footage(ref: str = Form(...), file: UploadFile = File(...), by:
     S.office.log.append("footage.added", actor=by, content={"id": f"F{n}", "ref": ref, "path": str(path), "served": f"/media/{path.name}"})
     asyncio.create_task(studio.after_footage(S.office, ref))
     return {"id": f"F{n}"}
+
+
+@app.post("/api/studio/photos")
+async def upload_photos(ref: str = Form(...), files: list[UploadFile] = File(...), by: str = Form("maya")):
+    """Photos of a listing for the free video (the listing's own photos from the feed are used too)."""
+    from diwan.providers import meta
+    if f"listing:{ref}" not in g().nodes:
+        raise HTTPException(404, f"no listing {ref}")
+    meta.MEDIA.mkdir(exist_ok=True)
+    n, paths = sum(1 for e in S.office.log.list() if e["type"] == "photos.added"), []
+    for i, f in enumerate(files):
+        if not (f.content_type or "").startswith("image/"):
+            raise HTTPException(400, f"{f.filename} is not a picture")
+        path = meta.MEDIA / f"photo-{ref}-{n + 1}-{i + 1}{Path(f.filename or 'p.jpg').suffix or '.jpg'}"
+        path.write_bytes(await f.read())
+        paths.append(str(path))
+    S.office.log.append("photos.added", actor=by, content={"ref": ref, "paths": paths})
+    return {"ok": True, "added": len(paths)}
+
+
+class FreeVideoIn(BaseModel):
+    ref: str
+    by: str = "maya"
+
+
+@app.post("/api/studio/free-video")
+async def free_video(body: FreeVideoIn):
+    """The free video: the computer's voice over the listing's photos, then the usual editing."""
+    from diwan.agents import freevideo, studio
+    r = await asyncio.to_thread(freevideo.make, S.office, body.ref, by=body.by)
+    if r.get("ok"):
+        asyncio.create_task(studio.after_footage(S.office, body.ref))
+    return r
 
 
 class DecideIn(BaseModel):

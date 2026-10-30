@@ -19,7 +19,7 @@ with sync_playwright() as p:
     pg.on("pageerror", lambda e: errors.append(str(e)))
     pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     pg.goto(f"{BASE}/web/studio.html?ref=MC-1204")
-    expect(pg.locator("#cost")).to_contain_text("Model spend")
+    expect(pg.locator("#runbtn")).to_be_visible()
     pg.get_by_role("button", name="Run this listing").click()
     opts = pg.locator(".opt")
     expect(opts).to_have_count(3, timeout=60_000)

@@ -17,7 +17,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"])
     pg = b.new_page(viewport={"width": 1440, "height": 1000})
     pg.on("pageerror", lambda e: errors.append(str(e)))
-    pg.goto(f"{BASE}/web/studio.html?ref=MC-1204")
+    pg.goto(f"{BASE}/web/studio.html?ref=MC-1204#setup")
     expect(pg.locator("#brandnote")).to_contain_text("Not set yet")
     pg.click("#branddraft")
     expect(pg.locator("#brandmsg")).to_contain_text(re.compile("Draft filled|needs|failed"), timeout=120_000)

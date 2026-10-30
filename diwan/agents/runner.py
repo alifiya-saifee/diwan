@@ -76,7 +76,7 @@ def has_model(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA,
     """Whether a turn can run at all: a recording of this exact request, or a live provider within the budget."""
     if tape_mode() != "off" and tape.load(c.id, tape.key(c.id, system, user, schema), tape_root) is not None:
         return True
-    return not offline() and provider_for(c) is not None and costs.allowed()
+    return not offline() and provider_for(c) is not None and costs.allowed(c.id)
 
 
 LIVE = float(env("DIWAN_LIVE_TIMEOUT", "25"))         # someone is waiting: Nova, Rania, a meeting
@@ -95,10 +95,10 @@ def call(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape
         costs.record(c.id, recorded.usage, cached=True)
         return recorded
     p = None if offline() else provider_for(c)
-    if p is not None and not costs.allowed():
+    if p is not None and not costs.allowed(c.id):
         p = None
         if not recorded:
-            raise NotSetUp(f"{c.name}: this month's model budget (USD {costs.budget():g}) is used up")
+            raise NotSetUp(f"{c.name}: this month's model budget (USD {costs.budget(costs.part_of(c.id)):g} for {costs.part_of(c.id).replace('rest', 'the rest of the office')}) is used up")
     if p is None:
         if recorded:
             return recorded

@@ -96,6 +96,10 @@ CHECKS: dict[str, list[Check]] = {
               "Rewrite without that word; the brand profile lists what we never say."),
         Check("script-arabic", "The hook is also written in Arabic.", "mscript",
               lambda o, ref, it: (bool(re.search(r"[؀-ۿ]", it.get("hook_ar", ""))), "no Arabic hook"), "Add the hook in Arabic."),
+        Check("script-not-repeated", "It is not the same as a script already used.", "mscript",
+              lambda o, ref, it: (lambda old: (not old, f"too close to {old['id']}: \"{old['hook_en'][:60]}\"" if old else ""))(
+                  __import__("diwan.agents.style", fromlist=["too_close"]).too_close(o, it)),
+              "Say it a new way: a different hook, a different first feature, a different structure."),
         Check("script-lessons", "Every lesson taught to the Script writer is kept.", "mscript",
               lambda o, ref, it: (lambda ls: (not ls, ls["rule"] if ls else ""))(lessons.broken(o.log, "mscript", _script_text(it))), "Follow the lesson."),
     ],
@@ -163,11 +167,20 @@ def review(office: Office, kind: str, ref: str, item: dict | None, *, cause: int
     return fails
 
 
+def _escalate_to(office: Office, kind: str) -> str:
+    """Who a stuck piece of work goes to: the person set in Setup to pick scripts (for ideas, scripts and film lists) or
+    to approve publishing (everything later); the owner until one is set."""
+    from diwan.agents import approvers
+    from diwan.people import BY_ROLE
+    role = "script" if kind in ("ideas", "script", "film list") else "publish"
+    return approvers.get(office)[role] or BY_ROLE["Owner"]
+
+
 def escalate(office: Office, kind: str, ref: str, fails: list[dict], *, cause: int | None) -> None:
     """Still failing after the returns: the Marketing lead raises it to the owner, with what was tried."""
     office.log.append("qa.escalated", actor="mkt", agent="mkt", caused_by=cause, content={"kind": kind, "ref": ref, "fails": fails})
     office.log.append("decision.needed", actor="mkt", agent="mkt", caused_by=cause,
-                      content={"who": "layla", "refs": [ref], "options": ["Fix it myself", "Accept as is", "Stop this reel"],
+                      content={"who": _escalate_to(office, kind), "refs": [ref], "options": ["Fix it myself", "Accept as is", "Stop this reel"],
                                "question": f"The {kind} for {ref} failed review {MAX_TRIES} times: " + "; ".join(f"{f['rule']} (found: {f['found']})" for f in fails)})
 
 

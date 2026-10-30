@@ -5,85 +5,351 @@
 <title>Diwan Studio</title>
 <link rel="stylesheet" href="app.css">
 <style>
-  .top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
-  .top select { width: auto; }
-  .grid2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
-  @media (max-width: 1100px) { .grid2 { grid-template-columns: 1fr; } }
-  .kpi td, .kpi th { font-size: 12.5px; white-space: nowrap; }
-  .kpi tr.ours td { color: var(--gold-2); }
-  .finding { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
-  .bars { display: flex; gap: 6px; align-items: center; margin-top: 6px; font-size: 11px; color: var(--muted); }
-  .bars i { height: 6px; border-radius: 3px; display: inline-block; }
-  .room { margin-bottom: 14px; }
-  .room h3 { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
-  .stepline { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  /* one spacing scale: 8 / 12 / 16 / 24 */
+  :root { --s1: 8px; --s2: 12px; --s3: 16px; --s4: 24px; }
+  main.studio { max-width: 1440px; }
+  .muted { color: var(--muted); }
+  .grow { flex: 1 1 var(--s1); }
+  .scroll { overflow-x: auto; }
+  [hidden] { display: none !important; }
+
+  /* header: one bar */
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); padding: var(--s3) 0; border-bottom: 1px solid var(--line); background: var(--bg); }
+  @media (min-width: 900px) { .bar { position: sticky; top: 56px; z-index: 10; } }
+  .bar h1 { margin: 0; font-size: 28px; line-height: 1; }
+  .bar .left, .bar .right { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+  .bar .right { margin-left: auto; }
+  .bar .left { min-width: 0; max-width: 100%; }
+  .bar select { width: 280px; max-width: 100%; min-width: 0; flex: 0 1 auto; height: 40px; }
+  .bar .btn, .bar button { height: 40px; }
+  .bar .pill { height: 32px; display: inline-flex; align-items: center; gap: var(--s1); padding: 0 var(--s2); }
+  .pill.warn { border-color: var(--warn); }
+
+  /* tabs */
+  .tabs { display: flex; gap: var(--s1); overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--line); margin: var(--s3) 0 var(--s4); }
+  .tabs button { flex: 0 0 auto; background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: var(--s2) var(--s3); color: var(--muted); font-weight: 600; }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--gold); }
+  .tabs.sub { margin: 0 0 var(--s3); }
+  .tabs.sub button { padding: var(--s1) var(--s2); font-size: 13px; }
+
+  /* panels and headings: one size everywhere */
+  .panel h2 { display: flex; align-items: center; gap: var(--s1); margin: 0 0 var(--s3); }
+  .panel + .panel { margin-top: var(--s4); }
+  .panel p { margin: 0 0 var(--s2); }
+  .note { font-size: 13px; color: var(--muted); }
+
+  /* run tab */
+  .work { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: flex-start; }
+  .work > .now { flex: 1 1 320px; max-width: 400px; min-width: 0; }
+  .work > .turn { flex: 999 1 560px; min-width: 0; }
+  .roomline { display: flex; gap: var(--s2); padding: var(--s1) 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .roomline > div { min-width: 0; }
+  .roomline b { display: block; font-size: 14px; }
+  .tx { color: #c9cfdb; }
+  .dotc { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: 0 0 8px; background: var(--faint); }
+  .dotc.ok { background: var(--green); } .dotc.wait { background: var(--warn); }
+  details.more { margin-top: var(--s2); }
+  details.more > summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  details.more > div { margin-top: var(--s1); }
+  .room { margin-bottom: var(--s3); }
+  .room h3 { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin: 0 0 var(--s1); font-weight: 600; }
+  .stepline { display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s1) 0; border-bottom: 1px solid var(--line); font-size: 13px; }
   .stepline .nm { width: 140px; flex: 0 0 140px; font-weight: 600; }
-  .stepline .tx { flex: 1; color: #c9cfdb; }
-  .dotc { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: 0 0 8px; }
-  .made pre { white-space: pre-wrap; font: 13px var(--font); margin: 6px 0 0; color: #dcd8cf; }
-  .made img, .made video { max-width: 100%; border-radius: 10px; margin-top: 8px; border: 1px solid var(--line); }
-  .covers { display: flex; gap: 10px; }
+  @media (max-width: 560px) { .stepline .nm { width: 110px; flex-basis: 110px; } }
+  .stepline .tx { flex: 1; }
+  .item { border: 1px solid var(--line); border-radius: 12px; padding: var(--s3); }
+  .item + .item { margin-top: var(--s2); }
+  .item .row { margin-top: var(--s2); }
+  .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s2); margin-top: var(--s2); }
+  .opt { border: 1px solid var(--line); border-radius: 12px; padding: var(--s2); min-width: 0; }
+  .opt pre, .made pre { white-space: pre-wrap; font: 13px var(--font); margin: var(--s1) 0; color: #dcd8cf; }
+  .opt .change { width: 100%; margin-bottom: var(--s1); }
+  .tag { display: inline-block; font-size: 11px; padding: 2px var(--s1); border-radius: 99px; border: 1px solid var(--line); margin-right: var(--s1); color: var(--gold-2); }
+  .check { display: flex; gap: var(--s1); align-items: center; margin-top: var(--s2); }
+  .check input { width: auto; }
+  .footage { margin-top: var(--s3); }
+  .made { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s3); }
+  .made > div { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: var(--s2); }
+  .made img, .made video { max-width: 100%; border-radius: 10px; margin-top: var(--s1); border: 1px solid var(--line); }
+  .covers { display: flex; gap: var(--s2); }
   .covers img { width: 48%; }
-  .opt { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 10px; }
-  .opt pre { white-space: pre-wrap; font: 13px var(--font); margin: 6px 0; color: #dcd8cf; }
-  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); margin-right: 6px; color: var(--gold-2); }
+  h2.sub { margin-top: var(--s4); }
+
+  /* competitors tab */
+  .info { position: relative; display: inline-flex; }
+  .info button { width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 50%; font-size: 12px; line-height: 1; color: var(--muted); }
+  .info .tip { display: none; position: absolute; top: 28px; left: 0; z-index: 5; width: 280px; padding: var(--s2); border-radius: 10px; background: var(--panel-solid);
+               border: 1px solid var(--line-2); font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink); }
+  .info:hover .tip, .info:focus-within .tip { display: block; }
+  .kpi td, .kpi th { font-size: 12.5px; white-space: nowrap; }
+  .kpi tr.ours td { color: var(--gold-2); background: var(--gold-soft); font-weight: 600; }
+  .kpi td.why { white-space: normal; }
+  .empty { border: 1px dashed var(--line-2); border-radius: 12px; padding: var(--s4); text-align: center; }
+  .empty p { margin: 0 auto var(--s2); max-width: 520px; }
+  .cars { display: flex; flex-direction: column; gap: var(--s4); }
+  .car h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s2); margin: 0 0 var(--s1); font-size: 14px; }
+  .car .arrows { margin-left: auto; display: flex; gap: var(--s1); }
+  .car .arrows button { min-width: 44px; min-height: 36px; padding: 0; }
+  @media (max-width: 700px) { .car .arrows { display: none; } }
+  .track { display: flex; gap: var(--s2); overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: var(--s1); scrollbar-width: thin; }
+  .card { flex: 0 0 210px; scroll-snap-align: start; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--raise); display: flex; flex-direction: column; }
+  .card .pic { aspect-ratio: 4 / 5; background: var(--bg-2); position: relative; overflow: hidden; }
+  .card .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .card .pic .cap { padding: var(--s3) var(--s2) var(--s2); font-size: 13px; color: #c9cfdb; }
+  .card .badge { position: absolute; top: var(--s1); left: var(--s1); background: rgba(10, 13, 19, .85); color: var(--ink); font-size: 11px; padding: 2px var(--s1); border-radius: 99px; }
+  .card .body { padding: var(--s2); display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; flex: 1; }
+  .card .x { color: var(--gold); font-weight: 600; }
+  .card .hook { color: #c9cfdb; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .body a { margin-top: auto; }
+  .card .day { color: var(--ink); font-weight: 600; }
+  .car .facts { margin: 0 0 var(--s2); font-size: 13px; color: var(--muted); }
+  .car .facts b { color: var(--ink); font-weight: 600; }
+  .car .adlink, .acc .adlink { font-size: 13px; }
+  .adform { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2) var(--s3); margin: var(--s3) 0; }
+  .adform .wide { grid-column: 1 / -1; }
+  .adform label { margin: 0 0 4px; }
+  .adform input, .adform select, .adform textarea { width: 100%; }
+  .adform textarea { height: 88px; resize: vertical; font: 13px var(--font); }
+  .adform .check { margin-top: 0; }
+  .adform .check input { width: auto; }
+  @media (max-width: 700px) { .adform { grid-template-columns: minmax(0, 1fr); } }
+  .ads { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--s3); }
+  .ad { border: 1px solid var(--line); border-radius: 12px; padding: var(--s3); display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
+  .ad .top { display: flex; align-items: center; gap: var(--s2); }
+  .ad .days { font-weight: 600; color: var(--gold); }
+  .ad .copy { white-space: pre-wrap; font-size: 13px; color: #c9cfdb; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+  .ad .x { margin-left: auto; width: 36px; height: 36px; min-height: 0; padding: 0; }
+  .grew { color: var(--green); } .shrank { color: var(--bad); }
+  .finding { padding: var(--s2) 0; border-bottom: 1px solid var(--line); font-size: 13px; }
   .st-winning { color: var(--green); } .st-fading { color: var(--warn); } .st-retired { color: var(--muted); }
-  .cost { font-size: 12px; color: var(--muted); margin-left: auto; }
-  .bgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
-  .bgrid label { font-size: 12px; color: var(--muted); display: block; }
-  .bgrid .wide { grid-column: 1 / -1; }
-  .bgrid textarea { width: 100%; min-height: 38px; resize: vertical; font: 13px var(--font); }
-  .bgrid .who { font-size: 11px; color: var(--faint, #6b7280); margin-top: 2px; }
-  @media (max-width: 700px) { .bgrid { grid-template-columns: 1fr; } }
-  .pin { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+
+  /* setup tab */
+  .bgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3); }
+  @media (max-width: 800px) { .bgrid { grid-template-columns: minmax(0, 1fr); } }
+  .bcard { border: 1px solid var(--line); border-radius: 12px; padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+  .bcard h3 { margin: 0; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .bcard label { margin: 0 0 4px; }
+  .bcard textarea { width: 100%; height: 64px; min-height: 64px; resize: vertical; font: 13px var(--font); }
+  .bcard .who { font-size: 11px; color: var(--faint); margin-top: 4px; }
+  .savebar { position: sticky; bottom: 0; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s3); padding: var(--s2) 0;
+             background: var(--bg); border-top: 1px solid var(--line); }
+  .savebar #brandmsg, .savebar #bizmsg { flex: 1 1 200px; font-size: 13px; }
+  .checks { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); }
+  .checks .check { margin-top: 0; }
+  .banner { border: 1px solid var(--warn); border-radius: 10px; padding: var(--s2) var(--s3); margin-bottom: var(--s3); font-size: 13px; display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
+  .banner span { flex: 1 1 240px; }
+  .wacc { padding: var(--s3) 0; border-bottom: 1px solid var(--line); }
+  .wacc h3 { margin: 0 0 var(--s1); font-size: 15px; }
+  .pattern { margin: var(--s2) 0 var(--s3); }
+  .findings { margin: 0 0 var(--s2); padding-left: 18px; font-size: 14px; line-height: 1.6; }
+  .pattern .forus { color: var(--gold); font-weight: 600; margin: 0 0 var(--s2); font-size: 13.5px; }
+  .pattern .forus ul { margin: 2px 0 0; padding-left: 18px; font-weight: 500; line-height: 1.6; }
+  .why-posts { display: flex; gap: var(--s2); overflow-x: auto; padding-bottom: var(--s1); }
+  .why-posts .card { flex-basis: 170px; }
+  .skip { font-size: 12.5px; color: var(--muted); margin-top: var(--s1); }
+  .readbar { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-bottom: var(--s2); font-size: 13px; }
+  .readbar span { flex: 1 1 260px; }
+  .warnline { color: var(--warn); font-size: 12px; }
+  .builtlike { font-size: 13px; color: var(--gold); margin: 4px 0; }
+  .weak { margin-top: var(--s2); font-size: 13.5px; } .weakrow { padding: var(--s1) 0; border-top: 1px solid var(--line); } .weakrow p { margin: 2px 0; } .weakrow ul { margin: 2px 0; padding-left: 18px; }
+  .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3); margin-top: var(--s2); } @media (max-width: 800px) { .two { grid-template-columns: minmax(0, 1fr); } }
+  .way { border: 1px solid var(--line); border-radius: 10px; padding: var(--s2) var(--s3); min-width: 0; } .way input[type=file] { min-width: 0; max-width: 100%; }
+  ol.chain { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s2); }
+  @media (max-width: 800px) { ol.chain { grid-template-columns: minmax(0, 1fr); } }
+  ol.chain li { display: flex; gap: var(--s1); border: 1px solid var(--line); border-radius: 10px; padding: var(--s2); font-size: 13px; min-width: 0; }
+  ol.chain .m { font-weight: 700; } ol.chain .c-done .m { color: var(--green); } ol.chain .c-waiting { border-color: var(--gold); } ol.chain .c-waiting .m { color: var(--gold); }
+  ol.chain .c-not-yet { opacity: .6; }
+  ol.days { list-style: none; margin: 0; padding: 0; } ol.days li { display: flex; gap: var(--s2); align-items: center; padding: var(--s1) 0; border-bottom: 1px solid var(--line); font-size: 13.5px; flex-wrap: wrap; }
+  ol.days .d { width: 92px; color: var(--gold); font-weight: 600; } ol.days li.done { opacity: .7; } .moves { display: flex; gap: 4px; } .moves button { padding: 2px 10px; }
+  .planpanel .row { align-items: center; gap: var(--s2); flex-wrap: wrap; } .planpanel h2 { margin: 0; }
+  ul.notes { list-style: none; margin: 0; padding: 0; } ul.notes li { display: flex; gap: var(--s2); align-items: center; justify-content: space-between; padding: var(--s1) 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+  ul.notes li.gone span { color: var(--muted); text-decoration: line-through; }
+  .own { margin: var(--s2) 0; } .own textarea { width: 100%; font: 13px var(--font); }
+  .stale ul { margin: 4px 0 0; padding-left: 18px; flex-basis: 100%; }
+  .stale { border: 1px solid var(--warn); border-radius: 8px; padding: var(--s2); margin: var(--s1) 0; font-size: 13px; display: flex; flex-wrap: wrap; gap: var(--s1); align-items: center; }
+  .stale b { color: var(--warn); }
+  .state-ok { color: var(--green); } .state-dirty { color: var(--warn); }
+  details.learn { margin-bottom: var(--s3); }
+  details.learn > summary { cursor: pointer; font-size: 13px; }
+  details.learn .row { margin-top: var(--s1); flex-wrap: wrap; }
+  #learnco { flex: 0 1 220px; } #learnurls { flex: 1 1 240px; }
+  #learndoc { width: 100%; margin-top: var(--s1); }
+  .learnrow { padding: 2px 0; }
+  .addrow { display: flex; flex-wrap: wrap; gap: var(--s1); }
+  .prefix { flex: 1 1 260px; display: flex; align-items: center; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg-2); }
+  .prefix span { padding: 0 0 0 var(--s2); color: var(--muted); }
+  .prefix input { border: 0; background: transparent; box-shadow: none; flex: 1; min-width: 0; }
+  .fieldmsg { font-size: 13px; margin-top: var(--s1); min-height: 20px; }
+  .fieldmsg.bad { color: var(--bad); } .fieldmsg.ok { color: var(--green); }
+  .accounts { margin-top: var(--s3); border-top: 1px solid var(--line); }
+  .acc { display: grid; grid-template-columns: 40px minmax(120px, 1.4fr) repeat(3, minmax(80px, 1fr)) minmax(150px, 1.6fr) 44px; gap: var(--s2); align-items: center;
+         padding: var(--s2) 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .acc.head { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .acc .av { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: var(--raise); display: grid; place-items: center; color: var(--muted); font-weight: 600; }
+  .acc .x { width: 36px; height: 36px; min-height: 0; padding: 0; }
+  .acc .st { font-size: 12.5px; }
+  .acc .st.fetched { color: var(--green); } .acc .st.not_found { color: var(--bad); } .acc .st.error, .acc .st.not_checked { color: var(--warn); }
+  @media (max-width: 760px) { .acc { grid-template-columns: 40px minmax(0, 1fr) 44px; } .acc .c3, .acc .c4, .acc .c5 { display: none; } .acc .st { grid-column: 2; }
+                              .acc.head { display: none; } }
+  .suggs { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--s2); margin-top: var(--s2); }
+  .sugg { border: 1px solid var(--line); border-radius: 10px; padding: var(--s2); display: flex; flex-direction: column; gap: var(--s1); }
+  .undo { position: fixed; left: 50%; bottom: var(--s4); transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: var(--s2);
+          padding: var(--s2) var(--s3); border-radius: 12px; background: var(--panel-solid); border: 1px solid var(--line-2); font-size: 13px; }
+  .importrow { flex-wrap: wrap; }
+  .importrow .note { flex: 1 1 260px; }
+  #csv { flex: 0 1 220px; }
 </style>
 </head>
 <body>
-<main>
-  <h1>The <em>studio</em></h1>
-  <p class="sub">Who we compete with, what works for them and why, and one listing going through research, planning, scripting, editing and publishing. Every number is counted from real posts; a step that lacks a connection says what it needs.</p>
-  <div class="top" id="top"></div>
-  <div class="grid2">
-    <div>
-      <section class="panel" id="brandpanel"><h2>Our brand <a class="small" href="graph.html?view=marketing" style="float:right;text-transform:none;letter-spacing:0;font-weight:500">See it in the memory graph →</a></h2>
-        <p class="small muted" id="brandnote"></p>
-        <details id="learnbox" style="margin-top:6px"><summary class="small" style="cursor:pointer">Learn our company from its pages or a document</summary>
-          <p class="small muted" style="margin:6px 0">Paste up to 6 public pages about the company (its site, its Property Finder or Bayut profile). The Brand brain reads them and
-            proposes knowledge cards, each with a quote copied from its page; a card whose quote is not on the page is dropped. Nothing is used until you confirm it on the Knowledge page.</p>
-          <div class="row"><input id="learnco" placeholder="Company name" style="flex:0 0 220px"><textarea id="learnurls" rows="2" placeholder="Web pages: https://… one per line" style="flex:1"></textarea></div>
-          <textarea id="learndoc" rows="4" placeholder="…or paste a company profile, brochure or about-us text" style="width:100%;margin-top:6px"></textarea>
-          <div class="row" style="margin-top:6px"><button id="learndemo">Use the demo company profile</button><span style="flex:1"></span><button class="primary" id="learngo">Read and propose</button></div>
-          <div id="learnres" class="small" style="margin-top:6px"></div>
+<main class="studio">
+  <div class="bar" id="top"></div>
+  <nav class="tabs" role="tablist" aria-label="Studio" id="tabs">
+    <button role="tab" id="t-run" aria-controls="tab-run" data-tab="run">Run</button>
+    <button role="tab" id="t-competitors" aria-controls="tab-competitors" data-tab="competitors">Competitors</button>
+    <button role="tab" id="t-setup" aria-controls="tab-setup" data-tab="setup">Setup</button>
+  </nav>
+  <div class="banner" id="bizbanner" role="status" hidden></div>
+
+  <section role="tabpanel" id="tab-run" aria-labelledby="t-run">
+    <section class="panel planpanel" id="planpanel"><div class="row"><h2 class="grow">The plan</h2><span class="note" id="nextrun"></span><button id="planbtn">Plan from today</button></div>
+      <div id="plan"></div>
+      <h2 class="sub">Where this listing's reel is now</h2><ol class="chain" id="chain"></ol>
+    </section>
+    <div class="work">
+      <section class="panel now"><h2>Running now, step by step</h2><div id="rooms"></div>
+        <details class="more" id="allsteps"><summary>Show every agent's last message</summary><div id="steps"></div></details>
+      </section>
+      <section class="panel turn"><h2>Your turn</h2><div id="turn"></div>
+        <div class="footage" id="footage" hidden><b>Footage</b>
+          <p class="note">After filming, upload the take here. The studio checks it against the script, puts captions on it and makes covers.</p>
+          <div class="row"><input type="file" id="file" accept="video/*"><button class="primary" id="up">Upload</button></div><div id="upres" class="note"></div>
+        </div>
+        <details class="own" id="ownbox"><summary>Write my own script</summary>
+          <p class="note">The hook on the first line, then one line per sentence (an Arabic hook line is picked up too). The Copywriter checks it like its own and lists every problem without changing it; then it is told two other ways, and you pick one of the three.</p>
+          <textarea id="owntext" rows="7" placeholder="Hook&#10;Line 1&#10;Line 2&#10;…&#10;Message us to book a viewing."></textarea>
+          <div class="row"><span class="fieldmsg grow" id="ownmsg" role="status"></span><button class="primary" id="ownsend">Check it and show 2 other ways</button></div>
         </details>
-        <div class="bgrid" id="brandform"></div>
-        <div class="row" style="margin-top:10px"><span class="small muted" id="brandmsg" style="flex:1"></span>
-          <button id="branddraft">Draft it for me</button><button class="primary" id="brandsave">Save</button></div>
-      </section>
-      <section class="panel" style="margin-top:18px"><h2>Competitors</h2>
-        <div class="row"><input id="names" placeholder="@brokerage.one, @brokerage.two"><button id="save">Save</button><button id="suggest">Suggest</button></div>
-        <div id="sugg" class="small muted" style="margin-top:8px"></div>
-        <div class="row" style="margin-top:10px;flex-wrap:wrap"><span class="small muted" style="flex:1 1 260px">No Instagram connection yet? Copy real posts into the
-          <a href="/api/studio/import-template">spreadsheet template</a> (likes, comments, caption, link, date) and import it.</span>
-          <input type="file" id="csv" accept=".csv,text/csv" style="flex:0 1 220px"><button id="imp">Import posts</button></div>
-        <div id="impres" class="small" style="margin-top:6px"></div>
-        <div style="overflow:auto;margin-top:12px"><table class="kpi" id="kpi"></table></div>
-        <div id="notes" class="small muted" style="margin-top:8px"></div>
-      </section>
-      <section class="panel" style="margin-top:18px"><h2>Why their best posts win</h2><div id="why"></div></section>
-      <section class="panel" style="margin-top:18px"><h2>What to post next</h2>
-        <p class="small muted">Each angle measured on our own posts against our median: two in a row at 1.2x or more is <b>winning</b> (keep it); down three times and under the median is <b>fading</b> (shift away); two under 0.8x is <b>resting</b> for 30 days. One slot always tests something new.</p>
-        <div id="strategy"></div></section>
-      <section class="panel" style="margin-top:18px"><h2>Their best posts</h2><div id="tops"></div></section>
-    </div>
-    <div>
-      <section class="panel"><h2>The line, step by step</h2><div id="steps"></div></section>
-      <section class="panel made" style="margin-top:18px"><h2>What it made</h2><div id="made"></div></section>
-      <section class="panel" style="margin-top:18px"><h2>Footage</h2>
-        <p class="small muted">After filming, upload the take here. The studio checks it against the script, puts captions on it and makes covers.</p>
-        <div class="row"><input type="file" id="file" accept="video/*"><button class="primary" id="up">Upload</button></div><div id="upres" class="small" style="margin-top:6px"></div>
+        <h2 class="sub">What it made so far</h2><div class="made" id="made"></div>
       </section>
     </div>
-  </div>
+  </section>
+
+  <section role="tabpanel" id="tab-competitors" aria-labelledby="t-competitors" hidden>
+    <section class="panel">
+      <h2>Competitors <span class="info"><button aria-label="About these numbers" aria-describedby="viewsnote">i</button>
+        <span class="tip" role="tooltip" id="viewsnote">Likes and comments only: Instagram does not give other accounts' views, reach or stories. A best post is one with more likes + comments than its account's average, reels compared with reels and other posts with other posts.</span></span></h2>
+      <div id="compempty" class="empty" hidden></div>
+      <div id="compbody">
+        <nav class="tabs sub" role="tablist" aria-label="Competitors" id="subtabs">
+          <button role="tab" id="s-overview" aria-controls="sub-overview" data-sub="overview">Overview</button>
+          <button role="tab" id="s-top" aria-controls="sub-top" data-sub="top">Top posts</button>
+          <button role="tab" id="s-why" aria-controls="sub-why" data-sub="why">Why they win</button>
+          <button role="tab" id="s-next" aria-controls="sub-next" data-sub="next">What to post next</button>
+          <button role="tab" id="s-ads" aria-controls="sub-ads" data-sub="ads">Their ads</button>
+
+          <button role="tab" id="s-ours" aria-controls="sub-ours" data-sub="ours">Our ads</button>
+        </nav>
+        <div role="tabpanel" id="sub-overview" aria-labelledby="s-overview"><p class="note" id="kpimsg"></p><div class="scroll"><table class="kpi" id="kpi"></table></div></div>
+        <div role="tabpanel" id="sub-top" aria-labelledby="s-top" hidden><div class="cars" id="cars"></div></div>
+        <div role="tabpanel" id="sub-why" aria-labelledby="s-why" hidden><div id="why"></div></div>
+        <div role="tabpanel" id="sub-next" aria-labelledby="s-next" hidden>
+          <p class="note">Each angle measured on our own posts against our median: two in a row at 1.2x or more is <b>winning</b> (keep it); down three times and under the median is <b>fading</b> (shift away); two under 0.8x is <b>resting</b> for 30 days. One slot always tests something new.</p>
+          <div class="scroll" id="strategy"></div>
+        </div>
+        <div role="tabpanel" id="sub-ours" aria-labelledby="s-ours" hidden>
+          <p class="note">Our own ad account, read-only: each ad's status and its last 30 days. Diwan never creates, changes or pauses an ad.</p>
+          <div class="row"><span class="grow note" id="oursmsg"></span><button id="oursload">Read our ads</button></div>
+          <div class="scroll" id="ours"></div>
+        </div>
+        <div role="tabpanel" id="sub-ads" aria-labelledby="s-ads" hidden>
+          <p class="note">Meta gives no numbers for other advertisers' ads, so these are tracked by hand: open a competitor's ads in the Ad Library, and pin the ones worth learning from. An ad that has been running a long time is usually one that works for them. Pinned ads join the research board, so ideas and scripts can build on them.</p>
+          <div class="note" id="adlinks"></div>
+          <div class="adform">
+            <div><label for="adacc">Competitor</label><select id="adacc"></select></div>
+            <div><label for="adurl">Ad Library link of the ad</label><input id="adurl" placeholder="https://www.facebook.com/ads/library/?id=…" autocomplete="off"></div>
+            <div><label for="adstart">Started running on</label><input id="adstart" type="date"></div>
+            <div><label class="check" for="adrunning"><input type="checkbox" id="adrunning" checked> Still running</label>
+              <label for="adend" id="adendlabel" hidden>Stopped on</label><input id="adend" type="date" hidden></div>
+            <div class="wide"><label for="adtext">The ad's text</label><textarea id="adtext" placeholder="Paste the ad's copy as it shows in the Ad Library"></textarea></div>
+            <div class="wide row"><span class="fieldmsg grow" id="admsg" role="status"></span><button class="primary" id="adpin">Pin this ad</button></div>
+          </div>
+          <div class="ads" id="adlist"></div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <section role="tabpanel" id="tab-setup" aria-labelledby="t-setup" hidden>
+    <section class="panel" id="bizpanel"><h2>Our business <span id="bizstate" class="note"></span></h2>
+      <p class="note">Set once, when you start. Every search, suggestion, competitor check, ad link and posting hour follows it; nothing assumes a trade or a country.</p>
+      <div class="adform">
+        <div><label for="bz-industry">Industry</label><input id="bz-industry" placeholder="What the business does, in a few words" autocomplete="off"></div>
+        <div><label for="bz-country">Country</label><select id="bz-country"></select></div>
+        <div id="bz-tzbox"><label for="bz-timezone">Time zone</label><select id="bz-timezone"></select></div>
+        <div><label for="bz-city">City or market (optional)</label><input id="bz-city" autocomplete="off"></div>
+        <div class="wide"><label>Where we post</label><div class="checks" id="bz-platforms"></div></div>
+      </div>
+      <div class="savebar"><span id="bizmsg"></span><button class="primary" id="bizsave">Save</button></div>
+    </section>
+
+    <section class="panel" id="brandpanel"><h2>Our brand <span id="brandstate" class="note"></span></h2>
+      <p class="note" id="brandnote"></p>
+      <p class="note"><a href="graph.html?view=marketing">See it in the memory graph →</a></p>
+      <details class="learn" id="learnbox"><summary>Learn our company from its pages or a document</summary>
+        <p class="note">Paste up to 6 public pages about the company (its own site, and its profiles on the sites where it is listed). The Brand brain reads them and
+          proposes knowledge cards, each with a quote copied from its page; a card whose quote is not on the page is dropped. Nothing is used until you confirm it on the Knowledge page.</p>
+        <div class="row"><input id="learnco" placeholder="Company name"><textarea id="learnurls" rows="2" placeholder="Web pages: https://… one per line"></textarea></div>
+        <textarea id="learndoc" rows="4" placeholder="…or paste a company profile, brochure or about-us text"></textarea>
+        <div class="row"><button id="learndemo">Use the demo company profile</button><span class="grow"></span><button id="learngo">Read and propose</button></div>
+        <div id="learnres" class="note"></div>
+      </details>
+      <div class="bgrid" id="brandform"></div>
+      <div class="savebar"><span id="brandmsg"></span><button id="branddraft">Draft it for me</button><button class="primary" id="brandsave">Save</button></div>
+    </section>
+
+    <section class="panel" id="approvalpanel"><h2>Approvals</h2>
+      <p class="note">Who the studio waits for. Cards on the Run tab say who they are waiting for, and work stuck after two returns goes to them.</p>
+      <div class="adform" id="approvalform"></div>
+      <div class="savebar"><span id="apmsg"></span><button class="primary" id="apsave">Save</button></div>
+    </section>
+
+    <section class="panel" id="rhythmpanel"><h2>Rhythm</h2>
+      <p class="note">When the studio works on its own. At the hour it runs the trend search (once per rhythm), picks a listing and writes its 3 scripts; they wait for you on the Run tab. Nothing is filmed or published without a person.</p>
+      <div class="adform">
+        <div><label class="check" for="rh-auto"><input type="checkbox" id="rh-auto"> Run automatically</label></div>
+        <div><label for="rh-at">Start at</label><input type="time" id="rh-at"></div>
+        <div><label for="rh-rhythm">Rhythm</label><select id="rh-rhythm"></select></div>
+        <div></div>
+        <div><label for="rh-angle">Don't repeat an angle within (days)</label><input type="number" min="0" max="60" id="rh-angle"></div>
+        <div><label for="rh-listing">Don't repeat a listing within (days)</label><input type="number" min="0" max="60" id="rh-listing"></div>
+      </div>
+      <div class="savebar"><span id="rhmsg"></span><button class="primary" id="rhsave">Save</button></div>
+    </section>
+
+    <section class="panel" id="stylepanel"><h2>Style notes</h2>
+      <p class="note">What the studio learned from your decisions: the changes you asked for, the angles you pick, the scripts you wrote. The Script writer reads every note here; delete any you disagree with. Scripts you approved are never written the same way twice.</p>
+      <div id="stylelist"></div>
+    </section>
+
+    <section class="panel"><h2>Competitor accounts</h2>
+      <p class="note" id="compnote">Instagram business or creator accounts of businesses you compete with. Each one is checked as you add it; their public posts are read with our own account. They never see it.</p>
+      <div class="addrow">
+        <label class="prefix" for="addname"><span aria-hidden="true">@</span><input id="addname" placeholder="Add an Instagram business account" autocomplete="off" spellcheck="false"></label>
+        <button class="primary" id="addbtn">Add</button><button id="suggest">Suggest</button>
+      </div>
+      <div class="fieldmsg" id="addmsg" role="status"></div>
+      <div id="sugg"></div>
+      <div class="accounts" id="acclist"></div>
+    </section>
+
+    <section class="panel"><h2>Import posts from a spreadsheet</h2>
+      <div class="row importrow"><span class="note">For when Instagram can't be read: copy real posts into the
+        <a href="/api/studio/import-template">spreadsheet template</a> (likes, comments, caption, link, date) and import it.</span>
+        <input type="file" id="csv" accept=".csv,text/csv"><button class="primary" id="imp">Import posts</button></div>
+      <div id="impres" class="note"></div>
+    </section>
+  </section>
+  <div class="undo" id="undo" role="status" hidden><span id="undotext"></span><button id="undobtn">Undo</button></div>
 </main>
 <script type="module">
 import { h, api, post, header, follow, toast, NAMES } from "./app.js";
@@ -97,109 +363,392 @@ const NAME = { mrival: "Competitor watch", mtrend: "Trend scout", mtrans: "Trans
   mfilm: "Film list", mscript: "Script writer", mcheck: "Video check", mplay: "Playbook writer", mcap: "Captions", mremix: "Remix", mwriter: "Content writer",
   mthumb: "Thumbnail", mpermit: "Permit checker", msched: "Scheduler", mcross: "Cross-publisher", mpub: "Publisher",
   mcopy: "Copywriter (review)", mshoot: "Shoot coordinator", mvideo: "AI video producer" };
-let last = {};
+const BRAND_GROUPS = [["Who we are", ["name", "positioning", "audience"]], ["How we sound", ["voice", "say"]], ["Rules", ["avoid", "never_claim"]],
+  ["Sign-off & hashtags", ["cta", "hashtags"]]];
+let last = {}, lastAt = {};
+const fromText = (ids) => (ids || []).map((x) => x.startsWith("listing:") ? `the listing ${x.slice(8)}` : `${x} "${data.board.find((b) => b.id === x)?.title || "card not on the board"}"`).join("; ");
+
+// ---------- tabs ----------
+function tabs(navId, attr, panelPrefix, initial, onShow) {
+  const buttons = [...$(navId).querySelectorAll("button")];
+  const show = (name, focus) => {
+    for (const b of buttons) {
+      const on = b.dataset[attr] === name;
+      b.setAttribute("aria-selected", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
+      $(panelPrefix + b.dataset[attr]).hidden = !on;
+      if (on && focus) b.focus();
+    }
+    onShow && onShow(name);
+  };
+  for (const [i, b] of buttons.entries()) {
+    b.onclick = () => show(b.dataset[attr]);
+    b.onkeydown = (e) => {
+      const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      if (d) show(buttons[(i + d + buttons.length) % buttons.length].dataset[attr], true);
+    };
+  }
+  show(buttons.some((b) => b.dataset[attr] === initial) ? initial : buttons[0].dataset[attr]);
+  return show;
+}
+const showTab = tabs("tabs", "tab", "tab-", location.hash.slice(1), (n) => history.replaceState(null, "", `#${n}`));
+tabs("subtabs", "sub", "sub-", "overview");
+const days = (from, to) => Math.max(0, Math.round((new Date((to || new Date().toISOString().slice(0, 10)) + "T12:00:00Z") - new Date(from + "T12:00:00Z")) / 864e5));
 
 async function load() {
   data = await api(`/api/studio?ref=${ref}`);
   const evs = await api("/api/events");
-  last = {};
+  last = {}; lastAt = {};
   for (const e of evs) {
     if (e.type === "agent.pack" && NAME[e.agent]) last[e.agent] = e.content.pack.verdict;
     if (e.type === "agent.started" && NAME[e.agent]) last[e.agent] = `Working: ${e.content.task}… (a free model endpoint can take a couple of minutes)`;
+    if (NAME[e.agent] && ["agent.pack", "agent.started", "step.blocked"].includes(e.type)) lastAt[e.agent] = e.id;
   }
   render();
 }
 
-function pill(on, text, href) { return h("a", { class: "pill", href: href || "settings.html" }, h("span", { class: `dot ${on ? "on" : ""}` }), text); }
+function pill(on, text, title, warn) { return h("a", { class: `pill${warn ? " warn" : ""}`, href: "settings.html", ...(title ? { title } : {}) }, h("span", { class: `dot ${on ? "on" : ""}` }), text); }
 function render() {
-  const c = data.connected;
-  $("top").replaceChildren(h("select", { onchange: (e) => { ref = e.target.value; load(); } }, data.listings.map((l) => h("option", { value: l.ref, selected: l.ref === ref }, `${l.ref} · ${l.title}${l.permit ? "" : " (no permit)"}`))),
-    h("button", { class: "primary", onclick: async () => { await post(`/api/marketing/run?ref=${ref}`); toast("Running: watch it on the Marketing floor or here"); } }, "Run this listing"),
-    h("a", { class: "btn", href: "office3d.html?enter=mkt" }, "Watch on the floor"),
-    pill(c.instagram, c.instagram ? "Instagram connected" : "Connect Instagram"), pill(c.meta, c.meta ? "Meta models on" : "Meta key missing"),
-    pill(c.public_url, c.public_url ? "Public video address set" : "No public address (publishing)"),
-    h("span", { class: "cost", id: "cost", title: "Estimated from tokens; a repeated request is answered from the cache at no cost" },
-      `Model spend ${data.costs.month}: $${data.costs.spend_usd.toFixed(2)} of $${data.costs.budget_usd} · saved $${data.costs.saved_usd.toFixed(2)} by cache (${data.costs.cached_calls}/${data.costs.calls} calls)${data.costs.over ? " · budget reached: templates only" : ""}`));
-  const st = data.strategy, LABEL = { winning: "winning: keep", fading: "fading: shift", retired: "resting", steady: "steady", untested: "untested" };
-  $("strategy").replaceChildren(...(st.note ? [h("p", { class: "small muted" }, st.note)] : []), h("table", { class: "kpi" },
-    h("tr", {}, ...["Angle", "Status", "Our last posts", "Competitors", "Why"].map((x) => h("th", {}, x))),
-    ...st.angles.map((x) => h("tr", {}, h("td", { title: x.what }, x.angle), h("td", { class: `st-${x.status}` }, LABEL[x.status]),
-      h("td", {}, x.last.length ? x.last.map((r) => r + "x").join(", ") : "—"),
-      h("td", {}, x.market_posts ? `${x.market_score}x on ${x.market_posts} (${x.market_outliers} outliers)` : "—"), h("td", { class: "small", style: "white-space:normal" }, x.why)))));
-  const a = data.analysis;
-  if (!$("names").value) $("names").value = a.names.map((n) => "@" + n).join(", ");
-  const K = (k) => k ?? "—";
-  const head = h("tr", {}, ...["Account", "Followers", "Posts/wk", "Avg likes", "Avg comments", "Eng. rate", "Formats", "Best day", "Best hour", "Outliers"].map((x) => h("th", {}, x)));
-  const row = (name, k, cls) => h("tr", { class: cls || "" }, h("td", {}, name), h("td", {}, K(k.followers?.toLocaleString())), h("td", {}, K(k.per_week)), h("td", {}, K(k.avg_likes)),
-    h("td", {}, K(k.avg_comments)), h("td", {}, k.engagement_rate != null ? `${k.engagement_rate}%` : k.engagement_rate_by_reach != null ? `${k.engagement_rate_by_reach}% of reach` : "—"),
-    h("td", {}, k.formats ? Object.entries(k.formats).map(([f, n]) => `${n} ${f.toLowerCase()}`).join(", ") : "—"), h("td", {}, K(k.best_day)),
-    h("td", {}, k.best_hour != null ? `${k.best_hour}:00` : "—"), h("td", {}, K(k.outliers)));
-  $("kpi").replaceChildren(head, ...(a.competitors.length ? a.competitors.map((r) => row("@" + r.account, r.kpis)) : [h("tr", {}, h("td", { colspan: 10, class: "muted" },
-    c.instagram ? "Save competitor accounts and run a listing to fetch their posts." : "Connect Instagram in Settings, or import posts from the spreadsheet template above."))]),
-    ...(a.ours.posts ? [row("Us", a.ours.kpis, "ours")] : []));
-  $("notes").replaceChildren(...a.notes.map((n) => h("div", {}, "· " + n)));
-  $("why").replaceChildren(...(a.why.length ? a.why.map((w) => h("div", { class: "finding" }, w.finding,
-    h("div", { class: "bars" }, h("i", { style: `width:${w.outliers}px;background:var(--gold)` }), `outliers ${w.outliers}%`, h("i", { style: `width:${w.others}px;background:var(--faint)` }), `others ${w.others}%`),
-    h("div", { class: "small" }, ...w.examples.map((u, i) => h("a", { href: u, target: "_blank", style: "margin-right:10px" }, `example ${i + 1}`)))))
-    : [h("p", { class: "small muted" }, "Needs at least two outliers among competitors with 5 or more posts. Every finding will be a measured difference, with the posts behind it.")]));
-  $("tops").replaceChildren(...(a.competitors.length ? a.competitors.flatMap((r) => r.top.map((p) => h("div", { class: "pin" },
-    h("b", {}, `@${r.account} · ${p.x != null ? p.x + "x" : ""} `), `${p.likes} likes, ${p.comments} comments · ${(p.type || "").toLowerCase()} · `, h("a", { href: p.permalink, target: "_blank" }, "open"),
-    h("div", { class: "muted" }, p.hook || "(no caption)")))) : [h("p", { class: "small muted" }, "Nothing fetched yet.")]));
+  const c = data.connected, k$ = data.costs;
+  const mk = (k$.parts || {}).marketing || { spend_usd: k$.spend_usd, budget_usd: k$.budget_usd, over: k$.over };
+  const spend = `Marketing spend ${k$.month}: $${mk.spend_usd.toFixed(2)} of $${mk.budget_usd}${mk.over ? " (Marketing's budget reached: templates only)" : ""}; ` +
+    `whole office $${k$.spend_usd.toFixed(2)} of $${k$.budget_usd}. ` +
+    `Estimated from tokens; a repeated request is answered from the cache at no cost (saved $${k$.saved_usd.toFixed(2)}, ${k$.cached_calls}/${k$.calls} calls).`;
+  $("top").replaceChildren(
+    h("div", { class: "left" }, h("h1", {}, "The ", h("em", {}, "studio")),
+      h("select", { "aria-label": "Listing", onchange: (e) => { ref = e.target.value; load(); } }, data.listings.map((l) => h("option", { value: l.ref, selected: l.ref === ref }, `${l.ref} · ${l.title}${l.permit ? "" : " (no permit)"}`))),
+      h("button", { class: "primary", id: "runbtn", onclick: async () => { await post(`/api/marketing/run?ref=${ref}`); showTab("run"); toast("Running: watch it here or on the Marketing floor"); } }, "Run this listing"),
+      h("a", { class: "btn", href: "office3d.html?enter=mkt" }, "Watch on the floor")),
+    h("div", { class: "right" },
+      pill(c.instagram, c.instagram ? "Instagram connected" : (c.instagram_why || "").startsWith("Instagram refused") ? "Instagram refuses the token" : "Connect Instagram",
+        c.instagram ? `Reading as @${c.instagram_user}` : c.instagram_why, !c.instagram && !!c.instagram_why),
+      pill(c.meta, c.meta ? (mk.over ? "Meta models: budget reached" : "Meta models on") : "Meta key missing", spend, mk.over),
+      pill(c.public_url, c.public_url ? "Publishing on" : "Publishing off", c.public_url ? "Approved posts can be published." : "No public address (PUBLIC_BASE_URL), so nothing can be published.")));
+  const miss = data.business.missing;
+  $("bizbanner").hidden = !miss.length;
+  if (miss.length) $("bizbanner").replaceChildren(h("span", {}, `Set your ${miss.join(" and ").toLowerCase()} in Setup first: the trend search, competitor suggestions and Why they win wait for them.`),
+    h("button", { onclick: () => { showTab("setup"); $("bz-industry").focus(); } }, "Open Setup"));
+  $("compnote").textContent = `Instagram business or creator accounts of ${industryWords()} you compete with. Each one is checked as you add it; their public posts are read with our own account. They never see it.`;
+  renderPlan(); renderChain(); renderRun(); renderCompetitors(c); renderAccounts();
+}
+
+// ---------- run tab ----------
+function renderRun() {
+  $("rooms").replaceChildren(...ROOMS.map(([room, ids]) => {
+    const first = (id) => (id === "mrival" ? 0 : 1);  // what Competitor watch found comes first
+    const waiting = ids.filter((id) => data.blocked[id]), recent = ids.filter((id) => lastAt[id]).sort((x, y) => first(x) - first(y) || lastAt[y] - lastAt[x])[0];
+    const state = waiting.length ? "wait" : recent ? "ok" : "";
+    const text = recent && !data.blocked[recent] ? `${NAME[recent]}: ${last[recent] || ""}` : waiting.length ? `${NAME[waiting[0]]}: waiting: ${data.blocked[waiting[0]]}` : "Not run yet";
+    return h("div", { class: "roomline" }, h("span", { class: `dotc ${state}` }), h("div", {}, h("b", {}, room), h("span", { class: "tx" }, text)));
+  }));
   $("steps").replaceChildren(...ROOMS.map(([room, ids]) => h("div", { class: "room" }, h("h3", {}, room), ...ids.map((id) => {
     const b = data.blocked[id], t = last[id];
-    return h("div", { class: "stepline" }, h("span", { class: "dotc", style: `background:${b ? "var(--warn)" : t ? "var(--green)" : "var(--faint)"}` }),
+    return h("div", { class: "stepline" }, h("span", { class: `dotc ${b ? "wait" : t ? "ok" : ""}` }),
       h("span", { class: "nm" }, NAME[id]), h("span", { class: "tx" }, b ? `Waiting: ${b}` : t || "Not run yet"));
-  }))), ...data.approvals.map((r) => r.kind === "use_script" ? scriptCard(r) : h("div", { class: "item", style: "margin-top:10px" },
-    h("div", {}, h("b", {}, "Waiting for the owner: "), r.text),
-    h("div", { class: "row", style: "margin-top:8px" }, h("span", {}),
-      h("button", { onclick: () => decide(r.id, "reject", prompt("Why?") || "") }, "Reject"),
-      h("button", { class: "primary", onclick: () => decide(r.id, "approve") }, "Approve & publish")))),
-    data.script_approved ? h("div", { class: "item", style: "margin-top:10px" }, h("b", {}, "Production: "), "the broker has the film list. Or have an AI presenter read the script.",
-      h("label", { style: "display:flex;gap:8px;align-items:center;margin-top:8px" }, h("input", { type: "checkbox", id: "consent", style: "width:auto" }),
-        "The person in the avatar agreed to their face and voice being used."),
-      h("div", { class: "row", style: "margin-top:8px" }, h("span", { class: "small muted" }, data.heygen ? "Uses HeyGen credits." : "Connect HeyGen in Settings first."),
-        h("button", { class: "primary", disabled: !data.heygen, onclick: aiVideo }, "Make AI video"))) : "");
+  }))));
+  $("footage").hidden = !data.script_approved;
+  const turn = [...data.approvals.map((r) => r.kind === "use_script" ? scriptCard(r) : h("div", { class: "item" },
+    h("div", {}, h("b", {}, `Waiting for ${data.approvers.publish.label}: `), r.text),
+    h("div", { class: "row" }, h("span", { class: "grow" }),
+      h("button", { onclick: () => decide(r.id, "reject", prompt("Why?") || "", approver("publish")) }, "Reject"),
+      h("button", { class: "primary", onclick: () => decide(r.id, "approve", "", approver("publish")) }, "Approve & publish")))),
+    data.script_approved ? h("div", { class: "item" }, h("b", {}, "Production: "), "the broker has the film list. Or make the video without filming, one of two ways:",
+      h("div", { class: "two" },
+        h("div", { class: "way" }, h("b", {}, "Free video"), h("p", { class: "note" }, `The computer's voice (${data.free_video.voice}) reads the script over the listing's photos with a slow zoom, the price card and an end card. No avatar, no cost. ${data.free_video.photos} photo${data.free_video.photos === 1 ? "" : "s"} ready.`),
+          h("div", { class: "row" }, h("input", { type: "file", id: "photos", accept: "image/*", multiple: true, "aria-label": "Add photos of the listing" }), h("button", { onclick: addPhotos }, "Add photos")),
+          h("div", { class: "row" }, h("span", { class: "note grow" }, data.free_video.missing.length ? `Needs ${data.free_video.missing.join(", ")}.` : data.free_video.photos ? "" : "Add photos first."),
+            h("button", { class: "primary", disabled: !!data.free_video.missing.length || !data.free_video.photos, onclick: freeVideo }, "Make free video"))),
+        h("div", { class: "way" }, h("b", {}, "AI presenter"), h("p", { class: "note" }, "A talking avatar reads the script (HeyGen, paid)."),
+          h("label", { class: "check" }, h("input", { type: "checkbox", id: "consent" }), "The person in the avatar agreed to their face and voice being used."),
+          h("div", { class: "row" }, h("span", { class: "note grow" }, data.heygen ? "Uses HeyGen credits." : "Connect HeyGen in Settings first."),
+            h("button", { class: "primary", disabled: !data.heygen, onclick: aiVideo }, "Make AI video"))))) : ""].filter(Boolean);
+  $("turn").replaceChildren(...(turn.length ? turn : [h("p", { class: "note" }, data.script_approved
+    ? "The broker has the film list. Upload the take below when it is filmed." : "Nothing is waiting for you. Pick a listing and press Run this listing.")]));
   const m = data.made, out = [];
-  if (m.ideas) out.push(h("div", {}, h("b", {}, "Idea"), h("pre", {}, `${m.ideas.pick.title}\n(${m.ideas.via})`)));
+  if (m.ideas) out.push(h("div", {}, h("b", {}, "Idea"), h("pre", {}, `${m.ideas.pick.title}\n(${m.ideas.via})`),
+    h("p", { class: "note" }, `From: ${fromText(m.ideas.pick.from || m.ideas.pick.cards)}`)));
   if (m["film list"]) out.push(h("div", {}, h("b", {}, `Film list for ${NAMES[m["film list"].who] || m["film list"].who}, ${m["film list"].when}`), h("pre", {}, m["film list"].shots.map((s, i) => `${i + 1}. ${s}`).join("\n"))));
   if (m.script) out.push(h("div", {}, h("b", {}, `Latest script · ${m.script.angle || ""} (${m.script.via})`), h("pre", {}, [m.script.hook_en, m.script.hook_ar, "", ...m.script.lines_en].join("\n"))));
   if (m["post text"]) out.push(h("div", {}, h("b", {}, "Post text"), h("pre", {}, m["post text"].text)));
   if (m.slot) out.push(h("div", {}, h("b", {}, "Slot"), h("pre", {}, `${new Date(m.slot.at).toLocaleString("en-GB", { weekday: "long", hour: "2-digit", minute: "2-digit" })}: ${m.slot.why}`)));
-  if (m.cover) out.push(h("div", {}, h("b", {}, "Covers"), h("div", { class: "covers" }, ...["frame", "generated"].filter((k) => m.cover[k]).map((k) => h("img", { src: m.cover[k], title: k === "frame" ? "A frame of the footage" : "Muse Image" })))));
+  if (m.cover) out.push(h("div", {}, h("b", {}, "Covers"), h("div", { class: "covers" }, ...(m.cover.options || []).map((o) => h("img", { src: o.served, alt: `Cover: frame of ${m.cover.footage} at ${o.at}s with the hook`, title: `Frame of ${m.cover.footage} at ${o.at}s` })))));
   if (m.cut) out.push(h("div", {}, h("b", {}, `Cut with captions (${m.cut.lines} lines)`), h("video", { src: m.cut.served, controls: true })));
   if (m.transcript) out.push(h("div", {}, h("b", {}, `Outlier transcript · @${m.transcript.account}`), h("pre", {}, m.transcript.text)));
   if (m.published) out.push(h("div", {}, h("b", {}, "Published"), h("pre", {}, `Instagram id ${m.published.instagram_id}`)));
-  $("made").replaceChildren(...(out.length ? out : [h("p", { class: "small muted" }, "Run a listing to see what each step makes.")]));
+  $("made").replaceChildren(...(out.length ? out : [h("p", { class: "note" }, "Run a listing to see what each step makes.")]));
 }
 function scriptCard(r) {
-  return h("div", { class: "item", style: "margin-top:10px" },
-    h("b", {}, `Pick a script: ${r.options.length} checked by the Copywriter, waiting for the Marketing manager`),
-    h("p", { class: "small muted" }, "Filming, AI video, editing and covers start only after you pick one. Ask for a change in plain words and only that script is rewritten."),
-    ...r.options.map((o, i) => h("div", { class: "opt", "data-script": o.id },
-      h("div", {}, h("span", { class: "tag" }, `${i + 1} · ${o.angle}`), h("span", { class: "small muted" }, `${o.why || ""} · ${o.via}${o.revises ? ` · revised from ${o.revises}` : ""}`)),
+  return h("div", { class: "item" },
+    h("b", {}, `Pick a script: ${r.options.length} checked by the Copywriter, waiting for ${data.approvers.script.label}`),
+    h("p", { class: "note" }, "Filming, AI video, editing and covers start only after you pick one. Ask for a change in plain words and only that script is rewritten."),
+    h("div", { class: "opts" }, ...r.options.map((o, i) => h("div", { class: "opt", "data-script": o.id },
+      h("div", {}, h("span", { class: "tag" }, `${i + 1} · ${o.angle}`), h("span", { class: "note" }, `${o.why || ""} · ${o.via}${o.revises ? ` · revised from ${o.revises}` : ""}`)),
       h("pre", {}, [o.hook_en, o.hook_ar, "", ...o.lines_en].join("\n")),
-      h("input", { placeholder: "Change something, e.g. make the hook shorter, sea view first", class: "change", style: "width:100%;margin-bottom:8px" }),
-      h("div", { class: "row" }, h("span", { style: "flex:1" }),
+      o.shots && o.shots.length ? h("details", { class: "vplan" }, h("summary", {}, `Video plan: ${o.shots.length} shots, about ${Math.round(o.shots[o.shots.length - 1].at + 3)} seconds`),
+        h("div", { class: "scroll" }, h("table", { class: "kpi" }, h("tr", {}, ...["At", "On screen", "Words on screen", "Said", "Cut"].map((x) => h("th", {}, x))),
+          ...o.shots.map((r) => h("tr", {}, h("td", {}, `${r.at}s`), h("td", {}, r.show), h("td", {}, r.text || "—"), h("td", {}, r.say), h("td", {}, r.cut)))))) : "",
+      h("p", { class: "note" }, `Builds on: ${o.cards && o.cards.length ? fromText(o.cards) : `the listing ${ref} (no research card)`}`),
+      ...(o.built_like || []).map((t) => h("p", { class: "builtlike" }, t)),
+      o.own ? (o.problems && o.problems.length ? h("div", { class: "stale" }, h("b", {}, `Your script: ${o.problems.length} thing${o.problems.length > 1 ? "s" : ""} to fix before it can be used. `),
+        h("ul", {}, ...o.problems.map((t) => h("li", {}, t)))) : h("p", { class: "note ok" }, "Your script passed every check.")) : "",
+      o.stale && o.stale.length ? h("div", { class: "stale", role: "status" }, h("b", {}, "Out of date: the listing changed since this was written. "), o.stale.join(" "),
+        h("button", { class: "primary", onclick: () => decide(r.id, "revise", `The listing changed since this script was written: ${o.stale.join(" ")} Update the script to the listing as it is now.`, approver("script"), o.id) }, "Rewrite with the new facts")) : "",
+      h("input", { placeholder: "Change something, e.g. make the hook shorter, sea view first", class: "change", "aria-label": `Change for script ${i + 1}` }),
+      h("div", { class: "row" }, h("span", { class: "grow" }),
         h("button", { onclick: (e) => { const note = e.target.closest(".opt").querySelector(".change").value.trim(); if (!note) return toast("Say what to change");
-          decide(r.id, "revise", note, "maya", o.id); } }, "Ask for change"),
-        h("button", { class: "primary", onclick: () => decide(r.id, "approve", "", "maya", o.id) }, "Use this one")))),
-    h("div", { class: "row", style: "margin-top:8px" }, h("span", {}), h("button", { onclick: () => decide(r.id, "reject", prompt("What is wrong with all of them?") || "", "maya") }, "Send all back")));
+          decide(r.id, "revise", note, approver("script"), o.id); } }, "Ask for change"),
+        h("button", { class: "primary", onclick: () => decide(r.id, "approve", "", approver("script"), o.id) }, "Use this one"))))),
+    h("div", { class: "row" }, h("span", { class: "grow" }), h("button", { onclick: () => decide(r.id, "reject", prompt("What is wrong with all of them?") || "", approver("script")) }, "Send all back")));
 }
-async function decide(id, decision, note = "", by = "layla", choice = null) {
+$("ownsend").onclick = async (e) => {
+  const text = $("owntext").value.trim(), msg = $("ownmsg");
+  if (text.split("\n").filter((x) => x.trim()).length < 2) { msg.className = "fieldmsg bad"; msg.textContent = "Write the hook on the first line and the script's lines below it."; return; }
+  e.target.disabled = true; msg.className = "fieldmsg"; msg.textContent = "Checking your script and writing two other ways… (two model calls)";
+  try {
+    const r = await post("/api/studio/own-script", { ref, text, by: me() });
+    msg.className = r.problems.length ? "fieldmsg bad" : "fieldmsg ok";
+    msg.textContent = `${r.problems.length ? `${r.problems.length} thing${r.problems.length > 1 ? "s" : ""} to fix in yours` : "Yours passed every check"}; ${r.others} other way${r.others === 1 ? "" : "s"} written. Pick one above.`;
+    await load();
+  } catch (err) { msg.className = "fieldmsg bad"; msg.textContent = err.message; } finally { e.target.disabled = false; }
+};
+const approver = (role) => data.approvers[role].id || undefined;  // the person set in Setup; else the server's default
+const me = () => (data && data.approvers.script.id) || undefined;  // no sign-in yet: actions are recorded as the person who picks scripts
+async function decide(id, decision, note = "", by = undefined, choice = null) {
   const r = await post(`/api/requests/${id}/decide`, { decision, by, note, choice });
   toast(r.next ? `Done: ${r.next}` : r.ok ? (r.id ? `Published: ${r.id}` : "Done") : `Not published yet: ${(r.needs || [r.error]).join("; ")}`);
   load();
 }
 async function aiVideo() {
-  if (!document.getElementById("consent").checked) return toast("Confirm the avatar's consent first");
-  try { await post("/api/studio/ai-video", { ref, by: "maya", consent: true }); toast("Recording: the AI presenter video is being made"); } catch (e) { toast(e.message); }
+  if (!$("consent").checked) return toast("Confirm the avatar's consent first");
+  try { await post("/api/studio/ai-video", { ref, by: me(), consent: true }); toast("Recording: the AI presenter video is being made"); } catch (e) { toast(e.message); }
 }
-$("save").onclick = async () => { await post("/api/studio/competitors", { usernames: $("names").value }); toast("Competitors saved"); load(); };
+async function addPhotos() {
+  const fs = $("photos").files; if (!fs.length) return toast("Pick photos first");
+  const fd = new FormData(); fd.append("ref", ref); for (const f of fs) fd.append("files", f);
+  const r = await fetch("/api/studio/photos", { method: "POST", body: fd }); const d = await r.json();
+  toast(r.ok ? `Added ${d.added} photo${d.added === 1 ? "" : "s"}` : d.detail); load();
+}
+async function freeVideo(e) {
+  e.target.disabled = true; e.target.textContent = "Making the video…";
+  const r = await post("/api/studio/free-video", { ref, by: me() });
+  toast(r.ok ? "Free video made: editing has started" : `Needs ${r.needs}`); load();
+}
+$("up").onclick = async () => {
+  const f = $("file").files[0]; if (!f) return toast("Pick a video file");
+  const fd = new FormData(); fd.append("ref", ref); fd.append("file", f);
+  $("upres").textContent = "Uploading…";
+  const r = await fetch("/api/studio/footage", { method: "POST", body: fd });
+  $("upres").textContent = r.ok ? "Uploaded. The studio is checking and captioning it." : "Upload failed";
+};
+
+// ---------- competitors tab ----------
+function industryWords() {
+  const b = data && data.business, where = b && (b.city || b.country_name);
+  const lower = b && b.industry ? b.industry[0].toLowerCase() + b.industry.slice(1) : "";
+  return lower ? `${lower} businesses${where ? " in " + where : ""}` : "businesses";
+}
+function whyCard(acc, p) {
+  return h("a", { class: "card", href: p.permalink || "#", target: "_blank", rel: "noopener" },
+    h("div", { class: "pic" }, p.thumb ? h("img", { src: p.thumb, alt: `Post by @${acc}: ${p.hook || "no caption"}`, loading: "lazy", referrerpolicy: "no-referrer",
+      onerror: (e) => e.target.replaceWith(h("div", { class: "cap" }, p.hook || "(no caption)")) }) : h("div", { class: "cap" }, p.hook || "(no caption)")),
+    h("div", { class: "body" }, h("span", { class: "day" }, `${p.engagement.toLocaleString()} likes + comments`),
+      h("span", { class: "x" }, `${p.x}x their average ${p.kind}`), p.thumb ? h("span", { class: "hook" }, p.hook || "(no caption)") : ""));
+}
+async function readPosts(e) {
+  e.target.disabled = true; e.target.textContent = "Reading…";
+  const r = await post("/api/studio/why/read");
+  if (r.needs) toast(r.needs); else toast(`Read ${r.read} post${r.read === 1 ? "" : "s"}${r.errors.length ? ". Not read: " + r.errors.join("; ") : ""}`);
+  await load();
+}
+function renderWhy() {
+  const w = data.analysis.why, u = w.unread;
+  const est = (u.covers * 0.006 + u.posts * 0.0005).toFixed(2);  // about $0.006 a cover, measured; captions cost little
+  const bar = h("div", { class: "readbar" },
+    h("span", {}, w.needs ? w.needs : u.posts ? `${u.posts} post${u.posts === 1 ? "" : "s"} not read yet (${u.covers} cover${u.covers === 1 ? "" : "s"} to look at). Muse Spark reads each post once: about $${est}, from Marketing's budget.`
+      : "Every fetched post has been read. New posts are read when you run a listing."),
+    w.needs ? h("button", { onclick: () => { showTab("setup"); $("bz-industry").focus(); } }, "Open Setup")
+      : u.posts ? h("button", { class: "primary", id: "readbtn", onclick: readPosts }, "Read them") : "");
+  const accs = w.accounts.filter((x) => x.read), o = w.ours;
+  const us = o.read ? h("div", { class: "wacc us" }, h("h3", {}, "Us", h("span", { class: "note" }, ` · ${o.read} of ${o.posts} posts read · ${o.winners} above our average`)),
+    o.tone ? h("p", { class: "note" }, `Tone of our best posts: ${o.tone}. Our brand voice in Setup: ${data.brand_voice || "not set"}.`) : "",
+    o.patterns.length ? h("ul", { class: "findings" }, ...o.patterns.map((f) => h("li", {}, f.finding))) : h("p", { class: "note" }, o.need),
+    o.weak.length ? h("div", { class: "weak" }, h("b", {}, "Our weak posts, and what to change"),
+      ...o.weak.map((p) => h("div", { class: "weakrow" }, h("a", { href: p.permalink, target: "_blank", rel: "noopener" }, p.hook || "(no caption)"),
+        h("p", { class: "note" }, p.why + "."),
+        p.advice.length ? h("ul", {}, ...p.advice.map((t) => h("li", {}, `Next time: ${t}`))) : h("p", { class: "note" }, "No pattern yet to compare it with: it needs 3 winning posts that share something.")))) : "") : "";
+  $("why").replaceChildren(bar, ...(us ? [us] : []), ...(accs.length ? accs.map((x) => h("div", { class: "wacc" },
+    h("h3", {}, h("a", { href: `https://www.instagram.com/${x.account}/`, target: "_blank", rel: "noopener" }, "@" + x.account),
+      h("span", { class: "note" }, ` · ${x.read} of ${x.posts} posts read · ${x.winners} above their average${x.skipped.length ? ` (${x.skipped.length} set aside)` : ""}`)),
+    x.tone ? h("p", { class: "note" }, `Tone of their best posts: ${x.tone}. A suggestion only: our voice stays the one in Setup.`) : "",
+    x.patterns.length ? h("div", { class: "pattern" },
+      h("ul", { class: "findings" }, ...x.patterns.map((f) => h("li", {}, f.finding))),
+      x.for_us.length ? h("div", { class: "forus" }, "So for us: ", h("ul", {}, ...x.for_us.map((t) => h("li", {}, t[0].toUpperCase() + t.slice(1) + ".")))) : "",
+      h("div", { class: "why-posts", "aria-label": `The posts behind these patterns` }, ...x.best.map((p) => whyCard(x.account, p)))) : "",
+    x.need ? h("p", { class: "note" }, x.need) : "",
+    x.skipped.length ? h("div", { class: "skip" }, h("b", {}, "Set aside, because it doesn't carry over to us: "),
+      ...x.skipped.map((p, i) => h("span", {}, i ? " · " : "", h("a", { href: p.permalink, target: "_blank", rel: "noopener" }, p.hook.slice(0, 50) || "(no caption)"), ` (${p.why_not})`))) : ""))
+    : [h("p", { class: "note" }, "Nothing read yet. Once their posts are read, each competitor shows what its best posts share that its ordinary posts don't: a pattern needs at least 3 winning posts.")]));
+}
+function renderCompetitors(c) {
+  const a = data.analysis, K = (k) => k ?? "—";
+  const none = !a.accounts.length && !a.competitors.length;
+  $("compempty").hidden = !none; $("compbody").hidden = none;
+  if (none) $("compempty").replaceChildren(h("p", {}, `No competitors yet. Add the Instagram business accounts of ${industryWords()} you compete with, and their best posts, engagement and what makes them win show here.`),
+    h("button", { class: "primary", onclick: () => { showTab("setup"); $("addname").focus(); } }, "Add competitors"));
+  const reels = (k) => { if (!k.formats) return "—"; const all = Object.values(k.formats).reduce((x, y) => x + y, 0), v = (k.formats.REELS || 0) + (k.formats.VIDEO || 0);
+    return all ? `${Math.round(100 * v / all)}%` : "—"; };
+  const best = (top) => top && top[0] ? h("a", { href: top[0].permalink, target: "_blank", rel: "noopener", title: top[0].hook || "" }, `${(top[0].hook || "(no caption)").slice(0, 40)}${top[0].x != null ? " · " + top[0].x + "x" : ""}`) : "—";
+  const grow = Object.fromEntries(a.accounts.filter((x) => x.growth != null).map((x) => [x.account, x]));
+  const fol = (name, k) => { const g = grow[name.replace(/^@/, "").toLowerCase()];
+    return h("td", {}, K(k.followers?.toLocaleString()), g ? h("span", { class: `note ${g.growth >= 0 ? "grew" : "shrank"}` }, ` ${g.growth >= 0 ? "+" : ""}${g.growth.toLocaleString()} since ${g.growth_since.slice(5).split("-").reverse().join("/")}`) : ""); };
+  const row = (name, k, top, cls) => h("tr", { class: cls || "" }, h("td", {}, name), fol(name, k), h("td", {}, K(k.per_week)), h("td", {}, K(k.avg_likes)),
+    h("td", {}, K(k.avg_comments)), h("td", {}, k.engagement_rate != null ? `${k.engagement_rate}%` : k.engagement_rate_by_reach != null ? `${k.engagement_rate_by_reach}% of reach` : "—"),
+    h("td", {}, reels(k)), h("td", {}, K(k.best_day)), h("td", {}, k.best_hour != null ? `${k.best_hour}:00` : "—"), h("td", {}, K(k.outliers)), h("td", {}, best(top)));
+  $("kpimsg").textContent = a.competitors.length ? "" : c.instagram ? "Their posts have not been fetched yet: add or re-add an account in Setup, or run a listing."
+    : (c.instagram_why || "").startsWith("Instagram refused") ? `${c.instagram_why}. Until then, import posts from a spreadsheet in Setup.`
+    : "Connect Instagram in Settings, or import posts from a spreadsheet in Setup.";
+  $("kpi").replaceChildren(h("tr", {}, ...["Account", "Followers", "Posts/wk", "Avg likes", "Avg comments", "Eng. rate", "Reels share", "Best day", "Best hour", "Above average", "Best post"].map((x) => h("th", {}, x))),
+    ...(a.ours.posts ? [row("Us", a.ours.kpis, null, "ours")] : []), ...a.competitors.map((r) => row("@" + r.account, r.kpis, r.best)));
+  const KIND = { VIDEO: "Reel", REELS: "Reel", CAROUSEL: "Carousel", IMAGE: "Image" };
+  const caption = (p) => h("div", { class: "cap" }, p.hook || "(no caption)");
+  const card = (acc, p) => h("div", { class: "card" },
+    h("div", { class: "pic" }, p.thumb ? h("img", { src: p.thumb, alt: `${KIND[p.type] || "Post"} by @${acc}: ${p.hook || "no caption"}`, loading: "lazy", referrerpolicy: "no-referrer",
+      onerror: (e) => e.target.replaceWith(caption(p)) }) : caption(p), h("span", { class: "badge" }, KIND[p.type] || "Post")),
+    h("div", { class: "body" }, h("span", { class: "day" }, `${p.engagement.toLocaleString()} likes + comments`),
+      h("span", { class: "x" }, `${p.x}x their average ${p.kind} (${p.avg.toLocaleString()})`), h("span", {}, `${p.likes.toLocaleString()} likes · ${p.comments.toLocaleString()} comments`),
+      h("span", { class: "hook" }, p.hook || "(no caption)"), h("span", { class: "note" }, p.at),
+      p.permalink ? h("a", { href: p.permalink, target: "_blank", rel: "noopener" }, "Open on Instagram") : ""));
+  $("cars").replaceChildren(...(a.competitors.length ? a.competitors.map((r) => {
+    const track = h("div", { class: "track" }, ...(r.best && r.best.length ? r.best.map((p) => card(r.account, p))
+      : [h("p", { class: "note" }, "No post above its average yet (it needs at least two reels or two other posts to compare).")]));
+    const by = (d) => () => track.scrollBy({ left: d * track.clientWidth * 0.9, behavior: "smooth" });
+    return h("div", { class: "car" }, h("h3", {}, h("a", { href: `https://www.instagram.com/${r.account}/`, target: "_blank", rel: "noopener" }, "@" + r.account),
+      h("span", { class: "note" }, `${r.kpis.followers != null ? r.kpis.followers.toLocaleString() + " followers · " : ""}${[r.kpis.avg_reel != null ? `average reel ${r.kpis.avg_reel.toLocaleString()}` : "", r.kpis.avg_post != null ? `average post ${r.kpis.avg_post.toLocaleString()}` : ""].filter(Boolean).join(" · ")} likes + comments · best posts, ranked by how far above it`),
+      data.ad_library[r.account.toLowerCase()] ? h("a", { class: "adlink", href: data.ad_library[r.account.toLowerCase()], target: "_blank", rel: "noopener" }, "See their ads ↗") : "",
+      h("span", { class: "arrows" }, h("button", { "aria-label": `Earlier best posts of @${r.account}`, onclick: by(-1) }, "←"),
+        h("button", { "aria-label": `More best posts of @${r.account}`, onclick: by(1) }, "→"))), facts(r), track);
+  }) : [h("p", { class: "note" }, "No posts fetched yet.")]));
+  function facts(r) {
+    const days = r.daily || [], posts = days.reduce((n, d) => n + d.posts, 0);
+    if (!posts) return h("p", { class: "facts" }, "No posts in the last 30 days.");
+    const top = days.reduce((x, d) => (d.engagement > x.engagement ? d : x));
+    const when = new Date(top.date + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    const f = r.kpis.formats || {}, all = Object.values(f).reduce((x, y) => x + y, 0), reels = (f.REELS || 0) + (f.VIDEO || 0);
+    return h("p", { class: "facts" }, h("b", {}, "Last 30 days: "), `${posts} post${posts > 1 ? "s" : ""} (${Math.round(posts / 30 * 7 * 10) / 10} a week) · busiest ${when}, `,
+      h("b", {}, `${top.engagement.toLocaleString()} likes + comments`), all ? ` · ${Math.round(100 * reels / all)}% reels` : "");
+  }
+  renderWhy();
+  renderAds();
+  const st = data.strategy, LABEL = { winning: "winning: keep", fading: "fading: shift", retired: "resting", steady: "steady", untested: "untested" };
+  $("strategy").replaceChildren(...(st.note ? [h("p", { class: "note" }, st.note)] : []), h("table", { class: "kpi" },
+    h("tr", {}, ...["Angle", "Status", "Our last posts", "Competitors", "Why"].map((x) => h("th", {}, x))),
+    ...st.angles.map((x) => h("tr", {}, h("td", { title: x.what }, x.angle), h("td", { class: `st-${x.status}` }, LABEL[x.status]),
+      h("td", {}, x.last.length ? x.last.map((r) => r + "x").join(", ") : "—"),
+      h("td", {}, x.market_posts ? `${x.market_score}x on ${x.market_posts} (${x.market_outliers} outliers)` : "—"), h("td", { class: "note why" }, x.why)))));
+}
+
+// ---------- competitors: their ads, pinned by hand ----------
+function renderAds() {
+  const names = data.analysis.accounts.map((x) => x.account), keep = $("adacc").value;
+  $("adacc").replaceChildren(...names.map((n) => h("option", { value: n, selected: n === keep }, "@" + n)));
+  $("adlinks").replaceChildren(...(names.length ? [h("b", {}, "See their ads: "), ...names.flatMap((n, i) => [i ? " · " : "",
+    h("a", { href: data.ad_library[n], target: "_blank", rel: "noopener" }, "@" + n + " ↗")])] : ["Add competitors in Setup first."]));
+  $("adlist").replaceChildren(...(data.ads.length ? data.ads.map((c) => h("div", { class: "ad" },
+    h("div", { class: "top" }, h("b", {}, "@" + c.account), h("span", { class: "days" }, c.ended ? `Ran ${days(c.started, c.ended)} days` : `Running ${days(c.started)} days`),
+      h("button", { class: "x", "aria-label": `Remove this ad of @${c.account}`, title: "Remove from the board", onclick: () => unpinAd(c) }, "×")),
+    h("span", { class: "note" }, c.ended ? `${c.started} to ${c.ended}` : `since ${c.started}`),
+    h("span", { class: "copy" }, c.text), h("a", { href: c.url, target: "_blank", rel: "noopener" }, "Open in the Ad Library ↗")))
+    : [h("p", { class: "note" }, "No ads pinned yet. Open a competitor's ads above, pick one that has been running for a while, and pin it here.")]));
+}
+$("adrunning").onchange = () => { const r = $("adrunning").checked; $("adend").hidden = r; $("adendlabel").hidden = r; };
+$("adpin").onclick = async () => {
+  const msg = $("admsg");
+  const body = { account: $("adacc").value, url: $("adurl").value, started: $("adstart").value, text: $("adtext").value, ended: $("adrunning").checked ? null : $("adend").value || null };
+  if (!body.account) { msg.className = "fieldmsg bad grow"; msg.textContent = "Add a competitor in Setup first."; return; }
+  const r = await post("/api/studio/ads/pin", body);
+  if (!r.ok) { msg.className = "fieldmsg bad grow"; msg.textContent = r.error; return; }
+  msg.className = "fieldmsg ok grow"; msg.textContent = `Pinned @${r.card.account}'s ad on the research board.`;
+  for (const id of ["adurl", "adstart", "adtext", "adend"]) $(id).value = "";
+  await load();
+};
+async function unpinAd(c) {
+  const r = await post("/api/studio/ads/unpin", { card: c.id });
+  $("admsg").className = r.ok ? "fieldmsg grow" : "fieldmsg bad grow"; $("admsg").textContent = r.ok ? `Removed @${c.account}'s ad from the board.` : r.error;
+  await load();
+}
+
+// ---------- setup: competitor accounts ----------
+const STATUS = { fetched: "✓ fetched", not_found: "✗ not found, or not a business or creator account", error: "⚠ could not check", not_checked: "⚠ not checked yet (Instagram not connected)" };
+const handle = (raw) => {
+  const s = raw.trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/[/?].*$/, "").replace(/^@/, "").toLowerCase();
+  return /^[a-z0-9._]{1,30}$/.test(s) && !s.includes("..") && !/^\.|\.$/.test(s) ? s : null;
+};
+const saved = () => data.analysis.accounts.map((x) => x.account);
+let undoTimer;
+function offerUndo(text, before) {
+  $("undotext").textContent = text; $("undo").hidden = false;
+  $("undobtn").onclick = async () => { $("undo").hidden = true; await saveNames(before); $("addmsg").textContent = "Undone."; $("addmsg").className = "fieldmsg"; };
+  clearTimeout(undoTimer); undoTimer = setTimeout(() => { $("undo").hidden = true; }, 8000);
+}
+async function saveNames(names) {
+  const r = await post("/api/studio/competitors", { usernames: names.map((n) => "@" + n).join(", "), by: me() });
+  await load();
+  return r;
+}
+async function addAccount(raw) {
+  const msg = $("addmsg"), hnd = handle(raw);
+  msg.className = "fieldmsg bad";
+  if (!raw.trim()) { msg.textContent = "Type an Instagram handle."; return; }
+  if (!hnd) { msg.textContent = `"${raw.trim()}" is not an Instagram handle: letters, numbers, dots and underscores only, up to 30.`; return; }
+  if (saved().includes(hnd)) { msg.textContent = `@${hnd} is already on the list.`; return; }
+  const before = saved();
+  msg.className = "fieldmsg"; msg.textContent = `Checking @${hnd} on Instagram…`; $("addbtn").disabled = true;
+  try {
+    const r = await saveNames([...before, hnd]);
+    const acc = data.analysis.accounts.find((x) => x.account === hnd);
+    $("addname").value = "";
+    if (!r.fetched) { msg.className = "fieldmsg"; msg.textContent = `@${hnd} added. It will be checked once Instagram is connected.`; }
+    else if (acc && acc.status === "fetched" && acc.fits === false) { msg.className = "fieldmsg bad"; msg.textContent = `⚠ @${hnd} added (${(acc.followers ?? 0).toLocaleString()} followers), but it may not be in ${data.business.industry.toLowerCase()}: ${acc.fit_why} Keep it only if they really compete with you; remove it with ×.`; }
+    else if (acc && acc.status === "fetched") { msg.className = "fieldmsg ok"; msg.textContent = `✓ @${hnd} added: ${(acc.followers ?? 0).toLocaleString()} followers, ${acc.posts_read} recent posts read. See them under Competitors.`; }
+    else { msg.className = "fieldmsg bad"; msg.textContent = `✗ @${hnd} added, but Instagram could not read it: ${acc?.error || r.says}. Check the spelling; it must be a business or creator account.`; }
+    offerUndo(`Added @${hnd}.`, before);
+  } finally { $("addbtn").disabled = false; }
+}
+async function removeAccount(hnd) {
+  const before = saved();
+  await saveNames(before.filter((x) => x !== hnd));
+  $("addmsg").className = "fieldmsg"; $("addmsg").textContent = `Removed @${hnd}. Its fetched posts stay in the history.`;
+  offerUndo(`Removed @${hnd}.`, before);
+}
+function renderAccounts() {
+  const list = data.analysis.accounts;
+  if (!list.length) {
+    $("acclist").replaceChildren(h("div", { class: "empty" }, h("p", {}, `No competitor accounts yet. Add the Instagram business account of one of the ${industryWords()} you compete with above, and its followers and best posts appear within seconds.`),
+      h("p", { class: "note" }, "Personal accounts can't be read: Instagram only shares business and creator accounts.")));
+    return;
+  }
+  const when = (t) => t ? new Date(t).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+  $("acclist").replaceChildren(h("div", { class: "acc head" }, h("span", {}), h("span", {}, "Account"), h("span", { class: "c3" }, "Followers"), h("span", { class: "c4" }, "Posts"),
+      h("span", { class: "c5" }, "Last fetched"), h("span", {}, "Status"), h("span", {})),
+    ...list.map((x) => h("div", { class: "acc" },
+      x.avatar ? h("img", { class: "av", src: x.avatar, alt: "", referrerpolicy: "no-referrer", onerror: (e) => e.target.replaceWith(h("span", { class: "av" }, x.account[0].toUpperCase())) })
+        : h("span", { class: "av", "aria-hidden": "true" }, x.account[0].toUpperCase()),
+      h("a", { href: `https://www.instagram.com/${x.account}/`, target: "_blank", rel: "noopener" }, "@" + x.account),
+      h("span", { class: "c3" }, x.followers != null ? x.followers.toLocaleString() : "—"), h("span", { class: "c4" }, x.media_count != null ? x.media_count.toLocaleString() : "—"),
+      h("span", { class: "c5" }, x.status === "fetched" ? when(x.checked_at) : "—"),
+      h("span", { class: `st ${x.status}`, title: x.error || "" }, STATUS[x.status] + (x.status === "error" ? `: ${x.error}` : ""),
+        x.fits === false ? h("div", { class: "warnline", title: x.fit_why }, `⚠ May not be in ${(data.business.industry || "your industry").toLowerCase()}: ${x.fit_why}`) : ""),
+      h("button", { class: "x", "aria-label": `Remove @${x.account}`, title: `Remove @${x.account}`, onclick: () => removeAccount(x.account) }, "×"))));
+}
+$("addbtn").onclick = () => addAccount($("addname").value);
+$("addname").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addAccount($("addname").value); } };
 $("suggest").onclick = async () => {
-  $("sugg").textContent = "Searching…";
+  $("sugg").replaceChildren(h("p", { class: "note" }, `Searching the web for ${industryWords()} on Instagram… (a paid web search, from Marketing's budget)`));
   const r = await post("/api/studio/competitors/suggest");
-  $("sugg").replaceChildren(...(r.ok ? [h("span", {}, "Suggested (check before saving): "), ...r.suggestions.map((s) => h("a", { href: "#", style: "margin-right:8px",
-    onclick: (e) => { e.preventDefault(); $("names").value = [$("names").value, "@" + s].filter(Boolean).join(", "); } }, "@" + s))] : [h("span", {}, r.needs)]));
+  if (!r.ok) { $("sugg").replaceChildren(h("p", { class: "note" }, r.needs)); return; }
+  $("sugg").replaceChildren(h("p", { class: "note" }, "Suggested from a web search: check each one before adding."),
+    h("div", { class: "suggs" }, ...r.suggestions.map((s) => h("div", { class: "sugg" },
+      h("a", { href: `https://www.instagram.com/${s}/`, target: "_blank", rel: "noopener" }, "@" + s),
+      saved().includes(s) ? h("span", { class: "note" }, "On the list") : h("button", { onclick: (e) => { e.target.disabled = true; addAccount(s); } }, "+ Add")))));
 };
 $("imp").onclick = async () => {
   const f = $("csv").files[0]; if (!f) return toast("Pick the filled-in template");
@@ -209,64 +758,186 @@ $("imp").onclick = async () => {
   $("impres").textContent = r.ok ? `Imported ${d.imported} posts, ${d.outliers} outliers.${d.errors.length ? " Skipped: " + d.errors.slice(0, 3).join("; ") : ""}` : d.detail;
   load();
 };
-$("up").onclick = async () => {
-  const f = $("file").files[0]; if (!f) return toast("Pick a video file");
-  const fd = new FormData(); fd.append("ref", ref); fd.append("file", f);
-  $("upres").textContent = "Uploading…";
-  const r = await fetch("/api/studio/footage", { method: "POST", body: fd });
-  $("upres").textContent = r.ok ? "Uploaded. The studio is checking and captioning it." : "Upload failed";
+
+// ---------- our ads ----------
+$("oursload").onclick = async (e) => {
+  e.target.disabled = true; $("oursmsg").textContent = "Reading our ad account…";
+  try {
+    const r = await api("/api/studio/our-ads");
+    if (!r.ok) { $("oursmsg").textContent = r.needs; $("ours").replaceChildren(); return; }
+    const n = (v, f = (x) => x.toLocaleString()) => (v == null ? "—" : f(v)), money = (v) => `${r.currency} ${v.toFixed(2)}`;
+    const t = r.total;
+    $("oursmsg").textContent = `${r.name} (${r.account}) · last 30 days: ${n(t.spend, money)} spent, ${n(t.reach)} reached, ${n(t.clicks)} clicks, ${n(t.leads)} leads.`;
+    $("ours").replaceChildren(r.ads.length ? h("table", { class: "kpi" }, h("tr", {}, ...["Ad", "Status", "Spend", "Reach", "Impressions", "Clicks", "CTR", "Cost per click", "Leads"].map((x) => h("th", {}, x))),
+      ...r.ads.map((a) => h("tr", {}, h("td", {}, a.name || a.id), h("td", {}, a.status), h("td", {}, n(a.spend, money)), h("td", {}, n(a.reach)), h("td", {}, n(a.impressions)),
+        h("td", {}, n(a.clicks)), h("td", {}, n(a.ctr, (x) => x.toFixed(2) + "%")), h("td", {}, n(a.cpc, money)), h("td", {}, n(a.leads)))))
+      : h("p", { class: "note" }, "The account has no ads yet."));
+  } finally { e.target.disabled = false; }
 };
+
+// ---------- approvals ----------
+async function loadApprovers() {
+  const r = await api("/api/studio/approvers");
+  $("approvalform").replaceChildren(...Object.entries(r.roles).map(([k, label]) => h("div", {}, h("label", { for: `ap-${k}` }, label),
+    h("select", { id: `ap-${k}`, onchange: () => { $("apmsg").className = "state-dirty"; $("apmsg").textContent = "Unsaved changes"; } },
+      h("option", { value: "" }, "Nobody set yet"), ...r.team.map((p) => h("option", { value: p.id, selected: r.set[k] === p.id }, `${p.name} · ${p.role}`))))));
+  $("apmsg").className = Object.values(r.set).some(Boolean) ? "state-ok" : ""; $("apmsg").textContent = Object.values(r.set).some(Boolean) ? "Saved ✓" : "Not set yet: anyone can answer, and stuck work goes to the owner.";
+}
+$("apsave").onclick = async () => {
+  const values = Object.fromEntries([...document.querySelectorAll("#approvalform select")].map((x) => [x.id.slice(3), x.value]));
+  const r = await post("/api/studio/approvers", { values });
+  if (!r.ok) { $("apmsg").className = "state-dirty"; $("apmsg").textContent = r.error; return; }
+  await loadApprovers(); await load();
+};
+
+// ---------- rhythm and the plan ----------
+const RH = { auto: "rh-auto", at: "rh-at", rhythm: "rh-rhythm", repeat_angle_days: "rh-angle", repeat_listing_days: "rh-listing" };
+const rhValues = () => Object.fromEntries(Object.entries(RH).map(([k, id]) => [k, k === "auto" ? ($(id).checked ? "on" : "off") : $(id).value]));
+let rhSaved = "";
+function rhState(text, cls) { const dirty = JSON.stringify(rhValues()) !== rhSaved; $("rhmsg").className = cls || (dirty ? "state-dirty" : "state-ok"); $("rhmsg").textContent = text || (dirty ? "Unsaved changes" : "Saved ✓"); }
+async function loadRhythm() {
+  const r = await api("/api/studio/rhythm");
+  $("rh-rhythm").replaceChildren(...r.rhythms.map((x) => h("option", { value: x, selected: x === r.settings.rhythm }, x[0].toUpperCase() + x.slice(1))));
+  for (const [k, id] of Object.entries(RH)) if (k === "auto") $(id).checked = r.settings.auto === "on"; else if (k !== "rhythm") $(id).value = r.settings[k];
+  rhSaved = JSON.stringify(rhValues()); rhState(r.next ? `Saved ✓ · ${r.next}` : "Saved ✓ · automatic is off: runs start only when you press Run this listing.");
+}
+for (const id of Object.values(RH)) $(id).oninput = () => rhState();
+$("rhsave").onclick = async () => {
+  const r = await post("/api/studio/rhythm", { values: rhValues(), by: me() });
+  if (!r.ok) return rhState(r.error, "state-dirty");
+  await loadRhythm(); await load();
+};
+$("planbtn").onclick = async () => { await post("/api/studio/plan/week"); await load(); toast("Planned. Each day's scripts are written that morning."); };
+function renderChain() {
+  const MARK = { done: "✓", waiting: "●", working: "…", "not yet": "○" };
+  $("chain").replaceChildren(...data.chain.map((c) => h("li", { class: `c-${c.state.replace(" ", "-")}` }, h("span", { class: "m", "aria-hidden": "true" }, MARK[c.state]),
+    h("span", {}, h("b", {}, c.step), h("span", { class: "note" }, ` · ${c.state === "waiting" ? "waiting for " : ""}${c.who}`)))));
+}
+function renderPlan() {
+  const rh = data.rhythm, p = rh.plan, done = new Set(rh.started), title = (ref) => (data.listings.find((l) => l.ref === ref) || {}).title || "";
+  $("nextrun").textContent = rh.next || "Automatic is off (Setup → Rhythm).";
+  const day = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const move = (d, step) => async () => { const r = await post("/api/studio/plan/move", { day: d, step, by: me() }); if (!r.ok) toast(r.error); await load(); };
+  $("plan").replaceChildren(...(p ? [h("ol", { class: "days" }, ...p.days.map((d, i) => h("li", { class: done.has(d.date) ? "done" : "" },
+      h("span", { class: "d" }, day(d.date)), h("span", { class: "grow" }, h("b", {}, d.ref ? `${d.ref} · ${title(d.ref)}` : "Nothing to make"), h("span", { class: "note" }, ` · ${d.why}`)),
+      done.has(d.date) ? h("span", { class: "note ok" }, "scripts written") : h("span", { class: "moves" },
+        h("button", { "aria-label": `Move ${day(d.date)} earlier`, disabled: i === 0, onclick: move(d.date, -1) }, "↑"),
+        h("button", { "aria-label": `Move ${day(d.date)} later`, disabled: i === p.days.length - 1, onclick: move(d.date, 1) }, "↓")))))]
+    : [h("p", { class: "note" }, `No plan yet. Press Plan from today, or turn on the automatic run in Setup → Rhythm (${rh.settings.rhythm}).`)]));
+}
+
+// ---------- setup: style notes ----------
+async function loadStyle() {
+  const r = await api("/api/studio/style");
+  const act = (path, id) => async () => { await post(path, { note: id, by: me() }); loadStyle(); };
+  $("stylelist").replaceChildren(
+    ...(r.notes.length ? [h("ul", { class: "notes" }, ...r.notes.map((n) => h("li", {}, h("span", {}, n.text, h("span", { class: "note" }, ` · from ${n.from} decision${n.from === 1 ? "" : "s"}`)),
+      h("button", { class: "x", "aria-label": `Delete note: ${n.text}`, title: "Delete this note", onclick: act("/api/studio/style/delete", n.id) }, "×"))))]
+      : [h("p", { class: "note" }, "No notes yet. They appear as you ask for changes, pick scripts and write your own.")]),
+    ...(r.deleted.length ? [h("details", {}, h("summary", { class: "note" }, `${r.deleted.length} deleted`),
+      h("ul", { class: "notes" }, ...r.deleted.map((n) => h("li", { class: "gone" }, h("span", {}, n.text), h("button", { onclick: act("/api/studio/style/restore", n.id) }, "Restore")))))] : []));
+}
+
+// ---------- setup: business ----------
+let biz = null, bizSaved = "";
+const bizValues = () => ({ industry: $("bz-industry").value.trim(), country: $("bz-country").value, city: $("bz-city").value.trim(), timezone: $("bz-timezone").value || "",
+  platforms: [...document.querySelectorAll("#bz-platforms input:checked")].map((i) => i.value).join(", ") });
+function bizState(text, cls) {
+  const dirty = JSON.stringify(bizValues()) !== bizSaved;
+  $("bizmsg").className = cls || (dirty ? "state-dirty" : biz.missing.length ? "" : "state-ok");
+  $("bizmsg").textContent = text || (dirty ? "Unsaved changes" : biz.missing.length ? `Not set yet: ${biz.missing.join(" and ").toLowerCase()} needed.` : "Saved ✓");
+}
+function zones(sel) {
+  const c = biz.countries.find((x) => x.code === $("bz-country").value), z = c ? c.zones : [];
+  $("bz-timezone").replaceChildren(...(z.length > 1 ? [h("option", { value: "" }, "Pick your time zone")] : []), ...z.map((n) => h("option", { value: n, selected: n === sel }, n.replace(/_/g, " "))));
+  $("bz-tzbox").hidden = z.length < 2;
+}
+async function loadBusiness() {
+  biz = await api("/api/business");
+  const v = Object.fromEntries(Object.entries(biz.profile).map(([k, f]) => [k, f.value]));
+  $("bz-industry").value = v.industry; $("bz-city").value = v.city;
+  $("bz-country").replaceChildren(h("option", { value: "" }, "Pick a country"), ...biz.countries.map((c) => h("option", { value: c.code, selected: c.code === v.country }, c.name)));
+  zones(v.timezone);
+  const on = v.platforms ? v.platforms.split(",").map((x) => x.trim()) : biz.platforms_known;
+  $("bz-platforms").replaceChildren(...biz.platforms_known.map((pl) => h("label", { class: "check" }, h("input", { type: "checkbox", value: pl, checked: on.includes(pl), onchange: () => bizState() }), pl)));
+  bizSaved = JSON.stringify(bizValues());
+  $("bizstate").textContent = biz.missing.length ? "· not set yet" : "· saved";
+  bizState();
+}
+for (const id of ["bz-industry", "bz-city"]) $(id).oninput = () => bizState();
+$("bz-timezone").onchange = () => bizState();
+$("bz-country").onchange = () => { zones(); bizState(); };
+$("bizsave").onclick = async () => {
+  const v = bizValues();
+  if (!v.industry || !v.country) return bizState("Industry and country are both needed.", "state-dirty");
+  if (!$("bz-tzbox").hidden && !v.timezone) return bizState("Pick your time zone: this country has more than one.", "state-dirty");
+  if (!v.platforms) return bizState("Pick at least one place we post.", "state-dirty");
+  const r = await post("/api/business", { values: v, by: me() });
+  if (!r.ok) return bizState(r.error, "state-dirty");
+  await loadBusiness(); await load();
+  bizState(r.changed.length ? "Saved ✓ · searches, suggestions, ad links and hours now follow it." : "Saved ✓ · nothing changed.");
+};
+
+// ---------- setup: brand ----------
+let brandSaved = {}, drafted = false, brandIsSet = false;
+const brandValues = () => Object.fromEntries([...document.querySelectorAll("#brandform textarea")].map((t) => [t.id.slice(2), t.value]));
+function brandState(text) {
+  const dirty = Object.entries(brandValues()).some(([k, v]) => (brandSaved[k] || "") !== v);
+  $("brandmsg").className = dirty ? "state-dirty" : brandIsSet ? "state-ok" : "";
+  $("brandmsg").textContent = text || (dirty ? "Unsaved changes" : brandIsSet ? "Saved ✓" : "Not saved yet");
+}
 async function loadBrand() {
   const b = await api("/api/brand");
+  brandIsSet = b.fields.some((f) => b.profile[f.key].by);  // something was saved: "Saved ✓" until a field changes
+  $("brandstate").textContent = b.set ? "· saved" : brandIsSet ? "· partly filled in" : "· not set yet";
   $("brandnote").textContent = (b.set ? "The writers use this on every idea, script and post: " : "Not set yet. Until it is, writers are told to write plainly and invent no slogan. Read by: ") +
     b.used_by.join(", ") + ". A script or post with a word from \"never use\" goes back to its writer.";
-  $("brandform").replaceChildren(...b.fields.map((f) => {
-    const v = b.profile[f.key];
-    return h("div", { class: ["positioning", "audience", "cta"].includes(f.key) ? "wide" : "" },
-      h("label", { for: `b-${f.key}` }, f.label), h("textarea", { id: `b-${f.key}`, placeholder: f.hint, rows: 1 }, v.value),
+  const byKey = Object.fromEntries(b.fields.map((f) => [f.key, f]));
+  brandSaved = Object.fromEntries(b.fields.map((f) => [f.key, b.profile[f.key].value || ""]));
+  $("brandform").replaceChildren(...BRAND_GROUPS.map(([title, keys]) => h("div", { class: "bcard" }, h("h3", {}, title), ...keys.filter((k) => byKey[k]).map((k) => {
+    const f = byKey[k], v = b.profile[k];
+    return h("div", {}, h("label", { for: `b-${k}` }, f.label), h("textarea", { id: `b-${k}`, placeholder: f.hint, rows: 2, oninput: () => brandState() }, v.value),
       v.by ? h("div", { class: "who" }, `saved by ${NAMES[v.by] || v.by} · ${v.at.slice(0, 10)}${v.via && v.via !== "typed" ? " · " + v.via : ""}`) : "");
-  }));
+  }))));
 }
-const brandValues = () => Object.fromEntries([...document.querySelectorAll("#brandform textarea")].map((t) => [t.id.slice(2), t.value]));
-let drafted = false;
 $("brandsave").onclick = async () => {
-  const r = await post("/api/brand", { values: brandValues(), by: "maya", via: drafted ? "drafted by the Brand brain, checked by Maya" : "typed" });
+  const r = await post("/api/brand", { values: brandValues(), by: me(), via: drafted ? `drafted by the Brand brain, checked by ${data.approvers.script.id ? data.approvers.script.label.split(" (")[0] : "the Marketing manager"}` : "typed" });
   drafted = false;
-  $("brandmsg").textContent = r.changed.length ? `Saved: ${r.changed.length} field${r.changed.length > 1 ? "s" : ""}. The next script uses it.` : "Nothing changed.";
-  loadBrand();
+  await loadBrand();
+  brandState(r.changed.length ? `Saved ✓ · ${r.changed.length} field${r.changed.length > 1 ? "s" : ""}. The next script uses it.` : "Saved ✓ · nothing changed.");
 };
 $("branddraft").onclick = async () => {
-  $("brandmsg").textContent = "The Brand brain is drafting from our company knowledge and our own posts… (one model call)";
+  brandState("The Brand brain is drafting from our company knowledge and our own posts… (one model call)");
   const r = await post("/api/brand/draft");
-  if (r.needs) { $("brandmsg").textContent = r.needs; return; }
+  if (r.needs) { brandState(r.needs); return; }
   for (const [k, v] of Object.entries(r.values)) { const t = $(`b-${k}`); if (t && v && !t.value.trim()) t.value = v; }
   drafted = true;
-  $("brandmsg").textContent = `Draft filled into the empty fields, from ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}. Read it, change anything, then Save. Nothing is saved yet.`;
+  brandState(`Unsaved changes · draft filled into the empty fields from ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}. Read it, change anything, then Save.`);
 };
 $("learngo").onclick = async () => {
   const urls = $("learnurls").value.split(/\s+/).filter((u) => u.startsWith("http")), document = $("learndoc").value;
   if (!urls.length && !document.trim()) return toast("Give a web address or paste a document");
   $("learnres").textContent = "The Brand brain is reading… (one model call)";
-  const r = await post("/api/brand/learn", { urls, document, document_name: $("learndoc").dataset.name || "company profile", company: $("learnco").value, by: "maya" });
+  const r = await post("/api/brand/learn", { urls, document, document_name: $("learndoc").dataset.name || "company profile", company: $("learnco").value, by: me() });
   if (r.needs) { $("learnres").textContent = r.needs; return; }
   for (const [k, v] of Object.entries(r.brand || {})) { const t = $(`b-${k}`); if (t && v && !t.value.trim()) t.value = v; }
-  drafted = true;
+  drafted = true; brandState();
   $("learnres").replaceChildren(
     h("div", {}, h("b", {}, `${r.proposed.length} knowledge cards proposed`), ` about ${r.company}, from ${r.pages.length} source${r.pages.length > 1 ? "s" : ""}. `,
       h("a", { href: "knowledge.html" }, "Confirm them on the Knowledge page →")),
-    ...r.proposed.map((k) => h("div", { class: "muted", style: "padding:2px 0" }, `${k.id} · ${k.title}: “${k.quote}”`)),
-    r.dropped.length ? h("div", { style: "margin-top:4px" }, `Dropped ${r.dropped.length}: ${r.dropped.map((d) => `${d.title} (${d.why})`).join("; ")}`) : "",
-    r.problems.length ? h("div", { class: "muted" }, "Could not read: " + r.problems.join("; ")) : "",
-    h("div", { class: "muted" }, "Brand fields it could support were filled into the empty boxes below; check them, then Save."));
+    ...r.proposed.map((k) => h("div", { class: "learnrow" }, `${k.id} · ${k.title}: “${k.quote}”`)),
+    r.dropped.length ? h("div", { class: "learnrow" }, `Dropped ${r.dropped.length}: ${r.dropped.map((d) => `${d.title} (${d.why})`).join("; ")}`) : "",
+    r.problems.length ? h("div", { class: "learnrow" }, "Could not read: " + r.problems.join("; ")) : "",
+    h("div", { class: "learnrow" }, "Brand fields it could support were filled into the empty boxes below; check them, then Save."));
 };
 $("learndemo").onclick = async () => {
   const d = await api("/api/brand/demo-profile");
   $("learndoc").value = d.text; $("learndoc").dataset.name = d.name; $("learnco").value = "Diwan Realty";
   toast("Demo profile loaded: everything in it is fictional");
 };
-loadBrand();
-load();
-follow((evs) => { if (evs.some((e) => ["agent.pack", "content.made", "step.blocked", "post.seen", "decision.made"].includes(e.type))) { clearTimeout(load.t); load.t = setTimeout(load, 400); } });
+loadBrand().then(() => brandState());
+load().then(loadBusiness); loadStyle(); loadRhythm(); loadApprovers();
+follow((evs) => { if (evs.some((e) => ["agent.pack", "content.made", "step.blocked", "post.seen", "competitor.checked", "decision.made"].includes(e.type))) { clearTimeout(load.t); load.t = setTimeout(load, 400); } });
 </script>
 </body>
 </html>

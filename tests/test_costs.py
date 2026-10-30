@@ -49,6 +49,22 @@ def test_budget_reached_stops_live_calls(monkeypatch, tmp_path):
     assert len(seen) == 1
 
 
+def test_marketing_and_the_rest_of_the_office_have_separate_caps(monkeypatch, tmp_path):
+    from diwan.agents.charters import get
+    assert costs.part_of("mscript") == "marketing" and costs.part_of("mkt") == "marketing" and costs.part_of("rania") == "rest"
+    assert costs.budget() == 25 and costs.budget("marketing") == 20 and costs.budget("rest") == 5  # the defaults
+    costs.record("mscript", {"provider": "meta"}, extra_usd=20.5)  # Marketing spends past its 20
+    assert not costs.allowed("mtrend") and costs.allowed("scribe")  # the studio stops; the front desk keeps working
+    monkeypatch.setenv("META_API_KEY", "k")
+    assert not runner.has_model(get("mscript"), "s", "u") and runner.has_model(get("scribe"), "s", "u")
+    costs.record("scribe", {"provider": "meta"}, extra_usd=4.6)  # the whole office past 25: everyone stops
+    assert not costs.allowed("scribe") and not costs.allowed()
+    parts = costs.summary()["parts"]
+    assert parts["marketing"] == {"budget_usd": 20, "spend_usd": 20.5, "left_usd": 0, "over": True} and parts["rest"]["spend_usd"] == 4.6
+    monkeypatch.setenv("DIWAN_BUDGET_MARKETING_USD", "30")  # a Marketing cap above the total is held to the total
+    assert costs.budget("marketing") == 25 and costs.budget("rest") == 0
+
+
 def test_nvidia_free_endpoint_costs_nothing():
     assert costs.estimate("nvidia", 10_000, 10_000) == 0.0
 
@@ -70,7 +86,7 @@ def _search_reply(final: str):
 
 def test_trends_pin_only_the_final_answer_tied_to_pages_the_search_opened(monkeypatch, tmp_path):
     """The first live run pinned the model's narration ("I'll research...") as trends."""
-    from diwan import demo
+    from diwan import business, demo
     from diwan.agents import studio
     from diwan.office import Office
     from diwan.providers import meta
@@ -79,6 +95,9 @@ def test_trends_pin_only_the_final_answer_tied_to_pages_the_search_opened(monkey
         "1. Price-first hooks | stop the scroll | https://example.com/reels\n2. Walk with the broker | feels personal | https://example.com/hooks\n"
         "3. Invented trend | made up | https://nowhere.example/x"))
     o = Office(EventLog()); demo.seed(o)
+    assert studio.trends(o, None) == []  # no search until the business is set
+    assert any("Set your industry and country" in e["content"]["needs"] for e in o.log.list() if e["type"] == "step.blocked")
+    business.save(o, {"industry": "Real estate brokerage", "country": "AE", "city": "Dubai"}, by="maya")
     cards = studio.trends(o, None)
     assert [c["title"] for c in cards] == ["Price-first hooks", "Walk with the broker"]          # the made-up link is dropped
     assert not any("research" in c["title"].lower() for c in cards)

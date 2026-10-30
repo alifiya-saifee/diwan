@@ -150,6 +150,8 @@ def marketing_graph(office: Office, upto: int | None = None) -> dict:
             if c.get("account"):
                 node(f"competitor:{c['account']}", "competitor", f"@{c['account']} · a competitor the team watches")
                 edge(c["id"], f"competitor:{c['account']}", "posted_by")
+        elif t == "board.unpinned" and c.get("id") in nodes:
+            nodes[c["id"]]["status"] = "withdrawn"
         elif t == "lesson.added":
             node(c["id"], "lesson", f"{c['id']} · {c['rule']} (taught to {c['agent']} by {e['actor']})")
         elif t == "lesson.removed" and c.get("id") in nodes:
@@ -167,8 +169,10 @@ def marketing_graph(office: Office, upto: int | None = None) -> dict:
             node(i, "script", f"{i} · {c.get('angle', 'price-reveal')} script for {c['ref']} ({c.get('via')}): \"{c['hook_en']}\" · "
                  + " / ".join(c.get("lines_en", [])), status="drafted", label=f"{i} {short(c['hook_en'], 22)}")
             edge(i, f"listing:{c['ref']}", "for")
-            if c["ref"] in latest_idea:
-                edge(i, latest_idea[c["ref"]], "from_idea")
+            if c.get("idea") or c["ref"] in latest_idea:
+                edge(i, c.get("idea") or latest_idea[c["ref"]], "from_idea")
+            for card in c.get("cards", []):
+                edge(i, card, "builds_on")
             if brand_fields:
                 edge(i, "brand:profile", "follows")
             if c.get("revises"):

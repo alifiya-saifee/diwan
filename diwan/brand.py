@@ -12,15 +12,15 @@ import re
 from diwan.office import Office
 
 FIELDS = {  # key: (label, what to write, used as a list)
-    "name": ("Brand name", "e.g. Diwan Realty", False),
+    "name": ("Brand name", "The name customers know you by", False),
     "positioning": ("Who we are", "One sentence: what we do, for whom, and why us", False),
-    "audience": ("Who we talk to", "e.g. first-time buyers and investors relocating to Dubai", False),
-    "voice": ("How we sound", "3 to 5 words, e.g. warm, straight-talking, expert", True),
-    "say": ("Words and phrases we use", "e.g. home, walk you through, honest numbers", True),
-    "avoid": ("Words we never use", "e.g. luxury, once-in-a-lifetime, cheap, hurry", True),
-    "never_claim": ("Claims we never make", "e.g. guaranteed returns, prices will rise", True),
-    "cta": ("How we sign off", "e.g. Message us on WhatsApp to book a viewing.", False),
-    "hashtags": ("Our hashtags", "e.g. #DiwanRealty #DubaiHomes", True),
+    "audience": ("Who we talk to", "Who the customers are, in a sentence", False),
+    "voice": ("How we sound", "3 to 5 words, e.g. warm, straight-talking", True),
+    "say": ("Words and phrases we use", "Words that sound like you, comma-separated", True),
+    "avoid": ("Words we never use", "Words you never want in a post, comma-separated", True),
+    "never_claim": ("Claims we never make", "Promises you never make, comma-separated", True),
+    "cta": ("How we sign off", "The last line of every post", False),
+    "hashtags": ("Our hashtags", "Your own hashtags, e.g. #YourBrand", True),
 }
 USED_BY = ["Idea generator", "Script writer", "Content writer", "Copywriter (review)"]
 

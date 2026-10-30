@@ -2,8 +2,11 @@
 
 Every live model call is written to a ledger (usage.jsonl, next to the .env): the agent, the provider, the tokens and
 an estimated price. A request answered from the cache is written too, with the cost it saved. Before a live call,
-`allowed()` checks this month's spend against DIWAN_BUDGET_USD (default 25); once it is reached, agents fall back to
-rules and templates and the screens say why, rather than spending past the cap.
+`allowed(agent)` checks this month's spend against the cap of the agent's part of the office: Marketing has
+DIWAN_BUDGET_MARKETING_USD (default 80% of the total: 20), the rest of the office what is left of DIWAN_BUDGET_USD
+(default 25, so 5).
+Once a part's cap is reached, its agents fall back to rules and templates and the screens say why; the other part
+keeps working.
 
 Prices are estimates per million tokens (input, output) and say so on screen. NVIDIA's free endpoint costs nothing.
 """
@@ -37,8 +40,25 @@ def estimate(provider: str, input_tokens: int | None, output_tokens: int | None)
     return round(((input_tokens or 0) * i + (output_tokens or 0) * o) / 1_000_000, 6)
 
 
-def budget() -> float:
-    return float(config.env("DIWAN_BUDGET_USD", "25"))
+def part_of(agent: str | None) -> str:
+    """"marketing" for an agent under the Marketing lead (or one of the studio's own ids), else "rest"."""
+    from diwan.agents.charters import get
+    c = get(agent) if agent else None
+    while c:
+        if c.id == "mkt":
+            return "marketing"
+        c = get(c.parent) if c.parent else None
+    return "rest"
+
+
+def budget(part: str | None = None) -> float:
+    """The monthly cap: the whole office's, or one part's (Marketing's own cap; the rest gets what is left)."""
+    total = float(config.env("DIWAN_BUDGET_USD", "25"))
+    if part is None:
+        return total
+    set_ = config.env("DIWAN_BUDGET_MARKETING_USD")  # unset: Marketing gets 80% of the total (20 of the default 25)
+    marketing = min(float(set_), total) if set_ else total * 0.8
+    return marketing if part == "marketing" else total - marketing
 
 
 def fee(name: str, default: float) -> float:
@@ -72,13 +92,16 @@ def rows() -> list[dict]:
     return out
 
 
-def month_spend(now: datetime | None = None) -> float:
+def month_spend(now: datetime | None = None, part: str | None = None) -> float:
     m = (now or datetime.now(timezone.utc)).strftime("%Y-%m")
-    return round(sum(r["cost_usd"] for r in rows() if r["at"].startswith(m)), 6)
+    return round(sum(r["cost_usd"] for r in rows() if r["at"].startswith(m) and (part is None or part_of(r["agent"]) == part)), 6)
 
 
-def allowed() -> bool:
-    return month_spend() < budget()
+def allowed(agent: str | None = None) -> bool:
+    """Whether a live call may run: the whole office is under its cap and, for an agent, so is its part."""
+    if month_spend() >= budget():
+        return False
+    return agent is None or month_spend(part=part_of(agent)) < budget(part_of(agent))
 
 
 def summary(now: datetime | None = None) -> dict:
@@ -93,7 +116,11 @@ def summary(now: datetime | None = None) -> dict:
         a["cost_usd"] = round(a["cost_usd"] + r["cost_usd"], 6)
         a["saved_usd"] = round(a["saved_usd"] + r["saved_usd"], 6)
     spend = round(sum(r["cost_usd"] for r in this), 6)
-    return {"month": m, "budget_usd": budget(), "spend_usd": spend, "left_usd": round(max(budget() - spend, 0), 6),
+    parts = {}
+    for part in ("marketing", "rest"):
+        s = round(sum(r["cost_usd"] for r in this if part_of(r["agent"]) == part), 6)
+        parts[part] = {"budget_usd": round(budget(part), 6), "spend_usd": s, "left_usd": round(max(budget(part) - s, 0), 6), "over": s >= budget(part)}
+    return {"month": m, "budget_usd": budget(), "spend_usd": spend, "left_usd": round(max(budget() - spend, 0), 6), "parts": parts,
             "saved_usd": round(sum(r["saved_usd"] for r in this), 6), "calls": len(this),
             "cached_calls": sum(r["cached"] for r in this), "over": spend >= budget(),
             "by_agent": sorted(by_agent.values(), key=lambda a: -a["cost_usd"]), "estimate": True}

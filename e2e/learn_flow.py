@@ -15,7 +15,7 @@ with sync_playwright() as p:
     b = p.chromium.launch()
     pg = b.new_page(viewport={"width": 1440, "height": 1000})
     pg.on("pageerror", lambda e: errors.append(str(e)))
-    pg.goto(f"{BASE}/web/studio.html?ref=MC-1204")
+    pg.goto(f"{BASE}/web/studio.html?ref=MC-1204#setup")
     pg.locator("#learnbox summary").click()
     pg.click("#learndemo")
     expect(pg.locator("#learndoc")).to_have_value(re.compile("Diwan Realty"), timeout=10_000)
