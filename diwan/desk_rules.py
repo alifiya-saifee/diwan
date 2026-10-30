@@ -27,7 +27,8 @@ DEFAULTS = {
     "cash_report_aed": 55_000,  # a real-estate cash payment at or above this is reported to the FIU (goAML)
     "vat_pct": 5,
     "stuck_days": 7,  # a deal with no step done in this many days counts as stuck
-    "discount_approval_pct": 5,  # a deal agreed further below its listing price than this waits for the owner before it converts
+    "discount_approval_pct": 5,
+    "sign_link_days": 14,  # how long a signing or documents link works  # a deal agreed further below its listing price than this waits for the owner before it converts
     "close_days_target": 60,  # the owner's target from "yes" to closed
     "developers": [],  # [{"name", "commission_pct", "payable_after_pct"}], one per developer agency agreement
     "agency": {"name": "", "orn": ""},  # our office as it appears on the forms: its name and RERA office number (ORN)
@@ -122,7 +123,8 @@ def validate(r: dict) -> list[str]:
         errs.append("VAT is a percentage between 0 and 100")
     if not isinstance(r.get("discount_approval_pct"), (int, float)) or not 0 <= r["discount_approval_pct"] <= 100:
         errs.append("The discount the owner approves above is a percentage between 0 and 100")
-    for key, label, top in (("stuck_days", "A deal is stuck after", 365), ("close_days_target", "The target from yes to closed", 3650)):
+    for key, label, top in (("stuck_days", "A deal is stuck after", 365), ("close_days_target", "The target from yes to closed", 3650),
+                            ("sign_link_days", "A link to a client works for", 90)):
         if not isinstance(r.get(key), int) or not 0 < r[key] <= top:
             errs.append(f"{label} is a whole number of days between 1 and {top}")
     names = [str(d.get("name", "")).strip().lower() for d in r.get("developers") or []]
@@ -167,7 +169,7 @@ def save(office, new: dict, *, by: str) -> dict:
     if PEOPLE.get(by, {}).get("role") != "Owner":
         raise PermissionError("Only the owner changes the Deal desk's rules.")
     r = _merge(DEFAULTS, new)
-    for k in ("cash_report_aed", "stuck_days", "close_days_target"):
+    for k in ("cash_report_aed", "stuck_days", "close_days_target", "sign_link_days"):
         r[k] = int(r[k]) if str(r.get(k, "")).isdigit() else r.get(k)
     r["agency"] = {"name": str((r.get("agency") or {}).get("name", "")).strip(), "orn": str((r.get("agency") or {}).get("orn", "")).strip()}
     r["brns"] = {k: str(v).strip() for k, v in (r.get("brns") or {}).items() if str(v).strip()}

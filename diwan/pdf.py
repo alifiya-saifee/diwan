@@ -14,11 +14,19 @@ def _esc(s: str) -> str:
     return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
-def render(blocks: list[tuple[str, str]]) -> bytes:
-    """blocks: (style, text) with style "title", "h" (a heading), "p" (a paragraph), "field" ("Label|value") or "gap"."""
+def render(blocks: list[tuple]) -> bytes:
+    """blocks: (style, text) with style "title", "h" (a heading), "p" (a paragraph), "field" ("Label|value") or "gap";
+    or ("image", label, jpeg bytes, width px, height px): a JPEG (a signature) beside its label, at most 200 x 60 points."""
+    images: list[tuple[bytes, int, int]] = []
     rows: list[tuple[int, list[tuple[str, int, str, int]]]] = []  # (height, runs of (font, size, text, x)) on one baseline
-    for style, text in blocks:
-        if style == "title":
+    for style, text, *more in blocks:
+        if style == "image":
+            jpeg, pw, ph = more
+            scale = min(200 / pw, 60 / ph, 1)
+            w, h = round(pw * scale), round(ph * scale)
+            images.append((jpeg, pw, ph))
+            rows.append((h + 8, [("F2", 10, text, MARGIN), ("IMG", len(images) - 1, (w, h), MARGIN + 170)]))
+        elif style == "title":
             rows += [(20, [("F2", 15, t, MARGIN)]) for t in textwrap.wrap(text, 58)] + [(8, [])]
         elif style == "h":
             rows += [(10, []), (16, [("F2", 11, text, MARGIN)])]
@@ -42,12 +50,17 @@ def render(blocks: list[tuple[str, str]]) -> bytes:
 
     objs = ["<< /Type /Catalog /Pages 2 0 R >>", None, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
             "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"]
+    for jpeg, pw, ph in images:  # latin-1 carries the bytes through unchanged
+        objs.append(f"<< /Type /XObject /Subtype /Image /Width {pw} /Height {ph} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode "
+                    f"/Length {len(jpeg)} >>\nstream\n{jpeg.decode('latin-1')}\nendstream")
+    xobjects = " ".join(f"/Im{i} {5 + i} 0 R" for i in range(len(images)))
     kids = []
     for n, pg in enumerate(pages, 1):
-        body = "".join(f"BT /{f} {s} Tf {x} {y} Td ({_esc(t)}) Tj ET\n" for f, s, t, x, y in pg if t)
+        body = "".join(f"q {t[0]} 0 0 {t[1]} {x} {y} cm /Im{s} Do Q\n" if f == "IMG" else f"BT /{f} {s} Tf {x} {y} Td ({_esc(t)}) Tj ET\n"
+                       for f, s, t, x, y in pg if t)
         body += f"BT /F1 8 Tf {MARGIN} 30 Td (Page {n} of {len(pages)}) Tj ET\n"
         objs.append(f"<< /Length {len(body.encode('latin-1'))} >>\nstream\n{body}endstream")
-        objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {W} {H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {len(objs)} 0 R >>")
+        objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {W} {H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> /XObject << {xobjects} >> >> /Contents {len(objs)} 0 R >>")
         kids.append(f"{len(objs)} 0 R")
     objs[1] = f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(kids)} >>"
     out, offsets = b"%PDF-1.4\n", []

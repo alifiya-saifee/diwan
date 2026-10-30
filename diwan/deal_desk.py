@@ -7,10 +7,10 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, timedelta
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from diwan import agency_forms, desk_kpis, desk_rules, desk_stages, roles
+from diwan import agency_forms, desk_kpis, desk_rules, desk_stages, roles, signing
 from diwan.agents import compliance, finance, operations, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
@@ -340,7 +340,7 @@ def overview():
 
 
 @router.get("/api/desk/deals/{deal}")
-def deal(deal: str):
+def deal(deal: str, request: Request):
     try:
         g = _office().graph()
         p = desk_rules.path(g, deal)
@@ -350,7 +350,7 @@ def deal(deal: str):
                                      "commission": finance.commission(g, deal), "closing": operations.closing(g, deal),
                                      "terms": desk_rules.terms(g, deal), "developers": [x["name"] for x in desk_rules.rules(g)["developers"]],
                                      "schedule": dict(zip(("kind", "payee", "document"), finance.SCHEDULE[p["id"]])) if p["id"] in finance.SCHEDULE else None,
-                                     "stages": desk_stages.view(g, deal), "agency": _agency_view(g, deal)}
+                                     "stages": desk_stages.view(g, deal), "agency": _agency_view(g, deal, _base(request))}
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
 
@@ -709,11 +709,23 @@ def kpis():
 
 # ---------- stages, and the agency forms at conversion ----------
 
-def _agency_view(g: Graph, deal: str) -> dict:
+def _base(request: Request | None = None) -> str:
+    from diwan.config import env
+    return (env("PUBLIC_BASE_URL") or (str(request.base_url) if request else "")).rstrip("/")
+
+
+def _links(g: Graph, deal: str, did: str, base: str) -> list[dict]:
+    return [{"signer": x["signer"], "name": x["name"], "status": signing.status(g, x, date.today()), "expires": x["expires"],
+             "signed_at": x["signed"]["at"] if x["signed"] else None, "url": f"{base}/web/sign.html?t={x['token']}"}
+            for x in signing.links(_office().log.list(deal=deal), did)]
+
+
+def _agency_view(g: Graph, deal: str, base: str) -> dict:
     li = agency_forms.our_listing(g, deal)
     ask = next((t for t in g.of("task", deal) if t.props.get("step") == "sides" and t.status in OPEN), None)
     return {"asking": ask.id if ask else None, "our_listing": li.props["ref"] if li else None, "needed": agency_forms.needed(g, deal),
-            "forms": agency_forms.forms(g, deal), "sides": desk_rules.SIDES, "terms": desk_rules.terms(g, deal)}
+            "forms": [f | {"links": _links(g, deal, f["draft"], base)} for f in agency_forms.forms(g, deal)],
+            "sides": desk_rules.SIDES, "terms": desk_rules.terms(g, deal)}
 
 
 class StageIn(BaseModel):
@@ -775,3 +787,28 @@ class DiscountIn(BaseModel):
 def decide_discount(tid: str, body: DiscountIn):
     _call(desk_stages.decide_discount, _office(), tid, pid(body.by) or body.by, body.approve, body.note)
     return {"ok": True}
+
+
+
+# ---------- signing online: the links, and the public page they open ----------
+
+@router.post("/api/desk/forms/{did}/links")
+def make_links(did: str, body: Run, request: Request):
+    _call(signing.make_links, _office(), did, pid(body.by) or body.by, missing="form", today=date.today())
+    g = _office().graph()
+    return {"links": _links(g, g.nodes[did].deal, did, _base(request))}
+
+
+@router.get("/api/sign/{token}")
+def sign_page(token: str):
+    return _call(signing.page, _office(), token, missing="link", today=date.today())
+
+
+@router.post("/api/sign/{token}")
+async def sign(token: str, request: Request, full_name: str = Form(""), id_no: str = Form(""), consent: str = Form(""),
+               image: UploadFile = File(...)):
+    from diwan.providers import meta
+    data = await image.read()
+    return _call(signing.sign, _office(), token, full_name=full_name, id_no=id_no, consent=consent in ("1", "true", "on", "yes"), image=data,
+                 ip=request.client.host if request.client else "", device=request.headers.get("user-agent", ""), media=meta.MEDIA,
+                 today=date.today(), missing="link")

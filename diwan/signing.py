@@ -1,0 +1,179 @@
+"""Signing an agency form online (docs/deal-desk.md item 13). Each person who signs a form gets their own link: Form A
+the seller and our broker, Form B the buyer and our broker, Form I our broker and the other agent. The broker shares
+the links personally. The person opens it with no login, reads the form, gives their name and ID number, uploads an
+image of their signature and agrees to sign electronically. A link works for one person on one version of the form,
+for the owner's number of days; a form sent back (the price or terms changed) can't be signed. When everyone has
+signed, the signatures and a signing record (who, when, from which device, and a fingerprint of what they signed) are
+put on the PDF, which is filed with Records the same way as an uploaded signed copy.
+"""
+from __future__ import annotations
+
+import hashlib
+import io
+import secrets
+from datetime import date, datetime, timedelta, timezone
+from typing import TYPE_CHECKING
+
+from diwan import agency_forms, desk_rules, roles
+from diwan.graph import OPEN, Graph
+from diwan.people import PEOPLE, name
+
+if TYPE_CHECKING:
+    from diwan.office import Office
+
+SIGNERS = {"A": [("seller", "The seller"), ("broker", "The broker")], "B": [("buyer", "The buyer"), ("broker", "The broker")],
+           "I": [("broker", "Our broker"), ("other", "The other broker")]}
+MAX_BYTES = 3_000_000
+
+
+def _form(g: Graph, did: str):
+    d = g.nodes.get(did)
+    if not d or d.type != "draft" or d.props.get("kind") not in agency_forms.FORM_OF:
+        raise KeyError(did)
+    return d, agency_forms.FORM_OF[d.props["kind"]]
+
+
+def _who(g: Graph, deal: str, form: str, signer: str) -> str:
+    d, t = g.nodes[f"deal:{deal}"].props, desk_rules.terms(g, deal)
+    return {"seller": "the seller", "buyer": d["customer"], "broker": name(d["broker"]),
+            "other": t.get("other_agent") or t.get("other_agency") or "the other agent"}[signer]
+
+
+def fingerprint(g: Graph, did: str) -> str:
+    """What was signed: the form's lines as drafted, so any later change to them shows."""
+    lines = [s.props["text"] for s in sorted(g.into(did, "part_of"), key=lambda s: s.props["n"])]
+    return hashlib.sha256("\n".join([g.nodes[did].props["kind"], *lines]).encode()).hexdigest()
+
+
+def links(events: list[dict], did: str) -> list[dict]:
+    out, by_token = [], {}
+    for e in events:
+        c = e["content"]
+        if e["type"] == "sign.link" and c.get("draft") == did:
+            by_token[c["token"]] = dict(c, signed=None)
+            out.append(by_token[c["token"]])
+        elif e["type"] == "sign.signed" and c.get("token") in by_token:
+            by_token[c["token"]]["signed"] = c | {"at": e["at"]}
+    return out
+
+
+def find(events: list[dict], token: str) -> dict | None:
+    link = None
+    for e in events:
+        c = e["content"]
+        if e["type"] == "sign.link" and c.get("token") == token:
+            link = dict(c, signed=None)
+        elif link and e["type"] == "sign.signed" and c.get("token") == token:
+            link["signed"] = c | {"at": e["at"]}
+    return link
+
+
+def make_links(office: Office, did: str, by: str, *, today: date) -> list[dict]:
+    """One link per person who signs this form, made once per version."""
+    g = office.graph()
+    d, form = _form(g, did)
+    deal = g.nodes[f"deal:{d.deal}"].props
+    if by != deal.get("broker") and by != roles.holder(g, "transactions") and PEOPLE.get(by, {}).get("role") != "Owner":
+        raise PermissionError(f"Only {name(deal.get('broker'))}, the transactions officer or the owner makes signing links.")
+    if d.status == "sent_back":
+        raise ValueError(f"{did} was sent back; make the links for the new version.")
+    task = next((t for t in g.of("task", d.deal) if t.props.get("step") == "sign" and t.props.get("draft") == did), None)
+    if not task or task.status not in OPEN:
+        raise ValueError(f"{did} isn't waiting for signatures.")
+    have = {x["signer"] for x in links(office.log.list(deal=d.deal), did)}
+    expires = (today + timedelta(days=desk_rules.rules(g)["sign_link_days"])).isoformat()
+    for signer, _ in SIGNERS[form]:
+        if signer not in have:
+            office.log.append("sign.link", actor=by, deal=d.deal, content={"token": secrets.token_urlsafe(18), "draft": did, "form": form, "task": task.id,
+                                                                            "signer": signer, "name": _who(g, d.deal, form, signer), "expires": expires})
+    return links(office.log.list(deal=d.deal), did)
+
+
+def status(g: Graph, link: dict, today: date) -> str:
+    if link["signed"]:
+        return "signed"
+    if g.nodes[link["draft"]].status == "sent_back":
+        return "replaced"
+    if link["expires"] < today.isoformat():
+        return "expired"
+    return "open"
+
+
+def page(office: Office, token: str, *, today: date) -> dict:
+    """What the signer sees: the form's lines and whether it can be signed. Nothing about anyone else's checks."""
+    g = office.graph()
+    link = find(office.log.list(), token)
+    if not link:
+        raise KeyError(token)
+    d, form = _form(g, link["draft"])
+    r = desk_rules.rules(g)
+    rows = [{"section": s, "label": lab, "value": v} for s, lab, v, _ in agency_forms.fields(g, d.deal, form)]
+    return {"title": agency_forms.TITLES[form], "agency": r["agency"]["name"] or "Diwan", "signer": link["name"],
+            "as": dict(SIGNERS[form])[link["signer"]], "status": status(g, link, today), "expires": link["expires"], "rows": rows,
+            "signed_at": link["signed"]["at"] if link["signed"] else None}
+
+
+def _jpeg(data: bytes) -> tuple[bytes, int, int]:
+    """The uploaded signature as a clean JPEG, or why it can't be used. Only real PNG or JPEG images are kept."""
+    from PIL import Image, UnidentifiedImageError
+    if len(data) > MAX_BYTES:
+        raise ValueError("The image is too large; keep it under 3 MB.")
+    if not (data.startswith(b"\x89PNG\r\n\x1a\n") or data.startswith(b"\xff\xd8\xff")):
+        raise ValueError("Upload the signature as a PNG or JPEG photo.")
+    try:
+        Image.open(io.BytesIO(data)).verify()
+        im = Image.open(io.BytesIO(data))
+        im.load()
+    except (UnidentifiedImageError, OSError, SyntaxError):
+        raise ValueError("That image can't be read; take the photo again.") from None
+    if im.width < 120 or im.height < 40:
+        raise ValueError("The image is too small to show a signature; take it closer.")
+    if im.mode in ("RGBA", "LA", "P"):
+        im = im.convert("RGBA")
+        bg = Image.new("RGB", im.size, "white")
+        bg.paste(im, mask=im.split()[-1])
+        im = bg
+    im = im.convert("RGB")
+    im.thumbnail((800, 300))
+    out = io.BytesIO()
+    im.save(out, "JPEG", quality=85)
+    return out.getvalue(), im.width, im.height
+
+
+def sign(office: Office, token: str, *, full_name: str, id_no: str, consent: bool, image: bytes, ip: str, device: str,
+         media, today: date) -> dict:
+    g = office.graph()
+    events = office.log.list()
+    link = find(events, token)
+    if not link:
+        raise KeyError(token)
+    st = status(g, link, today)
+    if st != "open":
+        raise ValueError({"signed": "This form is already signed with this link.",
+                          "replaced": "This version was replaced. Your broker will send you the new one.",
+                          "expired": "This link has expired. Ask your broker for a new one."}[st])
+    if not full_name.strip() or not id_no.strip():
+        raise ValueError("Give your full name and your ID or passport number.")
+    if not consent:
+        raise ValueError("Tick that you agree to sign electronically.")
+    jpeg, w, h = _jpeg(image)
+    media.mkdir(parents=True, exist_ok=True)
+    path = media / f"sig-{token}.jpg"
+    path.write_bytes(jpeg)
+    office.log.append("sign.signed", actor=f"signer:{link['signer']}", deal=g.nodes[link["draft"]].deal,
+                      content={"token": token, "draft": link["draft"], "signer": link["signer"], "name": full_name.strip(), "id_no": id_no.strip(),
+                               "file": path.name, "w": w, "h": h, "ip": ip, "device": device[:160], "fingerprint": fingerprint(g, link["draft"])})
+    all_links = links(office.log.list(deal=g.nodes[link["draft"]].deal), link["draft"])
+    done = {x["signer"] for x in all_links if x["signed"]}
+    form = link["form"]
+    if done >= {s for s, _ in SIGNERS[form]}:
+        deal = g.nodes[link["draft"]].deal
+        sigs = [x["signed"] | {"as": dict(SIGNERS[form])[x["signer"]], "jpeg": (media / x["signed"]["file"]).read_bytes()} for x in all_links if x["signed"]]
+        data = agency_forms.render(office.graph(), link["draft"], signatures=sigs)
+        agency_forms.signed(office, link["task"], g.nodes[f"deal:{deal}"].props["broker"], data, "signed online", media=media, today=today)
+        return {"status": "signed", "complete": True}
+    return {"status": "signed", "complete": False}
+
+
+def when(iso: str) -> str:
+    return datetime.fromisoformat(iso).astimezone(timezone(timedelta(hours=4))).strftime("%d %b %Y, %H:%M Dubai time")

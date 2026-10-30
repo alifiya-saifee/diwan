@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign your form</title>
+<style>
+  /* the page a client opens from their broker's link: the form to read, then their name, ID, signature image and consent */
+  :root { --bg: #f6f5f1; --panel: #fff; --ink: #1d2228; --muted: #5d6670; --line: #dcd9d0; --accent: #9a6b12; --ok: #1f7a5a; --bad: #b3261e; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #15181c; --panel: #1d2127; --ink: #e9e6df; --muted: #9aa3ad; --line: #30363e; --accent: #e0b45c; --ok: #5fcf9f; --bad: #f28b82; color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px 60px; display: grid; gap: 18px; }
+  .who { font-size: 13px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+  h1 { font: 600 24px/1.25 Georgia, serif; margin: 0; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  h2 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin: 14px 0 6px; }
+  h2:first-child { margin-top: 0; }
+  dl { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 4px 12px; margin: 0; font-size: 14px; }
+  dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+  label { display: grid; gap: 4px; font-size: 14px; margin-bottom: 12px; }
+  input[type=text] { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); }
+  .check { display: flex; gap: 10px; align-items: flex-start; }
+  button { font: 600 16px system-ui, sans-serif; width: 100%; padding: 13px; border-radius: 12px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: default; }
+  #preview { max-width: 100%; max-height: 120px; display: none; margin-top: 6px; background: #fff; border-radius: 8px; }
+  .msg { padding: 12px 14px; border-radius: 12px; font-size: 15px; }
+  .msg.bad { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
+  .msg.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+  .small { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main id="main"><p class="small">Loading your form…</p></main>
+<script>
+const $ = (s) => document.querySelector(s);
+const token = new URLSearchParams(location.search).get("t") || "";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const NOTE = { signed: "You have signed this form. Thank you: your broker has been told.", replaced: "This version was replaced. Your broker will send you the new one.",
+  expired: "This link has expired. Ask your broker for a new one." };
+
+async function load() {
+  const r = await fetch(`/api/sign/${encodeURIComponent(token)}`);
+  if (!r.ok) { $("#main").innerHTML = `<div class="msg bad">This link isn't valid. Ask your broker for a new one.</div>`; return; }
+  const f = await r.json();
+  let rows = "", sec = null;
+  for (const x of f.rows) {
+    if (x.section !== sec) { rows += `${sec ? "</dl>" : ""}<h2>${esc(x.section)}</h2><dl>`; sec = x.section; }
+    rows += `<dt>${esc(x.label)}</dt><dd>${x.value == null ? "<span class='small'>filled in by hand</span>" : esc(x.value)}</dd>`;
+  }
+  $("#main").innerHTML = `<div><div class="who">${esc(f.agency)} · for ${esc(f.signer)}, as ${esc(f.as.toLowerCase())}</div><h1>${esc(f.title)}</h1></div>
+    <section aria-label="The form">${rows}</dl></section>
+    ${f.status !== "open" ? `<div class="msg ${f.status === "signed" ? "ok" : "bad"}">${NOTE[f.status]}</div>` : `
+    <section aria-label="Sign">
+      <label>Your full name<input type="text" id="name" autocomplete="name" value="${esc(f.signer.startsWith("the ") ? "" : f.signer)}"></label>
+      <label>Your Emirates ID or passport number<input type="text" id="id" autocomplete="off"></label>
+      <label>A photo of your signature (PNG or JPEG)<input type="file" id="img" accept="image/png,image/jpeg"><img id="preview" alt="Your signature"></label>
+      <label class="check"><input type="checkbox" id="consent"><span>I have read this form and I agree to sign it electronically.</span></label>
+      <div id="err" class="msg bad" hidden></div>
+      <button id="sign">Sign</button>
+      <p class="small">Your link works until ${esc(f.expires)}, only for you and only for this version of the form.</p>
+    </section>`}`;
+  if (f.status !== "open") return;
+  $("#img").onchange = () => { const file = $("#img").files[0]; if (file) { $("#preview").src = URL.createObjectURL(file); $("#preview").style.display = "block"; } };
+  $("#sign").onclick = async () => {
+    const fd = new FormData();
+    fd.append("full_name", $("#name").value); fd.append("id_no", $("#id").value); fd.append("consent", $("#consent").checked ? "1" : "");
+    if ($("#img").files[0]) fd.append("image", $("#img").files[0]);
+    $("#sign").disabled = true;
+    const r = await fetch(`/api/sign/${encodeURIComponent(token)}`, { method: "POST", body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      $("#err").hidden = false;
+      $("#err").textContent = Array.isArray(j.detail) ? "Choose the photo of your signature." : (j.detail || "That didn't work; try again.");
+      $("#sign").disabled = false; return;
+    }
+    load();
+  };
+}
+load();
+</script>
+</body>
+</html>

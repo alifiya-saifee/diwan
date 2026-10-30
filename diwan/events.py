@@ -24,6 +24,8 @@ TYPES = {
     # the front desk: settings, Nova's rounds, the Lobby board
     "setting.changed", "rounds.started", "briefing.ready",
     "stage.changed", "autonomy.changed", "lesson.added", "lesson.removed",
+    # the Deal desk's links to clients: signing a form, and the documents they send
+    "sign.link", "sign.signed", "docs.requested", "docs.received", "docs.rejected", "docs.reminded", "docs.confirmed",
     # the content studio: what it saw, what it pinned, what it made, and footage people uploaded
     "post.seen", "post.read", "photos.added", "plan.made", "plan.started", "competitor.checked", "board.pinned", "board.unpinned", "content.made", "footage.added", "step.blocked",
     "qa.passed", "qa.failed", "qa.escalated",

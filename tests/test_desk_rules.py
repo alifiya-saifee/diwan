@@ -563,3 +563,66 @@ def test_a_refused_discount_goes_back_to_the_broker_and_nothing_moves(office):
     assert not desk_stages.agreed(g, "marina-1204")
     assert any(q.props.get("kind") == "discount" and "2.45M" in q.props["text"] for q in g.of("question", "marina-1204", "open"))
     assert desk_stages.convert(office, "marina-1204", "omar", 2_480_000)["waiting"] is None  # 4.6%: within the limit
+
+
+# ---------- signing a form online (spec item 13) ----------
+
+def _png(w=400, h=120):
+    import io
+    from PIL import Image, ImageDraw
+    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(im).line([(20, 90), (120, 30), (200, 95), (380, 25)], fill="navy", width=6)
+    b = io.BytesIO()
+    im.save(b, "PNG")
+    return b.getvalue()
+
+
+def _form_b(office, c):
+    _convert(office, c)
+    c.post("/api/desk/deals/marina-1204/sides", json={"by": "omar", "sides": "both"})
+    return next(f for f in __import__("diwan.agency_forms", fromlist=["x"]).forms(office.graph(), "marina-1204") if f["form"] == "B")
+
+
+def test_each_signer_gets_a_link_and_the_form_is_filed_when_all_have_signed(office, monkeypatch, tmp_path):
+    from diwan.providers import meta
+    monkeypatch.setattr(appmod.S, "office", office)
+    monkeypatch.setattr(meta, "MEDIA", tmp_path)
+    c = TestClient(appmod.app)
+    b = _form_b(office, c)
+    assert c.post(f"/api/desk/forms/{b['draft']}/links", json={"by": "priya"}).status_code == 403
+    links = c.post(f"/api/desk/forms/{b['draft']}/links", json={"by": "omar"}).json()["links"]
+    assert [(x["signer"], x["name"], x["status"]) for x in links] == [("buyer", "Karim Haddad", "open"), ("broker", "Omar", "open")]
+    t = [x["url"].split("t=")[1] for x in links]
+    page = c.get(f"/api/sign/{t[0]}").json()
+    assert page["status"] == "open" and page["as"] == "The buyer" and any(r["value"] and "2,600,000" in r["value"] for r in page["rows"])
+    form = {"full_name": "Karim Haddad", "id_no": "784-1990-1234567-1", "consent": "1"}
+    assert c.post(f"/api/sign/{t[0]}", data=form | {"consent": ""}, files={"image": ("s.png", _png())}).status_code == 400
+    assert c.post(f"/api/sign/{t[0]}", data=form, files={"image": ("s.txt", b"not an image")}).status_code == 400
+    assert c.post(f"/api/sign/{t[0]}", data=form, files={"image": ("s.png", _png(60, 20))}).status_code == 400  # too small to show
+    assert c.post(f"/api/sign/{t[0]}", data=form, files={"image": ("s.png", _png())}).json() == {"status": "signed", "complete": False}
+    assert c.post(f"/api/sign/{t[0]}", data=form, files={"image": ("s.png", _png())}).status_code == 400  # once
+    assert c.post(f"/api/sign/{t[1]}", data=form | {"full_name": "Omar Saeed"}, files={"image": ("s.png", _png())}).json()["complete"]
+    g = office.graph()
+    task = g.nodes[b["task"]]
+    assert task.status == "done" and task.props["result"] == "signed"
+    from diwan import agency_forms
+    pdf = (tmp_path / agency_forms.signed_file("marina-1204", "B", b["draft"])).read_bytes()
+    assert pdf.startswith(b"%PDF") and b"/DCTDecode" in pdf and b"Signing record" in pdf and b"784-1990-1234567-1" in pdf
+    assert c.get("/api/sign/nope").status_code == 404
+
+
+def test_a_replaced_or_expired_link_cannot_be_signed(office, monkeypatch, tmp_path):
+    from datetime import date, timedelta
+    from diwan import signing
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    b = _form_b(office, c)
+    tok = [x["url"].split("t=")[1] for x in c.post(f"/api/desk/forms/{b['draft']}/links", json={"by": "omar"}).json()["links"]]
+    late = date.today() + timedelta(days=15)
+    with pytest.raises(ValueError, match="expired"):
+        signing.sign(office, tok[0], full_name="K", id_no="1", consent=True, image=_png(), ip="", device="", media=tmp_path, today=late)
+    live = office.graph().facts("marina-1204", "deal_term")[-1].id
+    office.record_fact("marina-1204", "deal_term", "We agreed two point five in the end.", "Karim Haddad", amount_aed=2_500_000, replaces=live)
+    assert c.get(f"/api/sign/{tok[0]}").json()["status"] == "replaced"
+    with pytest.raises(ValueError, match="replaced"):
+        signing.sign(office, tok[0], full_name="K", id_no="1", consent=True, image=_png(), ip="", device="", media=tmp_path, today=date.today())

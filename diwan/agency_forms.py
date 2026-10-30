@@ -193,7 +193,8 @@ def fields(g: Graph, deal: str, form: str) -> list[tuple[str, str, str | None, s
 SIGNERS = {"A": ["The seller", "The broker"], "B": ["The buyer", "The broker"], "I": ["Our broker", "The other broker"]}
 
 
-def render(g: Graph, did: str) -> bytes:
+def render(g: Graph, did: str, signatures: list[dict] | None = None) -> bytes:
+    """The form as a PDF; with `signatures` (from diwan/signing.py), signed, with the signing record at the end."""
     d = g.nodes.get(did)
     if not d or d.type != "draft" or d.props.get("kind") not in FORM_OF:
         raise KeyError(did)
@@ -212,6 +213,17 @@ def render(g: Graph, did: str) -> bytes:
             section = sec
         blocks.append(("field", f"{label}|{value if value is not None else '____________________________  (to fill)'}"))
     blocks.append(("h", "Signatures"))
+    if signatures:
+        from diwan.signing import when
+        for x in signatures:
+            blocks += [("field", f"{x['as']}|{x['name']}"), ("image", "", x["jpeg"], x["w"], x["h"]), ("field", f"|Signed online {when(x['at'])}"), ("gap", "")]
+        blocks.append(("h", "Signing record"))
+        blocks.append(("p", "Each person signed with their own link from Diwan, after reading this form. The fingerprint is a SHA-256 of the "
+                            "form's lines as drafted: the same fingerprint means the same words."))
+        for x in signatures:
+            blocks += [("field", f"{x['as']}|{x['name']}, ID {x['id_no']}"), ("field", f"|{when(x['at'])}, from {x['ip'] or 'unknown'}"),
+                       ("field", f"|{x['device'] or 'device not given'}"), ("field", f"|Fingerprint {x['fingerprint'][:32]}"), ("gap", "")]
+        return pdf.render(blocks)
     for who in SIGNERS[form]:
         blocks += [("field", f"{who}|Name ______________________"), ("field", "|Signature ______________________   Date __________"), ("gap", "")]
     return pdf.render(blocks)

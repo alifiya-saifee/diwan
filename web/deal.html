@@ -724,6 +724,17 @@ function stageBar(v) {
       : s.closing ? h("div", { class: "small muted" }, `Won comes from closing: waiting on ${s.closing.waiting.join("; ").toLowerCase()}.`) : null);
 }
 
+// each person who signs gets their own link; the broker copies it and shares it personally
+function signLinks(x, may) {
+  if (!x.links.length) return may ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/desk/forms/${x.draft}/links`, {}, "Signing links ready: copy each and share it") }, "Make the signing links")) : null;
+  const ST = { open: ["warn", "waiting"], signed: ["ok", "signed"], expired: ["bad", "expired"], replaced: ["bad", "replaced"] };
+  return h("div", { class: "rsteps", style: "margin-top:8px" }, ...x.links.map((l) => h("div", { class: "acts", style: "margin-top:0" },
+    h("span", { style: "flex:1 1 200px" }, `${l.name}`, h("span", { class: "small muted" }, l.signed_at ? ` · signed ${ago(l.signed_at)}` : ` · until ${l.expires}`)),
+    h("span", { class: `chip ${ST[l.status][0]}` }, ST[l.status][1]),
+    l.status === "open" ? h("button", { "data-url": l.url, onclick: async () => {
+      try { await navigator.clipboard.writeText(l.url); toast(`Link for ${l.name} copied`); } catch { prompt("Copy this link", l.url); } } }, "Copy link") : null)));
+}
+
 async function upload(tid, file) {
   if (!file) throw new Error("Choose the signed PDF first.");
   const fd = new FormData(); fd.append("by", me()); fd.append("file", file);
@@ -763,7 +774,8 @@ function agencyEl(v) {
         x.signed ? h("a", { class: "btn", href: x.file, target: "_blank" }, "The signed copy") : null,
         x.waiting && may ? file : null,
         x.waiting && may ? h("button", { class: "primary", onclick: async () => { try { await upload(x.task, file.files[0]); toast("Signed copy filed with Records"); await open(deal); show(); } catch (e) { toast(e.message); } } }, "Upload the signed copy") : null),
-      x.waiting ? h("div", { class: "small muted", style: "margin-top:6px" }, `${v.broker_name} shares it with ${x.form === "I" ? "the other agent" : "the client"} personally, then uploads the signed copy.`) : null));
+      x.waiting ? signLinks(x, may) : null,
+      x.waiting ? h("div", { class: "small muted", style: "margin-top:6px" }, `${v.broker_name} shares each link personally; or prints the PDF and uploads the signed copy.`) : null));
   }
   if (back.length) kids.push(h("div", { class: "small muted", style: "margin-top:8px" }, ...back.map((x) => h("div", {}, `${x.title} v${x.version} (${x.draft}) sent back: ${x.reason || ""}`))));
   const waiting = live.filter((x) => x.waiting).length;

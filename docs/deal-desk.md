@@ -176,6 +176,16 @@ the same deals and one deal opens in a side panel:
     that replaces an earlier one), so commission, the forms and Form F rest on it; the comparison is kept for the KPI
     "price against the listing" per broker. The stage bar can't cross the conversion stage without it.
 
+13. **Signing a form online** (approved by the product owner 30 Oct). Each person who signs a form gets their own link:
+    Form A the seller and our broker, Form B the buyer and our broker, Form I our broker and the other agent. The broker
+    makes the links and shares each one personally. The page has no login and no Diwan header: the form's lines, then the
+    signer's full name, Emirates ID or passport number, a photo of their signature (PNG or JPEG only, checked from its
+    content, at most 3 MB, big enough to show) and their agreement to sign electronically. A link works for one person on
+    one version, for the owner's number of days (default 14); a form sent back can't be signed ("This version was
+    replaced"). When everyone has signed, the signatures and a signing record (name, ID, time, device, address and a
+    fingerprint of the form's lines) go on the PDF, which is filed with Records like an uploaded copy. Printing and
+    uploading the signed copy stays available. Links reach a client's phone only when `PUBLIC_BASE_URL` is set.
+
 ## States every section must handle
 
 Empty (no deals; a deal with no money facts; nothing to screen), errors (an action by the wrong person is refused with
