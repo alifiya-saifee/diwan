@@ -77,7 +77,9 @@ def changed(g: Graph) -> bool:
 
 
 def path_of(g: Graph, deal: str) -> str:
-    """The paperwork path a deal follows, from its sales desk's listing filter."""
+    """The paperwork path a deal follows: the one the broker set on the deal, else its sales desk's listing filter."""
+    if (chosen := g.settings.get(f"deal:{deal}", {}).get("path")) in PATHS:
+        return chosen
     d = g.nodes.get(f"deal:{deal}")
     desk = next((k for k in g.settings.get("sales", {}).get("kinds") or [] if d and k.get("id") == d.props.get("kind")), None)
     li = (desk or {}).get("listings") or {}
@@ -138,3 +140,18 @@ def _diff(base: dict, new: dict) -> dict:
         elif base.get(k) != v:
             out[k] = v
     return out
+
+
+def set_path(office, deal: str, path_id: str, *, by: str) -> None:
+    """The broker (or the owner) says which path a deal follows when its sales desk doesn't, once, before paperwork starts."""
+    g = office.graph()
+    d = g.nodes.get(f"deal:{deal}")
+    if not d:
+        raise KeyError(deal)
+    if path_id not in PATHS:
+        raise ValueError(f"The path is one of {', '.join(PATHS)}.")
+    if by not in (d.props.get("broker"),) and PEOPLE.get(by, {}).get("role") != "Owner":
+        raise PermissionError("Only the deal's broker or the owner says which path it follows.")
+    if any(t.props["agent"] in ("transfer", "formf") for t in g.of("task", deal)):
+        raise ValueError("The paperwork has started, so the path is fixed.")
+    office.log.append("setting.changed", actor=by, deal=deal, content={"person": f"deal:{deal}", "key": "path", "value": path_id})

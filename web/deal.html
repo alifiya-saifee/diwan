@@ -492,7 +492,26 @@ function taskEl(t) {
   return el;
 }
 
+const PATHS = { ready: "Ready home, bought from its owner", offplan: "Off-plan unit, bought from a developer", rent: "Rental" };
+function pathEl(v) {
+  const started = v.tasks.some((t) => ["transfer", "formf"].includes(t.agent));
+  if (started || v.path.from_desk) return null;
+  const mayChoose = me() === v.broker || me() === OWNER;
+  return h("div", { class: "card" }, h("div", { class: "top" }, h("strong", {}, "Which paperwork this deal follows"), v.path.chosen ? null : h("span", { class: "chip" }, "not set: ready by default")),
+    h("div", { class: "small", style: "margin-top:4px" }, "Its sales desk doesn't say, so the broker sets it once, before the paperwork starts."),
+    mayChoose ? h("div", { class: "acts" }, h("select", { "aria-label": "Paperwork path", style: "flex:1 1 260px", onchange: (e) => send(`/api/desk/deals/${encodeURIComponent(deal)}/path`, { path: e.target.value }, `Now: ${PATHS[e.target.value]}`) },
+      ...Object.entries(PATHS).map(([k, label]) => h("option", { value: k, selected: k === v.path.id }, label))))
+      : h("div", { class: "acts small muted" }, `${v.path.name}. Only ${v.broker_name} (the broker) or the owner changes it.`));
+}
+
 function formfEl(v) {
+  if (v.path.id !== "ready") {
+    if (v.tasks.some((t) => t.agent === "transfer")) return null;
+    return h("div", { class: "card open" }, h("strong", {}, `${v.path.name}: paperwork`),
+      h("div", { class: "small", style: "margin-top:4px" }, `Starts the owner's steps for this path, each waiting on who the rules say${v.path.id === "rent" ? ", and tells Finance to expect the security deposit" : ""}.`),
+      holds("transactions") ? h("div", { class: "acts" }, h("button", { class: "primary", onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/paperwork`, {}, "Paperwork started") }, "Start the paperwork"))
+        : h("div", { class: "acts small muted" }, `${rname("transactions")} starts it.`));
+  }
   if (v.drafts.some((d) => d.kind === "Form F" && d.status !== "sent_back")) return null;
   const due = ["Offer", "Form F"].includes(v.stage);
   return h("div", { class: `card ${due ? "open" : ""}` }, h("strong", {}, "Form F"),
@@ -552,7 +571,7 @@ function render() {
     const cards = v.cards.filter(by(k)), tasks = v.tasks.filter(by(k));
     const appr = k === "fin" ? v.approvals : [], drafts = v.drafts.filter(by(k));
     const open = cards.filter((c) => c.status === "open").length;
-    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "ops" ? formfEl(v) : null, k === "fin" ? commissionEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
+    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "ops" ? pathEl(v) : null, k === "ops" ? formfEl(v) : null, k === "fin" ? commissionEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
     return h("section", { class: "dept", id: `dept-${k}` }, h("h2", {}, label, open ? h("span", { class: "chip warn" }, `${open} open`) : null),
       ...(kids.length ? kids : [h("div", { class: "empty" }, `Nothing for ${label} on this deal.`)]));
   });

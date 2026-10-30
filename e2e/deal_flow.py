@@ -452,6 +452,42 @@ with sync_playwright() as p:
     check("11e", "Ahmed marks it received from his queue; the row leaves", pg.locator(".q", has_text="Collect commission").count() == 0
           and any(e["type"] == "document.filed" and "Commission received" in e["content"]["title"] for e in api.get(f"{BASE}/api/events?deal=marina-1204").json()))
 
+
+    # ---------- 12. the rental path (plan L2-L8) ----------
+    api.post(f"{BASE}/api/demo/reset")
+    pg.set_viewport_size({"width": 1440, "height": 1000})
+    pg.goto(f"{BASE}/web/deal.html?deal=jvc-88")
+    pg.wait_for_selector("#dept-ops .card")
+    acting("priya")
+    pg.wait_for_timeout(500)
+    check("12a", "only the broker or owner sets the path", "Only Omar (the broker) or the owner changes it" in pg.locator("#dept-ops").inner_text())
+    acting("omar")
+    pg.wait_for_timeout(500)
+    pg.select_option("#dept-ops select[aria-label='Paperwork path']", "rent")
+    pg.wait_for_timeout(900)
+    ops = pg.locator("#dept-ops").inner_text()
+    check("12b", "the deal is now a rental, offering its own paperwork", "Rental: paperwork" in ops and "Start the paperwork" not in ops)  # Omar can't start it
+    acting("joseph")
+    pg.wait_for_timeout(500)
+    clear()
+    pg.locator("#dept-ops").get_by_role("button", name="Start the paperwork").click()
+    msg = toast()
+    pg.wait_for_timeout(900)
+    ops = pg.locator("#dept-ops").inner_text()
+    shot("25-rental")
+    check("12c", "rental steps from the owner's rules, each with who it waits on",
+          all(x in ops for x in ("Tenancy contract signed", "Ejari registered", "Move-in inspection and keys", "waiting on the tenant and the landlord")), msg)
+    fin = pg.locator("#dept-fin").inner_text()
+    check("12d", "Finance: security deposit 5% of the yearly rent, agency fee 5% + VAT from the tenant",
+          "Expect the security deposit AED 95,000" in fin and "Yearly rent" in fin and "Commission 5%" in fin and "paid by the tenant" in fin)
+    acting("ahmed")
+    pg.wait_for_timeout(500)
+    dep = pg.locator("#dept-fin .card", has_text="Expect the security deposit")
+    dep.locator("input").fill("CHQ 001122")
+    dep.get_by_role("button", name="Received").click()
+    pg.wait_for_timeout(900)
+    check("12e", "Ahmed marks the deposit received", "Received, reference CHQ 001122" in pg.locator("#dept-fin").inner_text())
+
     # widths: no sideways scroll at 1280 or on a phone
     for w, hgt in ((1280, 900), (390, 844)):
         pg.set_viewport_size({"width": w, "height": hgt})

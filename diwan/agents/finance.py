@@ -65,8 +65,8 @@ def due_date(words: str | None, said: date) -> date | None:
 def expected(g: Graph, task: Node, today: date) -> dict:
     """What the Payment tracker shows for one expectation: the promise, the day, and whether it is late."""
     promise = next((g.nodes[f] for f in task.props.get("rests_on", []) if f in g.nodes and g.nodes[f].props.get("kind") == "payment_promise"), None)
-    if not promise:
-        return {}
+    if not promise:  # worked out from the rules (a rental's deposit), not promised in words: no day was said
+        return {"amount_aed": task.props.get("amount_aed"), "due": None, "due_words": None, "overdue": False} if task.props.get("amount_aed") else {}
     said = datetime.fromisoformat(promise.at).astimezone(DUBAI).date()
     due = due_date(promise.props.get("due"), said)
     return {"amount_aed": promise.props.get("amount_aed"), "due": due.isoformat() if due else None, "due_words": promise.props.get("due"),

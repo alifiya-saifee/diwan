@@ -126,3 +126,25 @@ def test_a_changed_price_sends_the_invoice_back_and_stops_it_being_sent(office, 
     assert g.nodes[did].status == "sent_back" and g.nodes[send.id].status == "withdrawn"
     assert finance.commission(g, "marina-1204")["total"] == 52_500
     assert finance.draft_invoice(office, "marina-1204", "ahmed") != did
+
+
+# ---------- the rental path (plan L2-L8) ----------
+
+def test_the_broker_sets_the_path_once_before_the_paperwork_starts(office, monkeypatch):
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    assert c.post("/api/desk/deals/jvc-88/path", json={"by": "priya", "path": "rent"}).status_code == 403
+    assert c.post("/api/desk/deals/jvc-88/path", json={"by": "omar", "path": "lease"}).status_code == 400
+    assert c.post("/api/desk/deals/jvc-88/path", json={"by": "omar", "path": "rent"}).json()["path"] == "rent"
+    v = c.get("/api/desk/deals/jvc-88").json()
+    assert v["path"] == {"id": "rent", "name": "Rental", "chosen": True, "from_desk": False}
+    assert v["commission"]["base_label"] == "Yearly rent" and v["commission"]["payer"] == "tenant" and v["commission"]["pct"] == 5
+    assert c.post("/api/desk/deals/jvc-88/paperwork", json={"by": "omar"}).status_code == 403
+    tids = c.post("/api/desk/deals/jvc-88/paperwork", json={"by": "joseph"}).json()["tasks"]
+    g = office.graph()
+    assert [g.nodes[t].props["action"] for t in tids] == [s for s, _ in desk_rules.DEFAULTS["paths"]["rent"]["steps"]]
+    dep = next(t for t in g.of("task", "jvc-88") if t.props["agent"] == "pay")
+    assert dep.props["amount_aed"] == 95_000 and "security deposit" in dep.props["action"]  # 5% of 1.9M said as the rent
+    assert c.post("/api/desk/deals/jvc-88/paperwork", json={"by": "joseph"}).status_code == 400
+    assert c.post("/api/desk/deals/jvc-88/path", json={"by": "omar", "path": "ready"}).status_code == 400  # fixed once started
+    assert c.post("/api/desk/deals/marina-1204/paperwork", json={"by": "joseph"}).status_code == 400  # ready: Form F instead

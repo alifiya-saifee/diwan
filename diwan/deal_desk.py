@@ -323,7 +323,9 @@ def deal(deal: str):
         g = _office().graph()
         p = desk_rules.path(g, deal)
         return deal_view(g, deal) | {"summary": Ledger(g, date.today()).summary(deal), "roles": roles.table(g),
-                                     "path": {"id": p["id"], "name": p["name"]}, "commission": finance.commission(g, deal)}
+                                     "path": {"id": p["id"], "name": p["name"], "chosen": bool(g.settings.get(f"deal:{deal}", {}).get("path")),
+                                              "from_desk": bool(g.nodes[f"deal:{deal}"].props.get("kind"))},
+                                     "commission": finance.commission(g, deal)}
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
 
@@ -583,3 +585,23 @@ def invoiced(tid: str, body: InvoiceIn):
 @router.post("/api/desk/tasks/{tid}/commission")
 def commission_in(tid: str, body: Received):
     return {"document": _call(finance.commission_received, _office(), tid, pid(body.by), body.reference, today=date.today())}
+
+
+# ---------- a rental or off-plan deal's path and paperwork ----------
+
+class PathIn(BaseModel):
+    by: str
+    path: str
+
+
+@router.post("/api/desk/deals/{deal}/path")
+def set_path(deal: str, body: PathIn):
+    _call(desk_rules.set_path, _office(), deal, body.path, missing="deal", by=pid(body.by) or body.by)
+    return {"path": desk_rules.path_of(_office().graph(), deal)}
+
+
+@router.post("/api/desk/deals/{deal}/paperwork")
+def start_paperwork(deal: str, body: Run):
+    if f"deal:{deal}" not in _office().graph().nodes:
+        raise HTTPException(404, f"There is no deal {deal!r}.")
+    return {"tasks": _call(operations.start_paperwork, _office(), deal, pid(body.by))}

@@ -102,3 +102,28 @@ def tick(office: Office, tid: str, by: str, note: str = "") -> None:
     if t.status not in OPEN:
         raise ValueError(f"{tid} is {t.status}.")
     office.log.append("task.done", actor=by, agent="transfer", deal=t.deal, content={"id": tid, "reason": f"Done{': ' + note.strip() if note.strip() else ''}"})
+
+
+def start_paperwork(office: Office, deal: str, by: str) -> list[str]:
+    """A rental or off-plan deal's paperwork: the owner's steps for its path, each waiting on who the rules say. A rental
+    also tells Finance to expect the security deposit (the owner's percentage of the yearly rent the client said).
+    A ready sale starts with the Form F plan instead."""
+    g = office.graph()
+    roles.check(g, "transactions", by)
+    p = desk_rules.path(g, deal)
+    if p["id"] == "ready":
+        raise ValueError("A ready sale's paperwork starts with the Form F plan.")
+    if any(t.props["agent"] == "transfer" for t in g.of("task", deal)):
+        raise ValueError("The paperwork has already started.")
+    who = roles.holder(g, "transactions")
+    tids = [office.add_task(deal, "transfer", step, needs_person=who, props={"waiting_on": waits}) for step, waits in p["steps"]]
+    if p["id"] == "rent":
+        rent = (g.facts(deal, "deal_term") or [None])[-1]
+        if rent and rent.props.get("amount_aed"):
+            amount = round(rent.props["amount_aed"] * p["deposit_pct"] / 100)
+            office.add_task(deal, "pay", f"Expect the security deposit AED {amount:,} ({p['deposit_pct']}% of the yearly rent) from the tenant, held by the landlord",
+                            rests_on=[rent.id], props={"amount_aed": amount})
+        else:
+            office.log.append("question.asked", actor="pay", agent="pay", deal=deal,
+                              content={"to": g.nodes[f"deal:{deal}"].props["broker"], "refs": [], "text": "What yearly rent did the tenant agree? The deposit and fee are worked out from it."})
+    return tids
