@@ -85,6 +85,8 @@ booked correctly, from the knowledge store and catalog, with people in control; 
 - [x] Operations: Form F filled from live facts, stopping before Submit; a replaced fact blocks it with the reason; the transfer checklist with who is waiting. *Checked in the browser 29 Oct (`e2e/deal_flow.py` 5a–5g): "Prepare Form F" → plan v1 from live facts, passed review, Seller and passport left for Joseph; only Joseph marks it submitted; the correction sends v1 back naming slide 5 and withdraws its submit step; v2 says Karim pays; a portal reference is required; the transfer checklist shows who each step waits on and Joseph ticks it.*
 - [x] Review: no draft resting on a replaced fact reaches a person; each send-back names the fact and its replacement. *Checked in the browser 29 Oct (6a, 5c): send-backs name the slide, the old fact and its replacement; every new draft is checked when made (`review.passed`, or sent back at once: tested in code).*
 - [x] A Deal desk screen (one deal: checks, payments, paperwork, send-backs); each department's 3D floor shows its work. *Checked in the browser 29 Oct (`e2e/deal_flow.py` 45/45, 7a–7g): `web/deal.html` ("Deals" in the header) with 302 deals paged at 50, search, "waiting for someone", an unknown deal and no match say so, 1280 and phone width, no stray null text; the Compliance, Finance, Operations and Review floors show only their own open work (a stale approval in red). "No deals yet" (empty office) is code only: the server always seeds the demo.*
+- [ ] Rules as the owner's settings, per kind of deal: the cash-report limit, each kind's stages, paperwork steps, deposit and fee percentages and closing checklist, with Dubai defaults filled in once (approved by the product owner 30 Oct; spec: docs/deal-desk.md item 8).
+- [ ] Closing a deal, then Records: a deal at its last stage is Closing until the final figures, commission, compliance and documents are done; closing records the sale with Records and archives the deal; rentals and off-plan keep their after-close work (approved by the product owner 30 Oct from the mock; spec item 9; the hand-over is agreed with the Records session first).
 
 ## 4. Records
 
@@ -114,6 +116,7 @@ booked correctly, from the knowledge store and catalog, with people in control; 
 | Front desk & Sales → Deal desk | a deal reaching Offer accepted | Form F starts |
 | Deal desk → everyone | `check.raised`, `decision.needed`, `review.returned` | money-related work waits for the officer; stale work goes back |
 | Front desk & Sales ↔ Records | `records.delegate()` from Nova | numbers and documents answered from records only |
+| Deal desk → Records | a deal closing (proposed 30 Oct, to agree) | the sale is recorded with Records (`office.close_sale`), so the owner page, Nova and Marketing count it |
 
 A new event shape at a meeting point is written in the changelog before either side builds it.
 

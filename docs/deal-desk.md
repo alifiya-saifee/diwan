@@ -85,6 +85,40 @@ the same deals and one deal opens in a side panel:
   person `desk`); until then the team member whose role says so holds it; with nobody in a role the work says so.
   A role's open work moves with the role; a question addressed to a broker stays with that broker.
 
+## Next, in order (approved by the product owner 30 Oct)
+
+8. **Rules as the owner's settings, per kind of deal.** Nothing the office decides lives in code. The owner edits, on the
+   Deal desk, with every change kept in the log (`setting.changed`, person `desk`):
+   - the cash-report limit (default AED 55,000) and which payment methods count as cash;
+   - for each kind of deal (ready sale, off-plan, rental): its stages, its paperwork steps with who each waits on, the
+     usual deposit and fee percentages, and its closing checklist. Ready sales start from today's steps; off-plan and
+     rentals start from the usual Dubai steps in the mock, which Joseph and Priya confirm before they're switched on;
+   - Dubai defaults are filled in once, so a new office starts working and changes only what differs.
+   *Done means:* the owner changes the cash limit to AED 50,000 and a 52,000 cash promise drafts a report; a step added
+   to a kind appears on the next deal of that kind and not on deals already past it; someone who isn't the owner can't
+   change anything; every change shows who made it and when. Rentals and off-plan also need the listing's
+   ready/off-plan and furnishing fields (Front desk & Sales) before a deal's kind can be read from its listing; until
+   then the broker sets the kind once.
+
+9. **Closing a deal, then Records** (mock approved 30 Oct, the same link). Reaching the last stage doesn't finish a
+   deal. It is **Closing** until four items are done, each waiting on its role:
+   1. final price and commission (or final rent and agency fee) confirmed by the broker, filled in from the deal's facts
+      with their quotes;
+   2. commission invoiced and paid (Finance), to the buyer, the developer or the tenant depending on the kind;
+   3. every compliance item closed (Compliance): no open screening, proof or cash report;
+   4. the documents filed (Paperwork): title deed copy, Form F and receipts; SPA and Oqood; Ejari, contract and inventory.
+
+   Then "Close the deal" records the sale with Records (price, commission, broker, date, kind, source), so the owner
+   page, Nova's numbers and Marketing's source report count it. The deal leaves the live pipeline for the archive,
+   searchable under "Closed", kept at least five years, and corrected only by a new entry. After closing, what keeps
+   running depends on the kind: nothing for a ready sale (Property management if the owner asks); the payment plan to
+   handover for off-plan; for a rental, the remaining cheques, a renewal question to the broker 90 days before the end,
+   and the deposit refund after the move-out inspection.
+   *Done means:* the button stays off until all four items are done; each item shows in its holder's My work; closing
+   writes one sale that Records finds and Nova's "what did we sell" counts; the Overview's "After the sale" numbers open
+   their deals; a closed rental still shows its lease work. **Needs the Records session's agreement first** on how the
+   Deal desk hands them the sale (`office.close_sale`, theirs), written in the changelog before either side builds it.
+
 ## States every section must handle
 
 Empty (no deals; a deal with no money facts; nothing to screen), errors (an action by the wrong person is refused with
