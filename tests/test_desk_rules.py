@@ -107,7 +107,6 @@ def test_an_invoice_is_drafted_sent_and_collected_by_finance_only(office, monkey
     assert office.graph().nodes[did].status == "live"  # Review passed it: it rests on the live price
     assert c.post("/api/desk/deals/marina-1204/invoice", json={"by": "ahmed"}).status_code == 400
     send = next(t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "inv")
-    assert c.post(f"/api/desk/tasks/{send.id}/invoiced", json={"by": "ahmed"}).status_code == 400
     collect = c.post(f"/api/desk/tasks/{send.id}/invoiced", json={"by": "ahmed", "number": "INV-0042"}).json()["task"]
     assert "invoice INV-0042" in office.graph().nodes[collect].props["action"]
     q = c.get("/api/desk/work?person=ahmed").json()["items"]
@@ -751,3 +750,34 @@ def test_rania_reminds_every_two_days_in_the_daytime_then_the_broker_calls(offic
     assert len(call) == 1 and call[0].props["needs_person"] == "omar" and "3 reminders" in call[0].props["action"]
     karim = [t for t in office.graph().of("task", "marina-1204") if t.props.get("step") == "docs_call"]
     assert len(karim) == 2 and all("no WhatsApp on file" in t.props["action"] for t in karim)  # the demo deal has no chat: the broker sends it
+
+
+
+# ---------- tax invoices and receipts as PDFs (spec item 15) ----------
+
+def test_diwan_numbers_its_invoices_in_one_sequence_and_prints_the_tax_invoice(office, monkeypatch):
+    from datetime import date
+    from diwan.agents import finance
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    desk_rules.save(office, edited(office, agency={"name": "Diwan Realty", "orn": "ORN-12345", "address": "Office 1204, Marina Plaza, Dubai", "trn": "100234567800003"}),
+                    by="layla")
+    finance.draft_invoice(office, "marina-1204", "ahmed")
+    send = next(t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "inv")
+    draft = c.get(f"/api/desk/invoices/{send.id}.pdf").content.decode("latin-1")
+    assert "Tax invoice \\(draft: not issued\\)" in draft and "100234567800003" in draft
+    collect = c.post(f"/api/desk/tasks/{send.id}/invoiced", json={"by": "ahmed"}).json()["task"]
+    num = office.graph().nodes[collect].props["invoice"]
+    assert num == f"INV-{date.today().year}-0001"
+    pdf = c.get(f"/api/desk/invoices/{collect}.pdf")
+    t = pdf.content.decode("latin-1")
+    assert pdf.headers["content-type"] == "application/pdf" and num in t and "Karim Haddad" in t and "AED 52,000.00" in t and "AED 2,600.00" in t and "AED 54,600.00" in t
+    finance.draft_invoice(office, "jvc-88", "ahmed")
+    send2 = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
+    assert c.post(f"/api/desk/tasks/{send2.id}/invoiced", json={"by": "ahmed", "number": num}).status_code == 400  # never reused
+    nxt = c.post(f"/api/desk/tasks/{send2.id}/invoiced", json={"by": "ahmed"}).json()["task"]
+    assert office.graph().nodes[nxt].props["invoice"].endswith("-0002")
+    assert c.get(f"/api/desk/receipts/{collect}.pdf").status_code == 404  # nothing received yet
+    c.post(f"/api/desk/tasks/{collect}/commission", json={"by": "ahmed", "reference": "ENBD 9001"})
+    r = c.get(f"/api/desk/receipts/{collect}.pdf").content.decode("latin-1")
+    assert f"RCT-{collect}" in r and "ENBD 9001" in r and "AED 54,600.00" in r

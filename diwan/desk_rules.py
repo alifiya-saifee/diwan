@@ -34,7 +34,8 @@ DEFAULTS = {
     "docs_reminder_days": 2, "docs_reminders": 3,  # Rania reminds this often, this many times, then the broker calls  # a deal agreed further below its listing price than this waits for the owner before it converts
     "close_days_target": 60,  # the owner's target from "yes" to closed
     "developers": [],  # [{"name", "commission_pct", "payable_after_pct"}], one per developer agency agreement
-    "agency": {"name": "", "orn": ""},  # our office as it appears on the forms: its name and RERA office number (ORN)
+    "agency": {"name": "", "orn": "", "address": "", "trn": ""},  # our office on forms and invoices: name, RERA number, address, VAT number
+    "invoice_prefix": "INV-",  # invoices Diwan issues are numbered prefix, year, running number
     "brns": {},  # each broker's RERA card number (BRN), by person
     "paths": {
         "ready": {
@@ -178,7 +179,8 @@ def save(office, new: dict, *, by: str) -> dict:
     r = _merge(DEFAULTS, new)
     for k in ("cash_report_aed", "stuck_days", "close_days_target", "sign_link_days", "docs_reminder_days", "docs_reminders"):
         r[k] = int(r[k]) if str(r.get(k, "")).isdigit() else r.get(k)
-    r["agency"] = {"name": str((r.get("agency") or {}).get("name", "")).strip(), "orn": str((r.get("agency") or {}).get("orn", "")).strip()}
+    r["agency"] = {k: str((r.get("agency") or {}).get(k, "")).strip() for k in ("name", "orn", "address", "trn")}
+    r["invoice_prefix"] = str(r.get("invoice_prefix") or "INV-").strip()
     r["brns"] = {k: str(v).strip() for k, v in (r.get("brns") or {}).items() if str(v).strip()}
     r["developers"] = [{"name": str(d.get("name", "")).strip(), "commission_pct": d.get("commission_pct"), "payable_after_pct": d.get("payable_after_pct")}
                        for d in r.get("developers") or []]
@@ -230,7 +232,7 @@ def developer(g: Graph, name_: str | None) -> dict | None:
 
 TERMS = {"agreement": "the signed agency agreement (Form A, Form B, the developer's or the listing agreement) and its number",
          "rate_pct": "the commission rate it says", "other_agency": "the other agency, under Form I", "other_share_pct": "their share of the commission",
-         "sides": "which side we act for", "other_orn": "the other agency's ORN", "other_agent": "the other agent", "other_brn": "the other agent's BRN",
+         "sides": "which side we act for", "payer_trn": "the VAT number of whoever pays the commission", "other_orn": "the other agency's ORN", "other_agent": "the other agent", "other_brn": "the other agent's BRN",
          "developer": "the developer", "start": "the tenancy start", "end": "the tenancy end", "furnished": "furnished"}
 MONEY_TERMS = ("rate_pct", "other_agency", "other_share_pct", "developer")
 FORM_TERMS = ("rate_pct", "other_agency", "other_share_pct", "other_orn", "other_agent", "other_brn", "sides")  # what the agency forms carry

@@ -278,6 +278,9 @@ async function rulesPanel() {
     h("div", { class: "rgrid" },
       h("label", { class: "rule" }, "Agency name", owner ? h("input", { value: d.agency.name, "aria-label": "Agency name", oninput: (e) => { d.agency.name = e.target.value; } }) : h("strong", {}, d.agency.name || "not set")),
       h("label", { class: "rule" }, "Office number (ORN)", owner ? h("input", { value: d.agency.orn, "aria-label": "Office number (ORN)", oninput: (e) => { d.agency.orn = e.target.value; } }) : h("strong", {}, d.agency.orn || "not set")),
+      h("label", { class: "rule" }, "Address (on invoices)", owner ? h("input", { value: d.agency.address || "", "aria-label": "Agency address", oninput: (e) => { d.agency.address = e.target.value; } }) : h("strong", {}, d.agency.address || "not set")),
+      h("label", { class: "rule" }, "VAT number (TRN)", owner ? h("input", { value: d.agency.trn || "", "aria-label": "VAT number (TRN)", oninput: (e) => { d.agency.trn = e.target.value; } }) : h("strong", {}, d.agency.trn || "not set")),
+      h("label", { class: "rule" }, "Invoice numbers start with", owner ? h("input", { value: d.invoice_prefix, "aria-label": "Invoice prefix", oninput: (e) => { d.invoice_prefix = e.target.value; } }) : h("strong", {}, d.invoice_prefix)),
       ...Object.entries(TEAM).filter(([, p]) => /broker/i.test(p.role || "")).map(([k, p]) => h("label", { class: "rule" }, `${p.name}'s card number (BRN)`,
         owner ? h("input", { value: d.brns[k] || "", "aria-label": `${p.name}'s BRN`, oninput: (e) => { d.brns[k] = e.target.value; } }) : h("strong", {}, d.brns[k] || "not set")))),
     h("div", { class: "groups", style: "margin:14px 0 10px" }, ...Object.keys(PATHNAMES).map((k) => h("button", { class: rulesPath === k ? "on" : "", onclick: () => { rulesPath = k; show(); } }, PATHNAMES[k]))),
@@ -413,7 +416,7 @@ function qrow(x) {
   else if (x.act === "submitted") { const i = inp("Portal reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/submitted`, { reference: i.value }, "Form F submitted") }, "I submitted it")]; }
   else if (x.act === "confirm") acts = [h("button", { onclick: () => open(x.deal) }, "Check the figures"), h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/confirm`, {}, "Final figures confirmed") }, "Confirm")];
   else if (x.act === "docs") acts = [h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/docs`, {}, "Closing documents filed") }, "Documents filed")];
-  else if (x.act === "invoiced") { const i = inp("Invoice number"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/invoiced`, { number: i.value }, "Invoice sent; collecting it next") }, "I sent it")]; }
+  else if (x.act === "invoiced") { const i = inp("Invoice no. (blank: Diwan numbers it)"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/invoiced`, { number: i.value }, "Invoice sent; collecting it next") }, "I sent it")]; }
   else if (x.act === "commission") { const i = inp("Bank reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/commission`, { reference: i.value }, "Commission received; receipt filed") }, "Received")]; }
   else if (x.act === "tick") acts = [h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/tick`, {}, "Ticked") }, "Done")];
   else if (x.act === "docscall") { const i = inp("What the client said"); acts = [openBtn(), i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/docscall`, { note: i.value }, "Noted") }, "Done")]; }
@@ -562,7 +565,9 @@ function taskEl(t) {
       const ref = h("input", { placeholder: escrow ? "Developer's receipt number" : "Bank or receipt reference", "aria-label": "Payment reference" });
       el.append(isFinance ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/received`, { reference: ref.value }, escrow ? "Marked paid into escrow; receipt filed" : "Marked received; receipt filed") }, escrow ? "Paid into escrow" : "Received"))
         : h("div", { class: "acts small muted" }, `Only ${rname("finance")} marks money received.`));
-    } else if (t.result === "received" && !escrow && !view.approvals.some((a) => a.action.endsWith(`(${t.id})`))) {
+    }
+    if (t.result === "received") el.append(h("div", { class: "acts" }, h("a", { class: "btn", href: `/api/desk/receipts/${t.id}.pdf`, target: "_blank" }, "Receipt (PDF)")));
+    if (t.result === "received" && !escrow && !view.approvals.some((a) => a.action.endsWith(`(${t.id})`))) {
       el.append(isFinance ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/release`, {}, "Release approved; carry it out when ready") }, "Approve release"))
         : h("div", { class: "acts small muted" }, `Only ${rname("finance")} releases money.`));
     }
@@ -594,12 +599,16 @@ function taskEl(t) {
       : h("div", { class: "acts small muted" }, `Only ${rname("finance")} pays out a share.`));
   } else if (t.agent === "inv" && live) {
     const send = t.step === "send" || /^Send /.test(t.action), fin = holds("finance");
-    const ref = h("input", { placeholder: send ? "Invoice number" : "Bank reference", "aria-label": send ? "Invoice number" : "Bank reference" });
+    const ref = h("input", { placeholder: send ? "Invoice number (blank: Diwan numbers it)" : "Bank reference", "aria-label": send ? "Invoice number" : "Bank reference" });
+    el.append(h("div", { class: "acts" }, h("a", { class: "btn", href: `/api/desk/invoices/${t.id}.pdf`, target: "_blank" }, send ? "Preview the invoice (PDF)" : "The invoice (PDF)")));
     el.append(fin ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send
       ? sendIt(`/api/desk/tasks/${t.id}/invoiced`, { number: ref.value }, "Invoice sent; collecting it next")
       : sendIt(`/api/desk/tasks/${t.id}/commission`, { reference: ref.value }, "Commission received; receipt filed") }, send ? "I sent it" : "Received"))
       : h("div", { class: "acts small muted" }, `Only ${rname("finance")} sends invoices and marks commission received.`));
   }
+  if (t.agent === "inv" && t.step === "collect" && t.result === "received")
+    el.append(h("div", { class: "acts" }, h("a", { class: "btn", href: `/api/desk/invoices/${t.id}.pdf`, target: "_blank" }, "The invoice (PDF)"),
+      h("a", { class: "btn", href: `/api/desk/receipts/${t.id}.pdf`, target: "_blank" }, "Receipt (PDF)")));
   if (live && t.agent === "report") {
     const ref = h("input", { placeholder: "goAML reference", "aria-label": "goAML reference" });
     el.append(officer ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/filed`, { reference: ref.value }, "Filing recorded") }, "I filed it"))

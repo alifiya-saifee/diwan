@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from diwan import agency_forms, desk_kpis, desk_rules, desk_stages, documents, roles, signing
+from diwan import agency_forms, desk_kpis, desk_rules, desk_stages, documents, invoices, roles, signing
 from diwan.agents import compliance, finance, operations, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
@@ -866,3 +866,23 @@ def doc_checked(tid: str, body: DocCheck):
 def docs_called(tid: str, body: Tick):
     _call(documents.call_done, _office(), tid, pid(body.by) or body.by, body.note)
     return {"ok": True}
+
+
+
+# ---------- the tax invoice and receipts as PDFs ----------
+
+def _pdf(data: bytes, filename: str):
+    from fastapi.responses import Response
+    return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{filename}"'})
+
+
+@router.get("/api/desk/invoices/{tid}.pdf")
+def invoice_pdf(tid: str):
+    g = _office().graph()
+    data = _call(invoices.invoice_pdf, g, tid, missing="invoice")
+    return _pdf(data, f"{g.nodes[tid].props.get('invoice') or 'invoice-draft'}.pdf")
+
+
+@router.get("/api/desk/receipts/{tid}.pdf")
+def receipt_pdf(tid: str):
+    return _pdf(_call(invoices.receipt_pdf, _office().graph(), tid, missing="receipt"), f"RCT-{tid}.pdf")

@@ -200,6 +200,14 @@ the same deals and one deal opens in a side panel:
     broker is asked to call. Reading the card itself needs a vision provider the owner approves for real IDs; until
     then the client types the details and a person checks them.
 
+15. **Tax invoices and receipts as PDFs** (asked for by the product owner 30 Oct). Sending the commission invoice gives
+    it Diwan's next number in one sequence that is never reused (the owner's prefix, the year, a running number:
+    INV-2026-0001), unless Finance types the number their own system gave it. The tax invoice prints our agency's name,
+    address and TRN (the owner's settings), who it is billed to (the buyer, the tenant or the developer) and their TRN
+    if given, what it is for, the amount before VAT, the VAT and the total in dirhams; before it is sent it is marked a
+    draft. Every payment and commission marked received has a receipt with its reference. Our accountant confirms the
+    layout against the Federal Tax Authority's requirements before invoices go to clients.
+
 ## States every section must handle
 
 Empty (no deals; a deal with no money facts; nothing to screen), errors (an action by the wrong person is refused with

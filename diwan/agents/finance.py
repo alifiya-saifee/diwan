@@ -197,14 +197,18 @@ def split_paid(office: Office, tid: str, by: str, reference: str) -> None:
     office.log.append("task.done", actor=by, agent="inv", deal=t.deal, content={"id": tid, "reason": f"Paid, reference {reference.strip()}", "result": "paid"})
 
 
-def invoice_sent(office: Office, tid: str, by: str, number: str) -> str:
+def invoice_sent(office: Office, tid: str, by: str, number: str = "", *, today: date | None = None) -> str:
+    """Finance sends the invoice: under Diwan's next number in the owner's sequence, or under the number their own
+    accounting system gave it."""
+    from diwan import invoices
     g = office.graph()
     roles.check(g, "finance", by)
     t = _inv_task(g, tid, "send")
     if g.stale(tid) or g.nodes[t.props["draft"]].status == "sent_back":
         raise ValueError(f"{t.props['draft']} rests on a price the client replaced; draft the invoice again.")
-    if not number.strip():
-        raise ValueError("Give the invoice number you sent it under.")
+    number = number.strip() or invoices.next_number(g, today or date.today())
+    if any(x.props.get("agent") == "inv" and x.props.get("invoice") == number for x in g.of("task")):
+        raise ValueError(f"Invoice {number} is already used; every invoice has its own number.")
     office.log.append("task.done", actor=by, agent="inv", deal=t.deal, content={"id": tid, "reason": f"Sent as invoice {number.strip()}", "result": "sent"})
     payer = t.props["action"].split(" to the ")[1].split(":")[0]
     return office.add_task(t.deal, "inv", f'Collect commission AED {t.props["amount_aed"]:,} from the {payer} (invoice {number.strip()})',
