@@ -29,6 +29,8 @@ def current(g: Graph, node) -> str | None:
     role = ROLE_WORK.get((node.type, node.props.get("agent")))
     if node.type == "task" and node.props.get("closing") and node.props.get("step") == "docs":
         role = "transactions"
+    if node.type == "task" and node.props.get("desk_role") in ROLES:  # work that names its role (after-closing tasks)
+        role = node.props["desk_role"]
     return (holder(g, role) or stored) if role and stored else stored
 
 

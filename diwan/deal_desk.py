@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from diwan import desk_rules, roles
+from diwan import desk_kpis, desk_rules, roles
 from diwan.agents import compliance, finance, operations, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
@@ -72,6 +72,7 @@ def deal_view(g: Graph, deal: str, today: date | None = None) -> dict:
               "needs_person": roles.current(g, t), "rests_on": _facts_on(g, t.props.get("rests_on", [])),
               "person": t.props.get("person"), "result": t.props.get("result"), "draft": t.props.get("draft"),
               "waiting_on": t.props.get("waiting_on"), "step": t.props.get("step"), "amount_aed": t.props.get("amount_aed"),
+              "after": operations.is_after(t), "due": t.props.get("due"),
               **(finance.expected(g, t, today or date.today()) if t.props["agent"] == "pay" else {})}
              for t in g.of("task", deal)]
     approvals = [{"id": a.id, "approver": a.props["approver"], "approver_name": name(a.props["approver"]), "action": a.props["action"],
@@ -210,13 +211,17 @@ class Ledger:
                     items.append(base | {"id": t.id, "who": roles.holder(self.g, "finance"), "kind": "Overdue" if e.get("overdue") else "Due soon" if soon else "Expected",
                                          "sev": "bad" if e.get("overdue") else "warn" if soon else "info", "title": t.props["action"],
                                          "at": t.at, "act": "received", "due": e.get("due")})
+                elif who and t.props["agent"] == "ops" and t.props.get("after_close"):
+                    late = t.props.get("due", "9") < self.today.isoformat()
+                    items.append(base | {"id": t.id, "who": who, "kind": "After closing", "sev": "bad" if late else "info", "title": t.props["action"],
+                                         "at": t.at, "act": "after", "due": t.props.get("due")})
                 elif who and operations.is_closing(t):
                     items.append(base | {"id": t.id, "who": who, "kind": "Closing", "sev": "warn", "title": t.props["action"], "at": t.at,
                                          "act": "confirm" if t.props.get("step") == "figures" else "docs"})
                 elif who and ag in ("screen", "report", "formf", "transfer", "inv"):
                     kind, sev, act = {"screen": ("Screening", "warn", "screen"), "report": ("Cash report", "bad", "filed"),
                                       "formf": ("Form F", "warn", "submitted"), "transfer": ("Transfer", "info", "tick"),
-                                      "inv": ("Commission", "warn", "invoiced" if t.props.get("step") == "send" else "commission")}[ag]
+                                      "inv": ("Commission", "warn", {"send": "invoiced", "split": "split"}.get(t.props.get("step"), "commission"))}[ag]
                     if ag == "formf" and not t.props.get("draft"):
                         continue
                     items.append(base | {"id": t.id, "who": who, "kind": kind, "sev": sev, "title": t.props["action"], "at": t.at, "act": act,
@@ -337,7 +342,9 @@ def deal(deal: str):
         return deal_view(g, deal) | {"summary": Ledger(g, date.today()).summary(deal), "roles": roles.table(g),
                                      "path": {"id": p["id"], "name": p["name"], "chosen": bool(g.settings.get(f"deal:{deal}", {}).get("path")),
                                               "from_desk": bool(g.nodes[f"deal:{deal}"].props.get("kind"))},
-                                     "commission": finance.commission(g, deal), "closing": operations.closing(g, deal)}
+                                     "commission": finance.commission(g, deal), "closing": operations.closing(g, deal),
+                                     "terms": desk_rules.terms(g, deal), "developers": [x["name"] for x in desk_rules.rules(g)["developers"]],
+                                     "schedule": dict(zip(("kind", "payee", "document"), finance.SCHEDULE[p["id"]])) if p["id"] in finance.SCHEDULE else None}
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
 
@@ -638,3 +645,56 @@ def close_deal(deal: str, body: Run):
     if f"deal:{deal}" not in _office().graph().nodes:
         raise HTTPException(404, f"There is no deal {deal!r}.")
     return {"sale": _call(operations.close, _office(), deal, pid(body.by), missing="deal", today=date.today())}
+
+
+
+# ---------- what the signed documents say, the payment schedule, the KPIs ----------
+
+class TermsIn(BaseModel):
+    by: str
+    terms: dict
+
+
+@router.post("/api/desk/deals/{deal}/terms")
+def set_terms(deal: str, body: TermsIn):
+    return {"terms": _call(desk_rules.set_terms, _office(), deal, body.terms, missing="deal", by=pid(body.by) or body.by)}
+
+
+class ScheduleIn(BaseModel):
+    by: str
+    document: str = ""
+    rows: list[dict] = []
+    cheques: int | None = None
+
+
+@router.post("/api/desk/deals/{deal}/schedule")
+def set_schedule(deal: str, body: ScheduleIn):
+    o = _office()
+    if f"deal:{deal}" not in o.graph().nodes:
+        raise HTTPException(404, f"There is no deal {deal!r}.")
+    rows = _call(finance.cheques, o.graph(), deal, body.cheques) if body.cheques else body.rows
+    return {"tasks": _call(finance.schedule, o, deal, rows, pid(body.by), document=body.document)}
+
+
+@router.post("/api/desk/tasks/{tid}/notneeded")
+def not_needed(tid: str, body: Tick):
+    _call(operations.not_needed, _office(), tid, pid(body.by), body.note)
+    return {"ok": True}
+
+
+@router.post("/api/desk/tasks/{tid}/split")
+def split_paid(tid: str, body: Received):
+    _call(finance.split_paid, _office(), tid, pid(body.by), body.reference)
+    return {"ok": True}
+
+
+@router.post("/api/desk/tasks/{tid}/after")
+def after_done(tid: str, body: Tick):
+    _call(operations.after_done, _office(), tid, pid(body.by) or body.by, body.note)
+    return {"ok": True}
+
+
+@router.get("/api/desk/kpis")
+def kpis():
+    o = _office()
+    return desk_kpis.kpis(o.graph(), o.log.list(), date.today())

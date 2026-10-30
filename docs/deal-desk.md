@@ -119,6 +119,28 @@ the same deals and one deal opens in a side panel:
    their deals; a closed rental still shows its lease work. **Needs the Records session's agreement first** on how the
    Deal desk hands them the sale (`office.close_sale`, theirs), written in the changelog before either side builds it.
 
+10. **The deal room plan: every touchpoint after the yes** (approved by the product owner 30 Oct:
+    https://claude.ai/artifact/5ofKRkJSPJstsj7NC9L1Mm). Each amount comes from the client's words, a signed document or
+    the owner's settings, never typed twice:
+    - a deal's **terms** from its signed documents (Form A or B and its rate, another agency and its share under Form I,
+      the developer, the tenancy dates and furnishing), recorded by the broker, the transactions officer or the owner,
+      and fixed once the commission invoice is drafted;
+    - **off-plan:** the owner's developer agreements (rate, and the share of the price paid before the developer owes
+      it); the SPA's payment plan becomes instalments into the project's escrow, each due on its day, which must add up
+      to the price less the booking already expected; the handover and title deed run on after closing;
+    - **rental:** the cheques spread over the year from the contract; after closing, the renewal question to the broker
+      the owner's notice days before the end, then the move-out (inspection, deposit refund, Ejari cancelled);
+    - **ready sale:** the buyer's mortgage, the seller's loan and the handover as steps; any step can be marked not
+      needed with the reason; the DLD fee shown;
+    - **KPIs** on the Overview, counted from the log, each opening its deals: yes to closed (per path, against the
+      owner's target), stuck (the owner's N days), time per touchpoint, compliance clear before money, corrections
+      caught, fall-through with reasons, money overdue by kind, commission billed vs collected, documents missing at
+      closing.
+    *Done means:* an instalment plan that doesn't add up is refused with the numbers; the developer can't be invoiced
+    before its share is paid; an instalment is never ours to release; the commission item waits for the other agency's
+    share to be paid; a rental can't close without its dates; every KPI is zero or "—" on an empty office and moves when
+    a deal closes. Not in this item: Form C (waiting on the product owner), mortgage amounts, resale before handover.
+
 ## States every section must handle
 
 Empty (no deals; a deal with no money facts; nothing to screen), errors (an action by the wrong person is refused with

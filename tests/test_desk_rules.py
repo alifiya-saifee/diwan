@@ -74,7 +74,7 @@ def test_a_new_step_reaches_new_paperwork_and_deals_past_it_keep_theirs(office, 
     assert c.post("/api/desk/rules", json={"by": "omar", "rules": r.json()["rules"]}).status_code == 403
     c.post(f"/api/desk/tasks/{sub.id}/submitted", json={"by": "joseph", "reference": "DLD-1"})
     got = [t.props["action"] for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "transfer"]
-    assert got[-1] == "Keys and access cards handed over" and len(got) == 6
+    assert got[-1] == "Keys and access cards handed over" and len(got) == len(steps) + 1
 
 
 def test_a_deals_path_comes_from_its_sales_desk(office):
@@ -155,6 +155,7 @@ def test_the_broker_sets_the_path_once_before_the_paperwork_starts(office, monke
 def _to_closing(office):
     from diwan.agents import compliance, operations
     desk_rules.set_path(office, "jvc-88", "rent", by="omar")
+    desk_rules.set_terms(office, "jvc-88", {"start": "2026-11-01", "end": "2027-10-31"}, by="omar")
     tids = operations.start_paperwork(office, "jvc-88", "joseph")
     for t in tids:
         operations.tick(office, t, "joseph")
@@ -208,3 +209,213 @@ def test_a_price_changed_after_confirmation_must_be_confirmed_again(office):
     office.record_fact("jvc-88", "deal_term", "We settled at one point eight.", "Sara Malik", amount_aed=1_800_000, replaces="F6")
     with pytest.raises(ValueError, match="confirm the final figures again"):
         operations.close(office, "jvc-88", "joseph", today=date.today())
+
+
+
+# ---------- what the signed documents say: rate, Form I split, developer, tenancy (plan R1-R3, O1, L2) ----------
+
+def _dev(office, **kw):
+    desk_rules.save(office, edited(office, developers=[{"name": "Emaar", "commission_pct": 4, "payable_after_pct": 20, **kw}]), by="layla")
+
+
+def test_terms_set_the_rate_and_the_other_agencys_share(office):
+    from diwan.agents import finance
+    with pytest.raises(PermissionError):
+        desk_rules.set_terms(office, "marina-1204", {"rate_pct": 1.5}, by="priya")
+    with pytest.raises(ValueError, match="together"):
+        desk_rules.set_terms(office, "marina-1204", {"other_agency": "Bayut Homes"}, by="omar")
+    desk_rules.set_terms(office, "marina-1204", {"agreement": "Form B 2026-118", "rate_pct": 1.5, "other_agency": "Bayut Homes", "other_share_pct": 50}, by="omar")
+    c = finance.commission(office.graph(), "marina-1204")
+    assert (c["pct"], c["rate_from"], c["amount"], c["share"], c["ours"]) == (1.5, "Form B 2026-118", 39_000, 19_500, 19_500)
+    assert c["fees"][0]["aed"] == 104_000  # the DLD fee, 4% of the price the client said
+    finance.draft_invoice(office, "marina-1204", "ahmed")
+    with pytest.raises(ValueError, match="fixed"):
+        desk_rules.set_terms(office, "marina-1204", {"rate_pct": 2}, by="omar")
+
+
+def test_the_split_is_paid_out_before_the_commission_item_is_done(office):
+    from datetime import date
+    from diwan.agents import finance, operations
+    desk_rules.set_terms(office, "jvc-88", {"other_agency": "Bayut Homes", "other_share_pct": 40}, by="omar")
+    steps = _to_closing(office)
+    finance.draft_invoice(office, "jvc-88", "ahmed")
+    send = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
+    finance.commission_received(office, finance.invoice_sent(office, send.id, "ahmed", "INV-9"), "ahmed", "ENBD 3", today=date.today())
+    item = lambda: next(i for i in operations.closing(office.graph(), "jvc-88")["items"] if i["key"] == "invoice")  # noqa: E731
+    assert not item()["done"] and "Bayut Homes" in item()["note"]
+    split = next(t for t in office.graph().of("task", "jvc-88") if t.props.get("step") == "split")
+    assert split.props["amount_aed"] == 38_000  # 40% of 95,000
+    with pytest.raises(ValueError, match="reference"):
+        finance.split_paid(office, split.id, "ahmed", " ")
+    finance.split_paid(office, split.id, "ahmed", "ENBD 4")
+    assert item()["done"]
+    operations.confirm_figures(office, steps["figures"], "omar")
+    operations.docs_filed(office, steps["docs"], "joseph")
+    sid = operations.close(office, "jvc-88", "joseph", today=date.today())
+    assert office.graph().nodes[sid].props["commission_aed"] == 57_000  # what we keep is what Records records
+
+
+def test_a_step_that_does_not_apply_is_marked_not_needed_with_the_reason(office):
+    from diwan.agents import operations
+    demo.correction(office)
+    operations.formf_plan(office, "marina-1204", office.add_task("marina-1204", "formf", "Prepare Form F"), "r1")
+    sub = next(t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "formf" and t.props.get("draft"))
+    operations.submitted(office, sub.id, "joseph", "DLD-2")
+    mort = next(t for t in office.graph().of("task", "marina-1204") if t.props["action"].startswith("Buyer's mortgage"))
+    with pytest.raises(ValueError, match="why"):
+        operations.not_needed(office, mort.id, "joseph", "")
+    operations.not_needed(office, mort.id, "joseph", "Karim pays cash")
+    t = office.graph().nodes[mort.id]
+    assert t.status == "done" and t.props["result"] == "not needed" and "Karim pays cash" in t.props["reason"]
+
+
+# ---------- off-plan: the developer's agreement, the SPA's instalments, the commission trigger (plan O1-O11) ----------
+
+def _offplan(office):
+    _dev(office)
+    desk_rules.set_path(office, "marina-1204", "offplan", by="omar")
+    desk_rules.set_terms(office, "marina-1204", {"developer": "Emaar"}, by="omar")
+    from diwan.agents import operations
+    return operations.start_paperwork(office, "marina-1204", "joseph")
+
+
+def test_a_developer_needs_an_agreement_and_its_rate_is_used(office):
+    from diwan.agents import finance
+    with pytest.raises(ValueError, match="no agreement with Emaar"):
+        desk_rules.set_terms(office, "marina-1204", {"developer": "Emaar"}, by="omar")
+    with pytest.raises(ValueError, match="percentage"):
+        desk_rules.save(office, edited(office, developers=[{"name": "Emaar", "commission_pct": 400, "payable_after_pct": 20}]), by="layla")
+    _offplan(office)
+    c = finance.commission(office.graph(), "marina-1204")
+    assert (c["pct"], c["payer"], c["developer"], c["amount"]) == (4, "developer", "Emaar", 104_000)
+    assert c["trigger"] == {"pct": 20, "paid": 0, "paid_pct": 0.0, "met": False}
+
+
+def test_the_spa_payment_plan_becomes_instalments_into_escrow_and_must_add_up(office, monkeypatch):
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    _offplan(office)
+    plan = [{"what": "On SPA signing", "pct": 10, "due": "2026-11-15"}, {"what": "On 50% construction", "pct": 30, "due": "2027-06-01"},
+            {"what": "On handover", "pct": 50, "due": "2028-03-01"}]
+    assert c.post("/api/desk/deals/marina-1204/schedule", json={"by": "ahmed", "document": "SPA-1", "rows": plan}).status_code == 403
+    r = c.post("/api/desk/deals/marina-1204/schedule", json={"by": "joseph", "document": "SPA-1", "rows": plan[:2]})
+    assert r.status_code == 400 and "add up" in r.json()["detail"] and "260,000 already expected" in r.json()["detail"]
+    tids = c.post("/api/desk/deals/marina-1204/schedule", json={"by": "joseph", "document": "SPA-1", "rows": plan}).json()["tasks"]
+    g = office.graph()
+    assert [g.nodes[t].props["amount_aed"] for t in tids] == [260_000, 780_000, 1_300_000]
+    assert all(g.nodes[t].props["payee"] == "the project's escrow account" for t in tids)
+    assert c.post("/api/desk/deals/marina-1204/schedule", json={"by": "joseph", "document": "SPA-1", "rows": plan}).status_code == 400
+    v = c.get("/api/desk/deals/marina-1204").json()
+    assert v["schedule"]["kind"] == "instalment" and [t["due"] for t in v["tasks"] if t["id"] in tids] == ["2026-11-15", "2027-06-01", "2028-03-01"]
+    assert c.post(f"/api/desk/tasks/{tids[0]}/received", json={"by": "ahmed", "reference": "EMR-55"}).status_code == 200
+    assert office.graph().nodes[tids[0]].props["reason"] == "Paid into the project's escrow account, receipt EMR-55"
+    assert c.post(f"/api/desk/tasks/{tids[0]}/release", json={"by": "ahmed"}).status_code == 400  # never ours to hold
+
+
+def test_the_developer_owes_commission_only_once_its_share_is_paid(office):
+    from datetime import date
+    from diwan.agents import finance
+    _offplan(office)
+    tids = finance.schedule(office, "marina-1204", [{"pct": 40, "due": "2026-11-15"}, {"pct": 50, "due": "2028-03-01"}], "joseph", document="SPA-2")
+    with pytest.raises(ValueError, match="once 20% of the price is paid; 0.0% is paid"):
+        finance.draft_invoice(office, "marina-1204", "ahmed")
+    finance.mark_received(office, tids[0], "ahmed", "EMR-1", today=date.today())
+    assert finance.commission(office.graph(), "marina-1204")["trigger"]["met"]
+    assert finance.draft_invoice(office, "marina-1204", "ahmed")
+
+
+def test_an_offplan_deal_closes_before_handover_and_the_instalments_keep_running(office):
+    from diwan.agents import operations
+    tids = _offplan(office)
+    g = office.graph()
+    assert [g.nodes[t].props.get("after", False) for t in tids] == [False, False, False, True, True]
+    for t in tids[:3]:
+        operations.tick(office, t, "joseph")
+    assert operations.closing(office.graph(), "marina-1204")  # closing started with the handover still ahead
+    assert all(office.graph().nodes[t].status == "queued" for t in tids[3:])
+
+
+# ---------- a rental after closing: cheques, renewal, move-out (plan L2, after closing) ----------
+
+def test_the_tenancy_cheques_are_spread_over_the_year_from_the_start_date(office):
+    from diwan.agents import finance
+    desk_rules.set_path(office, "jvc-88", "rent", by="omar")
+    with pytest.raises(ValueError, match="start date"):
+        finance.cheques(office.graph(), "jvc-88", 4)
+    with pytest.raises(ValueError, match="ends after"):
+        desk_rules.set_terms(office, "jvc-88", {"start": "2026-11-01", "end": "2026-10-01"}, by="omar")
+    desk_rules.set_terms(office, "jvc-88", {"start": "2026-11-30", "end": "2027-11-29"}, by="omar")
+    rows = finance.cheques(office.graph(), "jvc-88", 4)
+    assert [(r["amount_aed"], r["due"]) for r in rows] == [(475_000, "2026-11-30"), (475_000, "2027-02-28"), (475_000, "2027-05-30"), (475_000, "2027-08-30")]
+    tids = finance.schedule(office, "jvc-88", rows, "joseph", document="TC-77")
+    assert office.graph().nodes[tids[0]].props["payee"] == "the landlord"
+
+
+def test_closing_a_rental_dates_the_renewal_question_and_the_move_out(office, monkeypatch):
+    from datetime import date
+    from diwan.agents import finance, operations
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    steps = _to_closing(office)
+    operations.confirm_figures(office, steps["figures"], "omar")
+    operations.docs_filed(office, steps["docs"], "joseph")
+    finance.draft_invoice(office, "jvc-88", "ahmed")
+    send = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
+    finance.commission_received(office, finance.invoice_sent(office, send.id, "ahmed", "INV-10"), "ahmed", "ENBD 5", today=date.today())
+    operations.close(office, "jvc-88", "joseph", today=date.today())
+    after = {t.props["step"]: t for t in office.graph().of("task", "jvc-88") if t.props.get("after_close")}
+    assert after["renewal"].props["due"] == "2027-08-02" and after["renewal"].props["needs_person"] == "omar"  # 90 days before 31 Oct
+    assert after["moveout"].props["due"] == "2027-10-31"
+    work = c.get("/api/desk/work?person=joseph").json()["items"]
+    assert any(x["id"] == after["moveout"].id and x["act"] == "after" for x in work)
+    assert c.post(f"/api/desk/tasks/{after['renewal'].id}/after", json={"by": "joseph", "note": "x"}).status_code == 403
+    assert c.post(f"/api/desk/tasks/{after['renewal'].id}/after", json={"by": "omar", "note": ""}).status_code == 400
+    assert c.post(f"/api/desk/tasks/{after['renewal'].id}/after", json={"by": "omar", "note": "Sara renews at the same rent"}).json()["ok"]
+
+
+def test_a_rental_cannot_close_without_its_tenancy_dates(office):
+    from datetime import date
+    from diwan.agents import finance, operations
+    steps = _to_closing(office)
+    desk_rules.set_terms(office, "jvc-88", {"start": "", "end": ""}, by="omar")
+    operations.confirm_figures(office, steps["figures"], "omar")
+    operations.docs_filed(office, steps["docs"], "joseph")
+    finance.draft_invoice(office, "jvc-88", "ahmed")
+    send = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
+    finance.commission_received(office, finance.invoice_sent(office, send.id, "ahmed", "INV-11"), "ahmed", "ENBD 6", today=date.today())
+    with pytest.raises(ValueError, match="start and end dates"):
+        operations.close(office, "jvc-88", "joseph", today=date.today())
+
+
+# ---------- the KPIs, counted from the log (plan: KPIs) ----------
+
+def test_kpis_are_counted_from_the_log_with_the_deals_behind_them(office, monkeypatch):
+    from datetime import date, timedelta
+    from diwan.agents import finance, operations
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    k = c.get("/api/desk/kpis").json()
+    assert k["to_close"]["median"] is None and k["fall"]["pct"] is None and k["stuck"]["deals"] == []
+    steps = _to_closing(office)
+    operations.confirm_figures(office, steps["figures"], "omar")
+    operations.docs_filed(office, steps["docs"], "joseph")
+    finance.draft_invoice(office, "jvc-88", "ahmed")
+    send = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
+    finance.commission_received(office, finance.invoice_sent(office, send.id, "ahmed", "INV-12"), "ahmed", "ENBD 7", today=date.today())
+    dep = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "pay")
+    finance.mark_received(office, dep.id, "ahmed", "ENBD 8", today=date.today())
+    operations.close(office, "jvc-88", "joseph", today=date.today())
+    k = c.get("/api/desk/kpis").json()
+    assert k["to_close"]["n"] == 1 and k["to_close"]["paths"]["rent"]["n"] == 1 and k["to_close"]["deals"][0]["deal"] == "jvc-88"
+    assert k["compliance"] == {"pct": 100, "n": 1, "deals": []}  # Sara was screened before the deposit arrived
+    assert k["commission"]["billed"] == k["commission"]["collected"] == 99_750 and k["commission"]["payers"]["tenant"]["billed"] == 99_750
+    assert {t["step"] for t in k["touchpoints"]} >= {"Ejari registered"}
+    from diwan import desk_kpis
+    office.add_task("marina-1204", "transfer", "Form F signed", needs_person="joseph", props={"waiting_on": "the buyer"})
+    later = desk_kpis.kpis(office.graph(), office.log.list(), date.today() + timedelta(days=10))
+    assert [(x["deal"], x["days"], x["waiting_on"]) for x in later["stuck"]["deals"]] == [("marina-1204", 10, "the buyer")]
+    office.log.append("stage.changed", actor="omar", deal="marina-1204", content={"stage": "Lost", "why": "the bank refused the mortgage"})
+    k = desk_kpis.kpis(office.graph(), office.log.list(), date.today())
+    assert k["fall"]["pct"] == 50 and k["fall"]["deals"][0]["why"] == "the bank refused the mortgage"
+    later = desk_kpis.kpis(office.graph(), office.log.list(), date.today() + timedelta(days=10))
+    assert later["stuck"]["deals"] == []  # the stuck deal was lost, the other closed

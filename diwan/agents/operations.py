@@ -5,7 +5,7 @@ new one is made from what stands now; the submit step rests on the same words, s
 from __future__ import annotations
 
 import re
-
+from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
 from diwan import desk_rules, roles
@@ -93,8 +93,14 @@ def submitted(office: Office, tid: str, by: str, reference: str) -> None:
     for r in g.of("request", t.deal, "open"):  # the clerk's "only a person submits" request is answered by this
         if r.props.get("kind") == "submit" and r.props.get("agent") == "formf":
             office.log.append("decision.made", actor=by, deal=t.deal, content={"card": r.id, "answer": f"Submitted, reference {reference.strip()}"})
-    for step, who in desk_rules.path(g, t.deal)["steps"]:  # the owner's steps for this deal's path
-        office.add_task(t.deal, "transfer", step, needs_person=roles.holder(g, "transactions"), props={"waiting_on": who})
+    add_steps(office, t.deal, desk_rules.path(g, t.deal)["steps"])
+
+
+def add_steps(office: Office, deal: str, steps: list) -> list[str]:
+    """The owner's steps for the deal's path, each waiting on who the rules say; a step marked "after" runs on after closing."""
+    who = roles.holder(office.graph(), "transactions")
+    return [office.add_task(deal, "transfer", s[0], needs_person=who, props={"waiting_on": s[1], **({"after": True} if s[2:] == ["after"] else {})})
+            for s in steps]
 
 
 def tick(office: Office, tid: str, by: str, note: str = "") -> None:
@@ -105,6 +111,20 @@ def tick(office: Office, tid: str, by: str, note: str = "") -> None:
     if t.status not in OPEN:
         raise ValueError(f"{tid} is {t.status}.")
     office.log.append("task.done", actor=by, agent="transfer", deal=t.deal, content={"id": tid, "reason": f"Done{': ' + note.strip() if note.strip() else ''}"})
+    start_closing(office, t.deal)
+
+
+def not_needed(office: Office, tid: str, by: str, why: str) -> None:
+    """A step that doesn't apply to this deal (a cash buyer has no mortgage), with the reason: it counts as done."""
+    roles.check(office.graph(), "transactions", by)
+    t = office.graph().nodes.get(tid)
+    if not t or t.type != "task" or t.props["agent"] != "transfer":
+        raise KeyError(tid)
+    if t.status not in OPEN:
+        raise ValueError(f"{tid} is {t.status}.")
+    if not why.strip():
+        raise ValueError("Say why this step isn't needed on this deal.")
+    office.log.append("task.done", actor=by, agent="transfer", deal=t.deal, content={"id": tid, "reason": f"Not needed: {why.strip()}", "result": "not needed"})
     start_closing(office, t.deal)
 
 
@@ -119,13 +139,13 @@ def start_paperwork(office: Office, deal: str, by: str) -> list[str]:
         raise ValueError("A ready sale's paperwork starts with the Form F plan.")
     if any(t.props["agent"] == "transfer" for t in g.of("task", deal)):
         raise ValueError("The paperwork has already started.")
-    who = roles.holder(g, "transactions")
-    tids = [office.add_task(deal, "transfer", step, needs_person=who, props={"waiting_on": waits}) for step, waits in p["steps"]]
+    tids = add_steps(office, deal, p["steps"])
     if p["id"] == "rent":
         rent = (g.facts(deal, "deal_term") or [None])[-1]
+        pct = p["deposit_pct_furnished"] if desk_rules.terms(g, deal).get("furnished") else p["deposit_pct"]
         if rent and rent.props.get("amount_aed"):
-            amount = round(rent.props["amount_aed"] * p["deposit_pct"] / 100)
-            office.add_task(deal, "pay", f"Expect the security deposit AED {amount:,} ({p['deposit_pct']}% of the yearly rent) from the tenant, held by the landlord",
+            amount = round(rent.props["amount_aed"] * pct / 100)
+            office.add_task(deal, "pay", f"Expect the security deposit AED {amount:,} ({pct}% of the yearly rent) from the tenant, held by the landlord",
                             rests_on=[rent.id], props={"amount_aed": amount})
         else:
             office.log.append("question.asked", actor="pay", agent="pay", deal=deal,
@@ -148,7 +168,7 @@ def start_closing(office: Office, deal: str) -> None:
     """When every paperwork step is done, the broker confirms the final figures and the transactions officer files the
     closing documents; the other two items (commission paid, compliance closed) are read from the record."""
     g = office.graph()
-    steps = [t for t in g.of("task", deal) if t.props["agent"] == "transfer"]
+    steps = [t for t in g.of("task", deal) if t.props["agent"] == "transfer" and not t.props.get("after")]
     if not steps or any(t.status != "done" for t in steps) or any(is_closing(t) for t in g.of("task", deal)):
         return
     p, d = desk_rules.path(g, deal), g.nodes[f"deal:{deal}"].props
@@ -163,7 +183,9 @@ def closing(g: Graph, deal: str) -> dict | None:
     if not tasks:
         return None
     p, by = desk_rules.path(g, deal), {t.props["step"]: t for t in tasks}
-    paid = any(t.props["agent"] == "inv" and t.props.get("result") == "received" for t in g.of("task", deal))
+    inv = [t for t in g.of("task", deal) if t.props["agent"] == "inv"]
+    split = [t for t in inv if t.props.get("step") == "split" and t.status in OPEN]
+    paid = any(t.props.get("result") == "received" for t in inv) and not split
     comp_open = [t for t in g.of("task", deal) if t.props["agent"] in ("screen", "report") and t.status in OPEN] + \
                 [c for c in g.of("check", deal, "open") if c.props.get("agent") == "comp"]
     items = []
@@ -174,7 +196,8 @@ def closing(g: Graph, deal: str) -> dict | None:
                           "who": roles.current(g, t) if key == "figures" else roles.holder(g, "transactions")})
         elif key == "invoice":
             items.append({"key": key, "text": text, "done": paid, "who": roles.holder(g, "finance"),
-                          "note": None if paid else "Draft, send and collect the commission invoice in Finance"})
+                          "note": None if paid else f"Pay {split[0].props['agency']} their share (Form I)" if split
+                          else "Draft, send and collect the commission invoice in Finance"})
         else:
             items.append({"key": key, "text": text, "done": not comp_open, "who": roles.holder(g, "compliance"),
                           "note": None if not comp_open else f"{len(comp_open)} compliance item(s) still open"})
@@ -232,8 +255,38 @@ def close(office: Office, deal: str, by: str, *, today) -> str:
     confirmed = re.search(r"\((F\d+)\)", fig.props.get("reason") or "")
     if not confirmed or com.get("fact") != confirmed.group(1):
         raise ValueError(f"The price changed after {name(fig.props.get('needs_person'))} confirmed it: confirm the final figures again.")
+    p, terms = desk_rules.path(g, deal), desk_rules.terms(g, deal)
+    if p["id"] == "rent" and not (terms.get("start") and terms.get("end")):
+        raise ValueError("Record the tenancy's start and end dates from the contract: the renewal and move-out are dated from them.")
     d = g.nodes[f"deal:{deal}"].props
-    sid = office.close_sale(listing=d.get("property"), price_aed=com["base"], commission_aed=com["amount"],
+    sid = office.close_sale(listing=d.get("property"), price_aed=com["base"], commission_aed=com.get("ours", com["amount"]),
                             broker=d["broker"], date=today.isoformat(), deal=deal)
     office.log.append("stage.changed", actor=by, deal=deal, content={"stage": "Won", "why": f"closed as {sid}"})
+    if p["id"] == "rent":  # what keeps running on a let: the renewal question, then the move-out
+        end = date.fromisoformat(terms["end"])
+        ask = end - timedelta(days=p["renewal_notice_days"])
+        office.add_task(deal, "ops", f"Ask {d['customer']} and the landlord whether the tenancy renews; new terms need {p['renewal_notice_days']} days' notice, "
+                        f"so by {ask.isoformat()}", needs_person=d["broker"], props={"step": "renewal", "after_close": True, "due": ask.isoformat()})
+        office.add_task(deal, "ops", "Move-out: inspection, the security deposit refunded and Ejari cancelled", needs_person=roles.holder(g, "transactions"),
+                        props={"step": "moveout", "after_close": True, "due": end.isoformat(), "desk_role": "transactions"})
     return sid
+
+
+def is_after(t) -> bool:
+    """Work that keeps running on a deal once it has closed: a step marked "after", or a rental's renewal and move-out."""
+    return (t.props.get("agent") == "ops" and bool(t.props.get("after_close"))) or (t.props.get("agent") == "transfer" and bool(t.props.get("after")))
+
+
+def after_done(office: Office, tid: str, by: str, note: str) -> None:
+    """The broker asked about the renewal, or the transactions officer finished the move-out: what happened, in their words."""
+    g = office.graph()
+    t = g.nodes.get(tid)
+    if not t or t.type != "task" or t.props.get("agent") != "ops" or not t.props.get("after_close"):
+        raise KeyError(tid)
+    if by != roles.current(g, t) and PEOPLE.get(by, {}).get("role") != "Owner":
+        raise PermissionError(f"This is {name(roles.current(g, t))}'s to do.")
+    if t.status not in OPEN:
+        raise ValueError(f"{tid} is {t.status}.")
+    if not note.strip():
+        raise ValueError("Say what happened (renewed, leaving, deposit refunded with its reference).")
+    office.log.append("task.done", actor=by, agent="ops", deal=t.deal, content={"id": tid, "reason": note.strip(), "result": "done"})
