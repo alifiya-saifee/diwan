@@ -80,6 +80,10 @@ the same deals and one deal opens in a side panel:
 - Compliance asks the broker, once, how a purchase is funded when a price or deposit is on the table and the customer
   has not said; the question closes itself when the customer says it.
 - The page refreshes live but never while someone is typing.
+- **Roles, not names** (product owner, 30 Oct: nothing hard-coded, everything from the database): Compliance, Finance
+  and Paperwork work goes to whoever holds the role. The owner assigns holders on the Overview (`setting.changed`,
+  person `desk`); until then the team member whose role says so holds it; with nobody in a role the work says so.
+  A role's open work moves with the role; a question addressed to a broker stays with that broker.
 
 ## States every section must handle
 

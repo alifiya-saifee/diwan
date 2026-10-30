@@ -1,13 +1,14 @@
 """Compliance: the legal duties come first. Any change to who pays, how, or what the customer earns reaches the
 compliance officer before any other room acts on it, with the old and new words side by side. Every party is put up
 for screening, the money story is laid out with the proof still missing, and cash at the reporting threshold gets a
-report draft. Nothing here decides suspicion, clears a name or files anything: Priya does.
+report draft. Nothing here decides suspicion, clears a name or files anything: the compliance officer does.
 """
 from __future__ import annotations
 
 import re
 from typing import TYPE_CHECKING
 
+from diwan import roles
 from diwan.graph import OPEN, Graph, Node
 
 if TYPE_CHECKING:
@@ -15,7 +16,6 @@ if TYPE_CHECKING:
 
 MONEY_KINDS = {"payer", "payment_promise", "income_claim"}
 CASH_REPORT_AED = 55_000  # a real-estate cash payment at or above this is reported to the FIU (goAML)
-OFFICER = "priya"
 
 
 def money_changed(office: Office, deal: str, olds: list[Node], new: Node, cause: int) -> None:
@@ -24,7 +24,7 @@ def money_changed(office: Office, deal: str, olds: list[Node], new: Node, cause:
         return
     before = " / ".join(f'"{o.props["quote"]}"' for o in olds)
     office.log.append("check.raised", actor="comp", agent="comp", deal=deal, caused_by=cause,
-                      content={"who": OFFICER, "title": "Payment arrangement changed", "refs": [o.id for o in olds] + [new.id],
+                      content={"who": roles.holder(office.graph(), "compliance"), "title": "Payment arrangement changed", "refs": [o.id for o in olds] + [new.id],
                                "text": f'Payment arrangement changed: {before} became "{new.props["quote"]}". Review before any money moves.'})
 
 
@@ -63,7 +63,7 @@ def parties(g: Graph, deal: str) -> list[dict]:
 
 def screen_parties(office: Office, deal: str, cause: int | None) -> None:
     """One screening per person while they are part of the deal. With no sanctions list connected the Screening analyst
-    prepares the check and Priya records the result; nobody is cleared by an agent."""
+    prepares the check and the compliance officer records the result; nobody is cleared by an agent."""
     g = office.graph()
     if f"deal:{deal}" not in g.nodes:
         return
@@ -71,13 +71,12 @@ def screen_parties(office: Office, deal: str, cause: int | None) -> None:
     for p in parties(g, deal):
         if any(_same(t.props.get("person") or t.props["action"][7:], p["name"]) for t in tasks):
             continue
-        office.add_task(deal, "screen", f"Screen {p['name']}, {p['role']}", rests_on=p["facts"], needs_person=OFFICER,
+        office.add_task(deal, "screen", f"Screen {p['name']}, {p['role']}", rests_on=p["facts"], needs_person=roles.holder(g, "compliance"),
                         caused_by=cause, props={"person": p["name"], "role": p["role"]})
 
 
 def record_screening(office: Office, tid: str, by: str, result: str, note: str = "") -> None:
-    if by != OFFICER:
-        raise PermissionError("Only Priya records a screening result.")
+    roles.check(office.graph(), "compliance", by)
     t = office.graph().nodes.get(tid)
     if not t or t.type != "task" or t.props["agent"] != "screen":
         raise KeyError(tid)
@@ -92,9 +91,8 @@ def record_screening(office: Office, tid: str, by: str, result: str, note: str =
 
 
 def record_filing(office: Office, tid: str, by: str, reference: str) -> None:
-    """Priya files the cash report herself on goAML and records its reference; the agent never files."""
-    if by != OFFICER:
-        raise PermissionError("Only Priya files reports with the FIU.")
+    """The compliance officer files the cash report on goAML and records its reference; the agent never files."""
+    roles.check(office.graph(), "compliance", by)
     t = office.graph().nodes.get(tid)
     if not t or t.type != "task" or t.props["agent"] != "report":
         raise KeyError(tid)
@@ -161,7 +159,7 @@ def source_of_funds(g: Graph, deal: str, nodes: dict | None = None) -> dict:
 # ---------- cash ----------
 
 def cash_rules(office: Office, deal: str, cause: int | None) -> None:
-    """A live cash promise at or above the threshold has one report draft and one filing task for Priya, both resting
+    """A live cash promise at or above the threshold has one report draft and one filing task for the compliance officer, both resting
     on the words; replaced words send the draft back and withdraw the task."""
     g = office.graph()
     payer = (g.facts(deal, "payer") or [None])[-1]
@@ -177,7 +175,7 @@ def cash_rules(office: Office, deal: str, cause: int | None) -> None:
                   {"n": 3, "text": f"Buyer {customer}; property {g.nodes[f'deal:{deal}'].props['property']}", "facts": []}]
         did = office.make_draft(deal, "cash report", slides, by="report")
         office.add_task(deal, "report", f"File the cash report {did} on goAML once the cash is received", rests_on=rests,
-                        needs_person=OFFICER, caused_by=cause, props={"draft": did})
+                        needs_person=roles.holder(g, "compliance"), caused_by=cause, props={"draft": did})
         g = office.graph()
 
 

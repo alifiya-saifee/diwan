@@ -138,7 +138,13 @@ const store = { get: (k) => { try { return localStorage.getItem(k); } catch { re
 let deal = new URLSearchParams(location.search).get("deal"), view = null;
 let filter = new URLSearchParams(location.search).get("filter") || "", stage = "", query = "", sort = "changed", desc = true, page = 1, group = "all";
 $("as").replaceChildren(...Object.entries(NAMES).map(([k, v]) => h("option", { value: k }, v)));
-$("as").value = store.get("desk.as") || "priya";
+// who holds each Deal desk role comes from the office's settings, never from a name in this page
+let ROLES = await api("/api/desk/roles");
+const TEAM = await api("/api/people"), OWNER = Object.keys(TEAM).find((k) => TEAM[k].role === "Owner");
+const R = (role) => ROLES.find((r) => r.role === role) || {};
+const holds = (role) => !!R(role).holder && R(role).holder === me();
+const rname = (role) => R(role).holder_name || `the ${R(role).title?.toLowerCase() || role} (nobody assigned)`;
+$("as").value = store.get("desk.as") || R("compliance").holder || Object.keys(NAMES)[0];
 $("as").onchange = () => { store.set("desk.as", $("as").value); render(); show(); };
 const me = () => $("as").value;
 const aed = (n) => !n ? "0" : n >= 1e6 ? `${(n / 1e6).toFixed(2).replace(/\.?0+$/, "")}M` : `${Math.round(n / 1000)}k`;
@@ -200,7 +206,22 @@ async function overview() {
           h("span", { class: "bar" }, h("i", { style: `width:${(s.waiting / max) * 100}%` }), h("i", { style: `width:${((s.deals - s.waiting) / max) * 100}%` })),
           h("span", { class: "v" }, `${s.deals} · ${aed(s.value)}`));
       }) : [h("div", { class: "empty" }, "No deals yet.")]),
-        h("div", { class: "legend" }, h("span", {}, h("i", { style: "background:var(--gold)" }), "Waiting for someone"), h("span", {}, h("i", { style: "background:var(--gold);opacity:.35" }), "Moving")))));
+        h("div", { class: "legend" }, h("span", {}, h("i", { style: "background:var(--gold)" }), "Waiting for someone"), h("span", {}, h("i", { style: "background:var(--gold);opacity:.35" }), "Moving")))),
+    rolesPanel());
+}
+
+function rolesPanel() {
+  const owner = me() === OWNER;
+  return h("section", { class: "panel", style: "margin-top:18px", id: "roles" }, h("h2", {}, "Who does what on the Deal desk"),
+    h("div", { class: "tiles", style: "margin:0" }, ...ROLES.map((r) => h("div", {}, h("div", { class: "small muted" }, r.title),
+      owner ? h("select", { "aria-label": r.title, onchange: async (e) => {
+        try { ROLES = await post("/api/desk/roles", { by: me(), role: r.role, person: e.target.value }); toast(`${NAMES[e.target.value]} is now the ${r.title.toLowerCase()}`); show(); }
+        catch (err) { toast(err.message); show(); } } },
+        h("option", { value: "", disabled: true, selected: !r.holder }, "Nobody yet"),
+        ...Object.entries(NAMES).map(([k, v]) => h("option", { value: k, selected: k === r.holder }, v)))
+        : h("strong", {}, r.holder_name || "Nobody yet")))),
+    h("div", { class: "small muted", style: "margin-top:8px" }, owner ? "Work goes to whoever holds the role. Change it here and the open work moves with it."
+      : `Work goes to whoever holds the role. Only ${TEAM[OWNER]?.name || "the owner"} changes it.`));
 }
 
 function moneyChart(days) {
@@ -228,7 +249,7 @@ function myWork(w) {
   const list = mine.filter((x) => group === "all" || x.kind === group);
   $("view").replaceChildren(
     h("p", { class: "lede" }, "Everything waiting for one person, across every deal, most urgent first. Act on it here; open the deal when you need the story."),
-    h("div", { class: "people" }, ...Object.keys(NAMES).filter((k) => w.counts[k] || ["priya", "ahmed", "joseph"].includes(k) || k === p).map((k) =>
+    h("div", { class: "people" }, ...Object.keys(NAMES).filter((k) => w.counts[k] || ROLES.some((r) => r.holder === k) || k === p).map((k) =>
       h("button", { class: `person ${k === p ? "on" : ""}`, onclick: () => goWork(k) }, h("span", { class: "av" }, NAMES[k][0]),
         h("span", {}, NAMES[k], h("small", {}, `${w.counts[k] || 0} to do`))))),
     h("section", { class: "panel" },
@@ -297,7 +318,7 @@ async function open(d) {
   deal = d;
   history.replaceState(null, "", `?deal=${encodeURIComponent(d)}${location.hash}`);
   $("drawerRoot").hidden = false;
-  try { view = await api(`/api/desk/deals/${encodeURIComponent(d)}`); }
+  try { view = await api(`/api/desk/deals/${encodeURIComponent(d)}`); ROLES = view.roles; }
   catch (e) { view = null; $("main").replaceChildren(h("div", { class: "empty", style: "padding-top:40px" }, e.message)); return; }
   render(); feed();
   if (VIEW() === "deals") document.querySelectorAll(".tablebox tbody tr").forEach((tr) => tr.classList.remove("sel"));
@@ -362,7 +383,7 @@ async function send(path, body, ok) {
 }
 
 function taskEl(t) {
-  const live = OPEN.includes(t.status), officer = me() === "priya";
+  const live = OPEN.includes(t.status), officer = holds("compliance");
   const el = h("div", { class: `card ${live ? "" : "done"} ${live && t.needs_person === me() ? "mine" : ""}` },
     h("div", { class: "top" }, h("strong", {}, t.action), h("span", {}, h("span", { class: "chip" }, t.id),
       chip(t.result === "possible match" ? "possible match" : t.status))),
@@ -375,38 +396,38 @@ function taskEl(t) {
     el.append(officer ? h("div", { class: "acts" }, note,
       h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/screen`, { result: "clear", note: note.value }, `${t.person} recorded as clear`) }, "Clear"),
       h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/screen`, { result: "possible match", note: note.value }, `${t.person}: possible match recorded`) }, "Possible match"))
-      : h("div", { class: "acts small muted" }, "Only Priya records a screening result."));
+      : h("div", { class: "acts small muted" }, `Only ${rname("compliance")} records a screening result.`));
   }
   if (t.agent === "pay") {
     const day = t.due ? new Date(`${t.due}T12:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : null;
     if (t.overdue) el.querySelector(".top > span").prepend(h("span", { class: "chip bad" }, "overdue"));
     el.append(h("div", { class: "small", style: "margin-top:6px" }, day ? `Due ${day} ("${t.due_words}")` : "No date said: ask when"));
-    const isAhmed = me() === "ahmed";
+    const isFinance = holds("finance");
     if (live) {
       const ref = h("input", { placeholder: "Bank or receipt reference", "aria-label": "Payment reference" });
-      el.append(isAhmed ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/received`, { reference: ref.value }, "Marked received; receipt filed") }, "Received"))
-        : h("div", { class: "acts small muted" }, "Only Ahmed marks money received."));
+      el.append(isFinance ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/received`, { reference: ref.value }, "Marked received; receipt filed") }, "Received"))
+        : h("div", { class: "acts small muted" }, `Only ${rname("finance")} marks money received.`));
     } else if (t.result === "received" && !view.approvals.some((a) => a.action.endsWith(`(${t.id})`))) {
-      el.append(isAhmed ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/release`, {}, "Release approved; carry it out when ready") }, "Approve release"))
-        : h("div", { class: "acts small muted" }, "Only Ahmed releases money."));
+      el.append(isFinance ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/release`, {}, "Release approved; carry it out when ready") }, "Approve release"))
+        : h("div", { class: "acts small muted" }, `Only ${rname("finance")} releases money.`));
     }
   }
-  const isJoseph = me() === "joseph";
+  const isTransactions = holds("transactions");
   if (t.agent === "formf" && t.draft && live) {
     const ref = h("input", { placeholder: "Portal reference", "aria-label": "Portal reference" });
     el.append(h("div", { class: "small", style: "margin-top:6px" }, "Fill the portal from the plan, then press Submit there yourself."),
-      isJoseph ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/submitted`, { reference: ref.value }, "Form F submitted; transfer checklist started") }, "I submitted it"))
-        : h("div", { class: "acts small muted" }, "Only Joseph submits portal forms."));
+      isTransactions ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/submitted`, { reference: ref.value }, "Form F submitted; transfer checklist started") }, "I submitted it"))
+        : h("div", { class: "acts small muted" }, `Only ${rname("transactions")} submits portal forms.`));
   }
   if (t.agent === "transfer") {
     el.querySelector(".small.muted").textContent = `Transfer tracker · waiting on ${t.waiting_on}`;
-    if (live) el.append(isJoseph ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/tick`, {}, "Ticked") }, "Done"))
-      : h("div", { class: "acts small muted" }, "Only Joseph ticks the checklist."));
+    if (live) el.append(isTransactions ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/tick`, {}, "Ticked") }, "Done"))
+      : h("div", { class: "acts small muted" }, `Only ${rname("transactions")} ticks the checklist.`));
   }
   if (live && t.agent === "report") {
     const ref = h("input", { placeholder: "goAML reference", "aria-label": "goAML reference" });
     el.append(officer ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/filed`, { reference: ref.value }, "Filing recorded") }, "I filed it"))
-      : h("div", { class: "acts small muted" }, "Only Priya files reports with the FIU."));
+      : h("div", { class: "acts small muted" }, `Only ${rname("compliance")} files reports with the FIU.`));
   }
   return el;
 }
@@ -429,8 +450,8 @@ function fundsEl(f) {
     f.proof.length ? h("div", { style: "margin-top:10px" }, h("div", { class: "small muted" }, "Proof"), ...f.proof.map((p) => h("div", { class: "acts", style: "margin-top:4px" },
       h("span", { style: "flex:1 1 300px" }, p.have ? "✓ " : "", p.text, p.facts.length ? h("span", { class: "small muted" }, ` (${p.facts.join(", ")})`) : null,
         p.have ? h("div", { class: "small muted" }, `Received: ${p.have} ${p.have_title}`) : null),
-      !p.have && me() === "priya" ? h("button", { onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/proof`, { kind: p.kind }, `${p.kind} filed with Records`) }, "Received") : null))) : null,
-    h("div", { class: "small muted", style: "margin-top:8px" }, "Numbers and words only. Whether anything is suspicious is Priya's call."));
+      !p.have && holds("compliance") ? h("button", { onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/proof`, { kind: p.kind }, `${p.kind} filed with Records`) }, "Received") : null))) : null,
+    h("div", { class: "small muted", style: "margin-top:8px" }, `Numbers and words only. Whether anything is suspicious is ${rname("compliance")}'s call.`));
 }
 
 function draftEl(d) {

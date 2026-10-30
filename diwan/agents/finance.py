@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
+from diwan import roles
 from diwan.graph import OPEN, Graph, Node
 
 if TYPE_CHECKING:
@@ -39,7 +40,6 @@ def payment_rules(office: Office, deal: str, cause: int) -> None:
 
 DUBAI = timezone(timedelta(hours=4))
 DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-FINANCE = "ahmed"
 
 
 def due_date(words: str | None, said: date) -> date | None:
@@ -75,9 +75,8 @@ def expected(g: Graph, task: Node, today: date) -> dict:
 
 def mark_received(office: Office, tid: str, by: str, reference: str, *, today: date) -> str:
     """A person saw the money arrive; the agent never marks money received. The receipt is filed with Records."""
-    if by != FINANCE:
-        raise PermissionError("Only Ahmed marks money received.")
     g = office.graph()
+    roles.check(g, "finance", by)
     t = g.nodes.get(tid)
     if not t or t.type != "task" or t.props["agent"] != "pay":
         raise KeyError(tid)
@@ -94,11 +93,10 @@ def mark_received(office: Office, tid: str, by: str, reference: str, *, today: d
 
 
 def approve_release(office: Office, tid: str, by: str) -> str:
-    """Releasing received money is Ahmed's approval, resting on the same words as the payment: if they are replaced
+    """Releasing received money is the finance holder's approval, resting on the same words as the payment: if they are replaced
     before it runs, the guard refuses it."""
-    if by != FINANCE:
-        raise PermissionError("Only Ahmed releases money.")
     g = office.graph()
+    roles.check(g, "finance", by)
     t = g.nodes.get(tid)
     if not t or t.type != "task" or t.props["agent"] != "pay":
         raise KeyError(tid)

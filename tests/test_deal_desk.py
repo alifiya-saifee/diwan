@@ -238,3 +238,35 @@ def test_catch_up_screens_deals_recorded_before_the_rule(monkeypatch):
     assert compliance.catch_up(o) > 0
     assert {t.props["person"] for t in o.graph().of("task") if t.props["agent"] == "screen"} == {"Karim Haddad", "Tariq Haddad", "Sara Malik"}
     assert compliance.catch_up(o) == 0
+
+
+# ---------- roles: work goes to whoever holds the role ----------
+
+def test_only_the_owner_assigns_a_role_and_new_work_follows_the_holder(client):
+    assert client.post("/api/desk/roles", json={"by": "priya", "role": "compliance", "person": "maya"}).status_code == 403
+    assert client.post("/api/desk/roles", json={"by": "layla", "role": "compliance", "person": "nobody"}).status_code == 400
+    table = client.post("/api/desk/roles", json={"by": "layla", "role": "compliance", "person": "maya"}).json()
+    assert next(r for r in table if r["role"] == "compliance")["holder"] == "maya"
+    o = appmod.S.office
+    o.open_deal("d-new", property="Apt 9, Bay Square", customer="Noor Saleh", broker="omar")
+    o.record_fact("d-new", "deal_term", "One point two for the apartment.", "Noor Saleh", amount_aed=1_200_000)
+    t = next(t for t in o.graph().of("task", "d-new") if t.props["agent"] == "screen")
+    assert t.props["needs_person"] == "maya"
+    r = client.post(f"/api/desk/tasks/{t.id}/screen", json={"by": "priya", "result": "clear"})
+    assert r.status_code == 403 and "Maya" in r.json()["detail"]
+    assert client.post(f"/api/desk/tasks/{t.id}/screen", json={"by": "maya", "result": "clear", "note": "UN list"}).json()["ok"]
+    q = client.get("/api/desk/work?person=maya").json()["items"]  # Priya's open work moved to Maya with the role
+    assert {"Payment arrangement changed", "Screen Karim Haddad, the buyer"} <= {x["title"] for x in q}
+    assert not client.get("/api/desk/work?person=priya").json()["items"]
+    omar = {x["title"] for x in client.get("/api/desk/work?person=omar").json()["items"]}  # questions to the broker stay his
+    assert {"How is Sara Malik funding the purchase? Compliance needs it before any money moves.",
+            "How is Noor Saleh funding the purchase? Compliance needs it before any money moves."} == omar
+
+
+def test_a_role_nobody_holds_says_so_instead_of_guessing(office, monkeypatch):
+    from diwan import roles
+    monkeypatch.setattr(roles, "PEOPLE", {k: v for k, v in roles.PEOPLE.items() if v["role"] != "Finance"})
+    g = office.graph()
+    assert roles.holder(g, "finance") is None and "nobody assigned" in roles.who(g, "finance")
+    with pytest.raises(PermissionError, match="Nobody is the finance"):
+        roles.check(g, "finance", "ahmed")

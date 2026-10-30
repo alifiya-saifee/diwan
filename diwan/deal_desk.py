@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from diwan import roles
 from diwan.agents import compliance, finance, operations, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
@@ -54,7 +55,8 @@ def _card(g: Graph, n: Node) -> dict:
     elif n.status == "open" and n.type == "question":
         can = "answer"
     old = g.nodes.get((p.get("refs") or [None])[0]) if can == "reapprove" else None
-    return {"id": n.id, "type": n.type, "who": p.get("who"), "who_name": name(p.get("who")), "text": p["text"],
+    w = roles.current(g, n)
+    return {"id": n.id, "type": n.type, "who": w, "who_name": name(w), "text": p["text"],
             "title": p.get("title"), "options": p.get("options") or [], "status": n.status, "answer": p.get("answer"),
             "agent": p.get("agent"), "dept": dept(p.get("agent")), "at": n.at, "can": can,
             "refs": _facts_on(g, [r for r in p.get("refs", []) if r.startswith("F")]),
@@ -67,7 +69,7 @@ def deal_view(g: Graph, deal: str, today: date | None = None) -> dict:
         raise KeyError(deal)
     tasks = [{"id": t.id, "agent": t.props["agent"], "agent_name": t.props.get("agent_name"), "dept": dept(t.props["agent"]),
               "action": t.props["action"], "status": t.status, "reason": t.props.get("reason"), "at": t.at,
-              "needs_person": t.props.get("needs_person"), "rests_on": _facts_on(g, t.props.get("rests_on", [])),
+              "needs_person": roles.current(g, t), "rests_on": _facts_on(g, t.props.get("rests_on", [])),
               "person": t.props.get("person"), "result": t.props.get("result"), "draft": t.props.get("draft"),
               "waiting_on": t.props.get("waiting_on"),
               **(finance.expected(g, t, today or date.today()) if t.props["agent"] == "pay" else {})}
@@ -162,10 +164,10 @@ class Ledger:
             paper = ("none", "Not started")
         back = [x for x in by["draft"] if x.status == "sent_back" and DRAFT_DEPT.get(x.props["kind"], "review") == "review"]
         rev = ("bad", f"{len(back)} sent back") if back else ("ok", "Passed") if by["draft"] else ("none", "Nothing yet")
-        waits = {c.props.get("who") for t in ("check", "decision", "question") for c in by[t] if c.status == "open"}
-        waits |= {t.props.get("needs_person") for t in by["task"] if t.status in OPEN}
+        waits = {roles.current(g, c) for t in ("check", "decision", "question") for c in by[t] if c.status == "open"}
+        waits |= {roles.current(g, t) for t in by["task"] if t.status in OPEN}
         if due:
-            waits.add(finance.FINANCE)
+            waits.add(roles.holder(g, "finance"))
         week = (self.today - timedelta(days=7)).isoformat()
         out = {"deal": deal, "customer": d.props.get("customer"), "property": d.props.get("property"), "broker": d.props.get("broker"),
                "broker_name": name(d.props.get("broker")), "stage": d.props.get("stage") or "New",
@@ -192,17 +194,17 @@ class Ledger:
                 act = "reviewed" if c.type == "check" and dept(ag) == "comp" else "reapprove" if c.type == "decision" and ag == "factcheck" \
                     else "answer" if c.type == "question" else "open"
                 kind = {"check": "Check", "decision": "Decision", "question": "Question"}[c.type]
-                items.append(base | {"id": c.id, "who": c.props["who"], "kind": kind, "sev": "bad" if c.type in ("check", "decision") else "warn",
+                items.append(base | {"id": c.id, "who": roles.current(self.g, c), "kind": kind, "sev": "bad" if c.type in ("check", "decision") else "warn",
                                      "title": c.props.get("title") or c.props["text"], "text": c.props["text"], "at": c.at, "act": act,
                                      "approval": self.g.nodes[c.props["refs"][0]].props["action"] if act == "reapprove" else None})
             for t in by["task"]:
                 if t.status not in OPEN:
                     continue
-                ag, who = t.props["agent"], t.props.get("needs_person")
+                ag, who = t.props["agent"], roles.current(self.g, t)
                 if ag == "pay":
                     e = finance.expected(self.g, t, self.today)
                     soon = e.get("due") and e["due"] <= (self.today + timedelta(days=2)).isoformat()
-                    items.append(base | {"id": t.id, "who": finance.FINANCE, "kind": "Overdue" if e.get("overdue") else "Due soon" if soon else "Expected",
+                    items.append(base | {"id": t.id, "who": roles.holder(self.g, "finance"), "kind": "Overdue" if e.get("overdue") else "Due soon" if soon else "Expected",
                                          "sev": "bad" if e.get("overdue") else "warn" if soon else "info", "title": t.props["action"],
                                          "at": t.at, "act": "received", "due": e.get("due")})
                 elif who and ag in ("screen", "report", "formf", "transfer"):
@@ -214,7 +216,7 @@ class Ledger:
                                          "waiting_on": t.props.get("waiting_on")})
             missing = [p["kind"] for p in compliance.source_of_funds(self.g, deal, by)["proof"] if not p["have"] and p["kind"] != "source of funds"]
             if missing:  # one row per deal, however many proofs: she marks each one in the deal
-                items.append(base | {"id": f"{deal}:proof", "who": compliance.OFFICER, "kind": "Proof", "sev": "info", "at": s["changed"], "act": "open",
+                items.append(base | {"id": f"{deal}:proof", "who": roles.holder(self.g, "compliance"), "kind": "Proof", "sev": "info", "at": s["changed"], "act": "open",
                                      "title": f"{len(missing)} proof{'s' if len(missing) > 1 else ''} missing: {', '.join(missing)}"})
         items.sort(key=lambda x: (SEV[x["sev"]], x["at"]))
         return items
@@ -318,7 +320,7 @@ def overview():
 def deal(deal: str):
     try:
         g = _office().graph()
-        return deal_view(g, deal) | {"summary": Ledger(g, date.today()).summary(deal)}
+        return deal_view(g, deal) | {"summary": Ledger(g, date.today()).summary(deal), "roles": roles.table(g)}
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
 
@@ -339,8 +341,9 @@ def answer(card: str, body: Answer):
         raise HTTPException(404, f"There is no card {card}.")
     if n.status != "open":
         raise HTTPException(409, f"{card} was already answered: {n.props.get('answer')}.")
-    if pid(body.by) != n.props.get("who"):
-        raise HTTPException(403, f"Only {name(n.props.get('who'))} can answer {card}.")
+    w = roles.current(g, n)
+    if pid(body.by) != w:
+        raise HTTPException(403, f"Only {name(w)} can answer {card}.")
     c = _card(g, n)
     try:
         if c["can"] == "reapprove" and body.choice == "Re-approve on the new facts":
@@ -417,13 +420,15 @@ class Proof(BaseModel):
 
 @router.post("/api/desk/deals/{deal}/proof")
 def proof(deal: str, body: Proof):
-    """Priya has the proof in hand: it is filed with Records against the deal, so it counts as received."""
+    """The compliance officer has the proof in hand: it is filed with Records against the deal, so it counts as received."""
     o = _office()
     g = o.graph()
     if f"deal:{deal}" not in g.nodes:
         raise HTTPException(404, f"There is no deal {deal!r}.")
-    if pid(body.by) != compliance.OFFICER:
-        raise HTTPException(403, "Only Priya marks compliance proof as received.")
+    try:
+        roles.check(g, "compliance", pid(body.by))
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
     need = next((p for p in compliance.source_of_funds(g, deal)["proof"] if p["kind"] == body.kind), None)
     if not need:
         raise HTTPException(400, f"{body.kind!r} is not asked for on this deal.")
@@ -463,9 +468,9 @@ def release(tid: str, body: Run):
         raise HTTPException(400, str(e)) from None
 
 
-def _call(fn, *a, missing="task"):
+def _call(fn, *a, missing="task", **kw):
     try:
-        return fn(*a)
+        return fn(*a, **kw)
     except PermissionError as e:
         raise HTTPException(403, str(e)) from None
     except KeyError:
@@ -507,3 +512,22 @@ class Tick(BaseModel):
 def tick(tid: str, body: Tick):
     _call(operations.tick, _office(), tid, pid(body.by), body.note)
     return {"ok": True}
+
+
+# ---------- who holds each role (the owner assigns; nothing is wired to a name) ----------
+
+@router.get("/api/desk/roles")
+def get_roles():
+    return roles.table(_office().graph())
+
+
+class RoleIn(BaseModel):
+    by: str
+    role: str
+    person: str
+
+
+@router.post("/api/desk/roles")
+def set_role(body: RoleIn):
+    _call(roles.assign, _office(), body.role, pid(body.person) or body.person, missing="role", by=pid(body.by) or body.by)
+    return roles.table(_office().graph())

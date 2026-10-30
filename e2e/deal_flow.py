@@ -348,6 +348,33 @@ with sync_playwright() as p:
     check("8j", "a decision opens the deal at the card that needs his words", "Karim Haddad" in pg.locator("#main h1").inner_text()
           and pg.locator("#dept-review .card.open", has_text="Your approval").count() == 1)
 
+
+    # ---------- 9. roles: the owner assigns, open work follows the holder, nobody acts for someone else ----------
+    api.post(f"{BASE}/api/demo/reset?correction=true")
+    pg.set_viewport_size({"width": 1440, "height": 1000})
+    pg.goto(f"{BASE}/web/deal.html#overview")
+    pg.wait_for_selector("#roles")
+    acting("priya")
+    pg.wait_for_timeout(500)
+    check("9a", "only the owner can change roles", pg.locator("#roles select").count() == 0 and "Only Layla changes it" in pg.locator("#roles").inner_text())
+    acting("layla")
+    pg.wait_for_timeout(500)
+    pg.locator("#roles select[aria-label='Compliance officer']").select_option("maya")
+    pg.wait_for_timeout(900)
+    shot("21-roles", full=False)
+    check("9b", "Layla makes Maya the compliance officer", "Maya is now the compliance officer" in toast())
+    pg.goto(f"{BASE}/web/deal.html#my-work")
+    pg.wait_for_selector(".person")
+    acting("maya")
+    pg.wait_for_timeout(800)
+    titles = pg.locator(".q .title").all_inner_texts()
+    check("9c", "Priya's open work moved to Maya", "Payment arrangement changed" in titles and "Screen Karim Haddad, the buyer" in titles, f"{len(titles)} rows")
+    pg.goto(f"{BASE}/web/deal.html?deal=marina-1204")
+    pg.wait_for_selector("#dept-comp .card")
+    acting("priya")
+    pg.wait_for_timeout(500)
+    check("9d", "Priya can no longer act for Compliance", "Only Maya records a screening result" in pg.locator("#dept-comp").inner_text())
+
     # widths: no sideways scroll at 1280 or on a phone
     for w, hgt in ((1280, 900), (390, 844)):
         pg.set_viewport_size({"width": w, "height": hgt})
