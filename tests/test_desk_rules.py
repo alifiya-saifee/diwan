@@ -441,7 +441,7 @@ def test_who_moves_a_stage_and_what_needs_a_reason(office, monkeypatch):
 
 
 def _convert(office, c):
-    c.post("/api/desk/deals/marina-1204/stage", json={"by": "omar", "stage": "Offer accepted"})
+    c.post("/api/desk/deals/marina-1204/convert", json={"by": "omar", "amount": 2_600_000})
     return next(t for t in office.graph().of("task", "marina-1204") if t.props.get("step") == "sides")
 
 
@@ -517,3 +517,49 @@ def test_a_changed_price_sends_the_forms_back_and_new_ones_are_drafted(office, m
     c.post("/api/desk/deals/marina-1204/sides", json={"by": "omar", "sides": "buyer", "other": {"other_agency": "Rival Homes", "other_share_pct": 50}})
     live = [f["form"] for f in agency_forms.forms(office.graph(), "marina-1204") if f["status"] == "live"]
     assert live == ["B", "I"]  # changed terms send the unsigned forms back; the buyer's side needs Form B and Form I
+
+
+
+# ---------- converting: the agreed price against the listing's (spec item 12) ----------
+
+def test_converting_records_the_agreed_price_and_compares_it_with_the_listing(office, monkeypatch):
+    from diwan.agents import finance
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    r = c.post("/api/desk/deals/marina-1204/stage", json={"by": "omar", "stage": "Offer accepted"})
+    assert r.status_code == 400 and "agreed price" in r.json()["detail"]
+    assert c.post("/api/desk/deals/marina-1204/convert", json={"by": "priya", "amount": 2_500_000}).status_code == 403
+    r = c.post("/api/desk/deals/marina-1204/convert", json={"by": "omar", "amount": 2_500_000}).json()
+    assert (r["listing_aed"], r["pct"], r["diff"], r["needs_owner"], r["waiting"]) == (2_600_000, -3.8, -100_000, False, None)
+    g = office.graph()
+    assert g.nodes["deal:marina-1204"].props["stage"] == "Offer accepted"
+    price = finance.commission(g, "marina-1204")
+    assert price["base"] == 2_500_000 and g.nodes[price["fact"]].props["replaces"] == ["F1"]
+    assert c.post("/api/desk/deals/marina-1204/convert", json={"by": "omar", "amount": 2_400_000}).status_code == 400
+    assert c.get("/api/desk/kpis").json()["pricing"]["brokers"]["Omar"] == {"avg_pct": -3.8, "n": 1}
+
+
+def test_a_discount_above_the_limit_waits_for_the_owner(office, monkeypatch):
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    r = c.post("/api/desk/deals/marina-1204/convert", json={"by": "omar", "amount": 2_400_000}).json()
+    assert r["needs_owner"] and r["waiting"] == "Layla" and r["pct"] == -7.7
+    g = office.graph()
+    assert (g.nodes["deal:marina-1204"].props.get("stage") or "New") != "Offer accepted"
+    ask = next(x for x in c.get("/api/desk/work?person=layla").json()["items"] if x["act"] == "discount")
+    assert c.post(f"/api/desk/tasks/{ask['id']}/discount", json={"by": "omar", "approve": True}).status_code == 403
+    assert c.post(f"/api/desk/tasks/{ask['id']}/discount", json={"by": "layla", "approve": False}).status_code == 400  # say why
+    assert c.post(f"/api/desk/tasks/{ask['id']}/discount", json={"by": "layla", "approve": True}).json()["ok"]
+    g = office.graph()
+    assert g.nodes["deal:marina-1204"].props["stage"] == "Offer accepted" and g.settings["deal:marina-1204"]["agreed"]["approved_by"] == "layla"
+
+
+def test_a_refused_discount_goes_back_to_the_broker_and_nothing_moves(office):
+    from diwan import desk_stages
+    desk_stages.convert(office, "marina-1204", "omar", 2_300_000)
+    t = next(t for t in office.graph().of("task", "marina-1204") if t.props.get("step") == "discount")
+    desk_stages.decide_discount(office, t.id, "layla", False, "The seller won't go under 2.45M")
+    g = office.graph()
+    assert not desk_stages.agreed(g, "marina-1204")
+    assert any(q.props.get("kind") == "discount" and "2.45M" in q.props["text"] for q in g.of("question", "marina-1204", "open"))
+    assert desk_stages.convert(office, "marina-1204", "omar", 2_480_000)["waiting"] is None  # 4.6%: within the limit

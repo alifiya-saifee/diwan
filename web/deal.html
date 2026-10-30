@@ -272,7 +272,8 @@ async function rulesPanel() {
     h("summary", { style: "cursor:pointer" }, h("h2", { style: "display:inline-flex;margin:0" }, "The rules this desk follows"),
       h("span", { class: "small muted", style: "margin-left:8px" }, r.changed_by ? `last changed by ${r.changed_by} ${ago(r.changed_at)}` : "Dubai's usual practice, unchanged")),
     h("div", { class: "rgrid" }, num(d, "cash_report_aed", "Report cash at or above (AED)", " AED"), num(d, "vat_pct", "VAT on our fees (%)", "%"),
-      num(d, "stuck_days", "A deal is stuck after (days)", " days"), num(d, "close_days_target", "Target from yes to closed (days)", " days")),
+      num(d, "stuck_days", "A deal is stuck after (days)", " days"), num(d, "close_days_target", "Target from yes to closed (days)", " days"),
+      num(d, "discount_approval_pct", "A discount above this needs the owner (%)", "%")),
     h("h2", { style: "margin-top:14px" }, "Our agency, as it appears on the forms"),
     h("div", { class: "rgrid" },
       h("label", { class: "rule" }, "Agency name", owner ? h("input", { value: d.agency.name, "aria-label": "Agency name", oninput: (e) => { d.agency.name = e.target.value; } }) : h("strong", {}, d.agency.name || "not set")),
@@ -341,6 +342,8 @@ async function kpiPanel(row) {
       tile("Money overdue", money(k.overdue.aed), "past the day it was due", Object.entries(k.overdue.kinds).map(([kind, v]) => row(kind, money(v.aed), () => goDeals("overdue")))),
       tile("Commission billed vs collected", `${money(com.collected)} / ${money(com.billed)}`, "collected of invoiced",
         Object.entries(com.payers).map(([p, v]) => row(`from the ${p}${v.days != null ? ` · ${v.days} d to collect` : ""}`, `${aed(v.collected)} / ${aed(v.billed)}`, null)), com.deals.slice(0, 3).map((x) => deal(x, `${money(x.aed)} unpaid`))),
+      tile("Price against the listing", k.pricing.avg_pct == null ? "—" : `${k.pricing.avg_pct > 0 ? "+" : ""}${k.pricing.avg_pct}%`, `average of ${k.pricing.n} converted · ${k.pricing.below} below, ${k.pricing.above} above`,
+        Object.entries(k.pricing.brokers).map(([b, x]) => row(b, `${x.avg_pct > 0 ? "+" : ""}${x.avg_pct}% (${x.n})`, null))),
       tile("Documents missing at closing", k.docs_missing.length, "deals at their last stage", k.docs_missing.slice(0, 4).map((x) => deal(x, "not filed")))));
 }
 
@@ -413,6 +416,8 @@ function qrow(x) {
   else if (x.act === "invoiced") { const i = inp("Invoice number"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/invoiced`, { number: i.value }, "Invoice sent; collecting it next") }, "I sent it")]; }
   else if (x.act === "commission") { const i = inp("Bank reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/commission`, { reference: i.value }, "Commission received; receipt filed") }, "Received")]; }
   else if (x.act === "tick") acts = [h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/tick`, {}, "Ticked") }, "Done")];
+  else if (x.act === "discount") { const i = inp("Why (needed to refuse)"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/discount`, { approve: true, note: i.value }, "Discount approved; the deal converts") }, "Approve"),
+    h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/discount`, { approve: false, note: i.value }, "Refused; the broker is told") }, "Refuse")]; }
   else if (x.act === "sign") {
     const f = h("input", { type: "file", accept: "application/pdf", "aria-label": "Signed copy (PDF)" });
     acts = [h("a", { class: "btn", href: `/api/desk/forms/${x.draft}.pdf`, target: "_blank" }, "Download PDF"), f,
@@ -672,8 +677,31 @@ function stageBar(v) {
   const pick = (stage) => {
     if (!may || s.closed) return;
     const back = stage === "Lost" || s.current === "Lost" || s.list.indexOf(stage) < at;
-    if (back) { stageAsk = stage; render(); feed(); } else go(stage);
+    if (!back && stage !== "Lost" && !s.agreed && s.list.indexOf(stage) >= s.list.indexOf(s.converted_at)) { stageAsk = "convert"; render(); feed(); }
+    else if (back) { stageAsk = stage; render(); feed(); } else go(stage);
   };
+  const fmt = (n) => `AED ${Math.round(n).toLocaleString()}`;
+  const delta = h("div", { class: "small", id: "delta", style: "flex-basis:100%" });
+  const amount = h("input", { type: "number", min: 0, step: 1000, value: s.listing_aed || v.summary.value || "", "aria-label": "Agreed price (AED)", style: "flex:1 1 200px",
+    oninput: () => paint() });
+  const paint = () => {
+    const a = Number(amount.value), L = s.listing_aed;
+    if (!L) { delta.textContent = "Not our listing: nothing to compare."; delta.style.color = "var(--muted)"; return; }
+    if (!a) { delta.textContent = ""; return; }
+    const pct = Math.round(((a - L) * 1000) / L) / 10;
+    if (pct < 0) { delta.textContent = `Discount ${-pct}% · ${fmt(L - a)} below the listing price of ${fmt(L)}${-pct > s.limit ? ` · above the ${s.limit}% limit: ${TEAM[OWNER]?.name || "the owner"} approves it first` : ""}`; delta.style.color = "var(--warn)"; }
+    else if (pct > 0) { delta.textContent = `+${pct}% over the listing · ${fmt(a - L)} more than ${fmt(L)}`; delta.style.color = "var(--ok, #82d99f)"; }
+    else { delta.textContent = `At the listing price of ${fmt(L)}`; delta.style.color = "var(--muted)"; }
+  };
+  paint();
+  const convertNow = async () => {
+    try {
+      const r = await post(`/api/desk/deals/${encodeURIComponent(deal)}/convert`, { by: me(), amount: amount.value });
+      stageAsk = null; toast(r.waiting ? `Sent to ${r.waiting} to approve the ${-r.pct}% discount` : "Converted at the agreed price; the agency forms are next"); await open(deal); show();
+    } catch (e) { toast(e.message); }
+  };
+  const note = h("input", { placeholder: "Why (needed to refuse)", "aria-label": "Why", style: "flex:1 1 200px" });
+  const decide = async (approve) => { try { await post(`/api/desk/tasks/${s.pending.task}/discount`, { by: me(), approve, note: note.value }); toast(approve ? "Discount approved; the deal converts" : "Refused; the broker is told"); await open(deal); show(); } catch (e) { toast(e.message); } };
   const reason = h("input", { placeholder: stageAsk === "Lost" ? "Why was it lost?" : "Why move it back?", "aria-label": "Why", style: "flex:1 1 220px" });
   return h("div", { id: "stagebar" },
     h("div", { class: "stagebar", role: "group", "aria-label": "Stage" },
@@ -682,9 +710,16 @@ function stageBar(v) {
       h("span", { class: `end ${s.closing ? "on" : ""}` }, s.closing ? `Closing · ${s.closing.done} of ${s.closing.of}` : "Closing"),
       h("span", { class: `end ${s.closed ? "on" : ""}` }, "Won"),
       s.current === "Lost" ? h("span", { class: "chip bad" }, "Lost") : may && !s.closed ? h("button", { class: "lost", onclick: () => pick("Lost") }, "Mark lost") : null),
-    stageAsk ? h("div", { class: "acts", style: "margin:4px 0 8px" }, reason,
+    s.pending ? h("div", { class: "card open", style: "margin:6px 0" }, h("strong", {}, `Waiting for ${TEAM[OWNER]?.name || "the owner"}: ${s.pending.text}`),
+      me() === OWNER ? h("div", { class: "acts" }, note, h("button", { class: "primary", onclick: () => decide(true) }, "Approve the discount"), h("button", { onclick: () => decide(false) }, "Refuse")) : null)
+    : stageAsk === "convert" ? h("div", { class: "card open", id: "convert", style: "margin:6px 0" }, h("strong", {}, "The client said yes: the agreed price"),
+      h("div", { class: "acts" }, amount, h("button", { class: "primary", onclick: convertNow }, "Save and convert"), h("button", { onclick: () => { stageAsk = null; render(); feed(); } }, "Cancel"), delta))
+    : stageAsk ? h("div", { class: "acts", style: "margin:4px 0 8px" }, reason,
       h("button", { class: "primary", onclick: () => go(stageAsk, reason.value) }, stageAsk === "Lost" ? "Mark lost" : `Move back to ${stageAsk}`),
       h("button", { onclick: () => { stageAsk = null; render(); feed(); } }, "Cancel")) : null,
+    s.agreed ? h("div", { class: "small", style: `color:${s.agreed.pct < 0 ? "var(--warn)" : s.agreed.pct > 0 ? "var(--ok, #82d99f)" : "var(--muted)"}` },
+      `Agreed AED ${s.agreed.amount.toLocaleString()}` + (s.agreed.pct == null ? " · not our listing" : s.agreed.pct < 0 ? ` · ${-s.agreed.pct}% discount on the listing` : s.agreed.pct > 0 ? ` · +${s.agreed.pct}% over the listing` : " · at the listing price")
+      + (s.agreed.approved_by ? ` · approved by ${NAMES[s.agreed.approved_by] || s.agreed.approved_by}` : "")) : null,
     !may && !s.closed ? h("div", { class: "small muted" }, `${v.broker_name} (the broker), ${rname("transactions")} or the owner moves the stage.`)
       : s.closing ? h("div", { class: "small muted" }, `Won comes from closing: waiting on ${s.closing.waiting.join("; ").toLowerCase()}.`) : null);
 }

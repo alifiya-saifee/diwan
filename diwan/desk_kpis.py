@@ -135,7 +135,17 @@ def kpis(g: Graph, events: list[dict], today: date) -> dict:
         if cl and not cl["sale"] and not next(i for i in cl["items"] if i["key"] == "docs")["done"]:
             missing.append(row(d, what=next(i for i in cl["items"] if i["key"] == "docs")["text"]))
 
-    return {"to_close": to_close, "stuck": {"days": r["stuck_days"], "deals": stuck}, "touchpoints": touch, "compliance": comp,
+    # the agreed price against our listing's, per broker
+    priced = defaultdict(list)
+    for d in deals:
+        a = g.settings.get(f"deal:{d}", {}).get("agreed") or {}
+        if a.get("pct") is not None:
+            priced[deals[d].props.get("broker")].append(a["pct"])
+    allp = [x for v in priced.values() for x in v]
+    pricing = {"n": len(allp), "avg_pct": round(sum(allp) / len(allp), 1) if allp else None, "below": sum(x < 0 for x in allp), "above": sum(x > 0 for x in allp),
+               "brokers": {name(b): {"avg_pct": round(sum(v) / len(v), 1), "n": len(v)} for b, v in priced.items()}}
+
+    return {"pricing": pricing, "to_close": to_close, "stuck": {"days": r["stuck_days"], "deals": stuck}, "touchpoints": touch, "compliance": comp,
             "caught": {"sent_back": caught["review.returned"], "approvals": caught["decision.needed"], "refused": caught["approval.refused"],
                        "withdrawn": caught["task.withdrawn"]},
             "fall": fall, "overdue": {"aed": sum(v["aed"] for v in over.values()), "kinds": dict(over)}, "commission": billed,

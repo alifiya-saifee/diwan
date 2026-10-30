@@ -168,6 +168,14 @@ the same deals and one deal opens in a side panel:
     price and the other agency; Form F's submit is refused until both are signed; uploading the signed PDF files it with
     Records and the submit then works; a changed price sends both forms back and drafts new ones.
 
+12. **Converting at the agreed price** (approved by the product owner 30 Oct). When the client says yes, the broker
+    (or the transactions officer, or the owner) moves the deal to its conversion stage and enters the agreed price,
+    filled in with our listing's price. Below it shows as a discount in amber, above it as a premium in green; a
+    property that isn't our listing has nothing to compare. A discount above the owner's limit (default 5%) waits for
+    the owner, who approves or refuses with a reason the broker hears. The agreed price becomes the deal's price (a fact
+    that replaces an earlier one), so commission, the forms and Form F rest on it; the comparison is kept for the KPI
+    "price against the listing" per broker. The stage bar can't cross the conversion stage without it.
+
 ## States every section must handle
 
 Empty (no deals; a deal with no money facts; nothing to screen), errors (an action by the wrong person is refused with

@@ -215,6 +215,8 @@ class Ledger:
                     late = t.props.get("due", "9") < self.today.isoformat()
                     items.append(base | {"id": t.id, "who": who, "kind": "After closing", "sev": "bad" if late else "info", "title": t.props["action"],
                                          "at": t.at, "act": "after", "due": t.props.get("due")})
+                elif who and t.props["agent"] == "ops" and t.props.get("step") == "discount":
+                    items.append(base | {"id": t.id, "who": who, "kind": "Discount", "sev": "warn", "title": t.props["action"], "at": t.at, "act": "discount"})
                 elif who and t.props["agent"] == "ops" and t.props.get("step") in ("sides", "sign"):
                     items.append(base | {"id": t.id, "who": who, "kind": "Agency forms", "sev": "warn", "title": t.props["action"], "at": t.at,
                                          "act": "open" if t.props["step"] == "sides" else "sign", "draft": t.props.get("draft")})
@@ -751,3 +753,25 @@ async def form_signed(tid: str, by: str = Form(...), file: UploadFile = File(...
     from diwan.providers import meta
     data = await file.read()
     return {"document": _call(agency_forms.signed, _office(), tid, pid(by) or by, data, file.filename or "", media=meta.MEDIA, today=date.today())}
+
+
+class ConvertIn(BaseModel):
+    by: str
+    amount: float | str = ""
+
+
+@router.post("/api/desk/deals/{deal}/convert")
+def convert(deal: str, body: ConvertIn):
+    return _call(desk_stages.convert, _office(), deal, pid(body.by) or body.by, body.amount, missing="deal")
+
+
+class DiscountIn(BaseModel):
+    by: str
+    approve: bool
+    note: str = ""
+
+
+@router.post("/api/desk/tasks/{tid}/discount")
+def decide_discount(tid: str, body: DiscountIn):
+    _call(desk_stages.decide_discount, _office(), tid, pid(body.by) or body.by, body.approve, body.note)
+    return {"ok": True}
