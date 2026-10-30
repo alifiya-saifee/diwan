@@ -29,10 +29,13 @@ DEFAULTS = {
     "stuck_days": 7,  # a deal with no step done in this many days counts as stuck
     "close_days_target": 60,  # the owner's target from "yes" to closed
     "developers": [],  # [{"name", "commission_pct", "payable_after_pct"}], one per developer agency agreement
+    "agency": {"name": "", "orn": ""},  # our office as it appears on the forms: its name and RERA office number (ORN)
+    "brns": {},  # each broker's RERA card number (BRN), by person
     "paths": {
         "ready": {
             "name": "Ready home, bought from its owner",
             "deposit_pct": 10, "commission_pct": 2, "commission_from": "buyer", "dld_fee_pct": 4,
+            "stages": ["Offer", "Offer accepted", "Form F", "Transfer"], "converted_at": "Offer accepted", "agency_forms": True,
             "steps": [["Form F signed by buyer, seller and both brokers", "the buyer and the seller"],
                       ["Buyer's mortgage: valuation and the bank's final offer", "the buyer's bank"],
                       ["Seller's mortgage cleared: liability and clearance letters", "the seller's bank"],
@@ -47,6 +50,7 @@ DEFAULTS = {
         "offplan": {
             "name": "Off-plan unit, bought from a developer",
             "deposit_pct": 10, "commission_pct": 2, "commission_from": "developer", "dld_fee_pct": 4,
+            "stages": ["Reservation", "SPA", "Oqood"], "converted_at": "Reservation", "agency_forms": False,
             "steps": [["Reservation form and the developer's KYC", "the buyer and the developer"],
                       ["SPA signed with the developer; the payment plan entered", "the buyer and the developer"],
                       ["Oqood registered with the DLD", "the developer"],
@@ -58,6 +62,7 @@ DEFAULTS = {
         "rent": {
             "name": "Rental",
             "deposit_pct": 5, "deposit_pct_furnished": 10, "commission_pct": 5, "commission_from": "tenant", "renewal_notice_days": 90,
+            "stages": ["Offer", "Offer accepted", "Contract", "Ejari", "Move-in"], "converted_at": "Offer accepted", "agency_forms": False,
             "steps": [["Tenancy contract signed", "the tenant and the landlord"],
                       ["Security deposit and agency fee received", "the tenant"],
                       ["Rent cheques collected", "the tenant"],
@@ -69,6 +74,7 @@ DEFAULTS = {
     },
 }
 PATHS = tuple(DEFAULTS["paths"])
+SALES_STAGES = ["New", "Qualifying", "Qualified", "Viewing booked", "Viewed"]  # Sales' own, before any path
 NUMBERS = ("deposit_pct", "deposit_pct_furnished", "commission_pct", "dld_fee_pct")
 PAYERS = ("buyer", "seller", "developer", "tenant", "landlord")
 
@@ -138,6 +144,12 @@ def validate(r: dict) -> list[str]:
             errs.append(f"{p['name']}: every step needs what it is and who it waits on")
         if all(len(s) == 3 for s in steps):
             errs.append(f"{p['name']}: at least one step comes before closing")
+        st = p.get("stages") or []
+        if not st or any(not isinstance(x, str) or not x.strip() for x in st) or len(set(x.lower() for x in st)) != len(st) \
+                or any(x.strip().lower() in [y.lower() for y in SALES_STAGES + ["Won", "Lost", "Closing"]] for x in st):
+            errs.append(f"{p['name']}: each stage after Viewed has a name, once, and isn't one of Sales' stages, Closing, Won or Lost")
+        elif p.get("converted_at") not in st:
+            errs.append(f"{p['name']}: the deal counts as converted at one of its own stages")
         if "renewal_notice_days" in p and (not isinstance(p["renewal_notice_days"], int) or not 0 < p["renewal_notice_days"] <= 365):
             errs.append(f"{p['name']}: the renewal notice is a whole number of days between 1 and 365")
         if [c[0] for c in p.get("closing") or []] != ["figures", "invoice", "compliance", "docs"] or \
@@ -154,11 +166,15 @@ def save(office, new: dict, *, by: str) -> dict:
     r = _merge(DEFAULTS, new)
     for k in ("cash_report_aed", "stuck_days", "close_days_target"):
         r[k] = int(r[k]) if str(r.get(k, "")).isdigit() else r.get(k)
+    r["agency"] = {"name": str((r.get("agency") or {}).get("name", "")).strip(), "orn": str((r.get("agency") or {}).get("orn", "")).strip()}
+    r["brns"] = {k: str(v).strip() for k, v in (r.get("brns") or {}).items() if str(v).strip()}
     r["developers"] = [{"name": str(d.get("name", "")).strip(), "commission_pct": d.get("commission_pct"), "payable_after_pct": d.get("payable_after_pct")}
                        for d in r.get("developers") or []]
     for pid in PATHS:
         p = r["paths"][pid]
         p["steps"] = [[str(s[0]).strip(), str(s[1]).strip()] + (["after"] if len(s) > 2 and s[2] == "after" else []) for s in p.get("steps") or [] if len(s) >= 2]
+        p["stages"] = [str(x).strip() for x in p.get("stages") or [] if str(x).strip()]
+        p["agency_forms"] = bool(p.get("agency_forms"))
         if str(p.get("renewal_notice_days", "")).isdigit():
             p["renewal_notice_days"] = int(p["renewal_notice_days"])
     if errs := validate(r):
@@ -202,8 +218,12 @@ def developer(g: Graph, name_: str | None) -> dict | None:
 
 TERMS = {"agreement": "the signed agency agreement (Form A, Form B, the developer's or the listing agreement) and its number",
          "rate_pct": "the commission rate it says", "other_agency": "the other agency, under Form I", "other_share_pct": "their share of the commission",
+         "sides": "which side we act for", "other_orn": "the other agency's ORN", "other_agent": "the other agent", "other_brn": "the other agent's BRN",
          "developer": "the developer", "start": "the tenancy start", "end": "the tenancy end", "furnished": "furnished"}
 MONEY_TERMS = ("rate_pct", "other_agency", "other_share_pct", "developer")
+FORM_TERMS = ("rate_pct", "other_agency", "other_share_pct", "other_orn", "other_agent", "other_brn", "sides")  # what the agency forms carry
+SIDES = {"both": "only us: our listing and our buyer", "seller": "we act for the seller; another agency brought the buyer",
+         "buyer": "we act for the buyer; another agency holds the listing"}
 
 
 def terms(g: Graph, deal: str) -> dict:
@@ -248,6 +268,10 @@ def set_terms(office, deal: str, new: dict, *, by: str) -> dict:
                 errs.append(f"{TERMS[k].capitalize()} is a date (YYYY-MM-DD)")
     if not errs and "start" in t and "end" in t and t["end"] <= t["start"]:
         errs.append("The tenancy ends after it starts")
+    if "sides" in t and t["sides"] not in SIDES:
+        errs.append(f"The side is one of {', '.join(SIDES)}")
+    if t.get("sides") in ("seller", "buyer") and "other_agency" not in t:
+        errs.append("Name the agency on the other side")
     if "furnished" in t:
         t["furnished"] = t["furnished"] in (True, "true", "yes", 1)
     if errs:
@@ -256,5 +280,11 @@ def set_terms(office, deal: str, new: dict, *, by: str) -> dict:
     if any(old.get(k) != t.get(k) for k in MONEY_TERMS) and \
             any(x.props["kind"] == "commission invoice" and x.status != "sent_back" for x in g.of("draft", deal)):
         raise ValueError("The commission invoice is already drafted on these terms; they are fixed now.")
+    from diwan import agency_forms
+    changed = [k for k in FORM_TERMS if old.get(k) != t.get(k)]
+    if changed and (signed := agency_forms.signed_forms(g, deal)):
+        raise ValueError(f"{' and '.join(signed)} {'is' if len(signed) == 1 else 'are'} signed with these terms; they are fixed now.")
     office.log.append("setting.changed", actor=by, deal=deal, content={"person": f"deal:{deal}", "key": "terms", "value": t})
+    if changed:
+        agency_forms.terms_changed(office, deal, by, changed)
     return t

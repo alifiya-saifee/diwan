@@ -419,3 +419,101 @@ def test_kpis_are_counted_from_the_log_with_the_deals_behind_them(office, monkey
     assert k["fall"]["pct"] == 50 and k["fall"]["deals"][0]["why"] == "the bank refused the mortgage"
     later = desk_kpis.kpis(office.graph(), office.log.list(), date.today() + timedelta(days=10))
     assert later["stuck"]["deals"] == []  # the stuck deal was lost, the other closed
+
+
+# ---------- stages on the Deal desk, and the agency forms at conversion (spec item 11) ----------
+
+def test_who_moves_a_stage_and_what_needs_a_reason(office, monkeypatch):
+    from diwan import desk_stages
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    assert desk_stages.stages(office.graph(), "marina-1204")[-4:] == ["Offer", "Offer accepted", "Form F", "Transfer"]
+    assert c.post("/api/desk/deals/marina-1204/stage", json={"by": "priya", "stage": "Offer"}).status_code == 403
+    assert c.post("/api/desk/deals/marina-1204/stage", json={"by": "omar", "stage": "Offer"}).json()["current"] == "Offer"
+    assert c.post("/api/desk/deals/marina-1204/stage", json={"by": "joseph", "stage": "Viewed"}).status_code == 400  # back needs a reason
+    assert c.post("/api/desk/deals/marina-1204/stage", json={"by": "joseph", "stage": "Viewed", "reason": "the seller withdrew the offer"}).status_code == 200
+    assert c.post("/api/desk/deals/marina-1204/stage", json={"by": "omar", "stage": "Won"}).status_code == 400
+    assert c.post("/api/desk/deals/marina-1204/stage", json={"by": "omar", "stage": "Lost"}).status_code == 400
+    assert c.post("/api/desk/deals/marina-1204/stage", json={"by": "layla", "stage": "Lost", "reason": "bought elsewhere"}).json()["current"] == "Lost"
+    e = [e for e in office.log.list() if e["type"] == "stage.changed"][-1]
+    assert e["content"] == {"stage": "Lost", "why": "bought elsewhere", "back": False}
+    assert c.post("/api/desk/deals/marina-1204/stage", json={"by": "omar", "stage": "Offer"}).status_code == 400  # reopening needs a reason too
+
+
+def _convert(office, c):
+    c.post("/api/desk/deals/marina-1204/stage", json={"by": "omar", "stage": "Offer accepted"})
+    return next(t for t in office.graph().of("task", "marina-1204") if t.props.get("step") == "sides")
+
+
+def test_conversion_on_our_listing_asks_who_brought_the_buyer_once(office, monkeypatch):
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    ask = _convert(office, c)
+    assert "MC-1204" in ask.props["action"] and "did another agent bring the buyer" in ask.props["action"] and ask.props["needs_person"] == "omar"
+    c.post("/api/desk/deals/marina-1204/stage", json={"by": "omar", "stage": "Form F"})
+    assert len([t for t in office.graph().of("task", "marina-1204") if t.props.get("step") == "sides"]) == 1
+    assert any(x["id"] == ask.id for x in c.get("/api/desk/work?person=omar").json()["items"])
+
+
+def test_seller_side_with_another_agency_drafts_form_a_and_form_i_as_pdfs(office, monkeypatch):
+    from diwan import agency_forms
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    desk_rules.save(office, edited(office, agency={"name": "Diwan Realty", "orn": "ORN-12345"}, brns={"omar": "BRN-55501"}), by="layla")
+    _convert(office, c)
+    assert c.post("/api/desk/deals/marina-1204/sides", json={"by": "omar", "sides": "seller", "other": {}}).status_code == 400  # name them
+    r = c.post("/api/desk/deals/marina-1204/sides", json={"by": "omar", "sides": "seller", "other": {
+        "other_agency": "Bayut Homes", "other_orn": "ORN-777", "other_agent": "Rami Aziz", "other_brn": "BRN-9", "other_share_pct": 50}})
+    drafts = r.json()["drafts"]
+    fs = agency_forms.forms(office.graph(), "marina-1204")
+    assert [f["form"] for f in fs] == ["A", "I"] and all(f["waiting"] and f["status"] == "live" for f in fs)
+    pdf = c.get(f"/api/desk/forms/{drafts[1]}.pdf")
+    assert pdf.status_code == 200 and pdf.headers["content-type"] == "application/pdf" and pdf.content.startswith(b"%PDF")
+    text = pdf.content.decode("latin-1")
+    for want in ("Bayut Homes", "ORN-777", "ORN-12345", "BRN-55501", "AED 2,600,000", "50%"):
+        assert want in text, want
+    a = c.get(f"/api/desk/forms/{drafts[0]}.pdf").content.decode("latin-1")
+    assert "Title deed number" in a and "\\(to fill\\)" in a
+
+
+def test_form_f_waits_for_the_signatures_and_the_upload_files_them(office, monkeypatch, tmp_path):
+    from diwan import agency_forms
+    from diwan.agents import operations
+    from diwan.providers import meta
+    monkeypatch.setattr(appmod.S, "office", office)
+    monkeypatch.setattr(meta, "MEDIA", tmp_path)
+    c = TestClient(appmod.app)
+    _convert(office, c)
+    c.post("/api/desk/deals/marina-1204/sides", json={"by": "omar", "sides": "both"})
+    assert [f["form"] for f in agency_forms.forms(office.graph(), "marina-1204")] == ["A", "B"]
+    operations.formf_plan(office, "marina-1204", office.add_task("marina-1204", "formf", "Prepare Form F"), "r1")
+    sub = next(t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "formf" and t.props.get("draft"))
+    with pytest.raises(ValueError, match="Form A and Form B wait for a signature"):
+        operations.submitted(office, sub.id, "joseph", "DLD-9")
+    signs = [t for t in office.graph().of("task", "marina-1204") if t.props.get("step") == "sign"]
+    assert c.post(f"/api/desk/tasks/{signs[0].id}/signed", data={"by": "omar"}, files={"file": ("a.txt", b"hello")}).status_code == 400
+    assert c.post(f"/api/desk/tasks/{signs[0].id}/signed", data={"by": "priya"}, files={"file": ("a.pdf", b"%PDF-1.4 x")}).status_code == 403
+    for t in signs:
+        assert c.post(f"/api/desk/tasks/{t.id}/signed", data={"by": "omar"}, files={"file": ("signed.pdf", b"%PDF-1.4 signed")}).status_code == 200
+    g = office.graph()
+    assert [d.props["kind"] for d in g.of("document") if d.deal == "marina-1204" and d.props["kind"].startswith("Form ")] == ["Form A", "Form B"]
+    assert (tmp_path / agency_forms.signed_file("marina-1204", "A", signs[0].props["draft"])).read_bytes() == b"%PDF-1.4 signed"
+    with pytest.raises(ValueError, match="signed with these terms"):
+        desk_rules.set_terms(office, "marina-1204", {"rate_pct": 1}, by="omar")
+    operations.submitted(office, sub.id, "joseph", "DLD-9")
+
+
+def test_a_changed_price_sends_the_forms_back_and_new_ones_are_drafted(office, monkeypatch):
+    from diwan import agency_forms
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    _convert(office, c)
+    c.post("/api/desk/deals/marina-1204/sides", json={"by": "omar", "sides": "both"})
+    office.record_fact("marina-1204", "deal_term", "We agreed two point five in the end.", "Karim Haddad", amount_aed=2_500_000, replaces="F1")
+    fs = agency_forms.forms(office.graph(), "marina-1204")
+    assert [(f["form"], f["status"]) for f in fs] == [("A", "sent_back"), ("B", "sent_back"), ("A", "live"), ("B", "live")]
+    assert len(agency_forms.unsigned(office.graph(), "marina-1204")) == 2
+    assert "2,500,000" in c.get(f"/api/desk/forms/{fs[2]['draft']}.pdf").content.decode("latin-1")
+    c.post("/api/desk/deals/marina-1204/sides", json={"by": "omar", "sides": "buyer", "other": {"other_agency": "Rival Homes", "other_share_pct": 50}})
+    live = [f["form"] for f in agency_forms.forms(office.graph(), "marina-1204") if f["status"] == "live"]
+    assert live == ["B", "I"]  # changed terms send the unsigned forms back; the buyer's side needs Form B and Form I

@@ -164,6 +164,9 @@ def draft_invoice(office: Office, deal: str, by: str) -> str:
         raise ValueError(c["missing"])
     if any(d.props["kind"] == "commission invoice" and d.status != "sent_back" for d in g.of("draft", deal)):
         raise ValueError("This deal already has a commission invoice; it is redrafted only if it is sent back.")
+    from diwan import agency_forms
+    if waiting := agency_forms.unsigned(g, deal):
+        raise ValueError(f"{' and '.join(waiting)} {'waits' if len(waiting) == 1 else 'wait'} for a signature: the commission is invoiced once the agency forms are signed.")
     if (tr := c.get("trigger")) and not tr["met"]:
         raise ValueError(f"{c['developer']} owes our commission once {tr['pct']}% of the price is paid; {tr['paid_pct']}% is paid so far.")
     slides = [{"n": 1, "text": f'{c["base_label"]} AED {c["base"]:,}, said: "{c["quote"]}"', "facts": [c["fact"]]},

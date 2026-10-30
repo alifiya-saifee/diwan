@@ -7,10 +7,10 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, timedelta
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from diwan import desk_kpis, desk_rules, roles
+from diwan import agency_forms, desk_kpis, desk_rules, desk_stages, roles
 from diwan.agents import compliance, finance, operations, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
@@ -19,7 +19,7 @@ from diwan.people import name, pid
 router = APIRouter()
 PAGE = 50
 DEPTS = {"comp": "Compliance", "fin": "Finance", "ops": "Paperwork", "review": "Review"}
-DRAFT_DEPT = {"cash report": "comp", "Form F": "ops", "commission invoice": "fin"}  # any other draft (the deck) is Review's
+DRAFT_DEPT = {"cash report": "comp", "Form F": "ops", "commission invoice": "fin"} | {k: "ops" for k in agency_forms.FORM_OF}  # any other (the deck) is Review's
 
 
 def _office():
@@ -215,6 +215,9 @@ class Ledger:
                     late = t.props.get("due", "9") < self.today.isoformat()
                     items.append(base | {"id": t.id, "who": who, "kind": "After closing", "sev": "bad" if late else "info", "title": t.props["action"],
                                          "at": t.at, "act": "after", "due": t.props.get("due")})
+                elif who and t.props["agent"] == "ops" and t.props.get("step") in ("sides", "sign"):
+                    items.append(base | {"id": t.id, "who": who, "kind": "Agency forms", "sev": "warn", "title": t.props["action"], "at": t.at,
+                                         "act": "open" if t.props["step"] == "sides" else "sign", "draft": t.props.get("draft")})
                 elif who and operations.is_closing(t):
                     items.append(base | {"id": t.id, "who": who, "kind": "Closing", "sev": "warn", "title": t.props["action"], "at": t.at,
                                          "act": "confirm" if t.props.get("step") == "figures" else "docs"})
@@ -344,7 +347,8 @@ def deal(deal: str):
                                               "from_desk": bool(g.nodes[f"deal:{deal}"].props.get("kind"))},
                                      "commission": finance.commission(g, deal), "closing": operations.closing(g, deal),
                                      "terms": desk_rules.terms(g, deal), "developers": [x["name"] for x in desk_rules.rules(g)["developers"]],
-                                     "schedule": dict(zip(("kind", "payee", "document"), finance.SCHEDULE[p["id"]])) if p["id"] in finance.SCHEDULE else None}
+                                     "schedule": dict(zip(("kind", "payee", "document"), finance.SCHEDULE[p["id"]])) if p["id"] in finance.SCHEDULE else None,
+                                     "stages": desk_stages.view(g, deal), "agency": _agency_view(g, deal)}
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
 
@@ -698,3 +702,52 @@ def after_done(tid: str, body: Tick):
 def kpis():
     o = _office()
     return desk_kpis.kpis(o.graph(), o.log.list(), date.today())
+
+
+
+# ---------- stages, and the agency forms at conversion ----------
+
+def _agency_view(g: Graph, deal: str) -> dict:
+    li = agency_forms.our_listing(g, deal)
+    ask = next((t for t in g.of("task", deal) if t.props.get("step") == "sides" and t.status in OPEN), None)
+    return {"asking": ask.id if ask else None, "our_listing": li.props["ref"] if li else None, "needed": agency_forms.needed(g, deal),
+            "forms": agency_forms.forms(g, deal), "sides": desk_rules.SIDES, "terms": desk_rules.terms(g, deal)}
+
+
+class StageIn(BaseModel):
+    by: str
+    stage: str
+    reason: str = ""
+
+
+@router.post("/api/desk/deals/{deal}/stage")
+def move_stage(deal: str, body: StageIn):
+    _call(desk_stages.move, _office(), deal, body.stage, pid(body.by) or body.by, body.reason, missing="deal")
+    return desk_stages.view(_office().graph(), deal)
+
+
+class SidesIn(BaseModel):
+    by: str
+    sides: str
+    other: dict = {}
+
+
+@router.post("/api/desk/deals/{deal}/sides")
+def set_sides(deal: str, body: SidesIn):
+    return {"drafts": _call(agency_forms.set_sides, _office(), deal, pid(body.by) or body.by, body.sides, body.other, missing="deal")}
+
+
+@router.get("/api/desk/forms/{did}.pdf")
+def form_pdf(did: str):
+    from fastapi.responses import Response
+    g = _office().graph()
+    data = _call(agency_forms.render, g, did, missing="form")
+    form = agency_forms.FORM_OF[g.nodes[did].props["kind"]]
+    return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="Form-{form}-{g.nodes[did].deal}-{did}.pdf"'})
+
+
+@router.post("/api/desk/tasks/{tid}/signed")
+async def form_signed(tid: str, by: str = Form(...), file: UploadFile = File(...)):
+    from diwan.providers import meta
+    data = await file.read()
+    return {"document": _call(agency_forms.signed, _office(), tid, pid(by) or by, data, file.filename or "", media=meta.MEDIA, today=date.today())}

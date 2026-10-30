@@ -141,6 +141,33 @@ the same deals and one deal opens in a side panel:
     share to be paid; a rental can't close without its dates; every KPI is zero or "—" on an empty office and moves when
     a deal closes. Not in this item: Form C (waiting on the product owner), mortgage amounts, resale before handover.
 
+11. **Stages on the Deal desk, and the agency forms at conversion** (approved by the product owner 30 Oct).
+    - **The stage bar** at the top of a deal: Sales' stages (New → Viewed), then the stages of the deal's path, which
+      are the owner's settings (ready: Offer, Offer accepted, Form F, Transfer; off-plan: Reservation, SPA, Oqood;
+      rental: Offer, Offer accepted, Contract, Ejari, Move-in). Then Closing (from the checklist) and Won. The broker,
+      the transactions officer and the owner move it; moving back and Lost need a reason; Won comes only from closing;
+      a closed deal doesn't move. The same `stage.changed` the Inbox writes, so both agree.
+    - **Conversion** is the path's "converted at" stage (Offer accepted; Reservation for off-plan). Reaching it asks the
+      broker once who is on the other side, unless the deal already says: only us (our listing, our buyer), we act for
+      the seller and another agency brought the buyer, or we act for the buyer and another agency holds the listing.
+      The other agency's name, ORN, agent, BRN and share are kept in the deal's terms. (Front desk & Sales are asked to
+      note "came with an agent" at enquiry, so this can be read instead of asked.)
+    - **The forms the deal needs** are drafted from the record: on a ready sale, Form A and B for only us, A and I for
+      the seller's side, B and I for the buyer's side; on any path, Form I when another agency is on the other side.
+      Each is a draft checked by Review, resting on the price the client said; our agency's name and ORN and each
+      broker's BRN are the owner's settings; what isn't on file (the seller's name, the title deed number) is printed
+      blank with who fills it. The broker downloads it as a **PDF** and shares it with the client or the other agent
+      personally, then uploads the signed copy, which Records files. A changed price or changed terms send an unsigned
+      form back and a new one is drafted; a signed form fixes the terms it carries.
+    - **The gate:** Form F isn't submitted and no commission invoice is drafted while a form waits for its signature.
+    - **KPIs:** deals whose forms are all signed, and the forms waiting per broker; one-agency against co-agency deals;
+      the commission given to other agencies.
+    *Done means:* a non-broker who isn't the transactions officer or the owner can't move a stage; moving back without
+    a reason is refused; Won isn't offered; reaching Offer accepted on our listing asks who brought the buyer; "we act
+    for the seller" with Bayut Homes drafts Form A and Form I, each downloadable as a PDF that opens and shows the
+    price and the other agency; Form F's submit is refused until both are signed; uploading the signed PDF files it with
+    Records and the submit then works; a changed price sends both forms back and drafts new ones.
+
 ## States every section must handle
 
 Empty (no deals; a deal with no money facts; nothing to screen), errors (an action by the wrong person is refused with

@@ -126,6 +126,13 @@
   .kpis .tile .big { font-size: 32px; }
   @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 560px) { .kpis { grid-template-columns: 1fr; } }
+  .stagebar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 12px 0 4px; }
+  .stagebar button { padding: 3px 10px; font-size: 12px; border-radius: 99px; color: var(--muted); background: transparent; }
+  .stagebar button.past { color: var(--teal); border-color: rgba(130, 217, 159, .3); }
+  .stagebar button.on { background: var(--gold); color: var(--bg); border-color: var(--gold); font-weight: 600; }
+  .stagebar .end { font-size: 12px; padding: 3px 10px; border-radius: 99px; border: 1px dashed var(--line-2); color: var(--muted); }
+  .stagebar .end.on { border-style: solid; border-color: rgba(130, 217, 159, .5); color: var(--teal); }
+  .stagebar .lost { margin-left: auto; color: var(--bad); }
   details.quiet > summary { cursor: pointer; color: var(--muted); font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 600; margin-top: 18px; }
 </style>
 </head>
@@ -166,7 +173,14 @@ const st = ([s, t]) => h("span", { class: `chip ${{ ok: "ok", warn: "warn", bad:
 
 // ---------- the three views ----------
 const VIEW = () => (["my-work", "deals"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview");
-async function show() {
+async function show() {  // a view that can't load says so, never a blank page
+  try { await showView(); }
+  catch (e) {
+    $("view").replaceChildren(h("div", { class: "allclear" }, h("b", {}, "This view didn't load"),
+      h("div", {}, `The server didn't answer (${e.message}). It may be restarting.`), h("button", { style: "margin-top:12px", onclick: show }, "Try again")));
+  }
+}
+async function showView() {
   document.querySelectorAll("#views a").forEach((a) => a.classList.toggle("on", a.dataset.v === VIEW()));
   const w = await api(`/api/desk/work?person=${me()}`);
   $("mycount").textContent = w.counts[me()] || "";
@@ -259,6 +273,12 @@ async function rulesPanel() {
       h("span", { class: "small muted", style: "margin-left:8px" }, r.changed_by ? `last changed by ${r.changed_by} ${ago(r.changed_at)}` : "Dubai's usual practice, unchanged")),
     h("div", { class: "rgrid" }, num(d, "cash_report_aed", "Report cash at or above (AED)", " AED"), num(d, "vat_pct", "VAT on our fees (%)", "%"),
       num(d, "stuck_days", "A deal is stuck after (days)", " days"), num(d, "close_days_target", "Target from yes to closed (days)", " days")),
+    h("h2", { style: "margin-top:14px" }, "Our agency, as it appears on the forms"),
+    h("div", { class: "rgrid" },
+      h("label", { class: "rule" }, "Agency name", owner ? h("input", { value: d.agency.name, "aria-label": "Agency name", oninput: (e) => { d.agency.name = e.target.value; } }) : h("strong", {}, d.agency.name || "not set")),
+      h("label", { class: "rule" }, "Office number (ORN)", owner ? h("input", { value: d.agency.orn, "aria-label": "Office number (ORN)", oninput: (e) => { d.agency.orn = e.target.value; } }) : h("strong", {}, d.agency.orn || "not set")),
+      ...Object.entries(TEAM).filter(([, p]) => /broker/i.test(p.role || "")).map(([k, p]) => h("label", { class: "rule" }, `${p.name}'s card number (BRN)`,
+        owner ? h("input", { value: d.brns[k] || "", "aria-label": `${p.name}'s BRN`, oninput: (e) => { d.brns[k] = e.target.value; } }) : h("strong", {}, d.brns[k] || "not set")))),
     h("div", { class: "groups", style: "margin:14px 0 10px" }, ...Object.keys(PATHNAMES).map((k) => h("button", { class: rulesPath === k ? "on" : "", onclick: () => { rulesPath = k; show(); } }, PATHNAMES[k]))),
     h("div", { class: "small muted", style: "margin-bottom:8px" }, `${P.name}: a deal follows this path when its sales desk is ${rulesPath === "rent" ? "for rent" : rulesPath === "offplan" ? "for off-plan sales" : "any other desk"}.`),
     h("div", { class: "rgrid" }, num(P, "commission_pct", "Our commission (%)", "%"),
@@ -267,6 +287,12 @@ async function rulesPanel() {
       num(P, "deposit_pct", rulesPath === "rent" ? "Security deposit, unfurnished (%)" : "Deposit (%)", "%"),
       rulesPath === "rent" ? num(P, "deposit_pct_furnished", "Security deposit, furnished (%)", "%") : null,
       rulesPath === "rent" ? num(P, "renewal_notice_days", "Ask about renewal this many days before the end", " days") : num(P, "dld_fee_pct", "DLD fee, paid by the buyer (%)", "%")),
+    h("div", { class: "rgrid" },
+      h("label", { class: "rule" }, "Stages after Viewed, in order", owner ? h("input", { value: P.stages.join(", "), "aria-label": "Stages after Viewed", oninput: (e) => { P.stages = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); } }) : h("strong", {}, P.stages.join(" → "))),
+      h("label", { class: "rule" }, "Converted at (the agency forms start)", owner ? h("select", { "aria-label": "Converted at", onchange: (e) => { P.converted_at = e.target.value; } },
+        ...P.stages.map((x) => h("option", { value: x, selected: x === P.converted_at }, x))) : h("strong", {}, P.converted_at)),
+      h("label", { class: "rule" }, "Forms A and B", owner ? h("span", { class: "small", style: "display:flex;gap:6px;align-items:center" }, h("input", { type: "checkbox", checked: P.agency_forms, "aria-label": "This path uses Forms A and B", onchange: (e) => { P.agency_forms = e.target.checked; } }), "this path uses them")
+        : h("strong", {}, P.agency_forms ? "used" : "not used"))),
     rulesPath === "offplan" ? developersEl(d, owner, num) : null,
     h("h2", { style: "margin-top:14px" }, "Paperwork steps, in order"), steps,
     h("h2", { style: "margin-top:14px" }, "Closing checklist"), closing,
@@ -387,6 +413,11 @@ function qrow(x) {
   else if (x.act === "invoiced") { const i = inp("Invoice number"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/invoiced`, { number: i.value }, "Invoice sent; collecting it next") }, "I sent it")]; }
   else if (x.act === "commission") { const i = inp("Bank reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/commission`, { reference: i.value }, "Commission received; receipt filed") }, "Received")]; }
   else if (x.act === "tick") acts = [h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/tick`, {}, "Ticked") }, "Done")];
+  else if (x.act === "sign") {
+    const f = h("input", { type: "file", accept: "application/pdf", "aria-label": "Signed copy (PDF)" });
+    acts = [h("a", { class: "btn", href: `/api/desk/forms/${x.draft}.pdf`, target: "_blank" }, "Download PDF"), f,
+      h("button", { class: "primary", onclick: async () => { try { await upload(x.id, f.files[0]); row.classList.add("gone"); toast("Signed copy filed with Records"); setTimeout(show, 320); } catch (e) { toast(e.message); } } }, "Upload signed")];
+  }
   else if (x.act === "split") { const i = inp("Bank reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/split`, { reference: i.value }, "Share paid to the other agency") }, "Paid")]; }
   else if (x.act === "after") { const i = inp("What happened"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/after`, { note: i.value }, "Done") }, "Done")]; }
   else acts = [openBtn()];
@@ -499,6 +530,7 @@ async function send(path, body, ok) {
 }
 
 function taskEl(t) {
+  if (t.agent === "ops" && ["sides", "sign"].includes(t.step)) return null;  // the agency forms card shows these
   const live = OPEN.includes(t.status), officer = holds("compliance");
   const el = h("div", { class: `card ${live ? "" : "done"} ${live && t.needs_person === me() ? "mine" : ""}` },
     h("div", { class: "top" }, h("strong", {}, t.action), h("span", {}, h("span", { class: "chip" }, t.id),
@@ -632,6 +664,78 @@ function commissionEl(v) {
     h("div", { class: "small muted", style: "margin-top:8px" }, "Worked out from the price the client said and the owner's rate. If the client changes the price, the invoice goes back."));
 }
 
+// the deal's stages: Sales' up to Viewed, then the path's (the owner's settings), then Closing and Won from the checklist
+let stageAsk = null;
+function stageBar(v) {
+  const s = v.stages, may = s.movers.includes(me()), at = s.list.indexOf(s.current);
+  const go = async (stage, reason = "") => { try { await post(`/api/desk/deals/${encodeURIComponent(deal)}/stage`, { by: me(), stage, reason }); stageAsk = null; toast(`Moved to ${stage}`); await open(deal); show(); } catch (e) { toast(e.message); } };
+  const pick = (stage) => {
+    if (!may || s.closed) return;
+    const back = stage === "Lost" || s.current === "Lost" || s.list.indexOf(stage) < at;
+    if (back) { stageAsk = stage; render(); feed(); } else go(stage);
+  };
+  const reason = h("input", { placeholder: stageAsk === "Lost" ? "Why was it lost?" : "Why move it back?", "aria-label": "Why", style: "flex:1 1 220px" });
+  return h("div", { id: "stagebar" },
+    h("div", { class: "stagebar", role: "group", "aria-label": "Stage" },
+      ...s.list.map((st, i) => h("button", { class: i < at && s.current !== "Lost" ? "past" : st === s.current ? "on" : "", disabled: !may || s.closed || st === s.current,
+        title: st === s.converted_at ? "The deal counts as converted here: the agency forms start" : "", onclick: () => pick(st) }, st, st === s.converted_at ? " ✦" : "")),
+      h("span", { class: `end ${s.closing ? "on" : ""}` }, s.closing ? `Closing · ${s.closing.done} of ${s.closing.of}` : "Closing"),
+      h("span", { class: `end ${s.closed ? "on" : ""}` }, "Won"),
+      s.current === "Lost" ? h("span", { class: "chip bad" }, "Lost") : may && !s.closed ? h("button", { class: "lost", onclick: () => pick("Lost") }, "Mark lost") : null),
+    stageAsk ? h("div", { class: "acts", style: "margin:4px 0 8px" }, reason,
+      h("button", { class: "primary", onclick: () => go(stageAsk, reason.value) }, stageAsk === "Lost" ? "Mark lost" : `Move back to ${stageAsk}`),
+      h("button", { onclick: () => { stageAsk = null; render(); feed(); } }, "Cancel")) : null,
+    !may && !s.closed ? h("div", { class: "small muted" }, `${v.broker_name} (the broker), ${rname("transactions")} or the owner moves the stage.`)
+      : s.closing ? h("div", { class: "small muted" }, `Won comes from closing: waiting on ${s.closing.waiting.join("; ").toLowerCase()}.`) : null);
+}
+
+async function upload(tid, file) {
+  if (!file) throw new Error("Choose the signed PDF first.");
+  const fd = new FormData(); fd.append("by", me()); fd.append("file", file);
+  const r = await fetch(`/api/desk/tasks/${tid}/signed`, { method: "POST", body: fd });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || `${r.status}`);
+  return j;
+}
+
+// the agency forms: who is on the other side, then each form as a PDF to share and its signed copy back
+function agencyEl(v) {
+  const a = v.agency, may = me() === v.broker || holds("transactions") || me() === OWNER;
+  const live = a.forms.filter((f) => f.status !== "sent_back"), back = a.forms.filter((f) => f.status === "sent_back");
+  if (!a.asking && !a.forms.length) return null;
+  const kids = [];
+  if (a.asking) {
+    const task = v.tasks.find((t) => t.id === a.asking);
+    let side = a.terms.sides || (a.our_listing ? "both" : "buyer");
+    const t = a.terms, f = {};
+    const inp = (k, label, attrs = {}) => { f[k] = h("input", { value: t[k] ?? "", "aria-label": label, ...attrs }); return h("label", { class: "rule" }, label, f[k]); };
+    const other = h("div", { class: "rgrid", hidden: side === "both" },
+      inp("other_agency", "Other agency"), inp("other_orn", "Their ORN"), inp("other_agent", "Their agent"), inp("other_brn", "Agent's BRN"),
+      inp("other_share_pct", "Their share of the commission (%)", { type: "number", step: "any" }));
+    kids.push(h("div", { style: "margin-top:4px" }, task?.action || "Who is on the other side?"),
+      may ? h("div", { class: "rsteps", style: "margin-top:8px" }, ...Object.entries(a.sides).map(([k, label]) => h("label", { class: "small", style: "display:flex;gap:8px;align-items:center;margin:0" },
+        h("input", { type: "radio", name: "sides", value: k, checked: k === side, onchange: () => { side = k; other.hidden = k === "both"; } }), label))) : null,
+      may ? other : null,
+      may ? h("div", { class: "acts" }, h("button", { class: "primary", id: "savesides", onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/sides`,
+        { sides: side, other: Object.fromEntries(Object.entries(f).map(([k, i]) => [k, i.value])) }, "Saved; the forms are drafted") }, "Save and draft the forms"))
+        : h("div", { class: "acts small muted" }, `Waiting for ${v.broker_name}.`));
+  }
+  for (const x of live) {
+    const file = h("input", { type: "file", accept: "application/pdf", "aria-label": `Signed Form ${x.form} (PDF)` });
+    kids.push(h("div", { class: "card", style: "margin:10px 0 0" }, h("div", { class: "top" }, h("strong", {}, `${x.title} · v${x.version}`),
+      h("span", {}, h("span", { class: "chip" }, x.draft), h("span", { class: `chip ${x.signed ? "ok" : "warn"}` }, x.signed ? "signed" : "waiting for a signature"))),
+      h("div", { class: "acts" }, h("a", { class: "btn", href: `/api/desk/forms/${x.draft}.pdf`, target: "_blank" }, "Download PDF"),
+        x.signed ? h("a", { class: "btn", href: x.file, target: "_blank" }, "The signed copy") : null,
+        x.waiting && may ? file : null,
+        x.waiting && may ? h("button", { class: "primary", onclick: async () => { try { await upload(x.task, file.files[0]); toast("Signed copy filed with Records"); await open(deal); show(); } catch (e) { toast(e.message); } } }, "Upload the signed copy") : null),
+      x.waiting ? h("div", { class: "small muted", style: "margin-top:6px" }, `${v.broker_name} shares it with ${x.form === "I" ? "the other agent" : "the client"} personally, then uploads the signed copy.`) : null));
+  }
+  if (back.length) kids.push(h("div", { class: "small muted", style: "margin-top:8px" }, ...back.map((x) => h("div", {}, `${x.title} v${x.version} (${x.draft}) sent back: ${x.reason || ""}`))));
+  const waiting = live.filter((x) => x.waiting).length;
+  return h("div", { class: `card ${a.asking || waiting ? "open" : ""}`, id: "agency" }, h("div", { class: "top" }, h("strong", {}, "Agency forms"),
+    h("span", { class: "small muted" }, a.asking ? "who is on the other side?" : waiting ? `${waiting} waiting for a signature · Form F and the invoice wait too` : "all signed")), ...kids);
+}
+
 // what the deal's signed documents say: who may record it is the broker, the transactions officer or the owner
 function termsEl(v) {
   const t = v.terms, may = me() === v.broker || holds("transactions") || me() === OWNER, f = {}, p = v.path.id;
@@ -718,7 +822,7 @@ function render() {
     const cards = v.cards.filter(by(k)), tasks = v.tasks.filter(by(k));
     const appr = k === "fin" ? v.approvals : [], drafts = v.drafts.filter(by(k));
     const open = cards.filter((c) => c.status === "open").length;
-    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "ops" ? closingEl(v) : null, k === "ops" ? pathEl(v) : null, k === "ops" ? formfEl(v) : null, k === "ops" ? termsEl(v) : null, k === "fin" ? scheduleEl(v) : null, k === "fin" ? commissionEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
+    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "ops" ? closingEl(v) : null, k === "ops" ? pathEl(v) : null, k === "ops" ? formfEl(v) : null, k === "ops" ? agencyEl(v) : null, k === "ops" ? termsEl(v) : null, k === "fin" ? scheduleEl(v) : null, k === "fin" ? commissionEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
     return h("section", { class: "dept", id: `dept-${k}` }, h("h2", {}, label, open ? h("span", { class: "chip warn" }, `${open} open`) : null),
       ...(kids.length ? kids : [h("div", { class: "empty" }, `Nothing for ${label} on this deal.`)]));
   });
@@ -727,6 +831,7 @@ function render() {
   $("main").replaceChildren(
     h("div", { class: "head" }, h("div", { class: "small muted" }, `${v.deal} · broker ${v.broker_name} · stage ${s.stage} · ${v.path.name}`), h("h1", {}, v.customer),
       h("div", { class: "muted" }, `${v.property}${s.value ? ` · AED ${s.value.toLocaleString()}` : ""}`)),
+    stageBar(v),
     h("div", { class: "strip" }, box("Compliance", s.comp), box("Money", s.money), box("Paperwork", s.paper), box("Review", s.review)),
     s.waiting.length ? h("div", {}, "Waiting for ", ...s.waiting.map((p) => h("span", { class: `chip ${p === me() ? "warn" : ""}` }, NAMES[p] || p))) : null,
     h("section", { class: "dept" }, h("h2", {}, "What the customer said"), said),

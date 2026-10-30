@@ -52,10 +52,13 @@ def make_plan(office: Office, deal: str, cause: int | None = None) -> str:
 
 def replan(office: Office, deal: str, sent_back: set, cause: int) -> None:
     """After a correction: every Form F plan Review sent back gets a new one from the live facts."""
+    from diwan import agency_forms
     g = office.graph()
     for did in sent_back:
         if g.nodes[did].props["kind"] == "Form F":
             make_plan(office, deal, cause)
+    if any(g.nodes[did].props["kind"] in agency_forms.FORM_OF for did in sent_back):  # the agency forms are drafted again too
+        agency_forms.make_forms(office, deal)
 
 
 def formf_plan(office: Office, deal: str, tid: str, req: str) -> str:
@@ -88,6 +91,9 @@ def submitted(office: Office, tid: str, by: str, reference: str) -> None:
         raise ValueError(f"{t.props['draft']} rests on words the customer replaced; submit the new plan.")
     if not reference.strip():
         raise ValueError("Give the portal reference of the submitted Form F.")
+    from diwan import agency_forms
+    if waiting := agency_forms.unsigned(g, t.deal):
+        raise ValueError(f"{' and '.join(waiting)} {'waits' if len(waiting) == 1 else 'wait'} for a signature: the broker uploads the signed copy first.")
     office.log.append("task.done", actor=by, agent="formf", deal=t.deal,
                       content={"id": tid, "reason": f"Submitted on the DLD portal, reference {reference.strip()}", "result": "submitted"})
     for r in g.of("request", t.deal, "open"):  # the clerk's "only a person submits" request is answered by this
