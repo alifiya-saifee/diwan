@@ -27,6 +27,8 @@ def current(g: Graph, node) -> str | None:
     a particular person, such as a question to the deal's broker, stays with that person."""
     stored = node.props.get("needs_person") if node.type == "task" else node.props.get("who")
     role = ROLE_WORK.get((node.type, node.props.get("agent")))
+    if node.type == "task" and node.props.get("closing") and node.props.get("step") == "docs":
+        role = "transactions"
     return (holder(g, role) or stored) if role and stored else stored
 
 

@@ -204,6 +204,14 @@ async function overview() {  // the rules panel loads its own data
         row("Cash report to file", o.comp.cash, () => goDeals("cash"))),
       tile("Paperwork", o.paper.submit + o.paper.sentback + o.paper.transfer, row("Form F to submit", o.paper.submit, () => goDeals("submit")),
         row("Form F sent back", o.paper.sentback, () => goDeals("sentback")), row("In transfer", o.paper.transfer, () => goDeals("transfer")))),
+    h("section", { class: "panel", id: "after", style: "margin-bottom:18px" }, h("h2", {}, "After the sale: closing, then Records"),
+      h("div", { class: "tiles", style: "margin:0" },
+        h("div", { class: "tile", style: "border:0;padding:0;background:none" }, h("span", { class: "big num" }, o.after.closing), h("span", { class: "small muted" }, "deals closing: paperwork done, checklist not"),
+          row("Waiting: final figures (broker)", o.after.left.figures, () => goDeals("closing")), row(`Waiting: commission paid (${rname("finance")})`, o.after.left.invoice, () => goDeals("closing")),
+          row(`Waiting: compliance closed (${rname("compliance")})`, o.after.left.compliance, () => goDeals("closing")), row(`Waiting: documents filed (${rname("transactions")})`, o.after.left.docs, () => goDeals("closing"))),
+        h("div", { class: "tile", style: "border:0;padding:0;background:none" }, h("span", { class: "big num" }, o.after.closed30), h("span", { class: "small muted" }, "closed here and recorded with Records"),
+          row("Commission recorded", o.after.commission30 ? `AED ${aed(o.after.commission30)}` : 0, () => goDeals("closed"))),
+        h("div", { class: "small muted", style: "grid-column:span 2;align-self:center" }, "A deal at its last step isn't finished. It closes when the broker has confirmed the final figures, the commission is paid, compliance is closed and the documents are filed. Then the sale goes to Records, which feeds the owner page and Nova's numbers, and the deal moves to the archive."))),
     h("div", { class: "charts" },
       h("section", { class: "panel" }, h("h2", {}, "Money expected, day by day"), moneyChart(o.money.days),
         h("div", { class: "legend" }, h("span", {}, h("i", { style: "background:var(--bad)" }), "Overdue"), h("span", {}, h("i", { style: "background:var(--gold)" }), "Expected"),
@@ -323,6 +331,8 @@ function qrow(x) {
   else if (x.act === "filed") { const i = inp("goAML reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/filed`, { reference: i.value }, "Filing recorded") }, "I filed it")]; }
   else if (x.act === "received") { const i = inp("Bank reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/received`, { reference: i.value }, "Marked received; receipt filed") }, "Received")]; }
   else if (x.act === "submitted") { const i = inp("Portal reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/submitted`, { reference: i.value }, "Form F submitted") }, "I submitted it")]; }
+  else if (x.act === "confirm") acts = [h("button", { onclick: () => open(x.deal) }, "Check the figures"), h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/confirm`, {}, "Final figures confirmed") }, "Confirm")];
+  else if (x.act === "docs") acts = [h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/docs`, {}, "Closing documents filed") }, "Documents filed")];
   else if (x.act === "invoiced") { const i = inp("Invoice number"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/invoiced`, { number: i.value }, "Invoice sent; collecting it next") }, "I sent it")]; }
   else if (x.act === "commission") { const i = inp("Bank reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/commission`, { reference: i.value }, "Commission received; receipt filed") }, "Received")]; }
   else if (x.act === "tick") acts = [h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/tick`, {}, "Ticked") }, "Done")];
@@ -335,14 +345,14 @@ function qrow(x) {
   return row;
 }
 
-const LABEL = { waiting: "Waiting for someone", overdue: "Money overdue", expected: "Money expected", unscreened: "Not screened", proof: "Proof missing",
+const LABEL = { closing: "Closing", closed: "Closed (archive)", waiting: "Waiting for someone", overdue: "Money overdue", expected: "Money expected", unscreened: "Not screened", proof: "Proof missing",
   cash: "Cash report to file", checks: "Payer changed", match: "Possible match", submit: "Form F to submit", sentback: "Form F sent back", transfer: "In transfer", corrected: "Corrected this week" };
 async function deals() {
   const r = await api(`/api/desk/deals?q=${encodeURIComponent(query)}&filter=${filter}&stage=${encodeURIComponent(stage)}&sort=${sort}&desc=${desc}&page=${page}`);
   const th = (k, label) => h("th", k ? { class: sort === k ? "on" : "", onclick: () => { desc = sort === k ? !desc : k !== "customer"; sort = k; page = 1; deals(); } } : {}, label, sort === k ? (desc ? " ↓" : " ↑") : "");
   const q = h("input", { id: "q", type: "search", placeholder: "Search customer, property, broker or deal id", value: query, "aria-label": "Search deals" });
   let qt; q.oninput = () => { clearTimeout(qt); qt = setTimeout(() => { query = q.value; page = 1; deals().then(() => { const n = $("q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }); }, 180); };
-  const quick = ["waiting", "overdue", "unscreened", "submit", "corrected"];
+  const quick = ["waiting", "overdue", "unscreened", "closing", "closed"];
   $("view").replaceChildren(
     h("p", { class: "lede" }, "The pipeline: where every deal stands in each department, and who it is waiting for. Click a row for the whole story."),
     h("div", { class: "toolbar" }, q, h("div", { class: "filters" },
@@ -354,7 +364,8 @@ async function deals() {
       h("tbody", {}, ...(r.rows.length ? r.rows.map((d) => h("tr", { class: d.deal === deal ? "sel" : "", onclick: () => open(d.deal) },
         h("td", {}, h("strong", {}, d.customer || d.deal), d.corrected ? h("span", { class: "chip warn", style: "margin-left:6px" }, "corrected") : null, h("div", { class: "sub" }, d.property)),
         h("td", { class: "num" }, d.value ? `AED ${aed(d.value)}` : h("span", { class: "sub" }, "not said")),
-        h("td", {}, h("span", { class: "chip" }, d.stage)), h("td", {}, st(d.comp)), h("td", {}, st(d.money)),
+        h("td", {}, h("span", { class: "chip" }, d.stage), d.phase === "closing" ? h("span", { class: "chip warn" }, `closing ${4 - d.closing_left}/4`) : d.phase === "closed" ? h("span", { class: "chip ok" }, `closed · ${d.sale}`) : null),
+        h("td", {}, st(d.comp)), h("td", {}, st(d.money)),
         h("td", {}, d.steps ? h("span", {}, h("span", { class: "steps" }, ...Array.from({ length: d.steps[1] }, (_, i) => h("i", { class: i < d.steps[0] ? "f" : "" }))), ` ${d.steps[0]}/${d.steps[1]}`) : st(d.paper)),
         h("td", {}, st(d.review)), h("td", {}, d.waiting_names.length ? d.waiting_names.join(", ") : h("span", { class: "sub" }, "nobody")),
         h("td", { class: "sub" }, ago(d.changed))))
@@ -520,6 +531,21 @@ function formfEl(v) {
     h("div", { class: "acts" }, h("button", { class: due ? "primary" : "", onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/formf`, {}, "Form F plan ready") }, "Prepare Form F")));
 }
 
+function closingEl(v) {
+  const c = v.closing;
+  if (!c) return null;
+  if (c.sale) return h("div", { class: "card", style: "border-color:rgba(130,217,159,.4)" }, h("div", { class: "top" }, h("strong", {}, `Closed · recorded with Records as ${c.sale}`), h("span", { class: "chip ok" }, c.closed_on)),
+    h("div", { class: "small", style: "margin-top:4px" }, "It counts in the owner page and Nova's numbers. The deal is in the archive (Deals → Closed), kept at least five years and corrected only by a new entry."));
+  const left = c.items.filter((i) => !i.done).length;
+  return h("div", { class: "card open", id: "closing" }, h("div", { class: "top" }, h("strong", {}, `Closing · ${4 - left} of 4 done`)),
+    h("div", { class: "steps", style: "margin-top:6px" }, ...c.items.map((i) => h("div", { class: "rstep", style: "grid-template-columns:22px minmax(0,1fr) auto" },
+      h("span", {}, i.done ? "✓" : "○"), h("div", {}, h("div", {}, i.text), h("div", { class: "small muted" }, i.done ? (i.note || "done") : (i.note || `waiting on ${NAMES[i.who] || i.who}`))),
+      !i.done && i.key === "figures" && (me() === i.who || me() === OWNER) ? h("button", { onclick: () => send(`/api/desk/tasks/${i.task}/confirm`, {}, "Final figures confirmed") }, "Confirm the final figures")
+        : !i.done && i.key === "docs" && holds("transactions") ? h("button", { onclick: () => send(`/api/desk/tasks/${i.task}/docs`, {}, "Closing documents filed") }, "Documents filed") : null))),
+    h("div", { class: "acts" }, holds("transactions") ? h("button", { class: "primary", disabled: !!left, onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/close`, {}, "Closed and recorded with Records") }, "Close the deal and record it with Records") : null,
+      h("span", { class: "small muted" }, left ? `${left} item${left > 1 ? "s" : ""} left` : holds("transactions") ? "Everything is done." : `${rname("transactions")} closes it.`)));
+}
+
 function commissionEl(v) {
   const c = v.commission, live = v.drafts.some((d) => d.kind === "commission invoice" && d.status !== "sent_back");
   const aed = (n) => `AED ${Number(n).toLocaleString()}`;
@@ -571,7 +597,7 @@ function render() {
     const cards = v.cards.filter(by(k)), tasks = v.tasks.filter(by(k));
     const appr = k === "fin" ? v.approvals : [], drafts = v.drafts.filter(by(k));
     const open = cards.filter((c) => c.status === "open").length;
-    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "ops" ? pathEl(v) : null, k === "ops" ? formfEl(v) : null, k === "fin" ? commissionEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
+    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "ops" ? closingEl(v) : null, k === "ops" ? pathEl(v) : null, k === "ops" ? formfEl(v) : null, k === "fin" ? commissionEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
     return h("section", { class: "dept", id: `dept-${k}` }, h("h2", {}, label, open ? h("span", { class: "chip warn" }, `${open} open`) : null),
       ...(kids.length ? kids : [h("div", { class: "empty" }, `Nothing for ${label} on this deal.`)]));
   });

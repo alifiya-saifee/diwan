@@ -148,3 +148,63 @@ def test_the_broker_sets_the_path_once_before_the_paperwork_starts(office, monke
     assert c.post("/api/desk/deals/jvc-88/paperwork", json={"by": "joseph"}).status_code == 400
     assert c.post("/api/desk/deals/jvc-88/path", json={"by": "omar", "path": "ready"}).status_code == 400  # fixed once started
     assert c.post("/api/desk/deals/marina-1204/paperwork", json={"by": "joseph"}).status_code == 400  # ready: Form F instead
+
+
+# ---------- closing, then Records (spec item 9) ----------
+
+def _to_closing(office):
+    from diwan.agents import compliance, operations
+    desk_rules.set_path(office, "jvc-88", "rent", by="omar")
+    tids = operations.start_paperwork(office, "jvc-88", "joseph")
+    for t in tids:
+        operations.tick(office, t, "joseph")
+    for t in office.graph().of("task", "jvc-88"):
+        if t.props["agent"] == "screen" and t.status in ("queued", "open"):
+            compliance.record_screening(office, t.id, "priya", "clear", "UN list")
+    return {t.props["step"]: t.id for t in office.graph().of("task", "jvc-88") if t.props.get("closing")}
+
+
+def test_the_last_step_starts_closing_and_the_deal_closes_only_when_all_four_are_done(office, monkeypatch):
+    from datetime import date
+    from diwan.agents import finance, operations
+    monkeypatch.setattr(appmod.S, "office", office)
+    c = TestClient(appmod.app)
+    assert operations.closing(office.graph(), "jvc-88") is None
+    steps = _to_closing(office)
+    cl = operations.closing(office.graph(), "jvc-88")
+    assert [i["key"] for i in cl["items"]] == ["figures", "invoice", "compliance", "docs"] and not cl["ready"]
+    assert {i["key"]: i["done"] for i in cl["items"]} == {"figures": False, "invoice": False, "compliance": True, "docs": False}
+    r = c.post("/api/desk/deals/jvc-88/close", json={"by": "joseph"})
+    assert r.status_code == 400 and "Not yet" in r.json()["detail"]
+    assert c.post(f"/api/desk/tasks/{steps['figures']}/confirm", json={"by": "priya"}).status_code == 403
+    assert c.post(f"/api/desk/tasks/{steps['figures']}/confirm", json={"by": "omar"}).json()["ok"]
+    assert c.post(f"/api/desk/tasks/{steps['docs']}/docs", json={"by": "joseph"}).json()["ok"]
+    finance.draft_invoice(office, "jvc-88", "ahmed")
+    send = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
+    collect = finance.invoice_sent(office, send.id, "ahmed", "INV-7")
+    finance.commission_received(office, collect, "ahmed", "ENBD 1", today=date.today())
+    assert operations.closing(office.graph(), "jvc-88")["ready"]
+    assert c.post("/api/desk/deals/jvc-88/close", json={"by": "omar"}).status_code == 403
+    sid = c.post("/api/desk/deals/jvc-88/close", json={"by": "joseph"}).json()["sale"]
+    g = office.graph()
+    sale = g.nodes[sid].props
+    assert (sale["deal"], sale["price_aed"], sale["commission_aed"], sale["broker"]) == ("jvc-88", 1_900_000, 95_000, "omar")
+    assert g.nodes["deal:jvc-88"].props["stage"] == "Won"
+    assert c.post("/api/desk/deals/jvc-88/close", json={"by": "joseph"}).status_code == 400
+    assert "jvc-88" not in [d["deal"] for d in c.get("/api/desk/deals").json()["rows"]]
+    assert [d["deal"] for d in c.get("/api/desk/deals?filter=closed").json()["rows"]] == ["jvc-88"]
+    assert c.get("/api/desk/overview").json()["after"]["closed30"] == 1
+
+
+def test_a_price_changed_after_confirmation_must_be_confirmed_again(office):
+    from datetime import date
+    from diwan.agents import finance, operations
+    steps = _to_closing(office)
+    operations.confirm_figures(office, steps["figures"], "omar")
+    operations.docs_filed(office, steps["docs"], "joseph")
+    finance.draft_invoice(office, "jvc-88", "ahmed")
+    send = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
+    finance.commission_received(office, finance.invoice_sent(office, send.id, "ahmed", "INV-8"), "ahmed", "ENBD 2", today=date.today())
+    office.record_fact("jvc-88", "deal_term", "We settled at one point eight.", "Sara Malik", amount_aed=1_800_000, replaces="F6")
+    with pytest.raises(ValueError, match="confirm the final figures again"):
+        operations.close(office, "jvc-88", "joseph", today=date.today())

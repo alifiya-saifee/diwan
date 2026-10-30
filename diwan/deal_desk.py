@@ -169,7 +169,10 @@ class Ledger:
         if due:
             waits.add(roles.holder(g, "finance"))
         week = (self.today - timedelta(days=7)).isoformat()
-        out = {"deal": deal, "customer": d.props.get("customer"), "property": d.props.get("property"), "broker": d.props.get("broker"),
+        cl = operations.closing(g, deal)
+        phase = "closed" if cl and cl["sale"] else "closing" if cl else None
+        out = {"phase": phase, "sale": cl["sale"] if cl else None, "closing_left": sum(not i["done"] for i in cl["items"]) if cl else None,
+               "deal": deal, "customer": d.props.get("customer"), "property": d.props.get("property"), "broker": d.props.get("broker"),
                "broker_name": name(d.props.get("broker")), "stage": d.props.get("stage") or "New",
                "value": price.props.get("amount_aed") if price else None,
                "comp": comp, "money": money, "paper": paper, "review": rev,
@@ -207,6 +210,9 @@ class Ledger:
                     items.append(base | {"id": t.id, "who": roles.holder(self.g, "finance"), "kind": "Overdue" if e.get("overdue") else "Due soon" if soon else "Expected",
                                          "sev": "bad" if e.get("overdue") else "warn" if soon else "info", "title": t.props["action"],
                                          "at": t.at, "act": "received", "due": e.get("due")})
+                elif who and operations.is_closing(t):
+                    items.append(base | {"id": t.id, "who": who, "kind": "Closing", "sev": "warn", "title": t.props["action"], "at": t.at,
+                                         "act": "confirm" if t.props.get("step") == "figures" else "docs"})
                 elif who and ag in ("screen", "report", "formf", "transfer", "inv"):
                     kind, sev, act = {"screen": ("Screening", "warn", "screen"), "report": ("Cash report", "bad", "filed"),
                                       "formf": ("Form F", "warn", "submitted"), "transfer": ("Transfer", "info", "tick"),
@@ -251,6 +257,10 @@ class Ledger:
                           "transfer": sum(s["paper"][1].startswith("Transfer ") and s["paper"][1] != "Transfer done" for s in sums)},
                 "stages": [{"stage": st, "deals": sum(s["stage"] == st for s in sums), "waiting": sum(s["stage"] == st and bool(s["waiting"]) for s in sums),
                             "value": sum(s["value"] or 0 for s in sums if s["stage"] == st)} for st in STAGES if any(s["stage"] == st for s in sums)],
+                "after": {"closing": sum(s["phase"] == "closing" for s in sums), "closed30": sum(1 for s in sums if s["phase"] == "closed"),
+                          "commission30": sum(n.props.get("commission_aed") or 0 for n in self.g.of("sale") if n.props.get("deal")),
+                          "left": {k: sum(1 for s in sums if s["phase"] == "closing" and any(i["key"] == k and not i["done"] for i in operations.closing(self.g, s["deal"])["items"]))
+                                   for k in ("figures", "invoice", "compliance", "docs")}},
                 "corrections": corrections[:8], "corrections_week": sum(1 for c in corrections if c["at"][:10] >= (self.today - timedelta(days=7)).isoformat())}
 
     def _ripple(self, f: Node) -> dict:
@@ -271,7 +281,7 @@ def _k(n: float) -> str:
     return f"{n / 1e6:.2f}".rstrip("0").rstrip(".") + "M" if n >= 1e6 else f"{round(n / 1000)}k" if n else "0"
 
 
-FILTERS = {"waiting": lambda s: s["waiting"], "overdue": lambda s: s["money"][0] == "bad", "expected": lambda s: s["money"][0] == "warn",
+FILTERS = {"closing": lambda s: s["phase"] == "closing", "closed": lambda s: s["phase"] == "closed", "waiting": lambda s: s["waiting"], "overdue": lambda s: s["money"][0] == "bad", "expected": lambda s: s["money"][0] == "warn",
            "unscreened": lambda s: s["flags"]["unscreened"], "proof": lambda s: s["flags"]["proof"], "cash": lambda s: s["flags"]["cash"],
            "checks": lambda s: s["flags"]["checks"], "match": lambda s: s["flags"]["match"],
            "submit": lambda s: s["paper"][1] == "Form F to submit", "sentback": lambda s: s["paper"][1] == "Form F sent back",
@@ -291,6 +301,8 @@ def deals(q: str = "", needs: bool = False, filter: str = "", person: str = "", 
         s = led.summary(d.deal)
         hay = f"{d.deal} {s['property']} {s['customer']} {s['broker_name']}".lower()
         if words and not all(w in hay for w in words):
+            continue
+        if (s["phase"] == "closed") != (filter == "closed"):  # closed deals live in the archive, found with the Closed filter
             continue
         if (needs and not s["waiting"]) or (filter in FILTERS and not FILTERS[filter](s)) or (person and person not in s["waiting"]) \
                 or (stage and s["stage"] != stage):
@@ -325,7 +337,7 @@ def deal(deal: str):
         return deal_view(g, deal) | {"summary": Ledger(g, date.today()).summary(deal), "roles": roles.table(g),
                                      "path": {"id": p["id"], "name": p["name"], "chosen": bool(g.settings.get(f"deal:{deal}", {}).get("path")),
                                               "from_desk": bool(g.nodes[f"deal:{deal}"].props.get("kind"))},
-                                     "commission": finance.commission(g, deal)}
+                                     "commission": finance.commission(g, deal), "closing": operations.closing(g, deal)}
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
 
@@ -605,3 +617,24 @@ def start_paperwork(deal: str, body: Run):
     if f"deal:{deal}" not in _office().graph().nodes:
         raise HTTPException(404, f"There is no deal {deal!r}.")
     return {"tasks": _call(operations.start_paperwork, _office(), deal, pid(body.by))}
+
+
+# ---------- closing a deal, then Records ----------
+
+@router.post("/api/desk/tasks/{tid}/confirm")
+def confirm_figures(tid: str, body: Run):
+    _call(operations.confirm_figures, _office(), tid, pid(body.by) or body.by)
+    return {"ok": True}
+
+
+@router.post("/api/desk/tasks/{tid}/docs")
+def closing_docs(tid: str, body: Run):
+    _call(operations.docs_filed, _office(), tid, pid(body.by))
+    return {"ok": True}
+
+
+@router.post("/api/desk/deals/{deal}/close")
+def close_deal(deal: str, body: Run):
+    if f"deal:{deal}" not in _office().graph().nodes:
+        raise HTTPException(404, f"There is no deal {deal!r}.")
+    return {"sale": _call(operations.close, _office(), deal, pid(body.by), missing="deal", today=date.today())}
