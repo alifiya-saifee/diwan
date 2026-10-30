@@ -729,7 +729,9 @@ def _agency_view(g: Graph, deal: str, base: str) -> dict:
     ask = next((t for t in g.of("task", deal) if t.props.get("step") == "sides" and t.status in OPEN), None)
     return {"asking": ask.id if ask else None, "our_listing": li.props["ref"] if li else None, "needed": agency_forms.needed(g, deal),
             "forms": [f | {"links": _links(g, deal, f["draft"], base)} for f in agency_forms.forms(g, deal)],
-            "sides": desk_rules.SIDES, "terms": desk_rules.terms(g, deal)}
+            "sides": desk_rules.SIDES, "terms": desk_rules.terms(g, deal),
+            "formf": [{"draft": d.id, "version": d.props.get("version"), "links": _links(g, deal, d.id, base)}
+                      for d in g.of("draft", deal) if d.props["kind"] == "Form F" and d.status != "sent_back"]}
 
 
 class StageIn(BaseModel):
@@ -760,7 +762,7 @@ def form_pdf(did: str):
     from fastapi.responses import Response
     g = _office().graph()
     data = _call(agency_forms.render, g, did, missing="form")
-    form = agency_forms.FORM_OF[g.nodes[did].props["kind"]]
+    form = agency_forms.form_of(g, did)
     return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="Form-{form}-{g.nodes[did].deal}-{did}.pdf"'})
 
 

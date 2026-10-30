@@ -781,3 +781,60 @@ def test_diwan_numbers_its_invoices_in_one_sequence_and_prints_the_tax_invoice(o
     c.post(f"/api/desk/tasks/{collect}/commission", json={"by": "ahmed", "reference": "ENBD 9001"})
     r = c.get(f"/api/desk/receipts/{collect}.pdf").content.decode("latin-1")
     assert f"RCT-{collect}" in r and "ENBD 9001" in r and "AED 54,600.00" in r
+
+
+
+# ---------- the IDs given at signing, fees, and Form F signed online ----------
+
+def test_the_owners_fees_show_with_who_pays_them(office):
+    from diwan.agents import finance
+    c = finance.commission(office.graph(), "marina-1204")
+    assert [(f["what"], f["aed"], f["payer"]) for f in c["fees"]] == [("DLD fee 4%", 104_000, "buyer"),
+                                                                      ("Trustee office fee (price AED 500,000 or more), plus VAT", 4000, "buyer")]
+    with pytest.raises(ValueError, match="each fee"):
+        desk_rules.save(office, edited(office, paths__rent__fees=[["Ejari", -1, "tenant"]]), by="layla")
+
+
+def test_form_f_is_signed_online_by_everyone_then_filed_and_its_step_ticks(office, monkeypatch, tmp_path):
+    from diwan import agency_forms
+    from diwan.agents import operations
+    from diwan.providers import meta
+    monkeypatch.setattr(appmod.S, "office", office)
+    monkeypatch.setattr(meta, "MEDIA", tmp_path)
+    c = TestClient(appmod.app)
+    _convert(office, c)
+    c.post("/api/desk/deals/marina-1204/sides", json={"by": "omar", "sides": "both"})
+    for f in agency_forms.forms(office.graph(), "marina-1204"):  # A and B signed on paper
+        c.post(f"/api/desk/tasks/{f['task']}/signed", data={"by": "omar"}, files={"file": ("s.pdf", b"%PDF-1.4 signed")})
+    operations.formf_plan(office, "marina-1204", office.add_task("marina-1204", "formf", "Prepare Form F"), "r1")
+    sub = next(t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "formf" and t.props.get("draft"))
+    operations.submitted(office, sub.id, "joseph", "DLD-1")
+    did = sub.props["draft"]
+    links = c.post(f"/api/desk/forms/{did}/links", json={"by": "omar"}).json()["links"]
+    assert [x["signer"] for x in links] == ["buyer", "seller", "broker"]  # no other agency on this deal
+    assert c.get(f"/api/desk/forms/{did}.pdf").content.startswith(b"%PDF")
+    form = {"consent": "1"}
+    for x, (who, idn) in zip(links, [("Karim Haddad", "784-1990-1234567-6"), ("Huda Al Mansoori", "P9988776"), ("Omar Saeed", "BRN-1")]):
+        r = c.post(f"/api/sign/{x['url'].split('t=')[1]}", data=form | {"full_name": who, "id_no": idn}, files={"image": ("s.png", _png())})
+    assert r.json()["complete"]
+    g = office.graph()
+    step = next(t for t in g.of("task", "marina-1204") if t.props.get("agent") == "transfer" and t.props["action"].startswith("Form F signed"))
+    assert step.status == "done" and step.props["reason"] == "Signed online by everyone"
+    signed = (tmp_path / f"deal-marina-1204-form-F-{did}-signed.pdf").read_bytes()
+    assert b"Huda Al Mansoori" in signed and b"784-1990-1234567-6" in signed
+    assert any(d.props["kind"] == "Form F" for d in g.of("document") if d.deal == "marina-1204")
+
+
+def test_a_signers_id_fills_their_line_on_the_signed_form(office, monkeypatch, tmp_path):
+    from diwan.providers import meta
+    monkeypatch.setattr(appmod.S, "office", office)
+    monkeypatch.setattr(meta, "MEDIA", tmp_path)
+    c = TestClient(appmod.app)
+    b = _form_b(office, c)
+    for x in c.post(f"/api/desk/forms/{b['draft']}/links", json={"by": "omar"}).json()["links"]:
+        c.post(f"/api/sign/{x['url'].split('t=')[1]}", data={"full_name": "Karim Haddad", "id_no": "784-1990-1234567-6", "consent": "1"},
+               files={"image": ("s.png", _png())})
+    from diwan import agency_forms
+    pdf = (tmp_path / agency_forms.signed_file("marina-1204", "B", b["draft"])).read_bytes().decode("latin-1")
+    line = pdf[pdf.index("Buyer's ID or passport number"):][:200]
+    assert "784-1990-1234567-6" in line and "to fill" not in line

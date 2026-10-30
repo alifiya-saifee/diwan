@@ -208,6 +208,14 @@ the same deals and one deal opens in a side panel:
     draft. Every payment and commission marked received has a receipt with its reference. Our accountant confirms the
     layout against the Federal Tax Authority's requirements before invoices go to clients.
 
+16. **Form F signed online, fees, and the IDs given at signing** (asked for by the product owner 30 Oct, "the complete
+    flow"). Form F's plan is a PDF too, with who holds the deposit (the owner's setting: the seller's agency, in trust)
+    and the usual deposit; the buyer, the seller, our broker and, on a co-agency deal, the other broker each get a
+    link. When everyone has signed, the signed Form F is filed with Records and the paperwork step "Form F signed…"
+    ticks itself. On every signed form, what a signer gave when signing (their ID or passport number, the seller's name)
+    fills their blank lines. The usual fees are the owner's settings per path, each with who pays it (the DLD fee, the
+    trustee office fee, Ejari), shown on the commission card; the transactions officer confirms the amounts.
+
 ## States every section must handle
 
 Empty (no deals; a deal with no money facts; nothing to screen), errors (an action by the wrong person is refused with

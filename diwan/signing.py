@@ -22,15 +22,18 @@ if TYPE_CHECKING:
     from diwan.office import Office
 
 SIGNERS = {"A": [("seller", "The seller"), ("broker", "The broker")], "B": [("buyer", "The buyer"), ("broker", "The broker")],
-           "I": [("broker", "Our broker"), ("other", "The other broker")]}
+           "I": [("broker", "Our broker"), ("other", "The other broker")],
+           "F": [("buyer", "The buyer"), ("seller", "The seller"), ("broker", "Our broker"), ("other", "The other broker")]}
+
+
+def signers(g: Graph, deal: str, form: str) -> list[tuple[str, str]]:
+    """Form F is signed by the other broker only when another agency is on the deal."""
+    return [x for x in SIGNERS[form] if not (form == "F" and x[0] == "other" and not desk_rules.terms(g, deal).get("other_agency"))]
 MAX_BYTES = 3_000_000
 
 
 def _form(g: Graph, did: str):
-    d = g.nodes.get(did)
-    if not d or d.type != "draft" or d.props.get("kind") not in agency_forms.FORM_OF:
-        raise KeyError(did)
-    return d, agency_forms.FORM_OF[d.props["kind"]]
+    return g.nodes[did], agency_forms.form_of(g, did)
 
 
 def _who(g: Graph, deal: str, form: str, signer: str) -> str:
@@ -78,13 +81,17 @@ def make_links(office: Office, did: str, by: str, *, today: date) -> list[dict]:
     if d.status == "sent_back":
         raise ValueError(f"{did} was sent back; make the links for the new version.")
     task = next((t for t in g.of("task", d.deal) if t.props.get("step") == "sign" and t.props.get("draft") == did), None)
-    if not task or task.status not in OPEN:
+    if form == "F":  # Form F has no signature task of its own: its plan's submit step waits on the portal, not on this
+        task = next((t for t in g.of("task", d.deal) if t.props.get("agent") == "formf" and t.props.get("draft") == did), None)
+        if any(x["signed"] for x in links(office.log.list(deal=d.deal), did)) and all(x["signed"] for x in links(office.log.list(deal=d.deal), did)):
+            raise ValueError(f"{did} is already signed.")
+    elif not task or task.status not in OPEN:
         raise ValueError(f"{did} isn't waiting for signatures.")
     have = {x["signer"] for x in links(office.log.list(deal=d.deal), did)}
     expires = (today + timedelta(days=desk_rules.rules(g)["sign_link_days"])).isoformat()
-    for signer, _ in SIGNERS[form]:
+    for signer, _ in signers(g, d.deal, form):
         if signer not in have:
-            office.log.append("sign.link", actor=by, deal=d.deal, content={"token": secrets.token_urlsafe(18), "draft": did, "form": form, "task": task.id,
+            office.log.append("sign.link", actor=by, deal=d.deal, content={"token": secrets.token_urlsafe(18), "draft": did, "form": form, "task": task.id if task else None,
                                                                             "signer": signer, "name": _who(g, d.deal, form, signer), "expires": expires})
     return links(office.log.list(deal=d.deal), did)
 
@@ -107,8 +114,8 @@ def page(office: Office, token: str, *, today: date) -> dict:
         raise KeyError(token)
     d, form = _form(g, link["draft"])
     r = desk_rules.rules(g)
-    rows = [{"section": s, "label": lab, "value": v} for s, lab, v, _ in agency_forms.fields(g, d.deal, form)]
-    return {"title": agency_forms.TITLES[form], "agency": r["agency"]["name"] or "Diwan", "signer": link["name"],
+    rows = [{"section": s, "label": lab, "value": v} for s, lab, v, _ in agency_forms.rows(g, link["draft"], form)]
+    return {"title": agency_forms.TITLES_ALL[form], "agency": r["agency"]["name"] or "Diwan", "signer": link["name"],
             "as": dict(SIGNERS[form])[link["signer"]], "status": status(g, link, today), "expires": link["expires"], "rows": rows,
             "signed_at": link["signed"]["at"] if link["signed"] else None}
 
@@ -166,11 +173,22 @@ def sign(office: Office, token: str, *, full_name: str, id_no: str, consent: boo
     all_links = links(office.log.list(deal=g.nodes[link["draft"]].deal), link["draft"])
     done = {x["signer"] for x in all_links if x["signed"]}
     form = link["form"]
-    if done >= {s for s, _ in SIGNERS[form]}:
-        deal = g.nodes[link["draft"]].deal
+    deal = g.nodes[link["draft"]].deal
+    if done >= {s for s, _ in signers(g, deal, form)}:
         sigs = [x["signed"] | {"as": dict(SIGNERS[form])[x["signer"]], "jpeg": (media / x["signed"]["file"]).read_bytes()} for x in all_links if x["signed"]]
         data = agency_forms.render(office.graph(), link["draft"], signatures=sigs)
-        agency_forms.signed(office, link["task"], g.nodes[f"deal:{deal}"].props["broker"], data, "signed online", media=media, today=today)
+        if form != "F":
+            agency_forms.signed(office, link["task"], g.nodes[f"deal:{deal}"].props["broker"], data, "signed online", media=media, today=today)
+        else:  # the signed memorandum is filed, and the paperwork step for its signatures ticks itself
+            path = media / f"deal-{deal}-form-F-{link['draft']}-signed.pdf"
+            path.write_bytes(data)
+            office.file_document(kind="Form F", title=f"Form F ({link['draft']}) signed online by {len(sigs)}", date=today.isoformat(), by="ops",
+                                 deal=deal, party=g.nodes[f"deal:{deal}"].props.get("customer"), text=f"/media/{path.name}")
+            from diwan.agents import operations
+            for t in office.graph().of("task", deal):
+                if t.props.get("agent") == "transfer" and t.status in OPEN and t.props["action"].lower().startswith("form f signed"):
+                    office.log.append("task.done", actor="ops", agent="transfer", deal=deal, content={"id": t.id, "reason": "Signed online by everyone"})
+                    operations.start_closing(office, deal)
         return {"status": "signed", "complete": True}
     return {"status": "signed", "complete": False}
 

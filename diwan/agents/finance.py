@@ -146,8 +146,8 @@ def commission(g: Graph, deal: str) -> dict:
     if t.get("other_agency"):
         share = round(amount * t["other_share_pct"] / 100)
         out |= {"other_agency": t["other_agency"], "share_pct": t["other_share_pct"], "share": share, "ours": amount - share}
-    if p.get("dld_fee_pct"):
-        out["fees"] = [{"what": f"DLD fee {p['dld_fee_pct']}%", "aed": round(base * p["dld_fee_pct"] / 100), "payer": "buyer"}]
+    out["fees"] = ([{"what": f"DLD fee {p['dld_fee_pct']}%", "aed": round(base * p["dld_fee_pct"] / 100), "payer": "buyer"}] if p.get("dld_fee_pct") else []) + \
+        [{"what": w, "aed": a, "payer": who} for w, a, who in p.get("fees") or []]  # the owner's usual fees, each with who pays it
     if dev:
         paid = paid_in(g, deal)
         out["trigger"] = {"pct": dev["payable_after_pct"], "paid": paid, "paid_pct": round(paid * 100 / base, 1),

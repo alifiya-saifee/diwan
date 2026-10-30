@@ -35,13 +35,15 @@ DEFAULTS = {
     "close_days_target": 60,  # the owner's target from "yes" to closed
     "developers": [],  # [{"name", "commission_pct", "payable_after_pct"}], one per developer agency agreement
     "agency": {"name": "", "orn": "", "address": "", "trn": ""},  # our office on forms and invoices: name, RERA number, address, VAT number
-    "invoice_prefix": "INV-",  # invoices Diwan issues are numbered prefix, year, running number
+    "invoice_prefix": "INV-",
+    "deposit_held_by": "the seller's agency, in trust",  # who holds a ready sale's Form F deposit cheque  # invoices Diwan issues are numbered prefix, year, running number
     "brns": {},  # each broker's RERA card number (BRN), by person
     "paths": {
         "ready": {
             "name": "Ready home, bought from its owner",
             "deposit_pct": 10, "commission_pct": 2, "commission_from": "buyer", "dld_fee_pct": 4,
             "stages": ["Offer", "Offer accepted", "Form F", "Transfer"], "converted_at": "Offer accepted", "agency_forms": True,
+            "fees": [["Trustee office fee (price AED 500,000 or more), plus VAT", 4000, "buyer"]],  # usual amounts: the transactions officer confirms
             "steps": [["Form F signed by buyer, seller and both brokers", "the buyer and the seller"],
                       ["Buyer's mortgage: valuation and the bank's final offer", "the buyer's bank"],
                       ["Seller's mortgage cleared: liability and clearance letters", "the seller's bank"],
@@ -69,6 +71,7 @@ DEFAULTS = {
             "name": "Rental",
             "deposit_pct": 5, "deposit_pct_furnished": 10, "commission_pct": 5, "commission_from": "tenant", "renewal_notice_days": 90,
             "stages": ["Offer", "Offer accepted", "Contract", "Ejari", "Move-in"], "converted_at": "Offer accepted", "agency_forms": False,
+            "fees": [["Ejari registration", 220, "tenant"]],
             "steps": [["Tenancy contract signed", "the tenant and the landlord"],
                       ["Security deposit and agency fee received", "the tenant"],
                       ["Rent cheques collected", "the tenant"],
@@ -163,6 +166,9 @@ def validate(r: dict) -> list[str]:
             errs.append(f"{p['name']}: each stage after Viewed has a name, once, and isn't one of Sales' stages, Closing, Won or Lost")
         elif p.get("converted_at") not in st:
             errs.append(f"{p['name']}: the deal counts as converted at one of its own stages")
+        if any(not (isinstance(f, list) and len(f) == 3 and str(f[0]).strip() and isinstance(f[1], (int, float)) and f[1] >= 0 and f[2] in PAYERS)
+               for f in p.get("fees") or []):
+            errs.append(f"{p['name']}: each fee has what it is, an amount in AED and who pays it")
         if "renewal_notice_days" in p and (not isinstance(p["renewal_notice_days"], int) or not 0 < p["renewal_notice_days"] <= 365):
             errs.append(f"{p['name']}: the renewal notice is a whole number of days between 1 and 365")
         if [c[0] for c in p.get("closing") or []] != ["figures", "invoice", "compliance", "docs"] or \

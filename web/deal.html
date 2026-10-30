@@ -886,7 +886,11 @@ function fundsEl(f) {
 }
 
 function draftEl(d) {
-  return h("div", { class: `card ${d.status === "sent_back" ? "open" : ""}` },
+  const ff = d.kind === "Form F" && d.status !== "sent_back" ? view.agency.formf.find((x) => x.draft === d.id) : null;
+  const may = me() === view.broker || holds("transactions") || me() === OWNER;
+  return h("div", { class: `card ${d.status === "sent_back" ? "open" : ""}`, ...(ff ? { id: "formf" } : {}) },
+    ff ? h("div", { class: "acts", style: "margin-top:0" }, h("a", { class: "btn", href: `/api/desk/forms/${d.id}.pdf`, target: "_blank" }, "Form F (PDF)")) : null,
+    ff ? signLinks({ draft: d.id, links: ff.links }, may) : null,
     h("div", { class: "top" }, h("strong", {}, `${d.kind} v${d.version}`), h("span", {}, h("span", { class: "chip" }, d.id),
       d.status === "live" ? h("span", { class: "chip ok" }, "passed review") : chip(d.status))),
     d.reason ? h("div", { style: "margin-top:4px" }, d.reason) : null,

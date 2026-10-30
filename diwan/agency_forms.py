@@ -192,27 +192,55 @@ def fields(g: Graph, deal: str, form: str) -> list[tuple[str, str, str | None, s
                  f"{t['other_share_pct']}%" + (f": AED {c['share']:,} of AED {c['amount']:,}" if c.get("share") is not None else "") if "other_share_pct" in t else None, None)]
 
 
-SIGNERS = {"A": ["The seller", "The broker"], "B": ["The buyer", "The broker"], "I": ["Our broker", "The other broker"]}
+SIGNERS = {"A": ["The seller", "The broker"], "B": ["The buyer", "The broker"], "I": ["Our broker", "The other broker"],
+           "F": ["The buyer", "The seller", "Our broker", "The other broker"]}
+
+
+TITLES_ALL = TITLES | {"F": "Form F: memorandum of understanding between the buyer and the seller"}
+
+
+def form_of(g: Graph, did: str) -> str:
+    d = g.nodes.get(did)
+    if not d or d.type != "draft" or (d.props.get("kind") not in FORM_OF and d.props.get("kind") != "Form F"):
+        raise KeyError(did)
+    return FORM_OF.get(d.props["kind"], "F")
+
+
+def rows(g: Graph, did: str, form: str) -> list[tuple[str, str, str | None, str | None]]:
+    """The form's lines: Form F's from its plan (each line from a live fact), the agency forms' from the record."""
+    if form != "F":
+        return fields(g, g.nodes[did].deal, form)
+    out = []
+    for s in sorted(g.into(did, "part_of"), key=lambda s: s.props["n"]):
+        label, _, value = s.props["text"].partition(": ")
+        out.append(("The memorandum", label, None if value.startswith("not said") else value, None))
+    p = desk_rules.path(g, g.nodes[did].deal)
+    out.append(("The deposit", "Held by", desk_rules.rules(g)["deposit_held_by"], None))
+    out.append(("The deposit", "Usual deposit", f"{p['deposit_pct']}% of the price", None))
+    return out
 
 
 def render(g: Graph, did: str, signatures: list[dict] | None = None) -> bytes:
     """The form as a PDF; with `signatures` (from diwan/signing.py), signed, with the signing record at the end."""
-    d = g.nodes.get(did)
-    if not d or d.type != "draft" or d.props.get("kind") not in FORM_OF:
-        raise KeyError(did)
-    form, deal = FORM_OF[d.props["kind"]], d.deal
+    form = form_of(g, did)
+    d, deal = g.nodes[did], g.nodes[did].deal
     filler = name(_deal(g, deal).props["broker"])
-    blocks = [("title", TITLES[form]),
+    blocks = [("title", TITLES_ALL[form]),
               ("p", f"Prepared by Diwan from deal {deal}, version {d.props.get('version', 1)} ({did}), on {date.today().isoformat()}. "
                     f"Every value comes from the deal record. A line marked 'to fill' is not on file and {filler} fills it by hand. "
                     "Check it against the current RERA form before anyone signs.")]
     if d.status == "sent_back":
         blocks.append(("p", f"SENT BACK, DO NOT SIGN: {d.props.get('reason') or 'a newer version replaces it'}"))
+    by_as = {x["as"]: x for x in signatures or []}  # what each signer gave when signing fills their own blank lines
+    given = {"Buyer's ID or passport number": by_as.get("The buyer", {}).get("id_no"), "Seller's ID or passport number": by_as.get("The seller", {}).get("id_no"),
+             "Seller's name, as on the title deed": by_as.get("The seller", {}).get("name"),
+             "Seller": by_as.get("The seller", {}).get("name"), "Buyer passport number": by_as.get("The buyer", {}).get("id_no")}
     section = None
-    for sec, label, value, _ in fields(g, deal, form):
+    for sec, label, value, _ in rows(g, did, form):
         if sec != section:
             blocks.append(("h", sec))
             section = sec
+        value = value if value is not None else given.get(label)
         blocks.append(("field", f"{label}|{value if value is not None else '____________________________  (to fill)'}"))
     blocks.append(("h", "Signatures"))
     if signatures:
