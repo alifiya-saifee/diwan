@@ -16,7 +16,53 @@
   .edge.picked { stroke: var(--green, #5ccfb5); stroke-width: 2.4; }
   .edge.sent_back { stroke: var(--bad); stroke-dasharray: 4 3; }
   .edge.builds_on, .edge.informs { stroke: #f0b35e; stroke-dasharray: 2 3; }
+  .edge.changes { stroke: var(--warn); stroke-dasharray: 2 3; }
+  .edge.in_area { stroke: #8a7f6a; opacity: .5; }
+  .edge.gone { opacity: .25; stroke-dasharray: 3 4; }  /* its statement was replaced */
+  .edge.reports_to { stroke: var(--line-2); opacity: .55; }
+  .edge.hands_to { stroke: #e8c77a; opacity: .85; fill: none; }
   .legend span { margin-right: 10px; }
+  .agentbox label { font-size: 11px; color: var(--muted); display: block; margin: 8px 0 3px; }
+  .agentbox textarea { min-height: 64px; }
+  #play { flex: 0 0 auto; }
+  svg.arrows { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: none; border-radius: 0; pointer-events: none; z-index: 0; }
+  .colhead { font: 600 10.5px var(--font); letter-spacing: 1px; text-transform: uppercase; fill: var(--muted); }
+  .colline { stroke: var(--line); stroke-dasharray: 2 4; }
+  .edge.dim { opacity: .08; }
+  .node.dim { opacity: .3; }
+  /* the agents view: departments as cards, flows as numbered arrows between them */
+  .flow { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .flow .grid { display: grid; grid-template-columns: 112px 1fr 1.15fr 1fr 1fr; gap: 54px; align-items: start; position: relative; z-index: 1; margin-top: 46px; }
+  .flow .stack { display: flex; flex-direction: column; gap: 14px; }
+  .dept { border: 1px solid var(--line-2); border-radius: 12px; background: #16181d; padding: 10px 12px; cursor: pointer; position: relative; z-index: 1; }
+  .dept:hover, .dept.on { border-color: #e8c77a; }
+  .dept h3 { margin: 0; font-size: 13px; display: flex; gap: 7px; align-items: center; }
+  .dept .what { font-size: 11.5px; color: var(--muted); margin: 4px 0 6px; line-height: 1.4; }
+  .dept .ag { display: flex; gap: 7px; align-items: center; font-size: 12px; padding: 4px 0; border-top: 1px solid var(--line); }
+  .dept .ag:hover { color: #e8c77a; }
+  .dept .ag .n { margin-left: auto; font-size: 10.5px; color: var(--faint); }
+  .dept .ag.quiet { opacity: .5; }
+  .dept .ag.custom .adot { box-shadow: 0 0 0 2px #e8c77a; }
+  .dept details summary { font-size: 12px; padding: 4px 0; border-top: 1px solid var(--line); cursor: pointer; color: var(--muted); }
+  .dept details .ag { padding-left: 12px; }
+  .adot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+  .dept .add { font-size: 11px; padding: 3px 9px; margin-top: 8px; }
+  .nova { max-width: 520px; margin: 0 auto; }
+  .flows { margin-top: 22px; position: relative; z-index: 1; }
+  .flows h2 { margin: 0 0 8px; }
+  .fl { display: grid; grid-template-columns: 26px 210px 1fr auto; gap: 10px; align-items: start; padding: 7px 0; border-top: 1px solid var(--line); font-size: 12.5px; cursor: pointer; }
+  .fl:hover { color: #e8c77a; }
+  .badge { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 700 11px var(--font); background: #e8c77a; color: #1b1608; }
+  .badge.off { background: var(--line-2); color: var(--ink); }
+  .badge.plan { background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
+  .panelsec { margin-top: 14px; }
+  .panelsec .ag { font-size: 12.5px; padding: 6px 0; border-top: 1px solid var(--line); cursor: pointer; }
+  dl.ch { display: grid; grid-template-columns: 92px 1fr; gap: 6px 10px; font-size: 12.5px; margin: 8px 0 0; }
+  dl.ch dt { color: var(--muted); font-size: 11.5px; } dl.ch dd { margin: 0; }
+  #find { max-width: 220px; }
+  .wrap > div { min-width: 0; }
+  @media (max-width: 1000px) { .flow .grid { grid-template-columns: 1fr; gap: 14px; } svg.arrows { display: none; }
+    .fl { grid-template-columns: 26px 1fr; } .fl > :nth-child(n+3) { grid-column: 2; } }
   .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 </style>
 </head>
@@ -26,69 +72,165 @@
   <p class="sub" id="sub">The office's memory, rebuilt from the event log. Drag the slider to rewind and watch a correction rewire the office.</p>
   <div class="row" style="margin-bottom:12px">
     <select id="deal" style="max-width:260px"></select>
+    <input id="find" list="deallist" placeholder="Find a deal: customer or property"><datalist id="deallist"></datalist>
+    <button id="play" title="Play the history from the start">▶ Play</button>
     <input type="range" id="upto" min="1" value="1">
     <span id="at" class="small muted" style="flex:0 0 150px"></span>
   </div>
   <div class="wrap">
-    <svg id="svg"></svg>
+    <div><svg id="svg"></svg><div id="flow" class="flow" hidden></div></div>
     <aside class="panel">
+      <div id="recbox">
       <h2>Record</h2>
       <p id="record" class="muted">Click any node.</p>
       <h2 style="margin-top:16px">Links</h2>
       <div id="links" class="small"></div>
       <div class="legend small muted" id="legend" style="margin-top:16px"></div>
+      </div>
+      <div class="agentbox" id="agentbox" hidden></div>
     </aside>
   </div>
 </main>
 <script type="module">
-import { h, api, header, follow } from "./app.js";
+import { h, api, post, header, follow, toast, NAMES } from "./app.js";
 header("graph.html");
 const $ = (id) => document.getElementById(id);
 const COLORS = { person: "#5b7bd5", deal: "#1d1c1a", property: "#8a7f6a", fact: "#0f8a6f", task: "#c27c1a", approval: "#7a4fc4",
   slide: "#b5527e", draft: "#b5527e", decision: "#a4262c", check: "#a4262c", question: "#d18b2a", request: "#7a4fc4",
   chat: "#25a35a", viewing: "#2d8fb5", listing: "#8a7f6a", knowledge: "#6b6860",
-  brand: "#e8c77a", idea: "#c58fe0", script: "#f08fc0", angle: "#5ccfb5", trend: "#f0b35e", outlier: "#f27d7d", competitor: "#8b92a3", post: "#82d99f", lesson: "#d9b26f", source: "#4f7cac" };
-const MKT = "__marketing";
+  brand: "#e8c77a", idea: "#c58fe0", script: "#f08fc0", angle: "#5ccfb5", trend: "#f0b35e", outlier: "#f27d7d", competitor: "#8b92a3", post: "#82d99f", lesson: "#d9b26f", source: "#4f7cac", version: "#6b6860", proposal: "#f0b35e" };
+const MKT = "__marketing", KN = "__knowledge", AG = "__agents";
 const isMkt = () => $("deal").value === MKT;
-const SHOW = new Set(["person", "deal", "fact", "task", "approval", "slide", "decision", "check", "question", "request", "chat", "viewing", "listing"]);
+const isKn = () => $("deal").value === KN;
+const isAg = () => $("deal").value === AG;
+const SHOW = new Set(["person", "deal", "fact", "task", "approval", "slide", "draft", "decision", "check", "question", "request", "chat", "viewing", "listing"]);
+const DEAD = ["superseded", "withdrawn", "refused", "sent_back", "cancelled", "retired", "replaced", "rejected", "removed"];
+// the agents view: one colour per department
+const DEPT = { nova: ["#e8c77a", "Nova"], sales: ["#25a35a", "Front desk & sales"], comp: ["#d05a5f", "Compliance"], fin: ["#c27c1a", "Finance"],
+  ops: ["#2d8fb5", "Operations"], review: ["#9a6fe0", "Review"], records: ["#a89c84", "Records"], mkt: ["#f08fc0", "Marketing"] };
+let steps = null;  // a deal's own event ids: the slider steps through these
 let data = { nodes: [], edges: [] }, pos = {}, selected = null, live = true;
 const SUB = document.getElementById("sub").textContent;
 
 function legend() {
+  if (isAg()) {
+    $("legend").replaceChildren(...Object.values(DEPT).map(([c, l]) => h("span", {}, h("span", { class: "sw", style: `background:${c}` }), l)),
+      h("div", { style: "margin-top:6px" }, "Gold line: a handoff the log shows (thicker = more). Grey: reports to. Faded: has not acted yet. Gold ring: an agent you added."));
+    return;
+  }
   const present = new Set(data.nodes.map((n) => n.type));
   $("legend").replaceChildren(...Object.entries(COLORS).filter(([k]) => present.has(k)).map(([k, c]) => h("span", {}, h("span", { class: "sw", style: `background:${c}` }), k)));
 }
 
+let dealList = [];
 async function deals() {
-  const ds = await api("/api/deals"), keep = $("deal").value;
-  $("deal").replaceChildren(h("option", { value: MKT }, "Marketing & brand"), ...ds.map((d) => h("option", { value: d.deal }, `${d.label} · ${d.props.customer}`)));
-  if (keep && (keep === MKT || ds.some((d) => d.deal === keep))) $("deal").value = keep;
-  else if (new URLSearchParams(location.search).get("view") === "marketing") $("deal").value = MKT;
-  else if (ds.length) $("deal").value = ds[0].deal;
+  dealList = (await api("/api/deals")).reverse();  // newest first
+  const keep = $("deal").value;
+  $("deal").replaceChildren(h("option", { value: AG }, "Agents · how the office works"), h("option", { value: MKT }, "Marketing & brand"), h("option", { value: KN }, "Knowledge & catalog"),
+    h("optgroup", { label: `Deals (${dealList.length}, newest first)` }, ...dealList.map((d) => h("option", { value: d.deal }, `${d.label} · ${d.props.customer}`))));
+  $("deallist").replaceChildren(...dealList.map((d) => h("option", { value: `${d.label} · ${d.props.customer}` })));
+  const view = new URLSearchParams(location.search).get("view"), want = new URLSearchParams(location.search).get("deal");
+  if (keep && (keep === MKT || keep === KN || keep === AG || dealList.some((d) => d.deal === keep))) $("deal").value = keep;
+  else if (want && dealList.some((d) => d.deal === want)) $("deal").value = want;
+  else if (view === "marketing") $("deal").value = MKT;
+  else if (view === "knowledge") $("deal").value = KN;
+  else if (view === "agents" || !dealList.length) $("deal").value = AG;
+  else $("deal").value = dealList[0].deal;
 }
 
+// the slider: a deal view steps through that deal's own events; the other views through the whole log
+const slideTo = (v) => steps?.length ? steps[Math.min(steps.length, Math.max(1, v)) - 1] : v;
+function setSlider(upto, last) {
+  if (steps?.length) {
+    if (!upto) { $("upto").max = steps.length; $("upto").value = steps.length; }
+    const i = upto ? steps.filter((x) => x <= upto).length : steps.length;
+    $("at").textContent = `step ${i} of ${steps.length} in this deal`;
+  } else {
+    if (!upto) { $("upto").max = last; $("upto").value = last; }
+    $("at").textContent = `event ${upto || last} of ${$("upto").max}`;
+  }
+}
 async function load(upto) {
-  const q = new URLSearchParams(isMkt() ? {} : { deal: $("deal").value });
+  const ag = isAg();
+  $("svg").style.display = ag ? "none" : ""; $("flow").hidden = !ag; $("recbox").hidden = ag; $("agentbox").hidden = !ag;
+  $("find").hidden = isMkt() || isKn();
+  if (ag) {
+    steps = null;
+    flow = await api(`/api/memory/flow${upto ? `?upto=${upto}` : ""}`);
+    $("sub").textContent = "How the office works: each department, what it does, and what passes between them. Numbered arrows match the list below; gold means the log shows it happening (thicker = more often), grey means built but not seen yet, dashed means planned. Click a department or an agent to see what it does. The owner can add agents to any team.";
+    setSlider(upto, flow.last_event); renderFlow();
+    if (!editing) sidePanel();  // never wipe a form someone is filling in
+    return;
+  }
+  const q = new URLSearchParams(isMkt() || isKn() ? {} : { deal: $("deal").value });
   if (upto) q.set("upto", upto);
-  if (isMkt()) {
-    data = await api(`/api/memory/marketing?${q}`);
-    $("sub").textContent = "The marketing team's memory: the brand and what it was drafted from, the research it built on, every script with its angle, who picked or sent it back. Rewind to see how it grew.";
-    if (!upto) { $("upto").max = data.last_event; $("upto").value = data.last_event; }
-    $("at").textContent = `event ${upto || data.last_event} of ${$("upto").max}`;
+  if (isMkt() || isKn()) {
+    steps = null;
+    data = await api(`/api/memory/${isKn() ? "knowledge" : "marketing"}?${q}`);
+    $("sub").textContent = isKn() ? "What the agents may know: every item, the versions an edit replaced (red dashed line), retired items dimmed with their reason, changes waiting for an owner, and each area guide's listings."
+      : "The marketing team's memory: the brand and what it was drafted from, the research it built on, every script with its angle, who picked or sent it back. Rewind to see how it grew.";
+    setSlider(upto, data.last_event);
     legend(); layout(); return;
   }
-  $("sub").textContent = SUB;
+  $("sub").textContent = "One deal as a story, left to right: who said it, what they said (their exact words), what the office built on it, and the checks and decisions. A replaced statement sits under the one that replaced it. Click anything to light up its links; drag the slider or press Play to watch it happen.";
   data = await api(`/api/graph?${q}`);
-  const keep = new Set(data.nodes.filter((n) => SHOW.has(n.type) && (n.deal === $("deal").value || n.type === "person" || n.type === "listing")).map((n) => n.id));
-  data.edges = data.edges.filter((e) => keep.has(e.src) && keep.has(e.dst));
-  const linked = new Set(data.edges.flatMap((e) => [e.src, e.dst]));
-  data.nodes = data.nodes.filter((n) => keep.has(n.id) && (linked.has(n.id) || n.type === "deal"));
-  if (!upto) { $("upto").max = data.last_event; $("upto").value = data.last_event; }
-  $("at").textContent = `event ${upto || data.last_event} of ${$("upto").max}`;
-  legend(); layout();
+  if (!upto) steps = data.steps;
+  setSlider(upto, data.last_event);
+  storyLayout(); legend();
+}
+
+// ---------- a deal as a story: who said it → what they said → what was built on it → checks and decisions ----------
+const WIDTH = [0.62, 1.3, 1.22, 1];  // "who" needs little room; what was said needs the most
+const COLS = [["Who", ["person"]], ["What they said", ["fact"]], ["What the office built on it", ["task", "approval", "draft", "slide", "chat", "viewing"]],
+  ["Checks and decisions", ["check", "decision", "question", "request"]]];
+const colOf = (n) => COLS.findIndex(([, ts]) => ts.includes(n.type));
+let story = null;
+function storyLayout() {
+  const deal = $("deal").value;
+  data.nodes = data.nodes.filter((n) => colOf(n) >= 0 && (n.deal === deal || n.type === "person"));
+  const same = {};
+  for (const n of data.nodes.filter((n) => n.type === "person")) { const k = (n.label || "").toLowerCase(); if (same[k] && same[k] !== n.id) same[n.id] = same[k]; else same[k] = n.id; }
+  const one = (id) => same[id] || id;
+  data.nodes = data.nodes.filter((n) => !same[n.id] || n.type !== "person" || same[n.id] === n.id);
+  data.edges = data.edges.map((e) => ({ ...e, src: one(e.src), dst: one(e.dst) })).filter((e) => e.src !== e.dst);
+  const ids = new Set(data.nodes.map((n) => n.id));
+  data.edges = data.edges.filter((e) => ids.has(e.src) && ids.has(e.dst));
+  const own = new Set(data.nodes.filter((n) => n.type !== "person").map((n) => n.id));
+  // a person belongs to this deal through its own items, or through a relation the customer stated in it ("my brother Tariq")
+  const linked = new Set(data.edges.filter((e) => own.has(e.src) || own.has(e.dst) || own.has(e.via)).flatMap((e) => [e.src, e.dst]));
+  data.nodes = data.nodes.filter((n) => n.type !== "person" || linked.has(n.id));
+  const kept = new Set(data.nodes.map((n) => n.id));
+  data.edges = data.edges.filter((e) => kept.has(e.src) && kept.has(e.dst));
+  const byId = Object.fromEntries(data.nodes.map((n) => [n.id, n])), ev = (n) => n.event || 0;
+  const out = (id, rel) => data.edges.filter((e) => e.src === id && rel.includes(e.rel)).map((e) => e.dst);
+  const into = (id, rel) => data.edges.filter((e) => e.dst === id && rel.includes(e.rel)).map((e) => e.src);
+  const rows = [[], [], [], []], row = {};
+  const put = (c, n, indent = 0) => { if (row[n.id] !== undefined) return; row[n.id] = rows[c].length; rows[c].push([n, indent]); };
+  // what they said: live statements in order, each replaced one right under the statement that replaced it
+  const facts = data.nodes.filter((n) => n.type === "fact").sort((a, b) => ev(a) - ev(b));
+  const under = (f, d) => { put(1, f, d); for (const old of out(f.id, ["replaces"]).map((i) => byId[i]).filter(Boolean)) under(old, d + 1); };
+  for (const f of facts.filter((f) => !into(f.id, ["replaces"]).length)) under(f, 0);
+  // who: the customer first, then in order of their first statement
+  const people = data.nodes.filter((n) => n.type === "person").sort((a, b) => (a.props?.role === "Customer" ? -1 : 0) - (b.props?.role === "Customer" ? -1 : 0) || ev(a) - ev(b));
+  for (const n of people) put(0, n);
+  // what was built: next to the first statement it rests on; slides under their deck
+  const anchor = (n) => Math.min(99, ...out(n.id, ["rests_on", "uses"]).map((f) => row[f] ?? 99), ...into(n.id, ["part_of"]).flatMap((s) => out(s, ["uses"]).map((f) => row[f] ?? 99)));
+  const built = data.nodes.filter((n) => colOf(n) === 2 && n.type !== "slide").sort((a, b) => anchor(a) - anchor(b) || ev(a) - ev(b));
+  for (const n of built) { put(2, n); for (const sl of into(n.id, ["part_of"]).map((i) => byId[i]).filter(Boolean).sort((a, b) => (a.props?.n || 0) - (b.props?.n || 0))) put(2, sl, 1); }
+  for (const n of data.nodes.filter((n) => n.type === "slide")) put(2, n, 1);
+  for (const n of data.nodes.filter((n) => colOf(n) === 3).sort((a, b) => ev(a) - ev(b))) put(3, n);
+  const W = $("svg").clientWidth, unit = (W - 30) / WIDTH.reduce((a, b) => a + b), RH = 30, TOP = 62;
+  const xs = WIDTH.map((_, c) => 14 + WIDTH.slice(0, c).reduce((a, b) => a + b, 0) * unit), ws = WIDTH.map((w) => w * unit);
+  pos = {};
+  rows.forEach((list, c) => list.forEach(([n, indent], r) => { pos[n.id] = { x: xs[c] + 8 + indent * 16, y: TOP + r * RH, c }; }));
+  story = { xs, ws, height: TOP + Math.max(4, ...rows.map((r) => r.length)) * RH + 20 };
+  $("svg").style.height = `${story.height}px`;
+  draw();
 }
 
 function layout() {
+  story = null;
+  $("svg").style.height = "";
   const W = $("svg").clientWidth, H = 720, many = data.nodes.length > 18, rep = many ? 5200 : 2200, len = many ? 150 : 110;
   for (const n of data.nodes) pos[n.id] ||= { x: W / 2 + (Math.random() - .5) * 300, y: H / 2 + (Math.random() - .5) * 300, vx: 0, vy: 0 };
   for (let it = 0; it < 220; it++) {
@@ -132,36 +274,232 @@ window.__graphOverlaps = () => {  // for the browser test: pairs of labels that 
   return n;
 };
 
+const NS = "http://www.w3.org/2000/svg";
+const el = (t, a) => { const x = document.createElementNS(NS, t); for (const k in a) x.setAttribute(k, a[k]); return x; };
 function draw() {
-  const NS = "http://www.w3.org/2000/svg", svg = $("svg");
-  const el = (t, a) => { const x = document.createElementNS(NS, t); for (const k in a) x.setAttribute(k, a[k]); return x; };
+  const svg = $("svg");
   svg.replaceChildren();
-  for (const e of data.edges) svg.append(el("line", { class: `edge ${e.rel}`, x1: pos[e.src].x, y1: pos[e.src].y, x2: pos[e.dst].x, y2: pos[e.dst].y }));
+  const status = Object.fromEntries(data.nodes.map((n) => [n.id, n.status]));
+  const dead = (id) => DEAD.includes(status[id]);
+  // work still resting on a replaced statement gets a warning ring until a person deals with it
+  const stale = new Set(data.edges.filter((e) => ["rests_on", "uses"].includes(e.rel) && dead(e.dst) && !dead(e.src)).map((e) => e.src));
+  const near = selected ? new Set([selected, ...data.edges.filter((e) => e.src === selected || e.dst === selected).flatMap((e) => [e.src, e.dst])]) : null;
+  if (story) {  // column headings and guides
+    COLS.forEach(([t], c) => {
+      const x = story.xs[c];
+      svg.append(el("text", { class: "colhead", x: x + 8, y: 30 }));
+      svg.lastChild.textContent = t;
+      if (c) svg.append(el("line", { class: "colline", x1: x, y1: 14, x2: x, y2: story.height - 8 }));
+    });
+  }
+  const lines = el("g", {}); svg.append(lines);
+  const ends = {};  // where each label ends, so a line starts after the words, never through them
   for (const n of data.nodes) {
-    const g = el("g", { class: "node", transform: `translate(${pos[n.id].x},${pos[n.id].y})`, style: "cursor:pointer" });
-    const dead = ["superseded", "withdrawn", "refused", "sent_back", "cancelled"].includes(n.status);
+    const g = el("g", { class: `node${near && !near.has(n.id) ? " dim" : ""}`, transform: `translate(${pos[n.id].x},${pos[n.id].y})`, style: "cursor:pointer" });
+    const isDead = DEAD.includes(n.status);
     const pending = n.status === "proposed";
-    g.append(el("circle", { r: n.type === "deal" || n.id === "brand:profile" ? 14 : n.type === "source" ? 11 : 8, fill: COLORS[n.type] || "#999", opacity: dead ? 0.3 : pending ? 0.55 : 1,
-      stroke: n.id === selected ? "var(--ink)" : "none", "stroke-width": 2 }));
+    const ring = n.id === selected ? ["var(--ink)", 2, ""] : stale.has(n.id) ? ["var(--warn)", 3, "3 2"] : n.type === "deal" ? ["#e8c77a", 1.5, ""] : ["none", 0, ""];
+    g.append(el("circle", { r: n.type === "deal" || n.id === "brand:profile" ? 14 : n.type === "source" ? 11 : story ? 7 : 8,
+      fill: COLORS[n.type] || "#999", opacity: isDead ? 0.3 : pending ? 0.55 : 1, stroke: ring[0], "stroke-width": ring[1], "stroke-dasharray": ring[2] }));
     const t = el("text", { x: 13, y: 4 });
-    t.textContent = `${n.label || n.id.replace(/^(person|deal|listing|chat|brand|angle|competitor|source):/, "")}${dead ? " ✕" : n.status === "approved" ? " ✓" : ""}`;
+    const ver = n.type === "knowledge" || n.type === "listing" ? (n.props?.version > 1 ? ` v${n.props.version}` : "") : "";
+    const name = n.type === "draft" ? `Deal ${n.label}` : n.type === "chat" ? "WhatsApp conversation" : n.type === "fact" && n.props?.quote ? `${n.label}: “${n.props.quote}”` : n.label || n.id.replace(/^(person|deal|listing|chat|brand|angle|competitor|source):/, "");
+    const tail = `${ver}${n.status === "retired" ? " (retired)" : n.status === "sent_back" ? " ✕ sent back" : isDead ? " ✕" : n.status === "approved" ? " ✓" : ""}${stale.has(n.id) ? " ⚠" : ""}`;
+    const room = story ? Math.floor((story.xs[pos[n.id].c] + story.ws[pos[n.id].c] - pos[n.id].x - 40) / 6.4) - tail.length : 999;
+    t.textContent = (name.length > room ? name.slice(0, Math.max(8, room - 1)).trimEnd() + "…" : name) + tail;
+    if (isDead) t.setAttribute("opacity", ".55");
+    const tip = el("title", {}); tip.textContent = n.record; g.append(tip);
     g.append(t);
     g.addEventListener("click", () => pick(n));
     svg.append(g);
+    if (story) ends[n.id] = pos[n.id].x + 13 + t.getComputedTextLength() + 6;
+  }
+  for (const e of data.edges) {
+    const gone = (e.via && dead(e.via)) || (["rests_on", "uses"].includes(e.rel) && dead(e.src));
+    const dim = near && !(near.has(e.src) && near.has(e.dst) && (e.src === selected || e.dst === selected)) ? " dim" : "";
+    const cls = `edge ${e.rel}${gone ? " gone" : ""}${dim}`;
+    if (story) {
+      // in a story, work points back at the statement it rests on: draw it forward, from the statement
+      let [ia, ib] = ["rests_on", "uses", "about", "part_of"].includes(e.rel) ? [e.dst, e.src] : [e.src, e.dst];
+      if (pos[ia].c > pos[ib].c) [ia, ib] = [ib, ia];
+      const a = pos[ia], b = pos[ib], sx = ends[ia];
+      const d = a.c === b.c  // same column: an arc on the left
+        ? `M${a.x - 8},${a.y} C${a.x - 30},${a.y} ${b.x - 30},${b.y} ${b.x - 8},${b.y}`
+        : `M${sx},${a.y} C${sx + Math.max(30, (b.x - sx) / 2)},${a.y} ${b.x - Math.max(30, (b.x - sx) / 2)},${b.y} ${b.x - 9},${b.y}`;
+      lines.append(el("path", { class: cls, d, fill: "none" }));
+      continue;
+    }
+    lines.append(el("line", { class: cls, x1: pos[e.src].x, y1: pos[e.src].y, x2: pos[e.dst].x, y2: pos[e.dst].y }));
   }
 }
-
 function pick(n) {
-  selected = n.id;
+  selected = selected === n.id ? null : n.id;  // click again to clear the highlight
   $("record").textContent = n.record + (n.status && !["live", "open"].includes(n.status) ? ` · ${n.status}` : "");
   $("record").className = "";
   const rel = data.edges.filter((e) => e.src === n.id || e.dst === n.id);
-  $("links").replaceChildren(...rel.map((e) => h("div", { style: "padding:3px 0" }, `${e.src.replace(/^\w+:/, "")} — ${e.rel.replace("_", " ")} → ${e.dst.replace(/^\w+:/, "")}`)));
+  const nm = (id) => data.nodes.find((x) => x.id === id)?.label || id.replace(/^\w+:/, "");
+  $("links").replaceChildren(...rel.map((e) => h("div", { style: "padding:3px 0" }, `${nm(e.src)} — ${e.rel.replace("_", " ")} → ${nm(e.dst)}`)));
   draw();
 }
 
-$("deal").onchange = () => { pos = {}; load(); };
-$("upto").oninput = () => { live = +$("upto").value === +$("upto").max; load(+$("upto").value); };
+// ---------- the agents view: departments, what passes between them, every agent's job ----------
+let flow = null, focus = null;  // focus: {dept} or {agent} shown in the side panel
+const dcolor = (id) => (DEPT[id] || [id === "customers" || id === "people" ? "#5b7bd5" : "#e8c77a"])[0];
+const bare = (id) => id.replace(/^agent:/, "");  // flow.agents is keyed by the agent's own id
+const agentRow = (a) => h("div", { class: `ag${["planned", "idle", "paused", "removed"].includes(a.status) ? " quiet" : ""}${a.props.custom ? " custom" : ""}`, "data-agent": bare(a.id),
+    title: a.props.job, onclick: (e) => { e.stopPropagation(); focus = { agent: bare(a.id) }; sidePanel(); } },
+  h("span", { class: "adot", style: `background:${dcolor(a.props.dept)}` }), `${a.label}${a.status === "paused" ? " (paused)" : a.status === "removed" ? " ✕" : ""}`,
+  h("span", { class: "n" }, a.props.actions ? `${a.props.actions}` : a.status === "planned" ? "planned" : ""));
+function deptCard(d) {
+  const owner = (flow.owners || []).includes(me), team = flow.teams[d.id];
+  const rooms = d.rooms.map((r) => h("details", {}, h("summary", {}, `${r.label} · ${d.agents.filter((a) => a.room === r.label).length}`),
+    ...d.agents.filter((a) => a.room === r.label).map(agentRow)));
+  return h("div", { class: `dept${focus?.dept === d.id ? " on" : ""}`, "data-dept": d.id, onclick: () => { focus = { dept: d.id }; sidePanel(); } },
+    h("h3", {}, h("span", { class: "adot", style: `background:${dcolor(d.id)}` }), d.name),
+    h("div", { class: "what" }, d.what),
+    ...d.agents.filter((a) => !a.room).map(agentRow), ...rooms,
+    ...d.people.map((p) => h("div", { class: "ag" }, h("span", { class: "adot", style: "background:#5b7bd5" }), p.name, h("span", { class: "n" }, p.role))),
+    team && owner ? h("button", { class: "add", onclick: (e) => { e.stopPropagation(); focus = { add: d.id }; sidePanel(); } }, "+ Add an agent here") : null);
+}
+function renderFlow() {
+  const D = Object.fromEntries(flow.departments.map((d) => [d.id, d])), col = (c) => flow.departments.filter((d) => d.col === c).map(deptCard);
+  const arrows = el("svg", { class: "arrows" });
+  const stat = (f) => f.count ? `seen ${f.count} time${f.count === 1 ? "" : "s"}` : f.built ? "built · not in this log yet" : "planned";
+  $("flow").replaceChildren(arrows, h("div", { class: "nova" }, deptCard(D.nova)),
+    h("div", { class: "grid" }, ...[1, 2, 3, 4, 5].map((c) => h("div", { class: "stack" }, ...col(c)))),
+    h("div", { class: "flows" }, h("h2", {}, "How work flows"),
+      ...flow.flows.filter((f) => f.n).sort((a, b) => a.n - b.n).map((f) => h("div", { class: "fl", "data-flow": f.n, onclick: () => { focus = { dept: f.from }; sidePanel(); } },
+        h("span", { class: `badge${f.count ? "" : f.built ? " off" : " plan"}` }, String(f.n)),
+        h("b", {}, `${D[f.from].name.split(" ·")[0]} → ${D[f.to].name.split(" ·")[0]}`), h("span", {}, f.what), h("span", { class: "small muted" }, stat(f))))));
+  requestAnimationFrame(() => drawArrows(arrows));
+}
+function drawArrows(svg) {
+  const box = $("flow").getBoundingClientRect();
+  const r = (id) => { const b = $("flow").querySelector(`[data-dept="${id}"]`)?.getBoundingClientRect(); return b && { l: b.left - box.left, r: b.right - box.left, t: b.top - box.top, b: b.bottom - box.top, cx: (b.left + b.right) / 2 - box.left, cy: Math.min((b.top + b.bottom) / 2, b.top + 60) - box.top }; };
+  const col = Object.fromEntries(flow.departments.map((d) => [d.id, d.col]));
+  const defs = el("defs", {});
+  for (const [id, c] of [["ag", "#e8c77a"], ["off", "#5b5f6b"]]) {
+    const m = el("marker", { id: `a-${id}`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: "userSpaceOnUse", orient: "auto-start-reverse" });
+    m.append(el("path", { d: "M0,0 L10,5 L0,10 z", fill: c })); defs.append(m);
+  }
+  svg.replaceChildren(defs);
+  // every arrow end gets its own spot down the card's edge (ordered by where the other end is), so none share a point
+  const list = flow.flows.filter((f) => f.n && r(f.from) && r(f.to));
+  const fwdOf = (f) => col[f.from] < col[f.to] || (col[f.from] === col[f.to] && r(f.from).cy < r(f.to).cy);
+  const slots = {};
+  for (const f of list) {
+    if (col[f.to] === 0) continue;
+    const fw = fwdOf(f);
+    (slots[`${f.from}|${fw ? "r" : "l"}`] ||= []).push([f, "s", r(f.to).cy]);
+    (slots[`${f.to}|${fw ? "l" : "r"}`] ||= []).push([f, "e", r(f.from).cy]);
+  }
+  const at = {};
+  for (const [key, ends] of Object.entries(slots)) {
+    const R = r(key.split("|")[0]), gap = Math.min(22, (R.b - R.t - 30) / Math.max(1, ends.length));
+    ends.sort((a, b) => a[2] - b[2]).forEach(([f, which], i) => { at[`${f.n}${which}`] = R.t + 26 + i * gap; });
+  }
+  for (const f of list) {
+    const A = r(f.from), B = r(f.to);
+    let sx, sy, ex, ey, d;
+    if (col[f.to] === 0) { sx = A.cx; sy = A.t; ex = Math.max(B.l + 20, Math.min(B.r - 20, A.cx)); ey = B.b; d = `M${sx},${sy} C${sx},${sy - 30} ${ex},${ey + 30} ${ex},${ey}`; }
+    else {
+      const fwd = fwdOf(f);
+      sx = fwd ? A.r : A.l; sy = at[`${f.n}s`]; ex = fwd ? B.l : B.r; ey = at[`${f.n}e`];
+      const k = Math.max(30, Math.abs(ex - sx) * 0.45) * (fwd ? 1 : -1);
+      d = `M${sx},${sy} C${sx + k},${sy} ${ex - k},${ey} ${ex},${ey}`;
+    }
+    const on = f.count > 0, kind = on ? "ag" : "off";
+    svg.append(el("path", { d, fill: "none", stroke: on ? "#e8c77a" : "#5b5f6b", "stroke-width": on ? Math.min(5, 1.4 + Math.log2(1 + f.count) * 0.7) : 1.4,
+      "stroke-dasharray": f.built ? "" : "5 4", "marker-end": `url(#a-${kind})`, opacity: on ? .9 : .7 }));
+    // the number sits just after the start, in the gap between cards
+    const bx = col[f.to] === 0 ? sx : sx + (ex > sx ? 16 : -16), by = col[f.to] === 0 ? sy - 16 : sy;
+    svg.append(el("circle", { cx: bx, cy: by, r: 9, fill: on ? "#e8c77a" : f.built ? "#3a3d46" : "#16181d", stroke: on ? "none" : "#7b7f8a", "stroke-dasharray": f.built ? "" : "2 2" }));
+    const t = el("text", { x: bx, y: by + 3.5, "text-anchor": "middle", style: `font:700 10px var(--font);fill:${on ? "#1b1608" : "var(--ink)"}` }); t.textContent = f.n; svg.append(t);
+  }
+}
+window.addEventListener("resize", () => { if (isAg() && flow) drawArrows($("flow").querySelector("svg.arrows")); });
+
+let editing = false;
+let me = (() => { try { return localStorage.getItem("diwan.memory.as"); } catch { return null; } })() || "layla";
+function sidePanel() {
+  if (!flow) return;
+  document.querySelectorAll(".dept").forEach((x) => x.classList.toggle("on", x.dataset.dept === focus?.dept));
+  const owner = (flow.owners || []).includes(me), D = Object.fromEntries(flow.departments.map((d) => [d.id, d]));
+  const as = h("select", { onchange: (e) => { me = e.target.value; try { localStorage.setItem("diwan.memory.as", me); } catch {} renderFlow(); sidePanel(); } },
+    ...Object.entries(NAMES).map(([id, nm]) => h("option", { value: id, selected: id === me }, `Acting as ${nm}${(flow.owners || []).includes(id) ? " · owner" : ""}`)));
+  let body;
+  if (focus?.agent) {
+    const a = flow.agents[focus.agent], p = a.props, custom = p.custom;
+    const act = async (what) => {
+      if (what === "remove" && !confirm(`Remove ${p.name}? Its history stays in the log.`)) return;
+      try { await post(`/api/agents/custom/${p.id}/${what}`, { by: me }); toast(`${p.name}: ${what === "pause" ? "paused" : what === "resume" ? "running again" : "removed"}`); load(); }
+      catch (e) { toast(e.message); }
+    };
+    body = [h("h2", {}, a.label), h("div", { class: "small muted" }, `${p.role} · ${D[p.dept]?.name || p.dept}${custom ? " · added by the owner" : ""}`),
+      h("dl", { class: "ch" }, h("dt", {}, "What it does"), h("dd", {}, p.job), h("dt", {}, "Listens for"), h("dd", {}, p.trigger),
+        h("dt", {}, "Reads"), h("dd", {}, p.inputs), h("dt", {}, "Produces"), h("dd", {}, p.out),
+        custom ? [h("dt", {}, "Hands work to"), h("dd", {}, NAMES[p.to] || p.to)] : [h("dt", {}, "Does alone"), h("dd", {}, p.alone.join(", ") || "nothing")],
+        h("dt", {}, "Needs a person for"), h("dd", {}, custom ? "everything: it only writes tasks" : p.person.join(", ") || "—"),
+        h("dt", {}, "Never"), h("dd", {}, p.never), h("dt", {}, "Runs on"), h("dd", {}, { spark: "Muse Spark", open: "Muse Spark Open", rules: "plain code", browser: "a browser", voice: "voice", video: "video" }[p.runs_on] || p.runs_on),
+        h("dt", {}, "So far"), h("dd", {}, `${p.actions} actions in the log · ${a.status}`)),
+      custom ? (a.status === "removed" ? h("p", { class: "small muted" }, "Removed. Its history stays in the log.") : h("div", { class: "row", style: "margin-top:10px" },
+          a.status === "paused" ? h("button", { disabled: !owner, onclick: () => act("resume") }, "Resume") : h("button", { disabled: !owner, onclick: () => act("pause") }, "Pause"),
+          h("button", { disabled: !owner, onclick: () => act("remove") }, "Remove")))
+        : h("p", { class: "small muted", style: "margin-top:10px" }, "Built-in agent: part of the office's code and its safety rules, so it is not removed or paused here. ",
+            h("a", { href: "team.html" }, "Set how much it may do alone on the Team page →")),
+      h("button", { style: "margin-top:8px", onclick: () => { focus = { dept: p.dept }; sidePanel(); } }, `← ${D[p.dept]?.name || "Team"}`)];
+  } else if (focus?.dept && !focus.add) {
+    const d = D[focus.dept];
+    const ins = flow.flows.filter((f) => f.n && f.to === d.id), outs = flow.flows.filter((f) => f.n && f.from === d.id);
+    const fl = (f, other) => h("div", { class: "small", style: "padding:4px 0" }, h("span", { class: `badge${f.count ? "" : f.built ? " off" : " plan"}`, style: "display:inline-grid;margin-right:6px" }, String(f.n)),
+      `${other}: ${f.what}`);
+    body = [h("h2", {}, d.name), h("p", { class: "small" }, d.what),
+      outs.length ? h("div", { class: "panelsec" }, h("h2", {}, "Sends"), ...outs.map((f) => fl(f, `to ${D[f.to].name}`))) : null,
+      ins.length ? h("div", { class: "panelsec" }, h("h2", {}, "Receives"), ...ins.map((f) => fl(f, `from ${D[f.from].name}`))) : null,
+      d.agents.length ? h("div", { class: "panelsec" }, h("h2", {}, `Its agents · ${d.agents.length}`),
+        ...d.agents.map((a) => h("div", { class: "ag", onclick: () => { focus = { agent: bare(a.id) }; sidePanel(); } }, h("b", {}, a.label), a.room ? h("span", { class: "muted" }, ` · ${a.room}`) : null,
+          h("div", { class: "muted" }, a.props.job)))) : null,
+      flow.teams[d.id] && owner ? h("button", { class: "primary", style: "margin-top:12px", onclick: () => { focus = { add: d.id }; sidePanel(); } }, `+ Add an agent to ${d.name}`) : null];
+  } else {
+    const team = focus?.add || "sales";
+    const f = { name: h("input", { placeholder: "e.g. Welcome caller" }), job: h("textarea", { placeholder: "What it does, in a sentence or two. e.g. When a lead qualifies, remind the broker to call within the hour and mention the budget." }),
+      trigger: h("select", {}, ...Object.entries(flow.triggers || {}).map(([k, v]) => h("option", { value: k }, v))),
+      team: h("select", {}, ...Object.entries(flow.teams || {}).map(([k, v]) => h("option", { value: k, selected: k === team }, D[k]?.name || v))),
+      to: h("select", {}, ...Object.entries(NAMES).map(([k, v]) => h("option", { value: k }, v))) };
+    body = [h("h2", {}, "Add an agent"),
+      h("p", { class: "small muted" }, "It listens for one thing happening in the office, writes what its job asks for, and hands it to a person as a task. It never messages a customer, changes a fact, approves or moves money, so it can't get round the office's safety rules."),
+      !owner ? h("p", { class: "small", style: "color:var(--warn)" }, "Only the owner adds agents.") : null,
+      h("fieldset", { disabled: !owner, style: "border:0;padding:0;margin:0" },
+        h("label", {}, "Name"), f.name, h("label", {}, "What it does"), f.job, h("label", {}, "Listens for"), f.trigger, h("label", {}, "Team"), f.team,
+        h("label", {}, "Hands its work to"), f.to,
+        h("button", { class: "primary", id: "addagent", style: "margin-top:10px", onclick: async () => {
+          try { const r = await post("/api/agents/custom", { by: me, name: f.name.value, job: f.job.value, trigger: f.trigger.value, team: f.team.value, to: f.to.value });
+            toast(`${r.name} added: it listens from now on`); focus = { agent: r.id }; editing = false; await load(); }
+          catch (e) { toast(e.message); } } }, "Add agent"))];
+    for (const x of [f.name, f.job]) x.oninput = () => { editing = !!(f.name.value || f.job.value); };
+  }
+  $("agentbox").replaceChildren(as, ...(body || []).filter(Boolean));
+}
+
+// ▶ Play: the history rebuilds by itself, like a film of the office
+let playing = false;
+$("play").onclick = async () => {
+  if (playing) { playing = false; return; }
+  playing = true; live = false; $("play").textContent = "❚❚ Pause";
+  const max = +$("upto").max, step = Math.max(1, Math.ceil(max / 90));
+  for (let v = steps?.length ? 1 : Math.max(1, max - step * 90); v <= max && playing; v += step) {
+    $("upto").value = v; await load(slideTo(v)); await new Promise((r) => setTimeout(r, steps?.length ? 450 : 120));
+  }
+  if (playing) { $("upto").value = max; live = true; await load(); }
+  playing = false; $("play").textContent = "▶ Play";
+};
+$("deal").onchange = () => { pos = {}; playing = false; selected = null; focus = null; editing = false; $("find").value = ""; load(); };
+$("find").onchange = () => {
+  const q = $("find").value.trim().toLowerCase();
+  const d = dealList.find((x) => `${x.label} · ${x.props.customer}`.toLowerCase() === q) || dealList.find((x) => `${x.label} ${x.props.customer}`.toLowerCase().includes(q));
+  if (d) { $("deal").value = d.deal; $("deal").onchange(); $("find").value = `${d.label} · ${d.props.customer}`; } else toast("No deal matches");
+};
+$("upto").oninput = () => { live = +$("upto").value === +$("upto").max; load(live ? undefined : slideTo(+$("upto").value)); };
 await deals();
 await load();
 follow(() => { if (live) { deals(); load(); } });

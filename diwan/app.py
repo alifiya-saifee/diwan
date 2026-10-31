@@ -74,6 +74,8 @@ async def morning_loop():
         from diwan.agents import rhythm, studio
         if (ref := rhythm.due(S.office)):  # the studio's automatic run, when the Marketing manager turned it on
             asyncio.create_task(studio.run(S.office, ref))
+        if rhythm.refresh_due(S.office):  # the daily refresh of competitor posts, when the Marketing manager turned it on
+            asyncio.create_task(asyncio.to_thread(studio.refresh_competitors, S.office, by="mrival", auto=True))
         if env("LISTING_FEED_URL") and ticks % 30 == 0:
             try:
                 xml = await asyncio.to_thread(portals.fetch_feed)
@@ -105,6 +107,12 @@ async def lifespan(_):
 
 
 app = FastAPI(title="Diwan", lifespan=lifespan)
+from diwan.brand_api import router as brand_router  # noqa: E402
+app.include_router(brand_router)
+from diwan.knowledge_api import router as knowledge_router  # noqa: E402
+app.include_router(knowledge_router)
+from diwan.deal_desk import router as desk_router  # noqa: E402
+app.include_router(desk_router)
 
 
 @app.middleware("http")
@@ -116,10 +124,6 @@ async def fresh_pages(request: Request, call_next):
     return res
 
 
-from diwan.brand_api import router as brand_router  # noqa: E402
-app.include_router(brand_router)
-from diwan.deal_desk import router as desk_router  # noqa: E402
-app.include_router(desk_router)
 def g():
     return S.office.graph()
 

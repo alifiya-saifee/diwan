@@ -121,9 +121,11 @@ def marketing_graph(office: Office, upto: int | None = None) -> dict:
             edges.append({"src": a, "dst": b, "rel": rel})
 
     brand_fields, scripts, latest_idea, requests = {}, {}, {}, {}
+    listings: dict[str, dict] = {}
     for e in evs:
         t, c = e["type"], e["content"]
         if t == "listing.added":
+            c = listings[c["ref"]] = listings.get(c["ref"], {}) | c  # a feed update carries only the fields that changed
             node(f"listing:{c['ref']}", "listing", f"{c['ref']} · {c['title']}, {c['community']} · AED {c['price_aed']:,} · features: "
                  f"{', '.join(c.get('features') or []) or 'none'} · permit {c.get('permit') or 'MISSING'}")
         elif t == "knowledge.added":

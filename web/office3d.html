@@ -272,6 +272,7 @@ function station(group, id, x, z, color, { scale = 1, screen = true, rotY = 0 } 
   group.add(g);
   const st = { id, g, bot: r.bot, eyeMat: r.eyeMat, home: g.position.clone(), color, glow: 0, bubble: null, bubbleT: 0, walk: null, canvas, tex, tag };
   if (canvas) drawScreen(st);
+  if (id === "rania") addPhone(st);
   return st;
 }
 
@@ -312,6 +313,128 @@ function drawScreen(st) {
   if (lines < 4) x.fillText(line, 12, y);
   if (w?.sample) { x.fillStyle = "#f0b35e"; x.font = "600 11px Inter, system-ui"; x.fillText("SAMPLE", W - 64, H - 10); }
   st.tex.needsUpdate = true;
+}
+
+// ---------- Rania's WhatsApp phone: the line as it really is ----------
+// The screen shows the real conversations (who wrote, what, who is replying, who is waiting) even when nothing is
+// happening. It moves only on real events: a message arriving makes it ring and rise, it stays up "typing" until her
+// reply is logged (held at least a moment so it can be seen), and a handover turns it amber until a person acts.
+// Click it to open that conversation in the Inbox.
+const phones = [];
+let phoneData = { rows: [], counts: {} }, phoneLine = "Sandbox line", phoneLive = null;
+const PH_W = 300, PH_H = 560;
+function addPhone(st) {
+  const c = document.createElement("canvas"); c.width = PH_W; c.height = PH_H;
+  const tex = new THREE.CanvasTexture(c);
+  const g = new THREE.Group();
+  const edge = emissive(0x25d366, .4);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(.52, .94, .05), new THREE.MeshStandardMaterial({ color: 0x0b0e15, metalness: .6, roughness: .3 }));
+  const rim = new THREE.Mesh(new THREE.BoxGeometry(.56, .98, .03), edge); rim.position.z = -.015;
+  const scr = new THREE.Mesh(new THREE.PlaneGeometry(.47, .87), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false })); scr.position.z = .027;
+  for (const m of [body, rim, scr]) { m.userData.phone = true; g.add(m); }
+  // on a stand at the front of the desk, facing the room; raised in front of her face while she answers
+  const rest = new THREE.Vector3(-.5, 1.62, 1.3), hand = new THREE.Vector3(0, 1.95, .95);
+  g.scale.setScalar(1.6); g.position.copy(rest); g.rotation.x = -.25;
+  st.g.add(g);
+  const tag = label("WhatsApp", { size: 24, accent: "#25d366", prio: 1 }); tag.position.set(-.5, 2.75, 1.3); st.g.add(tag);
+  st.phone = { g, c, tex, edge, rest, hand, lift: 0, tag, tagText: "" };
+  phones.push(st);
+  drawPhone(st);
+}
+function phoneState(now = performance.now()) {
+  // ringing → typing → replied, from real events, each shown long enough to see; then the line's resting state
+  const L = phoneLive;
+  if (L) {
+    const age = now - L.t0;
+    if (age < 1200) return "ringing";
+    if ((!L.replied && !L.handed) || age < 2600) return age < 30000 ? "typing" : null;
+    if (L.handed) return age < 14000 ? "handed" : null;
+    if (now - Math.max(L.replied, L.t0 + 2600) < 8000) return "replied";
+  }
+  return null;
+}
+function wrapText(x, text, X, Y, maxW, lh, maxLines) {
+  let line = "", y = Y, n = 0;
+  for (const word of String(text || "").split(/\s+/)) {
+    const t = line ? `${line} ${word}` : word;
+    if (x.measureText(t).width > maxW && line) { x.fillText(line, X, y); y += lh; line = word; if (++n >= maxLines - 1) { line += "…"; break; } } else line = t;
+  }
+  x.fillText(line, X, y); return y + lh;
+}
+function drawPhone(st) {
+  const p = st.phone, x = p.c.getContext("2d"), W = PH_W, H = PH_H, state = phoneState();
+  const need = phoneData.rows.filter((r) => r.attention), waiting = phoneData.rows.filter((r) => r.waiting_min != null);
+  x.fillStyle = "#0b141a"; x.beginPath(); x.roundRect(0, 0, W, H, 26); x.fill();
+  x.fillStyle = "#8696a0"; x.font = "600 15px Inter, system-ui";
+  x.fillText(new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Dubai" }), 20, 26);
+  x.fillStyle = "#1f2c34"; x.fillRect(0, 38, W, 58);
+  x.fillStyle = "#25d366"; x.beginPath(); x.arc(30, 67, 11, 0, Math.PI * 2); x.fill();
+  x.fillStyle = "#e9edef"; x.font = "700 21px Inter, system-ui"; x.fillText("WhatsApp", 50, 74);
+  x.fillStyle = "#8696a0"; x.font = "500 13px Inter, system-ui"; x.fillText(phoneLine, W - 14 - x.measureText(phoneLine).width, 72);
+  let y = 112;
+  const L = phoneLive;
+  if (state && L) {  // the conversation happening now
+    x.fillStyle = "#e9edef"; x.font = "700 17px Inter, system-ui"; x.fillText(L.name, 16, y + 8); y += 22;
+    x.fillStyle = "#202c33"; x.font = "500 16px Inter, system-ui";
+    const inH = Math.min(3, Math.ceil(x.measureText(L.text).width / 230)) * 21 + 18;
+    x.beginPath(); x.roundRect(14, y, 250, inH, 12); x.fill(); x.fillStyle = "#e9edef"; wrapText(x, L.text, 26, y + 24, 226, 21, 3); y += inH + 12;
+    if (state === "ringing") { x.fillStyle = "#25d366"; x.font = "700 17px Inter, system-ui"; x.fillText("● New message", 16, y + 16); }
+    else if (state === "typing") {
+      x.fillStyle = "#005c4b"; x.beginPath(); x.roundRect(W - 120, y, 104, 40, 12); x.fill();
+      const t = performance.now() / 300; x.fillStyle = "#e9edef";
+      for (let i = 0; i < 3; i++) { x.globalAlpha = .4 + .6 * Math.abs(Math.sin(t + i * .7)); x.beginPath(); x.arc(W - 90 + i * 22, y + 20, 6, 0, Math.PI * 2); x.fill(); }
+      x.globalAlpha = 1; x.fillStyle = "#8696a0"; x.font = "500 13px Inter, system-ui"; x.fillText("Rania is typing…", 16, y + 25);
+    } else if (state === "replied") {
+      x.font = "500 16px Inter, system-ui"; const h2 = Math.min(4, Math.ceil(x.measureText(L.reply).width / 230)) * 21 + 18;
+      x.fillStyle = "#005c4b"; x.beginPath(); x.roundRect(W - 266, y, 250, h2, 12); x.fill(); x.fillStyle = "#e9edef"; wrapText(x, L.reply, W - 254, y + 24, 226, 21, 4);
+    } else if (state === "handed") {
+      x.fillStyle = "rgba(240,179,94,.16)"; x.beginPath(); x.roundRect(14, y, W - 28, 64, 12); x.fill();
+      x.fillStyle = "#f0b35e"; x.font = "700 16px Inter, system-ui"; x.fillText(`Passed to ${NAMES[L.handed] || L.handed}`, 26, y + 26);
+      x.font = "500 13px Inter, system-ui"; x.fillText("The customer only hears a broker will reply", 26, y + 48);
+    }
+  } else {  // resting: the real list of conversations, newest first
+    const rows = [...phoneData.rows].sort((a, b) => (b.last_at || "").localeCompare(a.last_at || "")).slice(0, 5);
+    if (!rows.length) {
+      x.fillStyle = "#8696a0"; x.font = "500 17px Inter, system-ui"; x.textAlign = "center";
+      x.fillText("No messages yet", W / 2, 230); x.font = "500 14px Inter, system-ui"; x.fillText("Rania answers here day and night", W / 2, 256); x.textAlign = "left";
+    }
+    for (const r of rows) {
+      x.fillStyle = r.attention ? "#f0b35e" : "#e9edef"; x.font = "700 16px Inter, system-ui"; x.fillText(r.name.slice(0, 20), 16, y + 4);
+      const who = r.mode === "ai" ? "Rania" : NAMES[r.handled_by] || "Person";
+      x.fillStyle = r.mode === "ai" ? "#25d366" : "#7ea6f8"; x.font = "600 12px Inter, system-ui"; x.fillText(who, W - 16 - x.measureText(who).width, y + 4);
+      x.fillStyle = "#8696a0"; x.font = "500 14px Inter, system-ui";
+      const prev = r.attention ? `${r.attention.kind === "call" ? "📞 " : ""}${r.attention.overdue ? "overdue" : `${r.attention.minutes_left}m`} · ${NAMES[r.attention.who] || r.attention.who}`
+        : `${r.last?.type === "sent" ? (r.last.by === "rania" ? "Rania: " : `${NAMES[r.last.by] || ""}: `) : ""}${r.last?.text || ""}`;
+      x.fillText(prev.length > 34 ? prev.slice(0, 33) + "…" : prev, 16, y + 26);
+      x.fillStyle = "#1f2c34"; x.fillRect(16, y + 40, W - 32, 1); y += 56;
+    }
+  }
+  // the footer: the whole line in one sentence
+  x.fillStyle = "#1f2c34"; x.fillRect(0, H - 58, W, 58);
+  x.fillStyle = need.length ? "#f0b35e" : "#8696a0"; x.font = "600 14px Inter, system-ui";
+  x.fillText(`${phoneData.rows.length} chats · ${waiting.length} waiting · ${need.length} ${need.length === 1 ? "needs" : "need"} a person`, 16, H - 24);
+  p.tex.needsUpdate = true;
+  const text = state === "ringing" || state === "typing" ? `WhatsApp · ${L.name}` : need.length ? `WhatsApp · ${need.length} ${need.length === 1 ? "needs" : "need"} a person` : `WhatsApp · ${phoneData.rows.length} chats`;
+  if (text !== p.tagText) {  // the tag readable from far away, rebuilt only when it changes
+    const pos = p.tag.position.clone(); st.g.remove(p.tag);
+    p.tag = label(text, { size: 24, accent: need.length ? "#f0b35e" : "#25d366", prio: 1 }); p.tag.position.copy(pos); st.g.add(p.tag); p.tagText = text;
+  }
+}
+async function loadPhone() {
+  try { phoneData = await api("/api/chats?view=all&person=layla"); } catch { return; }
+  phones.forEach(drawPhone);
+}
+function phoneEvent(e) {
+  const c = e.content || {};
+  if (e.type === "chat.received") phoneLive = { chat: c.chat, name: c.name || phoneData.rows.find((r) => r.phone === c.chat)?.name || `+${c.chat}`, text: c.text, t0: performance.now() };
+  else if (phoneLive && c.chat === phoneLive.chat && (e.type === "chat.sent" || e.type === "chat.suggested") && !phoneLive.replied) { phoneLive.replied = performance.now(); phoneLive.reply = (e.type === "chat.suggested" ? "Suggested: " : "") + c.text; }
+  else if (phoneLive && c.chat === phoneLive.chat && e.type === "chat.handover" && c.mode === "human" && e.actor === "rania") phoneLive.handed = c.by;
+  if (/^(chat\.|attention\.|lead\.)/.test(e.type)) { clearTimeout(phoneEvent.t); phoneEvent.t = setTimeout(loadPhone, 300); }
+}
+function openPhone() {
+  const chat = (phoneState() && phoneLive?.chat) || phoneData.rows.find((r) => r.attention)?.phone ||
+    [...phoneData.rows].sort((a, b) => (b.last_at || "").localeCompare(a.last_at || ""))[0]?.phone;
+  window.open(`inbox.html${chat ? `?chat=${encodeURIComponent(chat)}&as=layla` : "?as=layla"}`, "_blank");
 }
 
 // ---------- HQ: the departments ----------
@@ -552,7 +675,7 @@ const byId = new Map();
 const agentOf = (e) => e.agent && AG[e.agent] ? e.agent : AG[e.actor] ? e.actor : e.type.startsWith("chat.") ? "rania" : e.type === "utterance" ? "scribe" : null;
 function remember(e) {
   const a = agentOf(e);
-  if (!a || ["agent.started", "chat.received", "fact.superseded"].includes(e.type)) return;
+  if (!a || ["agent.started", "chat.received", "fact.superseded", "notify.sent", "notify.read"].includes(e.type)) return;
   lastWork[a] = { agent: a, text: e.type === "agent.pack" ? e.content.pack.verdict : describe(e), at: e.id, sample: !!e.content?.usage?.sample };
 }
 function botFor(agent) {
@@ -566,7 +689,9 @@ function caption(parts) {
 }
 function play(e, quiet = false) {
   byId.set(e.id, e);
+  if (e.type === "notify.read") return;  // someone reading their notices is not office work
   remember(e);
+  if (!quiet) phoneEvent(e);
   const who = agentOf(e);
   if (who) gstate.working[who] = performance.now();
   const cause = e.caused_by && byId.get(e.caused_by), from = cause && agentOf(cause);
@@ -860,7 +985,7 @@ function stopTalk(bye) {
   renderNova();
 }
 $("send").onclick = () => { const t = $("say").value.trim(); if (t) { $("say").value = ""; ask(t); } };
-$("say").onkeydown = (e) => e.key === "Enter" && $("send").onclick();
+$("say").onkeydown = (e) => { if (e.key === "Enter") $("send").onclick(); };
 $("mic").onclick = () => listen(true);
 $("back").onclick = leave;
 
@@ -870,10 +995,11 @@ function hit(ev) {
   const r = renderer.domElement.getBoundingClientRect();
   mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(mouse, camera);
-  return ray.intersectObjects((where === "hq" ? hq : floor.group).children, true).find((i) => i.object.userData.dept || i.object.userData.agent || i.object.userData.core);
+  return ray.intersectObjects((where === "hq" ? hq : floor.group).children, true).find((i) => i.object.userData.phone || i.object.userData.dept || i.object.userData.agent || i.object.userData.core);
 }
 renderer.domElement.addEventListener("click", (ev) => {
   const x = hit(ev); if (!x) return;
+  if (x.object.userData.phone) return openPhone();
   if (where === "hq") {
     const k = x.object.userData.dept || deptOf(x.object.userData.agent);
     if (k === "meet") return enter("meet");
@@ -931,7 +1057,7 @@ window.__diwanOverlaps = () => {  // for the browser test: visible labels that o
   return { overlaps: pairs.length, shown: vis.length, pairs };
 };
 const clock = new THREE.Clock();
-let screenTick = 0;
+let screenTick = 0, phoneTick = 0;
 (function tick() {
   const dt = Math.min(clock.getDelta(), .05), t = clock.elapsedTime;
   const bots = [...Object.values(hqBots), ...Object.values(floor?.stations || {})];
@@ -953,6 +1079,17 @@ let screenTick = 0;
   }
   if (floor) for (const t of floor.teams) if (t.rec) t.rec.material.emissiveIntensity = t.agents.some((a) => agentState(a) === "working") ? (Math.sin(clock.elapsedTime * 6) > 0 ? 3 : .2) : .3;
   if (floor) { floor.core.rotation.y += dt * .4; floor.core.rotation.x += dt * .15; floor.coreIn.scale.setScalar(1 + Math.sin(t * 2) * .08); }
+  const ps = phoneState(), need = phoneData.rows.some((r) => r.attention);
+  for (const st of phones) {  // up in her hand while a message is being answered, on the desk otherwise
+    const p = st.phone, up = ps === "ringing" || ps === "typing" ? 1 : 0;
+    p.lift += (up - p.lift) * Math.min(1, dt * 5);
+    p.g.position.lerpVectors(p.rest, p.hand, p.lift); p.g.rotation.x = -.25 + p.lift * .2;
+    p.tag.position.set(p.g.position.x, p.g.position.y + 1.1, p.g.position.z);
+    p.g.rotation.z = ps === "ringing" ? Math.sin(t * 45) * .07 : 0;
+    p.edge.color.setHex(ps === "handed" || (!ps && need) ? 0xf0b35e : 0x25d366); p.edge.emissive.copy(p.edge.color);
+    p.edge.emissiveIntensity = ps === "ringing" ? 2 + Math.sin(t * 20) : ps ? 1.4 : need ? .8 + Math.sin(t * 3) * .4 : .35;
+  }
+  if (phones.length && (ps || (phoneTick += dt) > 15)) { phoneTick = 0; phones.forEach(drawPhone); }
   if ((screenTick += dt) > .25 && floor) { screenTick = 0; for (const st of Object.values(floor.stations)) if (st.canvas && agentState(st.id) === "working" && ["wave"].includes(KIND[st.id])) drawScreen(st); }
   for (let i = orbs.length - 1; i >= 0; i--) {
     const o = orbs[i]; o.t += dt / 1.15;
@@ -980,10 +1117,17 @@ let screenTick = 0;
 const past = await api("/api/events");
 for (const e of past) { byId.set(e.id, e); remember(e); }
 renderTitle(); renderBar(); renderDemo(); renderSide(); refreshState();
+api("/api/integrations").then((i) => { phoneLine = { aisensy: "AiSensy", cloud: "Meta Cloud API" }[i.provider] || "Sandbox line"; loadPhone(); }).catch(loadPhone);
 follow((evs) => evs.forEach((e) => play(e)), past.at(-1)?.id || 0);
 const q = new URLSearchParams(location.search).get("enter");
 if (q && DEPTS[q]) setTimeout(() => enter(q), 1200);
-Object.assign(window.__diwan, { enter, leave, goStop, play, hqBots });
+Object.assign(window.__diwan, { enter, leave, goStop, play, hqBots, phoneState,
+  phoneXY: () => {  // for the browser test: where Rania's phone is on screen
+    const st = phones.find((s) => s.g.parent?.visible !== false && (where === "hq" ? s === hqBots.rania : s === floor?.stations.rania));
+    if (!st) return null;
+    const v = st.phone.g.getWorldPosition(new THREE.Vector3()).project(camera), r = renderer.domElement.getBoundingClientRect();
+    return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height };
+  } });
 Object.defineProperty(window.__diwan, "floor", { get: () => floor });
 </script>
 </body>

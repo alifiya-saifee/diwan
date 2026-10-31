@@ -30,13 +30,12 @@ TYPES = {
     "sign.link", "sign.signed", "docs.requested", "docs.received", "docs.rejected", "docs.reminded", "docs.confirmed",
     # the content studio: what it saw, what it pinned, what it made, and footage people uploaded
     "post.seen", "post.read", "product.saved", "mchat.said", "mchat.upload", "mchat.analysed", "photos.added", "plan.made", "plan.started", "competitor.checked", "board.pinned", "board.unpinned", "content.made", "footage.added", "step.blocked",
-    "listings.found", "topic.saved", "competitors.refreshed",
     "qa.passed", "qa.failed", "qa.escalated",
     "lobby.posted", "lobby.seen", "lobby.reminded", "lobby.late", "lobby.done", "lobby.cancelled",
     "chat.received", "chat.sent", "chat.suggested", "chat.handover", "appointment.booked", "appointment.cancelled",
     # the lead desk: who owns a lead, what needs a person by when, the Pool, and notices to people
     "lead.assigned", "lead.pooled", "lead.claimed", "attention.raised", "attention.overdue", "attention.cleared",
-    "notify.sent", "notify.read", "listings.synced", 
+    "notify.sent", "notify.read", "listings.synced", "listings.found", "topic.saved", "competitors.refreshed",
     # qualification: the owner's form, the customer type, answers with quotes, and the verdict
     "qualify.form", "qualify.type", "qualify.answer", "qualify.asked", "qualify.passed", "qualify.not_fit", "qualify.open",
     "agent.added", "agent.paused", "agent.resumed", "agent.removed", "lead.recommended", "lead.hot", "lead.kind",

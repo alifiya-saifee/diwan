@@ -1,5 +1,5 @@
 {
- "at": "2026-10-28T10:07:23",
+ "at": "2026-10-31T09:01:39",
  "mode": "rules",
  "suites": {
   "Scribe": {
@@ -82,22 +82,36 @@
    ]
   },
   "Rania": {
-   "passed": 12,
-   "total": 12,
-   "seconds": 0.0,
+   "passed": 14,
+   "total": 14,
+   "seconds": 0.1,
    "cases": [
     {
      "case": "Hi",
      "pass": true,
      "why": "",
-     "reply": "Hi Test, I'm Rania from Diwan Realty. Are you looking to buy, and which area, size and budget do you have in mind?",
+     "reply": "Hi, I'm Rania from Diwan Realty. Are you looking to buy, rent, or sell a property?",
      "by": "rules"
     },
     {
      "case": "Hi → 2 bed in the Marina around 2.7 million",
      "pass": true,
      "why": "",
-     "reply": "Here's what fits:\n• Unit 1204, Marina Crest, Dubai Marina: 2 bed apartment, AED 2,600,000 (ref MC-1204, permit SAMPLE-71204)\nWould you like to see one? Tell me a",
+     "reply": "Thank you, noted. I'll send you the best options once I know a little more. Are you looking to buy, rent, sell or let out a property?",
+     "by": "rules"
+    },
+    {
+     "case": "I want to buy → Dubai Marina → An apartment → 2 bed → Budget is 2.7 million → Cash → Now",
+     "pass": true,
+     "why": "",
+     "reply": "Thank you! Based on what you told me, these fit best:\n1. Unit 1204, Marina Crest, Dubai Marina: 2 bed apartment, AED 2,600,000 (ref MC-1204, permit SAMPLE-71204)",
+     "by": "rules"
+    },
+    {
+     "case": "I want to buy → Dubai Marina → An apartment → 2 bed → Budget is 2.7 million → Cash → Now → The first one",
+     "pass": true,
+     "why": "",
+     "reply": "Great choice! Unit 1204, Marina Crest (MC-1204). I've told Omar, who will call you shortly. Would you like to see it? Omar is free Wednesday 28 Oct, 10:00 AM, We",
      "by": "rules"
     },
     {
@@ -111,14 +125,14 @@
      "case": "Hi → Any 1 bed in Downtown?",
      "pass": true,
      "why": "",
-     "reply": "I don't have a listing that fits that right now. Omar hears about new ones first, so I've passed your brief on.",
+     "reply": "I've passed this to Omar, who hears about new ones first and will contact you with options that fit.",
      "by": "rules"
     },
     {
      "case": "Hi → What are your fees?",
      "pass": true,
      "why": "",
-     "reply": "Our buyer commission is 2% of the price plus VAT. The Dubai Land Department transfer fee is 4%.",
+     "reply": "Our buyer commission is 2% of the price plus VAT. The Dubai Land Department transfer fee is 4%. Are you looking to buy, rent, sell or let out a property?",
      "by": "rules"
     },
     {
@@ -126,28 +140,28 @@
      "pass": true,
      "why": "",
      "reply": "That's one for Omar personally, who will reply to you here.",
-     "by": "rules"
+     "by": "policy"
     },
     {
      "case": "Hi → Can I pay in crypto?",
      "pass": true,
      "why": "",
      "reply": "That's one for Omar personally, who will reply to you here.",
-     "by": "rules"
+     "by": "policy"
     },
     {
      "case": "Hi → Can you give me a discount?",
      "pass": true,
      "why": "",
      "reply": "That's one for Omar personally, who will reply to you here.",
-     "by": "rules"
+     "by": "policy"
     },
     {
      "case": "Hi → What ROI is guaranteed?",
      "pass": true,
      "why": "",
      "reply": "I can't promise returns or yields. Omar can share recent sales and rental data for the area and will reply here.",
-     "by": "rules"
+     "by": "policy"
     },
     {
      "case": "Hi → I want to speak to an agent",
@@ -167,7 +181,7 @@
      "case": "Hi → What time do you open?",
      "pass": true,
      "why": "",
-     "reply": "We're open Monday to Saturday, 10am to 7pm. Viewings run in the same hours.",
+     "reply": "We're open Monday to Saturday, 10am to 7pm. Viewings run in the same hours. Are you looking to buy, rent, sell or let out a property?",
      "by": "rules"
     }
    ]
@@ -175,7 +189,7 @@
   "Nova": {
    "passed": 18,
    "total": 18,
-   "seconds": 0.1,
+   "seconds": 0.2,
    "cases": [
     {
      "case": "Who is paying for Karim?",
@@ -188,7 +202,7 @@
      "case": "What changed on the Marina deal?",
      "pass": true,
      "why": "",
-     "reply": "\"My brother Tariq is helping with the deposit.\" (F2) became \"Actually, forget my brother. I'll pay it all myself.\" (F7). \"Tariq will send the deposit from his a",
+     "reply": "\"My brother Tariq is helping with the deposit.\" (F2) became \"Actually, forget my brother. I'll pay it all myself.\" (F7). It touched: task for Screening analyst:",
      "by": "rules"
     },
     {
@@ -415,12 +429,12 @@
    ]
   },
   "Studio": {
-   "passed": 17,
-   "total": 17,
+   "passed": 14,
+   "total": 14,
    "seconds": 0.1,
    "cases": [
     {
-     "case": "Competitor watch finds every outlier (2x the account's median)",
+     "case": "Competitor watch finds every post above its account's average for its kind",
      "pass": true,
      "why": ""
     },
@@ -440,24 +454,9 @@
      "why": "19"
     },
     {
-     "case": "Finding measured: outliers open with a question",
+     "case": "Why they win claims no pattern from posts nobody has read",
      "pass": true,
-     "why": ""
-    },
-    {
-     "case": "Finding measured: outliers are reels or videos",
-     "pass": true,
-     "why": ""
-    },
-    {
-     "case": "Finding measured: outliers were posted in the evening (6 to 11 PM Dubai)",
-     "pass": true,
-     "why": ""
-    },
-    {
-     "case": "Every finding links example posts",
-     "pass": true,
-     "why": ""
+     "why": "0 patterns"
     },
     {
      "case": "Nothing costly before a person approves the script",
@@ -507,6 +506,6 @@
    ]
   }
  },
- "passed": 78,
- "total": 78
+ "passed": 77,
+ "total": 77
 }

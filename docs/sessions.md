@@ -94,8 +94,8 @@ web/office3d.html`.
 **Goal:** a customer on the sandbox WhatsApp line or an Instagram DM is answered, qualified, assigned, briefed and
 booked correctly, from the knowledge store and catalog, with people in control; Nova runs the office's day.
 
-- [ ] **Fix first:** Rania uses `knowledge.search()` only, so internal-only items never reach a customer (handoff.md issue 1).
-- [ ] **Fix first:** the feed sync keeps a listing's status; an accepted price shows "waiting for the portal" instead of reverting (issue 2).
+- [x] **Fix first:** Rania uses `knowledge.search()` only, so internal-only items never reach a customer (handoff.md issue 1). *Checked in the browser 29 Oct, offline and one live Muse Spark pass ($0.02): an internal item added on the Knowledge page is not in her sources or reply; fees still answered from K3; an edit is used at once.*
+- [x] **Fix first:** the feed sync keeps a listing's status; an accepted price shows "waiting for the portal" instead of reverting (issue 2). *Checked in the browser 29 Oct (offline, a local feed): Hamza proposes 2.35M, Layla accepts, sync → price kept, "waiting for the portal" on card and detail, a task and a notice for Hamza, Rania quotes 2.35M; the portal catching up clears it; a retired listing stays retired with "take it off the portals". Reserved/sold: tested in code only (the page has no control to set them yet).*
 - [ ] Knowledge and catalog: the header search box on every screen; pages work at phone width; then commit the knowledge work.
 - [ ] Intake: duplicates ignored, bursts merged, spam to "not a lead", source tagged (including Marketing posts).
 - [ ] Profiler: tags with quotes, persona checklists, Qualified only when complete and the customer agreed.
@@ -160,6 +160,8 @@ booked correctly, from the knowledge store and catalog, with people in control; 
 A new event shape at a meeting point is written in the changelog before either side builds it.
 
 ## Changelog (one line per shared change or new event shape)
+
+- 30 Oct (Marketing, approved by the product owner): products and services (`diwan/products.py`, event `product.saved`; kept apart from the CRM's listings, so the front desk never offers one as a property). `business` gains `permit` (yes/no) and `languages`; `business.permit_needed(office)`, `business.languages(office)`. `/api/marketing/run` accepts a product ref. `brand.cta` default is now "Message us to find out more." `/api/studio/competitors` also takes `add` / `remove` (one account).
 
 - 30 Oct (Deal desk, shared file `diwan/app.py`): `morning_loop` now calls `documents.sweep(S.office, now)` after `lobby.chase` (one line): Rania's reminders for missing client documents go through `reception._send`, so they show in the Inbox like any message, and stay in the sandbox until a WhatsApp line is connected. **For Front desk & Sales:** the client's confirmed details are `documents.profile(events, deal)` (by party: Emirates ID number, expiry, passport number…, with who confirmed them); please show them on the lead's profile in the Inbox. Public page `web/docs.html`, `/api/docs/<token>`.
 - 30 Oct (Deal desk, shared file `diwan/events.py`): new event types `sign.link`, `sign.signed` (signing a form online) and `docs.requested`, `docs.received`, `docs.rejected`, `docs.reminded`, `docs.confirmed` (documents a client sends, next). Public page `web/sign.html` and `/api/sign/<token>` (no login; a token per signer). The owner's rules gain `sign_link_days` (14) and `discount_approval_pct` (5).

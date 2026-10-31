@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Catalog</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  main { max-width: none; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .bar > * { width: auto; }
+  .bar input[type=number] { width: 120px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+  .card { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: rgba(255, 255, 255, .02); cursor: pointer; }
+  .card:hover { border-color: var(--line-2); }
+  .card.na { border-color: rgba(242, 125, 125, .35); }
+  .ph { aspect-ratio: 16 / 10; background: var(--raise); display: grid; place-items: center; color: var(--faint); font-size: 12px; position: relative; overflow: hidden; }
+  .ph img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ph .tag { position: absolute; top: 8px; left: 8px; }
+  .card .body { padding: 10px 12px; }
+  .card .price { font-weight: 600; font-size: 16px; }
+  .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin: 14px 0; }
+  .layout { display: grid; grid-template-columns: 1fr 380px; gap: 18px; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  aside .panel { position: sticky; top: 72px; max-height: calc(100vh - 90px); overflow: auto; }
+  .hist div { padding: 4px 0; font-size: 12px; border-bottom: 1px solid var(--line); }
+  td .ph { width: 72px; aspect-ratio: 4 / 3; border-radius: 6px; overflow: hidden; }
+  .seg button { padding: 6px 10px; }
+  .seg button.on { background: var(--gold); color: var(--bg); }
+  .head { align-items: flex-end; margin-bottom: 6px; flex-wrap: wrap; }
+  .tablewrap { overflow-x: auto; }
+  .layout > section { min-width: 0; }
+  .ph .count { position: absolute; bottom: 8px; right: 8px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 11px; padding: 2px 7px; border-radius: 99px; }
+  .thumbs { display: flex; gap: 6px; margin-top: 6px; overflow-x: auto; }
+  .thumbs img { width: 64px; height: 44px; object-fit: cover; border-radius: 6px; cursor: pointer; opacity: .65; border: 1px solid var(--line); flex: none; }
+  .thumbs img.on { opacity: 1; border-color: var(--gold); }
+  .credit { font-size: 11px; color: var(--faint); margin-top: 4px; line-height: 1.4; }
+  .credit a { color: var(--muted); }
+  #bigmap { height: min(70vh, 640px); border-radius: 12px; border: 1px solid var(--line); }
+  .minimap { height: 190px; border-radius: 10px; border: 1px solid var(--line); margin-top: 6px; }
+  .mapnote { display: grid; place-items: center; color: var(--muted); font-size: 13px; text-align: center; padding: 16px; }
+  .leaflet-popup-content { font: 13px var(--font); color: #222; }
+  .pin { background: var(--gold); color: #1a1408; font: 700 11px var(--font); padding: 3px 7px; border-radius: 99px; white-space: nowrap;
+         box-shadow: 0 1px 4px rgba(0, 0, 0, .4); border: 1px solid rgba(0, 0, 0, .25); transform: translate(-50%, -50%); display: inline-block; }
+  .pin.na { background: #f27d7d; }
+  .far .pin { font-size: 0; padding: 6px; }  /* zoomed out: dots; prices show from zoom 13 and on hover */
+  #detail .ph { clear: both; }
+  .card .price { white-space: nowrap; }
+  .pin.rent { background: #5ccfb5; }
+  @media (max-width: 600px) { .bar > input, .bar > select { flex: 1 1 45%; width: auto !important; } .seg { margin-left: 0 !important; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="row head">
+    <div><h1>Listings <em>catalog</em></h1>
+      <p class="sub" style="margin:0">From the portal feed and brokers. A listing without a permit is never advertised: Rania and the studio never offer it.
+        <a href="knowledge.html">← Knowledge</a></p></div>
+    <div style="flex:0 0 auto" class="row"><label style="margin:0">Acting as</label><select id="as" style="width:auto"></select></div>
+  </div>
+  <div class="bar" style="margin-top:14px">
+    <input id="q" placeholder="Ref, building or title" style="width:240px">
+    <select id="area"><option value="">Any area</option></select>
+    <select id="completion"><option value="">Any stage (ready, off-plan)</option></select>
+    <select id="type"><option value="">Any type</option></select>
+    <select id="beds"><option value="">Any beds</option><option value="0">Studio</option><option value="1">1 bed</option><option value="2">2 beds</option><option value="3">3 beds</option><option value="4">4 beds</option><option value="5">5+ beds</option></select>
+    <input id="min" type="number" min="0" step="50000" placeholder="Min AED">
+    <input id="max" type="number" min="0" step="50000" placeholder="Max AED">
+    <select id="status"><option value="">Any status</option></select>
+    <select id="agent"><option value="">Any agent</option></select>
+    <select id="offering"><option value="">Sale or rent</option><option value="sale">For sale</option><option value="rent">For rent</option></select>
+    <select id="permit"><option value="">Permit: any</option><option value="yes">Has permit</option><option value="no">No permit (not advertised)</option></select>
+    <label style="margin:0"><input type="checkbox" id="retired" style="width:auto"> Show retired</label>
+    <button id="clear">Clear</button>
+    <span class="seg" style="margin-left:auto"><button id="vgrid" class="on">Photos</button><button id="vtable">Table</button><button id="vmap">Map</button></span>
+  </div>
+  <div class="layout">
+    <section>
+      <div class="row small muted" id="count"></div>
+      <div id="rows" style="margin-top:10px"></div>
+      <div class="pager"><button id="prev">← Previous</button><span id="pg" class="small muted"></span><button id="next">Next →</button></div>
+    </section>
+    <aside><div class="panel" id="detail"><h2>Price changes waiting</h2><div id="props" class="list"></div><p class="small muted" style="margin-top:12px">Click a listing for its details, history and area guide.</p></div></aside>
+  </div>
+</main>
+<script type="module">
+import { h, api, post, header, toast, NAMES } from "./app.js";
+header("knowledge.html");
+const $ = (id) => document.getElementById(id);
+const PEOPLE = [["layla", "Layla · Owner"], ["rashid", "Rashid · Sales manager"], ["maya", "Maya · Marketing manager"], ["omar", "Omar · Broker"], ["hamza", "Hamza · Broker"], ["nadia", "Nadia · Broker"]];
+const store = { get: (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+$("as").replaceChildren(...PEOPLE.map(([v, l]) => h("option", { value: v }, l)));
+$("as").value = store.get("kn.as", "layla");
+const by = () => $("as").value;
+let page = 1, view = store.get("cat.view", "grid"), data, selected = null;
+const aed = (n) => `AED ${(+n).toLocaleString()}`;
+const day = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+const pre = new URLSearchParams(location.search);
+for (const k of ["q", "area", "beds", "permit", "offering"]) if (pre.get(k)) $(k).value = pre.get(k);
+const priceText = (l) => aed(l.price_aed) + (l.offering === "rent" ? " / year" : "");
+
+function photo(l, thumb = false) {
+  const n = (l.photos || []).length;
+  return h("div", { class: "ph" }, l.photo ? h("img", { src: l.photo, alt: "", loading: "lazy" }) : h("span", {}, thumb ? "no photo" : "No photo in the feed yet"),
+    !thumb && !l.advertised && h("span", { class: "chip bad tag" }, "not advertised"),
+    !thumb && n > 1 && h("span", { class: "count" }, `1 / ${n}`));
+}
+
+// demo photos are free-licence pictures of the area or a similar home: each shows its author and licence
+let credits = {};
+api("img/demo/credits.json").then((c) => { credits = c; }).catch(() => {});
+function credit(src) {
+  const c = credits[(src || "").split("/").pop()];
+  if (!src || !src.includes("/img/demo/") || !c) return null;
+  return h("div", { class: "credit" }, "Demo photo of the area or a similar home, not this unit · ",
+    h("a", { href: c.page, target: "_blank", rel: "noopener" }, c.title.replace(/^File:/, "").replace(/\.\w+$/, "")), ` by ${c.author} · ${c.license}`);
+}
+function gallery(l) {
+  const pics = l.photos || [];
+  if (pics.length < 2) return [photo(l), credit(pics[0])];
+  const big = h("img", { src: pics[0], alt: "" }), cap = h("div", {}, credit(pics[0]));
+  const box = h("div", { class: "ph" }, big, !l.advertised && h("span", { class: "chip bad tag" }, "not advertised"));
+  const thumbs = pics.map((src, i) => h("img", { src, alt: `photo ${i + 1}`, class: i ? "" : "on", onclick: (e) => {
+    big.src = src; cap.replaceChildren(credit(src) || ""); for (const t of e.target.parentNode.children) t.className = t === e.target ? "on" : ""; } }));
+  return [box, h("div", { class: "thumbs" }, ...thumbs), cap];
+}
+
+// the map: OpenStreetMap through Leaflet, loaded only when a map is shown; without internet the page says so
+let leaflet = null;
+function needLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  return leaflet ||= new Promise((ok, bad) => {
+    const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";
+    const js = document.createElement("script"); js.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
+    js.onload = () => ok(window.L); js.onerror = () => { leaflet = null; bad(new Error("The map needs an internet connection.")); };
+    document.head.append(css, js);
+  });
+}
+const tiles = (L) => L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap contributors" });
+const pinIcon = (L, p, text) => L.divIcon({ className: "", html: `<span class="pin ${!p.advertised ? "na" : p.offering === "rent" ? "rent" : ""}">${text}</span>`, iconSize: [0, 0] });
+const short = (n) => n >= 1e6 ? `${+(n / 1e6).toFixed(n >= 1e7 ? 0 : 2)}M` : `${Math.round(n / 1e3)}k`;
+let bigmap = null;
+async function drawMap() {
+  const box = h("div", { id: "bigmap", class: "mapnote" }, "Loading the map…");
+  $("rows").replaceChildren(box, h("div", { class: "small muted", style: "margin-top:6px" },
+    "Gold: for sale · green: for rent · red: not advertised (no permit). Click a pin for the listing."));
+  try {
+    const L = await needLeaflet();
+    box.className = ""; box.textContent = "";
+    bigmap?.remove();
+    bigmap = L.map(box, { scrollWheelZoom: true }).setView([25.12, 55.22], 11);
+    tiles(L).addTo(bigmap);
+    const zoomed = () => box.classList.toggle("far", bigmap.getZoom() < 13);
+    bigmap.on("zoomend", zoomed);
+    const pts = [];
+    for (const p of data.pins) {
+      L.marker([p.lat, p.lng], { icon: pinIcon(L, p, short(p.price_aed)) }).addTo(bigmap)
+        .bindTooltip(`${p.ref} · ${p.title} · AED ${p.price_aed.toLocaleString()}${p.offering === "rent" ? " / year" : ""}`, { direction: "top", offset: [0, -8] })
+        .on("click", () => detail({ id: p.id, can_edit: data.rows.find((r) => r.id === p.id)?.can_edit }));
+      pts.push([p.lat, p.lng]);
+    }
+    if (pts.length) bigmap.fitBounds(pts, { padding: [30, 30], maxZoom: 14 });
+    zoomed();
+    if (!data.pins.length) box.append(h("div", { class: "mapnote", style: "position:absolute;inset:0;z-index:500;pointer-events:none" }, "No listing here has a map location."));
+  } catch (e) { box.textContent = e.message; }
+}
+async function miniMap(el, l) {
+  try {
+    const L = await needLeaflet();
+    el.className = "minimap"; el.textContent = "";
+    const m = L.map(el, { zoomControl: false, attributionControl: true, scrollWheelZoom: false }).setView([l.lat, l.lng], 14);
+    tiles(L).addTo(m);
+    L.marker([l.lat, l.lng], { icon: pinIcon(L, l, l.ref) }).addTo(m);
+  } catch (e) { el.textContent = e.message; }
+}
+const statusChip = (r) => h("span", { class: `chip ${r.status === "available" ? "ok" : r.status === "retired" ? "bad" : "warn"}` }, r.status);
+// accepted here, but the portal feed still shows the old value: the listing's agent has a task to update the portal
+const waitChip = (l) => Object.keys(l.portal_pending || {}).length ? h("span", { class: "chip warn", title: "Changed here; the portal has not caught up yet" }, "waiting for the portal") : null;
+const waitText = (l) => Object.entries(l.portal_pending || {}).map(([k, v]) => k === "status" ? `It is ${v.ours} here, but the portals still advertise it.`
+  : k === "price_aed" ? `Price here ${aed(v.ours)}; the portal still shows ${aed(v.portal)}.` : `${k}: ${v.ours} here, ${v.portal} on the portal.`);
+const permitChip = (l) => l.permit ? h("span", { class: "chip" }, `permit ${l.permit}`) : h("span", { class: "chip bad" }, "no permit");
+
+async function load() {
+  const q = new URLSearchParams({ page, size: 50, by: by() });
+  for (const k of ["q", "area", "beds", "status", "agent", "permit", "offering", "completion", "type"]) if ($(k).value) q.set(k, $(k).value);
+  if ($("min").value) q.set("min_price", $("min").value);
+  if ($("max").value) q.set("max_price", $("max").value);
+  if ($("retired").checked) q.set("retired", true);
+  const t0 = performance.now();
+  data = await api(`/api/catalog?${q}`);
+  fill("area", data.areas, "Any area"); fill("completion", data.completions, "Any stage (ready, off-plan)", (c) => c.replace(/^./, (x) => x.toUpperCase())); fill("type", data.types, "Any type"); fill("agent", data.agents, "Any agent", (a) => NAMES[a] || a); fill("status", data.statuses, "Any status");
+  const pages = Math.max(1, Math.ceil(data.total / data.size));
+  const from = data.total ? (page - 1) * data.size + 1 : 0, to = Math.min(page * data.size, data.total);
+  $("count").textContent = `${data.total.toLocaleString()} of ${data.all.toLocaleString()} listings · showing ${from}–${to}`;
+  $("pg").textContent = `page ${page} of ${pages}`;
+  document.querySelector(".pager").style.display = view === "map" ? "none" : "";  // the map shows every filtered listing at once
+  $("prev").disabled = page <= 1; $("next").disabled = page >= pages;
+  if (!data.rows.length) $("rows").replaceChildren(h("div", { class: "panel muted", style: "text-align:center" }, data.all ? "No listing matches these filters. Clear a filter to see more." :
+    "No listings yet. Set the portal feed address in Settings, or add an off-market listing on the Knowledge page."));
+  else if (view === "map") drawMap();
+  else if (view === "grid") $("rows").replaceChildren(h("div", { class: "cards" }, ...data.rows.map(card)));
+  else $("rows").replaceChildren(h("div", { class: "tablewrap" }, table()));
+  $("props").replaceChildren(...(data.proposals.length ? data.proposals.map(proposal) : [h("div", { class: "small muted" }, "No price changes waiting.")]));
+  window.__catalogMs = performance.now() - t0;
+}
+
+function fill(id, vals, any, label = (x) => x) {
+  const keep = $(id).value || pre.get(id) || "";
+  $(id).replaceChildren(h("option", { value: "" }, any), ...vals.map((v) => h("option", { value: v }, label(v))));
+  $(id).value = keep;
+}
+
+function card(r) {
+  const l = r.listing;
+  return h("div", { class: `card ${l.advertised ? "" : "na"}`, "data-ref": l.ref, onclick: () => detail(r) }, photo(l),
+    h("div", { class: "body" },
+      h("div", { class: "row" }, h("span", { class: "price" }, priceText(l)), h("span", { class: "small muted", style: "text-align:right" }, l.ref)),
+      h("div", {}, r.title), h("div", { class: "small muted" }, `${l.beds ? l.beds + " bed" : "Studio"} ${l.type} · ${l.community}`),
+      h("div", {}, statusChip(r), l.offering === "rent" && h("span", { class: "chip ok" }, "for rent"), waitChip(l), permitChip(l), h("span", { class: "chip" }, l.agent_name || "no agent"))));
+}
+
+function table() {
+  return h("table", {}, h("thead", {}, h("tr", {}, ...["", "Ref", "Listing", "Beds", "Price", "Permit", "Status", "Agent"].map((x) => h("th", {}, x)))),
+    h("tbody", {}, ...data.rows.map((r) => { const l = r.listing; return h("tr", { "data-ref": l.ref, style: "cursor:pointer", onclick: () => detail(r) },
+      h("td", {}, photo(l, true)), h("td", { style: "white-space:nowrap" }, l.ref), h("td", {}, r.title, h("div", { class: "small muted" }, l.community)), h("td", {}, l.beds || "Studio"),
+      h("td", { style: "white-space:nowrap" }, priceText(l)), h("td", {}, permitChip(l)), h("td", {}, statusChip(r), waitChip(l), !l.advertised && h("span", { class: "chip bad" }, "not advertised")), h("td", {}, l.agent_name || "—")); })));
+}
+
+async function detail(r) {
+  selected = r.id;
+  const d = await api(`/api/items/${encodeURIComponent(r.id)}/history`), l = d.item.listing, it = d.item;
+  const can = r.can_edit;
+  const price = h("input", { type: "number", value: l.price_aed, min: 0, step: 1000, id: "newprice" });
+  const why = h("input", { placeholder: "Why (kept in the history)", id: "pricewhy" });
+  $("detail").replaceChildren(
+    h("button", { style: "float:right", onclick: () => { selected = null; $("detail").replaceChildren(h("h2", {}, "Price changes waiting"), h("div", { id: "props", class: "list" })); load(); } }, "Close"),
+    h("h2", {}, l.ref), ...gallery(l),
+    h("h3", { style: "margin:10px 0 2px" }, it.title), h("div", { class: "muted" }, `${l.beds ? l.beds + " bed" : "Studio"} ${l.type} · ${l.community}${l.size_sqft ? ` · ${l.size_sqft.toLocaleString()} sq ft` : ""}`),
+    h("div", { class: "price", style: "font-size:20px;margin:6px 0" }, priceText(l), it.version > 1 ? h("span", { class: "chip" }, `v${it.version}`) : null),
+    h("div", {}, statusChip(it), l.offering && h("span", { class: `chip ${l.offering === "rent" ? "ok" : ""}` }, `for ${l.offering}`), waitChip(l), permitChip(l), h("span", { class: "chip" }, l.agent_name || "no agent")),
+    l.description && h("p", { class: "small", style: "margin:8px 0 0" }, l.description),
+    l.lat != null && l.lng != null ? h("div", { class: "mapnote minimap", id: "minimap" }, "Loading the map…") : h("div", { class: "small muted", style: "margin-top:6px" }, "No map location in the feed."),
+    waitChip(l) && h("div", { class: "small", style: "color:var(--warn);margin-top:6px" }, ...waitText(l).map((t) => h("div", {}, t)),
+      h("div", { class: "muted" }, `${l.agent_name || "The listing's agent"} has a task to update the portals. Rania already uses what is set here.`)),
+    !l.advertised && h("p", { class: "small", style: "color:var(--bad)" }, l.permit ? "Not advertised: the listing is not available." : "Not advertised: no permit number. Rania and the studio never offer it until a permit is added."),
+    h("div", { class: "small muted" }, it.used.week ? `cited in ${it.used.week} replies this week` : "cited in 0 replies this week"),
+    it.status !== "retired" && h("div", { style: "margin-top:12px" }, h("h2", {}, can ? "Change the price" : "Propose a new price"),
+      h("div", { class: "row" }, price), h("div", { class: "row", style: "margin-top:6px" }, why,
+        h("button", { class: "primary", id: "pricego", onclick: async () => {
+          try {
+            const res = await post(`/api/items/${encodeURIComponent(r.id)}/edit`, { by: by(), why: why.value, changes: { price_aed: +price.value } });
+            toast(res.proposal ? `Proposed (${res.proposal}): waits for ${res.waits_for.join(" or ")}` : res.version ? `New price saved as version ${res.version}` : "Same price");
+            await load(); detail(r);
+          } catch (e) { toast(e.message); }
+        } }, can ? "Save" : "Propose")),
+      h("div", { class: "small muted", style: "margin-top:4px" }, can ? "Rania quotes the new price from the next message." : "The listing owner accepts or rejects it. A price agreed with one customer belongs in that customer's chat, not here.")),
+    can && it.status !== "retired" && h("button", { style: "margin-top:10px", onclick: async () => {
+      const w = (prompt("Why is this listing retired?") || "").trim(); if (!w) return;
+      try { await post(`/api/items/${encodeURIComponent(r.id)}/retire`, { by: by(), why: w }); toast("Retired"); load(); detail(r); } catch (e) { toast(e.message); } } }, "Retire"),
+    can && it.status === "retired" && h("button", { style: "margin-top:10px", onclick: async () => { await post(`/api/items/${encodeURIComponent(r.id)}/restore`, { by: by() }); toast("Restored"); load(); detail(r); } }, "Restore"),
+    h("h2", { style: "margin-top:16px" }, "Area guide"),
+    ...(d.related.length ? d.related.map((x) => h("div", { class: "small" }, h("a", { href: `knowledge.html?tab=${x.tab}&q=${encodeURIComponent(x.title)}` }, x.title), ` · ${x.text}`))
+      : [h("div", { class: "small muted" }, `No guide for ${l.community} yet. Add one on the Knowledge page, Areas tab.`)]),
+    h("h2", { style: "margin-top:16px" }, "History"),
+    h("div", { class: "hist" }, ...d.history.map((x) => h("div", {}, h("strong", {}, x.what), ` · ${x.by} · ${day(x.at)}`, x.text ? h("div", { class: "muted" }, x.text) : null, x.why ? h("div", { class: "muted" }, `why: ${x.why}`) : null))),
+    h("h2", { style: "margin-top:16px" }, "Price changes waiting"), h("div", { id: "props", class: "list" }));
+  $("props").replaceChildren(...(data.proposals.length ? data.proposals.map(proposal) : [h("div", { class: "small muted" }, "No price changes waiting.")]));
+  if ($("minimap")) miniMap($("minimap"), l);
+}
+
+function proposal(p) {
+  const ch = Object.entries(p.changes).map(([k, v]) => k === "price_aed" ? `price → ${aed(v)}` : `${k}: ${v}`).join("; ");
+  return h("div", { class: "item", "data-proposal": p.id }, h("strong", {}, `${p.id} · ${p.item.replace("listing:", "")}`),
+    h("div", { class: "small muted" }, `${NAMES[p.by] || p.by} proposes ${ch}`), p.why ? h("div", { class: "small muted" }, `why: ${p.why}`) : null,
+    p.can_decide ? h("div", { class: "row", style: "margin-top:6px" },
+      h("button", { class: "primary", onclick: async () => { await post(`/api/proposals/${p.id}/decide`, { accept: true, by: by() }); toast("Accepted: new version saved"); await load(); if (selected) detail({ id: selected, can_edit: true }); } }, "Accept"),
+      h("button", { onclick: async () => { await post(`/api/proposals/${p.id}/decide`, { accept: false, by: by() }); toast("Rejected"); load(); } }, "Reject"))
+      : h("div", { class: "small muted" }, `Waits for ${(p.owners || []).map((o) => NAMES[o] || o).join(" or ")}`));
+}
+
+let t;
+const again = () => { page = 1; clearTimeout(t); t = setTimeout(load, 200); };
+for (const id of ["q", "min", "max"]) $(id).oninput = again;
+for (const id of ["area", "beds", "status", "agent", "permit", "retired", "offering", "completion", "type"]) $(id).onchange = again;
+$("clear").onclick = () => { for (const id of ["q", "min", "max", "area", "beds", "status", "agent", "permit", "offering", "completion", "type"]) $(id).value = ""; $("retired").checked = false; history.replaceState(null, "", "catalog.html"); pre.delete("q"); again(); };
+$("prev").onclick = () => { page--; load(); scrollTo(0, 0); };
+$("next").onclick = () => { page++; load(); scrollTo(0, 0); };
+const setView = (v) => { view = v; store.set("cat.view", v); for (const x of ["grid", "table", "map"]) $(`v${x}`).className = v === x ? "on" : ""; load(); };
+$("vgrid").onclick = () => setView("grid"); $("vtable").onclick = () => setView("table"); $("vmap").onclick = () => setView("map");
+$("as").onchange = () => { store.set("kn.as", by()); load(); };
+setView(view);
+</script>
+</body>
+</html>

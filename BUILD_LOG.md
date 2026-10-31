@@ -164,3 +164,22 @@ Everything in this repository was written during the Meta Global AI Developer Ha
   the hour); a taken time offered the earliest slots of the day, now the nearest; "price please?" matched a knowledge
   card on the word "please"; "what did we sell" was not sent to the analyst; the studio's worker threads and the web
   raced on one database connection (500s); "null" printed on two screens; Instagram chats labelled as WhatsApp.
+
+## 28 Oct 2026: the lead desk
+
+- Assignment: a new lead goes to the listing's agent, otherwise round-robin among brokers on shift and not away,
+  fewest leads today first. Viewings are booked with the listing's agent. Shifts, "away today" and each broker's
+  WhatsApp for notices are set on the Settings page.
+- Attention: whatever Rania hands to a person becomes a card with a due time (15 minutes for a call request or a portal
+  enquiry, 30 for a reply), including a customer writing while a person has the chat and a reply waiting for review.
+  A card leaves only with a recorded action: called, messaged, no answer, or not needed with a reason; a person
+  replying counts as messaged. Past due, the owner is told; untouched for an hour, the lead goes to the Pool for any
+  broker on shift to claim.
+- Notices: every assignment, card, overdue and Pool move, on the Inbox bell and as a browser notification, and on the
+  broker's own WhatsApp through an approved AiSensy template (a business can only start a chat with a template).
+- Portals: listings come from the brokerage's own portal feed (the XML it gives Property Finder, Bayut and Dubizzle),
+  synced every 30 minutes; ones that leave the feed go off-market, ones typed in by hand are untouched. Enquiries
+  arrive on /api/portals/{portal}/lead, signed with that portal's secret, and refused without one. The portals do not
+  publish their partner API specs, so field names follow the common feed and lead formats until a key brings the docs.
+- A portal enquiry is a call card for the listing's agent; Rania does not message first, because a portal enquiry does
+  not open WhatsApp's 24-hour window.

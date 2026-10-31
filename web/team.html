@@ -78,7 +78,7 @@ async function show(id) {
     const t = lessonBox.value.trim(); if (!t) return;
     try { await post("/api/lessons", { text: t, agent: id }); toast("Lesson saved"); show(id); } catch (e) { toast(e.message); }
   };
-  lessonBox.onkeydown = (e) => e.key === "Enter" && addLesson();
+  lessonBox.onkeydown = (e) => { if (e.key === "Enter") addLesson(); };
   document.getElementById("detail").replaceChildren(
     h("h2", {}, a.role), h("h1", { style: "font-size:30px" }, a.name),
     h("div", { class: "seg" }, ...Object.entries(a.levels).map(([k, label]) => h("button", { class: a.autonomy === k ? "on" : "",
