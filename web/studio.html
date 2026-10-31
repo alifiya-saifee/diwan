@@ -169,6 +169,10 @@
   ol.chain li { display: flex; gap: var(--s1); border: 1px solid var(--line); border-radius: 10px; padding: var(--s2); font-size: 13px; min-width: 0; }
   ol.chain .m { font-weight: 700; } ol.chain .c-done .m { color: var(--green); } ol.chain .c-waiting { border-color: var(--gold); } ol.chain .c-waiting .m { color: var(--gold); }
   ol.chain .c-not-yet { opacity: .6; }
+  .slideshow { display: flex; gap: var(--s2); overflow-x: auto; padding: var(--s1) 0; } .slideshow img { height: 280px; border-radius: 8px; }
+  ol.stagebar { list-style: none; margin: 0 0 var(--s2); padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); } ol.stagebar li { border: 1px solid var(--line); border-radius: 10px; padding: var(--s1) var(--s2); font-size: 13px; }
+  .tag.st-approved { color: var(--green); } .tag.st-pending { color: var(--gold); } #tab-plan ol.days li { flex-wrap: wrap; }
+  ol.chain.nine { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: var(--s2); } @media (max-width: 800px) { ol.chain.nine { grid-template-columns: minmax(0, 1fr); } }
   ol.days { list-style: none; margin: 0; padding: 0; } ol.days li { display: flex; gap: var(--s2); align-items: center; padding: var(--s1) 0; border-bottom: 1px solid var(--line); font-size: 13.5px; flex-wrap: wrap; }
   ol.days .d { width: 92px; color: var(--gold); font-weight: 600; } ol.days li.done { opacity: .7; } .moves { display: flex; gap: 4px; } .moves button { padding: 2px 10px; }
   .planpanel .row { align-items: center; gap: var(--s2); flex-wrap: wrap; } .planpanel h2 { margin: 0; }
@@ -217,12 +221,25 @@
   <div class="bar" id="top"></div>
   <nav class="tabs" role="tablist" aria-label="Studio" id="tabs">
     <button role="tab" id="t-run" aria-controls="tab-run" data-tab="run">Run</button>
+    <button role="tab" id="t-plan" aria-controls="tab-plan" data-tab="plan">Plan</button>
     <button role="tab" id="t-competitors" aria-controls="tab-competitors" data-tab="competitors">Competitors</button>
+    <button role="tab" id="t-results" aria-controls="tab-results" data-tab="results">Results</button>
     <button role="tab" id="t-setup" aria-controls="tab-setup" data-tab="setup">Setup</button>
   </nav>
   <div class="banner" id="bizbanner" role="status" hidden></div>
 
   <section role="tabpanel" id="tab-run" aria-labelledby="t-run">
+    <section class="panel planpanel" id="jpanel"><div class="row"><h2 class="grow">Your next post</h2><span class="note" id="jstage"></span></div>
+      <div id="jbody"></div>
+      <details id="jmoment"><summary>Something just happened</summary>
+        <p class="note">News, a new law, a market change. It goes before the plan for 7 days, or until the date you give. Scripts use only the facts you write here.</p>
+        <label for="jm-title">What happened</label><input id="jm-title" autocomplete="off">
+        <label for="jm-what">The facts a video may use</label><textarea id="jm-what" rows="3"></textarea>
+        <label for="jm-until">Holds until (optional)</label><input id="jm-until" type="date">
+        <label for="jm-files">Photos from it (optional)</label><input id="jm-files" type="file" accept="image/*" multiple>
+        <div class="row"><button id="jm-add">Put it first</button><span class="fieldmsg" id="jm-msg" role="status"></span></div>
+      </details>
+    </section>
     <section class="panel planpanel" id="planpanel"><div class="row"><h2 class="grow">The plan</h2><span class="note" id="nextrun"></span><button id="planbtn">Plan from today</button></div>
       <div id="plan"></div>
       <h2 class="sub">Where this listing's reel is now</h2><ol class="chain" id="chain"></ol>
@@ -290,6 +307,33 @@
           <div class="ads" id="adlist"></div>
         </div>
       </div>
+    </section>
+  </section>
+
+  <section role="tabpanel" id="tab-plan" aria-labelledby="t-plan" hidden>
+    <section class="panel planpanel"><div class="row"><h2 class="grow">Waiting for you</h2><span class="note" id="pl-count"></span></div><div id="pl-wait"></div></section>
+    <section class="panel planpanel"><div class="row"><h2 class="grow">The plan</h2><label for="pl-span">Plan ahead</label>
+      <select id="pl-span"><option value="7">1 week</option><option value="14">2 weeks</option><option value="31">1 month</option></select><button class="primary" id="pl-make">Make the plan</button></div>
+      <p class="note">Nothing is written or paid for until a day comes or you press Write it now. Approved stays on its day. Rejected comes off, and the day takes the next best post.</p>
+      <div id="pl-days"></div></section>
+    <section class="panel planpanel"><h2>Going out</h2><div id="pl-out"></div></section>
+    <section class="panel planpanel"><h2>Came off</h2><div id="pl-off"></div></section>
+  </section>
+
+  <section role="tabpanel" id="tab-results" aria-labelledby="t-results" hidden>
+    <section class="panel"><h2>Today</h2><div id="mktday"></div></section>
+    <section class="panel"><h2>Where each post is</h2><ol class="stagebar" id="mktstages"></ol><div class="scroll"><table class="kpi" id="mktpieces"></table></div></section>
+    <section class="panel"><h2>What each post brought</h2><p class="note" id="mktweekly"></p><div class="scroll"><table class="kpi" id="mktposts"></table></div></section>
+    <section class="panel"><h2>Campaigns</h2><p class="note" id="mktcap"></p><div class="scroll"><table class="kpi" id="mktcamps"></table></div>
+      <details id="cp-new"><summary>Plan a campaign</summary>
+        <p class="note">Diwan drafts the ad from the approved script. You launch it in Ads Manager and pay; nothing launches from here.</p>
+        <label for="cp-goal">Goal</label><input id="cp-goal" autocomplete="off">
+        <label for="cp-aud">Audience</label><input id="cp-aud" autocomplete="off">
+        <label for="cp-budget">Budget (AED)</label><input id="cp-budget" type="number" min="1">
+        <label for="cp-days">Days</label><input id="cp-days" type="number" min="1">
+        <div class="row"><button id="cp-add">Draft it for the post selected above</button><span class="fieldmsg" id="cp-msg" role="status"></span></div>
+      </details>
+      <div class="row"><button id="cp-spend">Read spend from the ad account</button></div>
     </section>
   </section>
 
@@ -376,6 +420,11 @@
         <div><label for="rh-months">Why they win compares posts from the last (months)</label><input type="number" min="1" max="60" id="rh-months"></div>
         <div><label for="rh-share">Informational videos, as a share of all (%)</label><input type="number" min="0" max="100" id="rh-share"></div>
         <div><label for="rh-topic">Don't repeat a topic within (days)</label><input type="number" min="0" max="60" id="rh-topic"></div>
+        <div><label class="check" for="rh-autopost"><input type="checkbox" id="rh-autopost"> Post by itself at the approved time</label></div>
+        <div><label class="check" for="rh-brief"><input type="checkbox" id="rh-brief"> An automatic run waits for a yes on the brief</label></div>
+        <div><label for="rh-archive">Archive live posts after (days)</label><input type="number" min="0" id="rh-archive"></div>
+        <div><label for="rh-adbudget">Ad budget a month (AED)</label><input type="number" min="0" id="rh-adbudget"></div>
+        <div><label for="rh-cpl">Limit per qualified lead (AED)</label><input type="number" min="0" id="rh-cpl"></div>
         <div class="wide"><label class="check" for="rh-refresh"><input type="checkbox" id="rh-refresh"> Refresh competitor posts every day</label>
           <p class="note">Instagram doesn't say when a competitor posts, so Diwan checks: once a day at this hour it re-reads their recent posts (new ones, and the likes and comments of the old), has the model read the new ones, and updates Why they win. Instagram reads cost nothing; the model reading is cents.</p></div>
         <div><label for="rh-refresh-at">Refresh at</label><input type="time" id="rh-refresh-at"></div>
@@ -428,7 +477,7 @@ const NAME = { mrival: "Competitor watch", mtrend: "Trend scout", mtrans: "Trans
 const BRAND_GROUPS = [["Who we are", ["name", "positioning", "audience"]], ["How we sound", ["voice", "say"]], ["Rules", ["avoid", "never_claim"]],
   ["Sign-off & hashtags", ["cta", "hashtags"]]];
 let last = {}, lastAt = {};
-const fromText = (ids) => (ids || []).map((x) => x.startsWith("listing:") ? `the listing ${x.slice(8)}` : x.startsWith("product:") ? `the product ${x.slice(8)}` : `${x} "${data.board.find((b) => b.id === x)?.title || "card not on the board"}"`).join("; ");
+const fromText = (ids) => (ids || []).map((x) => x.startsWith("listing:") ? `the listing ${x.slice(8)}` : x.startsWith("product:") ? `the product ${x.slice(8)}` : x.startsWith("topic:") ? "the facts given" : `${x} "${data.board.find((b) => b.id === x)?.title || "card not on the board"}"`).join("; ");
 
 // ---------- tabs ----------
 function tabs(navId, attr, panelPrefix, initial, onShow) {
@@ -452,14 +501,26 @@ function tabs(navId, attr, panelPrefix, initial, onShow) {
   show(buttons.some((b) => b.dataset[attr] === initial) ? initial : buttons[0].dataset[attr]);
   return show;
 }
-const showTab = tabs("tabs", "tab", "tab-", location.hash.slice(1), (n) => history.replaceState(null, "", `#${n}`));
+const showTab = tabs("tabs", "tab", "tab-", location.hash.slice(1), (n) => { history.replaceState(null, "", `#${n}`); if (n === "results") loadResults(); if (n === "plan") loadPlan(); });
 tabs("subtabs", "sub", "sub-", "overview");
 const days = (from, to) => Math.max(0, Math.round((new Date((to || new Date().toISOString().slice(0, 10)) + "T12:00:00Z") - new Date(from + "T12:00:00Z")) / 864e5));
 
+let loads = 0;  // refreshes overlap: only the newest one draws, or an older answer brings back a card just decided
 async function load() {
-  data = await api(`/api/studio?ref=${ref}`);
-  if (data.listings.length && !data.listings.some((l) => l.ref === ref)) { ref = data.listings[0].ref; data = await api(`/api/studio?ref=${ref}`); }
-  const evs = await api("/api/events");
+  const mine = ++loads;
+  if (!data) $("top").textContent = "Loading the studio…";
+  let d, evs;
+  try {
+    d = await api(`/api/studio?ref=${ref}`);
+    if (mine !== loads) return;
+    if (d.listings.length && !d.listings.some((l) => l.ref === ref)) { ref = d.listings[0].ref; d = await api(`/api/studio?ref=${ref}`); if (mine !== loads) return; }
+    evs = await api("/api/events");
+  } catch {
+    if (mine === loads && !data) { $("top").textContent = "Can't reach Diwan right now. Trying again…"; setTimeout(load, 3000); }
+    return;
+  }
+  if (mine !== loads) return;
+  data = d;
   last = {}; lastAt = {};
   for (const e of evs) {
     if (e.type === "agent.pack" && NAME[e.agent]) last[e.agent] = e.content.pack.verdict;
@@ -479,7 +540,7 @@ function render() {
   $("top").replaceChildren(
     h("div", { class: "left" }, h("h1", {}, "The ", h("em", {}, "studio")),
       h("select", { "aria-label": "Listing", onchange: (e) => { ref = e.target.value; load(); } }, data.listings.map((l) => h("option", { value: l.ref, selected: l.ref === ref }, `${l.kind === "listing" ? "" : l.kind === "service" ? "Service · " : l.kind === "topic" ? "Topic · " : "Product · "}${l.kind === "topic" ? "" : l.ref + " · "}${l.title}${data.permit_needed && !l.permit ? " (no permit)" : ""}`))),
-      h("button", { class: "primary", id: "runbtn", onclick: async () => { await post(`/api/marketing/run?ref=${ref}`); showTab("run"); toast("Running: watch it here or on the Marketing floor"); } }, (() => { const k = (data.listings.find((l) => l.ref === ref) || {}).kind; return k === "listing" ? "Run this listing" : k === "topic" ? "Make an informational video" : "Make a reel for this"; })()),
+      h("button", { class: "primary", id: "runbtn", onclick: async () => { await post(`/api/marketing/run?ref=${ref}`); showTab("run"); toast("Running: watch it here or on the Marketing floor"); } }, (() => { const k = (data.listings.find((l) => l.ref === ref) || {}).kind; return k === "listing" ? "Run this listing" : data.journey.shape && data.journey.next && data.journey.next.ref === ref ? "Write this post" : k === "topic" ? "Make an informational video" : "Make a reel for this"; })()),
       h("a", { class: "btn", href: "office3d.html?enter=mkt" }, "Watch on the floor"),
       h("button", { id: "talkbtn", onclick: () => openChat({ ref: () => ref }) }, "Talk to the Marketing lead")),
     h("div", { class: "right" },
@@ -492,7 +553,7 @@ function render() {
   if (miss.length) $("bizbanner").replaceChildren(h("span", {}, `Set your ${miss.join(" and ").toLowerCase()} in Setup first: the trend search, competitor suggestions and Why they win wait for them.`),
     h("button", { onclick: () => { showTab("setup"); $("bz-industry").focus(); } }, "Open Setup"));
   $("compnote").textContent = `Instagram business or creator accounts of ${industryWords()} you compete with. Each one is checked as you add it; their public posts are read with our own account. They never see it.`;
-  renderPlan(); renderChain(); renderRun(); renderCompetitors(c); renderAccounts(); renderRefresh(); renderTopics();
+  renderJourney(); renderPlan(); renderChain(); renderRun(); renderCompetitors(c); renderAccounts(); renderRefresh(); renderTopics();
 }
 
 // ---------- run tab ----------
@@ -510,12 +571,22 @@ function renderRun() {
       h("span", { class: "nm" }, NAME[id]), h("span", { class: "tx" }, b ? `Waiting: ${b}` : t || "Not run yet"));
   }))));
   $("footage").hidden = !data.script_approved;
-  const turn = [...data.approvals.map((r) => r.kind === "use_script" ? scriptCard(r) : h("div", { class: "item" },
+  const turn = [...data.approvals.map((r) => r.kind === "use_script" ? scriptCard(r) : r.kind === "approve_brief" ? h("div", { class: "item" }, h("div", {}, h("b", {}, `Waiting for ${data.approvers.script.label}: `), r.text),
+    h("div", { class: "row" }, h("span", { class: "grow" }), h("button", { onclick: () => decide(r.id, "reject", "", approver("script")) }, "Not this one"), h("button", { class: "primary", onclick: () => decide(r.id, "approve", "", approver("script")) }, "Write the scripts"))) : h("div", { class: "item" },
     h("div", {}, h("b", {}, `Waiting for ${data.approvers.publish.label}: `), r.text),
-    h("div", { class: "row" }, h("span", { class: "grow" }),
-      h("button", { onclick: () => decide(r.id, "reject", prompt("Why?") || "", approver("publish")) }, "Reject"),
-      h("button", { class: "primary", onclick: () => decide(r.id, "approve", "", approver("publish")) }, "Approve & publish")))),
-    data.script_approved ? h("div", { class: "item" }, h("b", {}, "Production: "), "the broker has the film list. Or make the video without filming, one of two ways:",
+    h("div", { class: "row" }, h("label", { for: `at-${r.id}` }, "Or choose the time"), h("input", { type: "datetime-local", id: `at-${r.id}` })),
+    h("div", { class: "row" }, h("input", { class: "grow change", id: `chg-${r.id}`, placeholder: "Change something, e.g. shorter caption, a different first photo", "aria-label": "Change this post" }),
+      h("button", { onclick: () => { const note = $(`chg-${r.id}`).value.trim(); if (!note) return toast("Say what to change"); decide(r.id, "revise", note, approver("publish")); } }, "Ask for change"),
+      h("button", { onclick: () => decide(r.id, "reject", prompt("Why?") || "", approver("publish")) }, "Stop this post"),
+      h("button", { onclick: () => decide(r.id, "approve", "now", approver("publish")) }, "Post now"),
+      h("button", { class: "primary", onclick: () => decide(r.id, "approve", "", approver("publish"), null, $(`at-${r.id}`).value || null) }, "Approve for this time")))),
+    data.made.scheduled ? h("div", { class: "item" }, h("b", {}, `Approved: goes out ${new Date(data.made.scheduled.at).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })}. `),
+      h("button", { onclick: async () => { const r = await post("/api/studio/post-now", { ref, by: me() }); toast(r.ok ? "Posted" : `Not posted yet: ${(r.needs || [r.error]).join("; ")}`); await load(); } }, "Post now"),
+      h("button", { onclick: async () => { await post("/api/studio/unschedule", { ref, by: me() }); await load(); } }, "Cancel it")) : "",
+    data.made.slides ? h("div", { class: "item" }, h("b", {}, `The post: ${data.made.slides.images.length} image${data.made.slides.images.length === 1 ? "" : "s"}`),
+      data.made.slides.people ? h("p", { class: "note" }, `${data.made.slides.people} show people: check they agreed before publishing.`) : "",
+      h("div", { class: "slideshow" }, ...data.made.slides.images.map((x) => h("img", { src: x.served, alt: x.text })))) : "",
+    data.script_approved && !data.made.slides ? h("div", { class: "item" }, h("b", {}, "Production: "), "the broker has the film list. Or make the video without filming, one of two ways:",
       h("div", { class: "two" },
         h("div", { class: "way" }, h("b", {}, "Free video"), h("p", { class: "note" }, `The computer's voice (${data.free_video.voice}) reads the script over the listing's photos with a slow zoom, the price card and an end card. No avatar, no cost. ${data.free_video.photos} photo${data.free_video.photos === 1 ? "" : "s"} ready.`),
           h("div", { class: "row" }, h("input", { type: "file", id: "photos", accept: "image/*", multiple: true, "aria-label": "Add photos of the listing" }), h("button", { onclick: addPhotos }, "Add photos")),
@@ -547,10 +618,11 @@ function scriptCard(r) {
     h("div", { class: "opts" }, ...r.options.map((o, i) => h("div", { class: "opt", "data-script": o.id },
       h("div", {}, h("span", { class: "tag" }, `${i + 1} · ${o.angle}`), h("span", { class: "note" }, `${o.why || ""} · ${o.via}${o.format ? ` · ${o.format}` : ""}${o.revises ? ` · revised from ${o.revises}` : ""}`)),
       h("pre", {}, [o.hook_en, o.hook_ar, "", ...o.lines_en].join("\n")),
+      o.slides ? h("div", { class: "slidesplan" }, h("b", {}, `${o.slides.length} image${o.slides.length === 1 ? "" : "s"}`), ...o.slides.map((s, k) => h("p", { class: "note" }, `${k + 1}. ${s.photo ? s.photo.split(/[\\/]/).pop() : "graphic"}: ${s.text}`))) : "",
       o.shots && o.shots.length ? h("details", { class: "vplan" }, h("summary", {}, `Video plan: ${o.shots.length} shots, about ${Math.round(o.shots[o.shots.length - 1].at + 3)} seconds`),
         h("div", { class: "scroll" }, h("table", { class: "kpi" }, h("tr", {}, ...["At", "On screen", "Words on screen", "Said", "Cut"].map((x) => h("th", {}, x))),
           ...o.shots.map((r) => h("tr", {}, h("td", {}, `${r.at}s`), h("td", {}, r.show), h("td", {}, r.text || "—"), h("td", {}, r.say), h("td", {}, r.cut)))))) : "",
-      h("p", { class: "note" }, `Builds on: ${o.cards && o.cards.length ? fromText(o.cards) : `the listing ${ref} (no research card)`}`),
+      h("p", { class: "note" }, `Builds on: ${o.cards && o.cards.length ? fromText(o.cards) : `${(data.listings.find((l) => l.ref === ref) || {}).kind === "topic" ? "the facts given" : `the listing ${ref}`} (no research card)`}`),
       ...(o.built_like || []).map((t) => h("p", { class: "builtlike" }, t)),
       o.own ? (o.problems && o.problems.length ? h("div", { class: "stale" }, h("b", {}, `Your script: ${o.problems.length} thing${o.problems.length > 1 ? "s" : ""} to fix before it can be used. `),
         h("ul", {}, ...o.problems.map((t) => h("li", {}, t)))) : h("p", { class: "note ok" }, "Your script passed every check.")) : "",
@@ -576,8 +648,8 @@ $("ownsend").onclick = async (e) => {
 };
 const approver = (role) => data.approvers[role].id || undefined;  // the person set in Setup; else the server's default
 const me = () => (data && data.approvers.script.id) || undefined;  // no sign-in yet: actions are recorded as the person who picks scripts
-async function decide(id, decision, note = "", by = undefined, choice = null) {
-  const r = await post(`/api/requests/${id}/decide`, { decision, by, note, choice });
+async function decide(id, decision, note = "", by = undefined, choice = null, at = null) {
+  const r = await post(`/api/requests/${id}/decide`, { decision, by, note, choice, at });
   toast(r.next ? `Done: ${r.next}` : r.ok ? (r.id ? `Published: ${r.id}` : "Done") : `Not published yet: ${(r.needs || [r.error]).join("; ")}`);
   load();
 }
@@ -1018,14 +1090,15 @@ $("apsave").onclick = async () => {
 };
 
 // ---------- rhythm and the plan ----------
-const RH = { auto: "rh-auto", at: "rh-at", rhythm: "rh-rhythm", repeat_angle_days: "rh-angle", repeat_listing_days: "rh-listing", compare_months: "rh-months", refresh: "rh-refresh", refresh_at: "rh-refresh-at", topic_share: "rh-share", repeat_topic_days: "rh-topic" };
-const rhValues = () => Object.fromEntries(Object.entries(RH).map(([k, id]) => [k, k === "auto" || k === "refresh" ? ($(id).checked ? "on" : "off") : $(id).value]));
+const RH = { auto_post: "rh-autopost", approve_brief: "rh-brief", archive_days: "rh-archive", ad_budget: "rh-adbudget", cpl_limit: "rh-cpl", auto: "rh-auto", at: "rh-at", rhythm: "rh-rhythm", repeat_angle_days: "rh-angle", repeat_listing_days: "rh-listing", compare_months: "rh-months", refresh: "rh-refresh", refresh_at: "rh-refresh-at", topic_share: "rh-share", repeat_topic_days: "rh-topic" };
+const RH_SWITCH = ["auto", "refresh", "auto_post", "approve_brief"];
+const rhValues = () => Object.fromEntries(Object.entries(RH).map(([k, id]) => [k, RH_SWITCH.includes(k) ? ($(id).checked ? "on" : "off") : $(id).value]));
 let rhSaved = "";
 function rhState(text, cls) { const dirty = JSON.stringify(rhValues()) !== rhSaved; $("rhmsg").className = cls || (dirty ? "state-dirty" : "state-ok"); $("rhmsg").textContent = text || (dirty ? "Unsaved changes" : "Saved ✓"); }
 async function loadRhythm() {
   const r = await api("/api/studio/rhythm");
   $("rh-rhythm").replaceChildren(...r.rhythms.map((x) => h("option", { value: x, selected: x === r.settings.rhythm }, x[0].toUpperCase() + x.slice(1))));
-  for (const [k, id] of Object.entries(RH)) if (k === "auto" || k === "refresh") $(id).checked = r.settings[k] === "on"; else if (k !== "rhythm") $(id).value = r.settings[k];
+  for (const [k, id] of Object.entries(RH)) if (RH_SWITCH.includes(k)) $(id).checked = r.settings[k] === "on"; else if (k !== "rhythm") $(id).value = r.settings[k];
   rhSaved = JSON.stringify(rhValues()); rhState([r.next ? `Saved ✓ · ${r.next}` : "Saved ✓ · automatic is off: runs start only when you press Run this listing.", r.next_refresh].filter(Boolean).join(" "));
 }
 for (const id of Object.values(RH)) $(id).oninput = () => rhState();
@@ -1040,6 +1113,79 @@ function renderChain() {
   $("chain").replaceChildren(...data.chain.map((c) => h("li", { class: `c-${c.state.replace(" ", "-")}` }, h("span", { class: "m", "aria-hidden": "true" }, MARK[c.state]),
     h("span", {}, h("b", {}, c.step), h("span", { class: "note" }, ` · ${c.state === "waiting" ? "waiting for " : ""}${c.who}`)))));
 }
+async function loadPlan() {
+  const m = await api("/api/marketing/plan"), date = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const when = (t) => new Date(t).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const open = (r) => { location.search = `?ref=${encodeURIComponent(r)}`; };
+  const act = async (path, body) => { const r = await post(path, { ...body, by: me() }); if (r.ok === false) toast(r.error || (r.needs || []).join("; ")); await loadPlan(); return r; };
+  $("pl-count").textContent = m.waiting.length ? `${m.waiting.length} waiting` : "";
+  $("pl-wait").replaceChildren(...(m.waiting.length ? [h("ol", { class: "days" }, ...m.waiting.map((w) => h("li", {}, h("span", { class: "d" }, w.label), h("span", { class: "grow" }, h("b", {}, w.title || ""), h("span", { class: "note" }, w.kind === "publish" ? ` · ${w.text.replace(/^Publish the \S+ /, "")}` : "")),
+      h("span", { class: "moves" }, w.kind === "use_script" ? h("button", { class: "primary", onclick: () => open(w.ref) }, "Read the scripts") : h("button", { class: "primary", onclick: () => act(`/api/requests/${w.id}/decide`, { decision: "approve", note: "" }) }, w.kind === "publish" ? "Approve" : "Write the scripts"),
+        w.kind === "publish" ? h("button", { onclick: () => open(w.ref) }, "Open") : "", h("button", { onclick: () => act(`/api/requests/${w.id}/decide`, { decision: "reject", note: "" }) }, "Reject")))))] : [h("p", { class: "note" }, "Nothing is waiting for you.")]));
+  const TAG = { pending: "Pending", approved: "Approved", written: "Written" };
+  $("pl-days").replaceChildren(...(m.days.length ? [h("ol", { class: "days" }, ...m.days.map((d) => h("li", { class: `pl-${d.state}` }, h("span", { class: "d" }, date(d.date)),
+      h("span", { class: "grow" }, h("b", {}, d.title || "Nothing planned"), d.ref ? h("span", { class: "note" }, ` · ${d.job} · ${d.format}`) : "", h("span", { class: "note", style: "display:block" }, d.why)),
+      h("span", { class: `tag st-${d.state}` }, d.stage || TAG[d.state]),
+      d.state !== "written" && d.ref ? h("span", { class: "moves" }, d.state === "pending" ? h("button", { class: "primary", onclick: () => act("/api/marketing/plan/day", { day: d.date, decision: "approve" }) }, "Approve") : "",
+        h("button", { onclick: async () => { const r = await act("/api/marketing/plan/write", { day: d.date }); if (r.ok) toast("Writing it now: it will appear under Waiting for you."); } }, "Write it now"),
+        h("button", { onclick: () => act("/api/marketing/plan/day", { day: d.date, decision: "reject" }) }, "Reject")) : ""))),
+    ] : [h("p", { class: "note" }, "No plan yet. Choose how far ahead and press Make the plan.")]));
+  const out = [...m.scheduled.map((x) => h("li", {}, h("span", { class: "d" }, "Scheduled"), h("span", { class: "grow" }, h("b", {}, x.title), h("span", { class: "note" }, ` · ${when(x.at)}`)))), ...m.live.map((x) => h("li", {}, h("span", { class: "d" }, "Live"), h("span", { class: "grow" }, h("b", {}, x.title), h("span", { class: "note" }, ` · since ${date(x.since)}`))))];
+  $("pl-out").replaceChildren(out.length ? h("ol", { class: "days" }, ...out) : h("p", { class: "note" }, "Nothing is scheduled yet."));
+  const off = [...m.removed.map((x) => h("li", {}, h("span", { class: "d" }, date(x.date)), h("span", { class: "grow" }, x.title))), ...m.stopped.map((x) => h("li", {}, h("span", { class: "d" }, "Stopped"), h("span", { class: "grow" }, h("b", {}, x.title), h("span", { class: "note" }, ` · ${x.why}`))))];
+  $("pl-off").replaceChildren(off.length ? h("ol", { class: "days" }, ...off) : h("p", { class: "note" }, "Nothing has been rejected."));
+}
+$("pl-make").onclick = async () => { const r = await post("/api/marketing/plan", { days: +$("pl-span").value, by: me() }); if (!r.ok) toast(r.error); await loadPlan(); };
+async function loadResults() {
+  const m = await api("/api/marketing/overview"), day = m.morning, cell = (x) => h("td", {}, x === null || x === undefined || x === "" ? "—" : String(x));
+  const row = (title, items) => items.length ? [h("h3", {}, title), h("ul", {}, ...items.map((t) => h("li", {}, t)))] : [];
+  const parts = [...row("Waiting for you", day.to_approve), ...row("Listings without content", day.need_content.map((x) => `${x.ref} · ${x.title}`)),
+    ...row("Worth a look", day.worth_a_look.map((x) => `${x.title} · ${x.why}`)), ...row("Leads yesterday", Object.entries(day.leads_yesterday).map(([k, v]) => `${k}: ${v}`)),
+    ...row("Paused", day.paused.map((x) => `${x.ref}: ${x.why}`)), ...row("Worth a post", m.ideas.map((x) => `${x.ref} · ${x.why}`)), ...row("Tomorrow", m.evening.tomorrow.map((x) => `${x.ref} at ${new Date(x.at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit" })}`))];
+  $("mktday").replaceChildren(...(parts.length ? parts : [h("p", { class: "note" }, "Nothing is waiting for you today.")]));
+  $("mktstages").replaceChildren(...m.stages.map((s) => h("li", {}, h("b", {}, String(s.n)), h("span", { class: "note" }, ` ${s.label}`))));
+  $("mktpieces").replaceChildren(h("tr", {}, ...["Post", "Stage", "Why"].map((x) => h("th", {}, x))), ...m.pieces.map((p) => h("tr", {}, cell(p.title || p.ref), cell(m.stages.find((s) => s.id === p.stage).label), cell(p.why))));
+  $("mktweekly").textContent = m.weekly.lines.join(" · ");
+  $("mktposts").replaceChildren(h("tr", {}, ...["Post", "Angle", "Leads", "Qualified", "Viewings", "Deals", "Commission (AED)", "Likes", "Comments"].map((x) => h("th", {}, x))),
+    ...m.results.map((r) => h("tr", {}, cell(r.title), cell(r.angle), cell(r.leads), cell(r.qualified), cell(r.viewings), cell(r.deals), cell(r.commission_aed ? r.commission_aed.toLocaleString() : 0), cell(r.likes), cell(r.comments))));
+  $("mktcap").textContent = m.cap.cap ? `AED ${m.cap.committed.toLocaleString()} of AED ${m.cap.cap.toLocaleString()} committed this month.` : "No monthly ad budget set: Setup → Rhythm.";
+  $("mktcamps").replaceChildren(h("tr", {}, ...["Post", "Goal", "Budget", "State", "Leads", "Qualified", "Spend", "Per qualified", ""].map((x) => h("th", {}, x))), ...m.campaigns.map((c) => h("tr", {}, cell(c.ref), cell(c.goal), cell(c.budget), cell(c.state), cell(c.leads), cell(c.qualified), cell(c.spend), cell(c.cost_per_qualified),
+    h("td", {}, c.state === "draft" ? h("button", { onclick: async () => { const ad = prompt("The ad's id in Ads Manager"); if (!ad) return; const r = await post(`/api/marketing/campaigns/${c.id}/start`, { ad_id: ad, by: me() }); if (!r.ok) toast(r.error); await loadResults(); } }, "I launched it") : c.state === "running" ? h("button", { onclick: async () => { await post(`/api/marketing/campaigns/${c.id}/end`, { by: me() }); await loadResults(); } }, "End it") : ""))));
+}
+$("cp-add").onclick = async () => {
+  const r = await post("/api/marketing/campaigns", { ref, by: me(), values: { goal: $("cp-goal").value, audience: $("cp-aud").value, budget: $("cp-budget").value, days: $("cp-days").value } });
+  $("cp-msg").className = r.ok ? "fieldmsg ok" : "fieldmsg bad"; $("cp-msg").textContent = r.ok ? `✓ Drafted: ${r.campaign.copy}` : r.error;
+  if (r.ok) await loadResults();
+};
+$("cp-spend").onclick = async () => { const rows = await api("/api/marketing/campaigns/spend"); toast((rows.find((x) => x.note) || {}).note || "Spend read"); };
+function renderJourney() {
+  const j = data.journey, MARK = { done: "✓", waiting: "●", "not yet": "○" }, say = (posted) => async () => { await post("/api/business", { values: { posted_before: posted }, by: me() }); await load(); };
+  $("jstage").textContent = `Stage: ${j.label} · ${j.posts} post${j.posts === 1 ? "" : "s"} seen${j.waiting ? `, ${j.waiting} approved and waiting` : ""}`;
+  const make = async () => { ref = j.next.ref; await post(`/api/marketing/run?ref=${ref}`); await load(); toast("Writing three scripts: they will wait for you here."); };
+  $("jbody").replaceChildren(h("p", { class: "note" }, j.why),
+    ...(j.ask ? [h("p", {}, "Have you posted on this account before?"), h("div", { class: "row" }, h("button", { onclick: say("no") }, "No, it is new"), h("button", { onclick: say("yes") }, "Yes, we already post"))] : []),
+    ...(j.next ? [h("p", {}, h("b", {}, `${j.next.label}${j.next.title ? `: ${j.next.title}` : ""}`), h("span", { class: "note" }, ` · ${j.next.why}`))] : []),
+    ...(j.shape ? [h("p", {}, h("b", {}, `Format: ${j.shape.label}`), h("span", { class: "note" }, ` · ${j.shape.why} · ${j.shape.usable} usable photo${j.shape.usable === 1 ? "" : "s"}`)),
+      ...j.shape.unusable.map((x) => h("p", { class: "note" }, `Not used · ${x}`)),
+      h("div", { class: "row" }, h("label", { for: "jfmt" }, "Change the format"), h("select", { id: "jfmt", onchange: async (e) => { const r = await post("/api/moments/format", { ref: j.next.ref, format: e.target.value, by: me() }); if (!r.ok) toast(r.error); await load(); } },
+        ...[["reel", "Reel"], ["carousel", "Carousel"], ["image", "Single image"], ["graphic", "Graphic"]].map(([v, t]) => h("option", { value: v, selected: v === j.shape.format }, t))),
+        h("input", { type: "file", id: "jmore", accept: "image/*", multiple: true, "aria-label": "Add more photos" }), h("button", { onclick: async () => { await sendPhotos(j.next.ref, $("jmore").files); await load(); } }, "Add photos"))] : []),
+    ...(j.next && j.next.ref ? [h("button", { class: "primary", id: "jmake", onclick: make }, "Write this post")] : []),
+    ...(j.steps.length ? [h("ol", { class: "chain nine" }, ...j.steps.map((s) => h("li", { class: `c-${s.state.replace(" ", "-")}` }, h("span", { class: "m", "aria-hidden": "true" }, MARK[s.state]), h("span", {}, `${s.n}. ${s.label}`))))] : []),
+    ...j.skipped.map((s) => h("p", { class: "note" }, `Skipped for now · ${s}`)));
+}
+async function sendPhotos(to, files) {
+  if (!files.length) return { ok: true };
+  const fd = new FormData(); fd.append("ref", to); fd.append("by", me()); for (const f of files) fd.append("files", f);
+  const r = await fetch("/api/studio/photos", { method: "POST", body: fd });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); toast(d.detail || "The photos could not be added"); }
+  return r;
+}
+$("jm-add").onclick = async () => {
+  const r = await post("/api/moments", { values: { title: $("jm-title").value, what: $("jm-what").value, until: $("jm-until").value }, by: me() });
+  $("jm-msg").className = r.ok ? "fieldmsg ok" : "fieldmsg bad"; $("jm-msg").textContent = r.ok ? "✓ It goes first now." : r.error;
+  if (r.ok) { await sendPhotos(r.ref, $("jm-files").files); $("jm-files").value = ""; $("jm-title").value = ""; $("jm-what").value = ""; $("jm-until").value = ""; await load(); }
+};
 function renderPlan() {
   const rh = data.rhythm, p = rh.plan, done = new Set(rh.started), title = (ref) => (data.listings.find((l) => l.ref === ref) || {}).title || "";
   $("nextrun").textContent = rh.next || "Automatic is off (Setup → Rhythm).";

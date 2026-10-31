@@ -18,7 +18,8 @@ from diwan.providers import meta
 
 MIN_WINS = 3      # winning posts that must share a trait before it is called a pattern
 GAP = 0.25        # how much more often the winners have it than the ordinary posts (25 percentage points)
-MAX_COVERS = 10   # covers sent in one call, the strongest winners first
+MAX_COVERS = 10   # covers read per account, the strongest winners first
+BATCH = 6         # posts in one call: all of an account's posts in one call took over 3 minutes and timed out
 
 HOOKS = ["a question", "a number or price", "a bold claim", "a story", "a how-to", "something else"]
 SCREENS = ["a person talking to camera", "a walkthrough or tour", "text on images", "photos or footage without a person", "something else"]
@@ -149,39 +150,42 @@ def read(office: Office, cause: int | None = None) -> dict:
         who = "our own account" if acc == US else "one competitor"
         wins = sorted((p for p in todo if studio.is_outlier(p)), key=lambda p: -p["score"])
         covers = {p["id"]: b for p in wins[:MAX_COVERS] if (b := _cover(p.get("thumb")))}
-        known = topics(office, acc)
-        lines = [f"{i}. [{p.get('type') or 'post'}{', cover attached' if p['id'] in covers else ''}] {(p.get('caption') or '(no caption)')[:500]}"
-                 for i, p in enumerate(todo)]
-        order = [p["id"] for p in todo if p["id"] in covers]
-        system = (f"You read social media posts by {who} and describe each one plainly. " + business.describe(office) + "\n"
-                  "For each post: its topic as a short label of 2 to 4 words that fits this industry (reuse a label from the known topics "
-                  "when one fits, so posts on the same subject share a label); its hook, from the first line or the cover; who or what is "
-                  "on screen, from the cover when attached, else from the caption and the post type; what it asks people to do; its tone "
-                  "in 2 to 4 plain words (e.g. warm and personal, formal and factual, playful); the offer it makes, if any; and seasonal: "
-                  "the occasion it is tied to (e.g. Ramadan, Eid, National Day, a holiday sale, the summer), or empty if it is not tied to one.\n"
-                  "carries_over is false when the post is about the competitor's own moment, which another business cannot copy: their "
-                  "event or party, an award, a partnership or signing, a team photo or celebration, a celebrity, a holiday greeting, "
-                  "their own launch. Then why_not says which, in a few words; otherwise why_not is empty.\n"
-                  "For every topic label you use, for_us is one line on what our business could make on that topic, in our own words: "
-                  "never copy their post, and never use their numbers, awards, sales or partners.\n" + brand.brief(office))
-        text = (f"{'Our own account' if acc == US else f'Competitor @{acc}'}. Known topics: {', '.join(known) or 'none yet'}.\nCovers are attached in this order: "
-                f"{', '.join(str([p['id'] for p in todo].index(x)) for x in order) or 'none'}.\nPosts:\n" + "\n".join(lines))
-        try:
-            got = meta.look(system, text, [covers[x] for x in order], SCHEMA, agent="mrival")
-        except meta.MetaError as e:
-            errors.append(f"@{acc}: {e}")
-            continue
-        for_us = {t["label"].strip().lower(): t["for_us"] for t in got.get("topics") or []}
-        for r in got.get("posts") or []:
-            if not (isinstance(r.get("n"), int) and 0 <= r["n"] < len(todo)):
-                continue  # a post number the model invented is dropped
-            p = todo[r["n"]]
-            office.log.append("post.read", actor="mrival", agent="mrival", caused_by=cause, key=f"read{READ}:{p['id']}",
-                              content={"post": p["id"], "account": acc, "topic": r["topic"].strip().lower(), "hook": r["hook"], "on_screen": r["on_screen"],
-                                       "asks": r["asks"], "tone": (r.get("tone") or "").strip().lower(), "offer": r.get("offer") or "no offer",
-                                       "seasonal": (r.get("seasonal") or "").strip(), "v": READ, "carries_over": acc == US or bool(r["carries_over"]), "why_not": r["why_not"] if not r["carries_over"] else "",
-                                       "for_us": for_us.get(r["topic"].strip().lower()) or known.get(r["topic"].strip().lower(), ""), "cover_read": p["id"] in covers})
-            total += 1
+        ordered = wins + [p for p in todo if p not in wins]  # the strongest first: a run cut short has read what matters
+        for at in range(0, len(ordered), BATCH):
+            todo = ordered[at:at + BATCH]
+            known = topics(office, acc)
+            lines = [f"{i}. [{p.get('type') or 'post'}{', cover attached' if p['id'] in covers else ''}] {(p.get('caption') or '(no caption)')[:500]}"
+                     for i, p in enumerate(todo)]
+            order = [p["id"] for p in todo if p["id"] in covers]
+            system = (f"You read social media posts by {who} and describe each one plainly. " + business.describe(office) + "\n"
+                      "For each post: its topic as a short label of 2 to 4 words that fits this industry (reuse a label from the known topics "
+                      "when one fits, so posts on the same subject share a label); its hook, from the first line or the cover; who or what is "
+                      "on screen, from the cover when attached, else from the caption and the post type; what it asks people to do; its tone "
+                      "in 2 to 4 plain words (e.g. warm and personal, formal and factual, playful); the offer it makes, if any; and seasonal: "
+                      "the occasion it is tied to (e.g. Ramadan, Eid, National Day, a holiday sale, the summer), or empty if it is not tied to one.\n"
+                      "carries_over is false when the post is about the competitor's own moment, which another business cannot copy: their "
+                      "event or party, an award, a partnership or signing, a team photo or celebration, a celebrity, a holiday greeting, "
+                      "their own launch. Then why_not says which, in a few words; otherwise why_not is empty.\n"
+                      "For every topic label you use, for_us is one line on what our business could make on that topic, in our own words: "
+                      "never copy their post, and never use their numbers, awards, sales or partners.\n" + brand.brief(office))
+            text = (f"{'Our own account' if acc == US else f'Competitor @{acc}'}. Known topics: {', '.join(known) or 'none yet'}.\nCovers are attached in this order: "
+                    f"{', '.join(str([p['id'] for p in todo].index(x)) for x in order) or 'none'}.\nPosts:\n" + "\n".join(lines))
+            try:
+                    got = meta.look(system, text, [covers[x] for x in order], SCHEMA, agent="mrival")
+            except meta.MetaError as e:
+                errors.append(f"@{acc}: {e}")
+                break  # what was read is kept; the next run goes on from there
+            for_us = {t["label"].strip().lower(): t["for_us"] for t in got.get("topics") or []}
+            for r in got.get("posts") or []:
+                if not (isinstance(r.get("n"), int) and 0 <= r["n"] < len(todo)):
+                    continue  # a post number the model invented is dropped
+                p = todo[r["n"]]
+                office.log.append("post.read", actor="mrival", agent="mrival", caused_by=cause, key=f"read{READ}:{p['id']}",
+                                  content={"post": p["id"], "account": acc, "topic": r["topic"].strip().lower(), "hook": r["hook"], "on_screen": r["on_screen"],
+                                           "asks": r["asks"], "tone": (r.get("tone") or "").strip().lower(), "offer": r.get("offer") or "no offer",
+                                           "seasonal": (r.get("seasonal") or "").strip(), "v": READ, "carries_over": acc == US or bool(r["carries_over"]), "why_not": r["why_not"] if not r["carries_over"] else "",
+                                           "for_us": for_us.get(r["topic"].strip().lower()) or known.get(r["topic"].strip().lower(), ""), "cover_read": p["id"] in covers})
+                total += 1
     pin(office, cause)
     return {"read": total, "errors": errors}
 

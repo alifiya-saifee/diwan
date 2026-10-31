@@ -302,7 +302,14 @@ async def chat_audio(ws: WebSocket, session: str, ref: str = "", by: str = "maya
     def on_turn(t: dict):
         loop.create_task(answer(t["final"]) if "final" in t else ws.send_json(t))
 
+    ended = asyncio.Event()
+
+    def dropped(task: asyncio.Task):
+        if not ended.is_set():  # the person is still talking and nobody is listening
+            loop.create_task(ws.close(4002, "Listening stopped. Press Talk to carry on, or type."))
+
     relay = asyncio.create_task(voice.stream(chunks(), on_turn))
+    relay.add_done_callback(dropped)
     try:
         while True:
             msg = await ws.receive()
@@ -310,7 +317,10 @@ async def chat_audio(ws: WebSocket, session: str, ref: str = "", by: str = "maya
                 await q.put(msg["bytes"])
             elif msg.get("type") == "websocket.disconnect" or msg.get("text") == "end":
                 break
+    except RuntimeError:  # closed from this side, above
+        pass
     finally:
+        ended.set()
         await q.put(None)
         with contextlib.suppress(Exception):
             await asyncio.wait_for(relay, 15)
@@ -390,6 +400,180 @@ def save_topic(body: TopicIn):
     from diwan import topics
     try:
         return {"ok": True, "ref": topics.save(_office(), body.values, by=body.by, ref=body.ref)}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/api/moments")
+def add_moment(body: TopicIn):
+    """Something that just happened: it goes before the plan until its script is approved or its date passes."""
+    from diwan import topics
+    try:
+        return {"ok": True, "ref": topics.save_moment(_office(), body.values, by=body.by)}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/api/marketing/plan")
+def marketing_plan():
+    """The Plan tab: the days ahead, what waits for a person, what is scheduled, what came off."""
+    from diwan.agents import marketing
+    return marketing.plan_view(_office())
+
+
+class PlanIn(BaseModel):
+    days: int = 7
+    by: str = "maya"
+
+
+@router.post("/api/marketing/plan")
+def make_marketing_plan(body: PlanIn):
+    """Plan the days ahead. Nothing is written until a day comes or a person presses Write it now."""
+    from datetime import datetime, timezone
+    from diwan import business
+    from diwan.agents import rhythm
+    if not 1 <= body.days <= 31:
+        return {"ok": False, "error": "Plan 1 to 31 days."}
+    rhythm.make_plan(_office(), business.local(datetime.now(timezone.utc), _office()).date(), auto=False, by=body.by, days_ahead=body.days)
+    return {"ok": True}
+
+
+class DayIn(BaseModel):
+    day: str
+    decision: str = ""
+    by: str = "maya"
+
+
+def _may_plan(by: str) -> bool:
+    from diwan import access
+    from diwan.agents import approvers
+    who = approvers.get(_office())["script"]
+    return not who or by == who or access.is_owner(by)
+
+
+@router.post("/api/marketing/plan/day")
+def decide_plan_day(body: DayIn):
+    """Approved stays on the plan. Rejected comes off, and the day takes the next best post."""
+    from diwan.agents import approvers, rhythm
+    if not _may_plan(body.by):
+        return {"ok": False, "error": f"This waits for {approvers.label(_office(), 'script')}."}
+    try:
+        rhythm.decide_day(_office(), body.day, body.decision, by=body.by)
+        return {"ok": True}
+    except rhythm.Invalid as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/api/marketing/plan/write")
+async def write_plan_day(body: DayIn):
+    """Write a planned day's post now. Pressing this is the brief's yes."""
+    import asyncio
+    from diwan.agents import approvers, rhythm, studio
+    if not _may_plan(body.by):
+        return {"ok": False, "error": f"This waits for {approvers.label(_office(), 'script')}."}
+    try:
+        ref = rhythm.start_day(_office(), body.day, by=body.by)
+    except rhythm.Invalid as e:
+        return {"ok": False, "error": str(e)}
+    asyncio.create_task(studio.run(_office(), ref))
+    return {"ok": True, "ref": ref}
+
+
+@router.get("/api/marketing/overview")
+def marketing_overview():
+    """The Results tab: every piece's stage, what each post brought, the day's lists and the campaigns."""
+    from diwan.agents import marketing
+    return marketing.overview(_office())
+
+
+class PostNowIn(BaseModel):
+    ref: str
+    by: str = "maya"
+
+
+@router.post("/api/studio/post-now")
+def post_now(body: PostNowIn):
+    """A scheduled post, at or before its time, by the person named to approve publishing, or the owner."""
+    from diwan import access
+    from diwan.agents import approvers, studio
+    who = approvers.get(_office())["publish"]
+    if who and body.by != who and not access.is_owner(body.by):
+        return {"ok": False, "needs": [f"This waits for {approvers.label(_office(), 'publish')}."]}
+    return studio.publish(_office(), body.ref, by=body.by)
+
+
+class CampaignIn(BaseModel):
+    ref: str
+    values: dict
+    by: str = "maya"
+
+
+@router.post("/api/marketing/campaigns")
+def add_campaign(body: CampaignIn):
+    from diwan.agents import marketing
+    try:
+        return {"ok": True, "campaign": marketing.draft(_office(), body.ref, body.values, by=body.by)}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+
+class CampaignStepIn(BaseModel):
+    ad_id: str = ""
+    why: str = ""
+    by: str = "maya"
+
+
+@router.post("/api/marketing/campaigns/{cid}/start")
+def start_campaign(cid: str, body: CampaignStepIn):
+    """A person launched it in Ads Manager and pays: this records it."""
+    from diwan.agents import marketing
+    try:
+        marketing.start(_office(), cid, ad_id=body.ad_id, by=body.by)
+        return {"ok": True}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/api/marketing/campaigns/{cid}/end")
+def end_campaign(cid: str, body: CampaignStepIn):
+    from diwan.agents import marketing
+    marketing.end(_office(), cid, by=body.by, why=body.why)
+    return {"ok": True}
+
+
+@router.get("/api/marketing/campaigns/spend")
+def campaign_spend():
+    """Reads the ad account (a network call), so only when a person asks."""
+    from diwan.agents import marketing
+    return marketing.campaign_report(_office(), spend=True)
+
+
+class UnscheduleIn(BaseModel):
+    ref: str
+    by: str = "maya"
+
+
+@router.post("/api/studio/unschedule")
+def unschedule(body: UnscheduleIn):
+    """Stop an approved post before its time."""
+    from diwan.agents import studio
+    studio.unschedule(_office(), body.ref, by=body.by)
+    return {"ok": True}
+
+
+class MomentFormatIn(BaseModel):
+    ref: str
+    format: str
+    by: str = "maya"
+
+
+@router.post("/api/moments/format")
+def moment_format(body: MomentFormatIn):
+    """A person overrides the format Diwan suggested."""
+    from diwan.agents import eventpost
+    try:
+        eventpost.choose(_office(), body.ref, body.format, by=body.by)
+        return {"ok": True}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
 

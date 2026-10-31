@@ -18,7 +18,7 @@ from diwan.agents import lessons
 from diwan.agents.charters import get
 from diwan.office import Office
 
-BANNED = r"\b(guaranteed?|risk.?free|assured returns?|best investment|will (double|rise)|100% (safe|return))\b"
+BANNED = r"\b(guaranteed?|risk.?free|assured returns?|best investment|will (double|rise|go up)|100% (safe|return)|free (golden )?visa|visa included|get (a|your) (golden )?visa)\b"
 MAX_TRIES = 3  # the first try and two returns
 
 
@@ -52,7 +52,7 @@ GENERIC = {"unit", "apartment", "villa", "townhouse", "flat", "dubai", "with", "
 def _names_listing(o: Office, ref: str, text: str) -> bool:
     """The text is about this listing: it names the ref, or a distinctive word of its title (the building, the villa)."""
     t = text.lower()
-    words = {w for w in __import__("re").findall(r"[a-z]{4,}", _listing(o, ref)["title"].lower())} - GENERIC
+    words = {w for w in __import__("re").findall(r"[a-z]{4,}|\d+", _listing(o, ref)["title"].lower())} - GENERIC  # "Villa 88" is named by its number
     return ref.lower() in t or any(w in t for w in words)
 
 
@@ -63,6 +63,35 @@ def _money(text: str) -> set[int]:
 
 def _script_text(item: dict) -> str:
     return " ".join([item.get("hook_en", ""), *item.get("lines_en", [])])
+
+
+def _right_size(path: str) -> bool:
+    from PIL import Image
+    try:
+        with Image.open(path) as img:
+            return img.size == (1080, 1350)
+    except OSError:
+        return False
+
+
+CLAIM = re.compile(r"\b(\d[\d,.]*)(?:\+?\s*(?:%|percent\b|(?:years?|clients?|customers?|families|deals?|homes?|sales|awards?|agents?|brokers?|projects?)\b)|(?:st|nd|rd|th)?[- ](?:floor|storey|story)\b)", re.I)
+
+
+STORY = re.compile(r"\b(?:I|we)(?:'d| had| have| once| always| never)? +(?:thought|assumed|believed|remember(?:ed)?|used to|felt|worried|feared|kept seeing|wondered|didn't think)\b"
+                   r"|\b(?:most|many|some) (?:[\w-]+ ){0,3}(?:think|believe|assume|expect|feel|worry)\b", re.I)
+
+
+def _made_up(o: Office, ref: str, text: str):
+    """A memory or a belief is not a fact unless the facts say it. A listing's lifestyle line is not held to this."""
+    return STORY.search(text) if _listing(o, ref)["item"] == "topic" and not STORY.search(_brief(o, ref)) else None
+
+
+def _stray_claims(o: Office, ref: str, text: str) -> list[str]:
+    """Numbers that sound like a track record ("15 years", "500 families", "98%") and appear in no source."""
+    from diwan import brand
+    from diwan.agents import journey
+    known = " ".join([_brief(o, ref), brand.brief(o), *journey.company(o, k=50)])
+    return [m.group(0) for m in CLAIM.finditer(text) if not re.search(rf"(?<![\d,.]){re.escape(m.group(1).rstrip('.,'))}(?!\d)", known)]
 
 
 CHECKS: dict[str, list[Check]] = {
@@ -94,6 +123,15 @@ CHECKS: dict[str, list[Check]] = {
               "Use only the listing's price; remove every other amount."),
         Check("script-no-promises", "No promised returns or guarantees.", "mscript",
               lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(re.search(BANNED, _script_text(it), re.I)), "Remove the promise; describe the property instead."),
+        Check("script-real-claims", "Every number claimed about us comes from the listing, the brand or a confirmed company fact.", "mscript",
+              lambda o, ref, it: (lambda stray: (not stray, ", ".join(stray)))(_stray_claims(o, ref, _script_text(it))),
+              "Remove that claim, or use only the numbers in the facts given."),
+        Check("script-no-made-up-story", "A post about the brand, a topic or a moment tells no personal story or belief the facts do not show.", "mscript",
+              lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(_made_up(o, ref, _script_text(it))),
+              "Say the fact plainly. Nobody in the facts thought, felt or remembered this."),
+        Check("script-natural", "It sounds like a person, with no planning words in it.", "mscript",
+              lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(re.search(r"\b(facts first|investor facts|price reveal|market check|walkthrough script|the angle|our angle|this hook)\b", _script_text(it), re.I)),
+              "Say it the way a person would; that phrase is our planning language, not something a viewer hears."),
         Check("script-no-placeholders", "No placeholders, brackets or notes to self.", "mscript",
               lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(re.search(r"\[[^\]]*\]|\bTBD\b|\bnot in (the )?listing\b|\bplaceholder\b", _script_text(it), re.I)),
               "Remove the placeholder; leave out any fact the listing does not have."),
@@ -101,7 +139,7 @@ CHECKS: dict[str, list[Check]] = {
               lambda o, ref, it: (lambda ls: (len(ls) == len(set(ls)), "a repeated line"))([re.sub(r"[^a-z0-9]", "", l.lower()) for l in [it["hook_en"], *it["lines_en"]]]),
               "Make every line say something new; the hook is said once, then the lines move on."),
         Check("script-call-to-action", "The script ends by asking the viewer to get in touch.", "mscript",
-              lambda o, ref, it: (bool(re.search(r"\b(message|dm|call|whatsapp|book|contact|enquire|inquire|link in bio|get in touch|reach out|speak to|talk to)\b", (it["lines_en"] or [""])[-1], re.I)),
+              lambda o, ref, it: (bool(re.search(r"\b(message|dm|call|whatsapp|book|contact|enquire|inquire|link in bio|get in touch|reach out|speak to|talk to|follow|ask us|tell us)\b", (it["lines_en"] or [""])[-1], re.I)),
                                   (it["lines_en"] or [""])[-1][:80]),
               "End with a line inviting the viewer to get in touch, in the brand's own sign-off."),
         Check("script-brand", "No word the brand never uses, no claim it never makes.", "mscript",
@@ -120,6 +158,11 @@ CHECKS: dict[str, list[Check]] = {
     "post text": [
         Check("post-permit", "The permit number is in the post.", "mwriter",
               lambda o, ref, it: (not _needed(o) or _listing(o, ref)["item"] == "topic" or (bool(_listing(o, ref).get("permit")) and _listing(o, ref)["permit"] in it["text"]), "permit missing"), "Add the permit number."),
+        Check("post-no-notes", "The post is what the public reads, with no internal notes.", "mwriter",
+              lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(re.search(r"^\s*(verdict|evidence|missing|next|actions|post \(unchanged\)):", it["text"], re.I | re.M)),
+              "Write only the post itself."),
+        Check("post-code", "The post carries its code word, so a lead can be traced to it.", "mwriter",
+              lambda o, ref, it: (not it.get("code") or it["code"] in it["text"], it.get("code") or ""), "Keep the code word in the last line."),
         Check("post-length", "2,200 characters or fewer (Instagram's limit).", "mwriter", lambda o, ref, it: (len(it["text"]) <= 2200, f"{len(it['text'])} characters"),
               "Shorten to 2,200 characters."),
         Check("post-hashtags", "10 hashtags or fewer.", "mwriter", lambda o, ref, it: (it["text"].count("#") <= 10, f"{it['text'].count('#')} hashtags"), "Keep the 10 best hashtags."),
@@ -128,6 +171,11 @@ CHECKS: dict[str, list[Check]] = {
               "Rewrite without that word; the brand profile lists what we never say."),
         Check("post-lessons", "Every lesson taught to the Content writer is kept.", "mwriter",
               lambda o, ref, it: (lambda ls: (not ls, ls["rule"] if ls else ""))(lessons.broken(o.log, "mwriter", it["text"])), "Follow the lesson."),
+    ],
+    "slides": [
+        Check("slides-exist", "Every image exists and is 1080 by 1350.", "mart",
+              lambda o, ref, it: (lambda bad: (not bad, ", ".join(bad)))([x["served"] for x in it["images"] if not _right_size(x["path"])]), "Make the image again."),
+        Check("slides-count", "1 to 10 images.", "mart", lambda o, ref, it: (1 <= len(it["images"]) <= 10, f"{len(it['images'])} images"), "Keep to Instagram's limit of 10."),
     ],
     "cut": [
         Check("cut-exists", "The captioned video exists and plays.", "mcap", lambda o, ref, it: (Path(it["path"]).exists() and Path(it["path"]).stat().st_size > 0, it["path"]),

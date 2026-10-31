@@ -313,8 +313,9 @@ def test_why_they_win_reads_each_post_once_and_shows_only_real_patterns(connecte
     pins = [b for b in studio.board(connected) if b["kind"] == "pattern"]
     assert len(pins) == 1 and pins[0]["title"].startswith("a 30-second price reveal of one of our listings, on camera; ")  # what the idea writer builds on
     assert pins[0]["why"].startswith("@rival.one: 3 of their 3 best posts are about price reveal")
+    calls = len(seen)
     reader.read(connected)
-    assert len(seen) == 1  # nothing new: no second call
+    assert len(seen) == calls  # nothing new: no second call
 
 
 def test_a_post_about_their_own_moment_is_set_aside_and_too_few_winners_say_so(connected, monkeypatch):
@@ -875,7 +876,7 @@ def test_the_plan_keeps_the_share_of_informational_videos_and_says_why(office):
     mix = rhythm.make_plan(office, date(2026, 11, 2), auto=False)
     assert kinds_of(mix) == ["listing", "topic", "listing", "topic", "listing", "topic", "listing"]  # spread, not four in a row
     topic_days = [d for d in mix["days"] if d["type"] == "topic"]
-    assert all(d["ref"] in topics.items(office) and d["why"].startswith("not covered") for d in topic_days)
+    assert all(d["ref"] in topics.items(office) and d["why"].startswith("Not covered") for d in topic_days)
     assert len({d["ref"] for d in topic_days}) == len(topic_days)  # no topic twice in the week
     with pytest.raises(rhythm.Invalid):
         rhythm.save(office, {"topic_share": "half"}, by="maya")

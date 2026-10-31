@@ -13,6 +13,7 @@ studio runs it through the same steps: ideas, three scripts, a film list, a post
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 
 from diwan import products
 
@@ -58,6 +59,7 @@ def exclude(office: Office, ref: str, *, by: str, on: bool = True) -> None:
 def items(office: Office, *, all_: bool = False) -> dict[str, dict]:
     """{ref: topic} of every topic a video may be about now (all_: the excluded ones too, marked)."""
     g, out = office.graph(), {}
+    today = datetime.now(timezone.utc).date().isoformat()
     for n in (g.of("knowledge") if kn else []):
         if kn.tab(n) in TAB_OK and kn.usable(n) and (n.props.get("text") or "").strip():
             out[n.id] = {"ref": n.id, "title": n.props.get("title") or n.label, "what": n.props["text"].strip(), "features": _facts(n.props["text"]),
@@ -67,12 +69,18 @@ def items(office: Office, *, all_: bool = False) -> dict[str, dict]:
                              "source": "product", "kind": "topic", "from": f"the {p.get('kind') or 'product'} {p['title']}"}
     for r, t in _typed(office).items():
         if t.get("title") and t.get("status") == "confirmed":
-            out[r] = {"ref": r, "title": t["title"], "what": t["what"], "features": _facts(t["what"]), "source": "typed", "kind": "topic", "from": "a topic typed in Setup"}
+            if t.get("moment") and t.get("until", "") < today:
+                continue  # news goes out of date: a moment is not a topic for ever
+            out[r] = {"ref": r, "title": t["title"], "what": t["what"], "features": _facts(t["what"]), "source": "typed", "kind": "topic", "from": "a topic typed in Setup",
+                      **({"moment": True, "until": t["until"], "from": "a moment a person typed", "format": t.get("format")} if t.get("moment") else {})}
     skip = excluded(office)
     return {r: t | ({"excluded": True} if r in skip else {}) for r, t in out.items() if (t["features"] or t["what"]) and (all_ or r not in skip)}
 
 
 def get(office: Office, ref: str) -> dict | None:
+    if ref.startswith("JOB-"):  # a post about the brand itself
+        from diwan.agents import journey
+        return journey.item(office, ref)
     return items(office).get(ref)
 
 
@@ -110,6 +118,22 @@ def save(office: Office, values: dict, *, by: str, ref: str | None = None) -> st
             ref = f"{base}-{n}"
         v = {"title": title, "what": what, "status": status}
     office.log.append("topic.saved", actor=by, content={"ref": ref, **v})
+    return ref
+
+
+MOMENT_DAYS = 7
+
+
+def save_moment(office: Office, values: dict, *, by: str) -> str:
+    """Something that just happened and matters more than the plan. A person says what happened: the writers use only
+    those facts, and it lapses by itself."""
+    until = str(values.get("until") or "").strip() or (datetime.now(timezone.utc).date() + timedelta(days=MOMENT_DAYS)).isoformat()
+    try:
+        datetime.strptime(until, "%Y-%m-%d")
+    except ValueError:
+        raise ValueError("The end date is a date like 2026-11-07.") from None
+    ref = save(office, values, by=by)
+    office.log.append("topic.saved", actor=by, content={"ref": ref, "moment": True, "until": until})
     return ref
 
 

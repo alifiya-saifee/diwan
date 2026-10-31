@@ -80,6 +80,8 @@ def report(office: Office, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     ours = _ours(office)
     med = statistics.median([_eng(p) for p in ours]) if len(ours) >= 3 else None
+    from diwan.agents import marketing
+    enquiries = marketing.leads_by_angle(office)  # what brought people in counts for more than what got likes
     market: dict[str, list[float]] = {}
     big: dict[str, int] = {}  # outliers per angle: above their account's average
     for p in studio.posts(office, "competitor"):
@@ -96,7 +98,7 @@ def report(office: Office, now: datetime | None = None) -> dict:
         m = market.get(a, [])
         rows.append({"angle": a, "what": what, "status": st, "posts": len(mine), "last": ratios[-3:],
                      "market_posts": len(m), "market_score": round(statistics.median(m), 1) if m else None,
-                     "market_outliers": big.get(a, 0), "why": _why(st, ratios, m)})
+                     "market_outliers": big.get(a, 0), "leads": enquiries.get(a, 0), "why": _why(st, ratios, m)})
     return {"median": med, "own_posts": len(ours), "angles": rows,
             "note": None if med else "Fewer than 3 of our own posts are classified, so angles are chosen from the competitors' outliers and tested."}
 
@@ -121,8 +123,8 @@ def pick(office: Office, n: int = 3, now: datetime | None = None, avoid: set[str
         if sum(1 for v in left.values() if v["status"] not in ("fading", "retired")) >= n:
             rows = left
     mk = lambda x: (x["market_score"] or 0) * (1 + x["market_outliers"])  # noqa: E731
-    proven = sorted([x for x in rows.values() if x["status"] == "winning"], key=lambda x: -x["last"][-1])
-    proven += sorted([x for x in rows.values() if x["status"] == "steady"], key=lambda x: -(sum(x["last"]) / len(x["last"])))
+    proven = sorted([x for x in rows.values() if x["status"] == "winning"], key=lambda x: (-x["leads"], -x["last"][-1]))
+    proven += sorted([x for x in rows.values() if x["status"] == "steady"], key=lambda x: (-x["leads"], -(sum(x["last"]) / len(x["last"]))))
     explore = sorted([x for x in rows.values() if x["status"] == "untested"], key=lambda x: -mk(x))
     if not r["median"]:  # nothing of ours to go on: lead with what wins in the market
         proven, explore = explore[:n - 1], explore[n - 1:]

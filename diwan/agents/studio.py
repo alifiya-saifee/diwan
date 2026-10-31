@@ -52,7 +52,7 @@ LANES = {"listing": r"\b(bed|br|apartment|villa|unit|for sale|listing|aed|price|
          "market update": r"\b(market|prices? (are|went)|rates?|report|q[1-4]|trend|data)\b",
          "behind the scenes": r"\b(team|office|day in|behind|bts|broker life)\b",
          "client story": r"\b(client|keys|handover|testimonial|happy|story|bought)\b"}
-BANNED = r"\b(guaranteed?|risk.?free|assured returns?|best investment|will (double|rise)|100% (safe|return))\b"
+BANNED = r"\b(guaranteed?|risk.?free|assured returns?|best investment|will (double|rise|go up)|100% (safe|return)|free (golden )?visa|visa included|get (a|your) (golden )?visa)\b"
 LIMITS = {"Instagram": 2200, "TikTok": 2200, "YouTube Shorts": 100, "Property Finder": 500}
 
 
@@ -161,6 +161,12 @@ def scored(ps: list[dict]) -> list[dict]:
 
 def is_outlier(p: dict) -> bool:
     return p["above"] if "above" in p else bool(p.get("score")) and p["score"] > 1
+
+
+def clear_win(p: dict) -> bool:
+    """Beat its kind's average by more than chance: twice the square root of that average, the same bar Why they win uses.
+    6 against a usual 3 is noise; 900 against a usual 680 is not."""
+    return bool(p.get("avg")) and p["engagement"] - p["avg"] > 2 * p["avg"] ** .5
 
 
 def competitors(g: Graph) -> list[str]:
@@ -359,7 +365,7 @@ def import_posts(office: Office, rows: list[dict], *, by: str) -> dict:
             if p["source"] == "competitor" and is_outlier(p):
                 outliers.append(p)
     outliers.sort(key=lambda p: -p["score"])
-    for p in outliers[:3]:
+    for p in [p for p in outliers if clear_win(p)][:3]:
         office.log.append("board.pinned", actor="mrival", agent="mrival", key=f"pin:{p['id']}",
                           content={"id": _stable_id("B", p["id"]), "kind": "outlier", "title": (p["caption"] or "(no caption)")[:90], "account": p["account"],
                                    "why": f"{p['engagement']:,} likes+comments, {p['score']}x @{p['account']}'s average {p['kind']}", "url": p["permalink"], "post": p["id"], "type": p["type"]})
@@ -418,14 +424,14 @@ def watch(office: Office, cause: int | None, only: list[str] | None = None) -> l
                               content={**p, "source": "own", "engagement": p["likes"] + p["comments"]})
     except instagram.InstagramError as e:
         errors.append(f"our account: {e}")
-    top = outliers[:3]
+    top = [p for p in outliers if clear_win(p)][:3]  # every post above average is counted; only clear wins are pinned
     for p in top:
         office.log.append("board.pinned", actor="mrival", agent="mrival", key=f"pin:{p['id']}",
                           content={"id": f"B-{p['id']}", "kind": "outlier", "title": (p["caption"] or "(no caption)")[:90], "account": p["account"],
                                    "why": f"{p['engagement']:,} likes+comments, {p['score']}x @{p['account']}'s average {p['kind']}", "url": p["permalink"], "post": p["id"], "media_url": p.get("media_url"),
                                    "type": p.get("type")})
     verdict = f"Reached {reached} of {len(names)} competitors. " + (f"{len(outliers)} posts above their account's average. Top: @{top[0]['account']} at {top[0]['score']}x their average." if top
-               else "No post above its account's average.")
+               else f"{len(outliers)} posts above their account's average, none by more than chance." if outliers else "No post above its account's average.")
     _pack(office, "mrival", verdict + (f" Not reached: {'; '.join(errors)}" if errors else ""), cause=cause,
           evidence=[Evidence(p["permalink"], f"post:{p['id']}") for p in top if p.get("permalink")],
           sources={f"post:{p['id']}": p["permalink"] for p in top if p.get("permalink")})
@@ -626,7 +632,7 @@ def ideas(office: Office, ref: str, cards: list[dict], cause: int | None, feedba
     what = "listing" if lst["item"] == "listing" else lst.get("kind") or "product"
     user = runner.user_message(f"Three short-video ideas for {what} {ref}. Each title is the hook a viewer would see, naming "
                                + ("the building or area" if lst["item"] == "listing" else "it") + (" and one real fact" if lst["item"] == "topic" else " and one real feature") + "; list the card ids an idea "
-                               f"builds on (an empty list if none). Use only facts from the {what}." + (f"\n\n{feedback}" if feedback else ""),
+                               f"builds on (an empty list if none). When a card fits, at least one idea must build on it. Use only facts from the {what}." + (f"\n\n{feedback}" if feedback else ""),
                                {_key(office, ref): _brief(office, ref), "brand": brand.brief(office), **{x["id"]: f"{x['title']} ({x['why']})" for x in cards}})
     out, by = [], "rules"
     if runner.has_model(c, system, user, schema=IDEAS_SCHEMA):
@@ -806,42 +812,52 @@ def _topic_template(t: dict, angle: str, sign_off: str) -> dict:
         if len(lines) >= 4:
             break
         lines.append(pad)
-    return {"hook_en": hooks.get(angle, f"{short}, in plain words."), "hook_ar": "", "lines_en": [*lines, sign_off]}
+    return {"hook_en": hooks.get(angle, t.get("hook") or f"{short}, in plain words."), "hook_ar": "", "lines_en": [*lines, sign_off]}
 
 
 def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: int | None, feedback: str | None = None,
            angle: str = "price-reveal", why: str = "", base: dict | None = None) -> dict:
     """One script on one angle. `base` is a draft to revise (a person's change request or a supervisor's return): the
     model changes what was asked and keeps the rest; without a model the change is applied to the template where it can be."""
-    from diwan.agents import strategy
+    from diwan.agents import eventpost, journey, strategy
     lst = _listing(office, ref)
     rec = _brief(office, ref)
     c = get("mscript")
+    sh = eventpost.shape(office, lst)
+    pictures = bool(sh) and sh["format"] in eventpost.SLIDES
+    schema = SCRIPT_SCHEMA if not pictures else {**SCRIPT_SCHEMA, "schema": {**SCRIPT_SCHEMA["schema"], "required": [*SCRIPT_SCHEMA["schema"]["required"], "photos"],
+                                                                             "properties": {**SCRIPT_SCHEMA["schema"]["properties"], "photos": {"type": "array", "items": {"type": "integer"}}}}}
     arabic = "Arabic" in business.languages(office)
     system = runner.instructions(c, office.log) + (f"\nWrite in the `script` format: about 30 seconds, 5 to 7 lines. Use only facts and amounts from "
                                                    f"the {lst['item']}, and build the lines from its features. Every line says something new; never repeat a "
                                                    "line or the name. No placeholders or brackets: if a fact is missing, leave it out. The last "
                                                    "line invites the viewer to get in touch, in the brand's own sign-off if it has one. "
+                                                   "Write how a person really talks to a friend: short, natural spoken sentences that a viewer would keep watching. The first line stops the scroll "
+                                                   "with a question or a surprising detail, about the viewer or the place, never about us. Never use a planning word such as an angle's name, "
+                                                   "'facts first', 'investor facts' or 'price reveal'. Never say a permit number or a unit reference aloud: they are shown on screen. "
                                                    + ("hook_ar and lines_ar are the Arabic of hook_en and lines_en." if arabic else "hook_ar and lines_ar are empty.")
                                                    + (" This is an informational video about a topic, not an ad for a property: a person speaks it to camera. Write the hook and "
                                                       "lines as natural first-person speech, each short enough to say in one breath; no price, no permit, no property tour. In "
                                                       "shots, one per spoken line: `show` is what the viewer sees (the speaker, or a short cut-away that shows the point), "
                                                       "`text` a caption of 2 to 6 words or empty, `cut` how it moves." if lst["item"] == "topic" else ""))
     built = built_like(office, idea["pick"].get("cards", []))
-    task = (f"Script for: {idea['pick']['title']}. Angle: {(topics.ANGLES if lst['item'] == 'topic' else {k: v[0] for k, v in strategy.ANGLES.items()}).get(angle, angle)}. Borrow the structure, never the words, of the hook card if given."
+    facts = "" if lst.get("job") else "\n".join(journey.company(office, f"{lst['title']} {rec}"))
+    task = (f"Script for: {idea['pick']['title']}. Angle: {({**topics.ANGLES, **journey.ANGLES} if lst['item'] == 'topic' else {k: v[0] for k, v in strategy.ANGLES.items()}).get(angle, angle)}. Borrow the structure, never the words, of the hook card if given."
             + (" Some competitor posts below worked; borrow only why they worked (format, hook, who is on screen). Never use their words, "
                "numbers, awards, sales or partners, and claim nothing about us that the listing and the brand do not say." if built else "")
+            + journey.brief(office, lst) + eventpost.brief(sh)
+            + (" The company facts below are confirmed: use one when it helps this post, and claim nothing about us beyond them." if facts else "")
             + (f"\n\nRevise this draft; change only what is asked, keep everything else:\n{json.dumps({k: base[k] for k in ('hook_en', 'hook_ar', 'lines_en')}, ensure_ascii=False)}" if base else "")
             + (f"\n\n{feedback}" if feedback else ""))
     from diwan.agents import style
     notes = style.brief(office)
-    user = runner.user_message(task, {_key(office, ref): rec, "brand": brand.brief(office), **({"hook": hook_card["hook"]} if hook_card else {}),
+    user = runner.user_message(task, {_key(office, ref): rec, "brand": brand.brief(office), **({"company": facts} if facts else {}), **({"hook": hook_card["hook"]} if hook_card else {}),
                                       **{f"worked{i + 1}": b for i, b in enumerate(built)}, **({"style": notes} if notes else {})})
     data, by = None, "template"
-    if runner.has_model(c, system, user, schema=SCRIPT_SCHEMA):
+    if runner.has_model(c, system, user, schema=schema):
         office.log.append("agent.started", actor="mscript", agent="mscript", caused_by=cause, content={"task": f"Writing the {angle} script for {ref} with the model"})
         try:
-            data = runner.call(c, system, user, schema=SCRIPT_SCHEMA).data
+            data = runner.call(c, system, user, schema=schema).data
             by = "muse-spark"
             stray = (_amounts(" ".join([data["hook_en"], *data["lines_en"]])) - _amounts(rec)) - {0}
             if stray:
@@ -854,9 +870,9 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
         if base:
             data = {**{k: base[k] for k in ("hook_en", "hook_ar", "lines_en")}, "lines_ar": base.get("lines_ar", [])}
         data = _apply_rules(data, feedback or "", lst)
-    data = data | {"shots": video_plan(data, lst)}
+    data = data | ({"shots": [], "slides": eventpost.slides(data, sh)} if pictures else {"shots": video_plan(data, lst)})
     m = _made(office, "mscript", "script", ref, data | {"via": by, "angle": angle, "why": why, "idea": idea.get("id"), "cards": idea["pick"].get("cards", []),
-                                                       "built_like": built, "listing_was": _facts(lst), "format": topics.format_for(lst), **({"revises": base["id"]} if base else {})}, cause)
+                                                       "built_like": built, "listing_was": _facts(lst), "format": sh["format"] if pictures else topics.format_for(lst), "job": journey.job_of(lst), **({"revises": base["id"]} if base else {})}, cause)
     _pack(office, "mscript", f"{angle} script{' (revised from ' + base['id'] + ')' if base else ''}: \"{data['hook_en']}\" · {len(data['lines_en'])} lines ({by}).",
           cause=cause, usage={"provider": by})
     return m
@@ -921,15 +937,19 @@ def _apply_rules(data: dict, note: str, lst: dict) -> dict:
 
 def variants(office: Office, ref: str, idea: dict, tr: dict | None, cause: int | None, n: int = 3) -> list[dict]:
     """Up to n scripts on different angles, each checked by the Copywriter, chosen by the strategy."""
-    from diwan.agents import strategy
+    from diwan.agents import journey, strategy
     from diwan.agents import rhythm
     avoid = rhythm.recent_angles(office, business.local(_now(), office).date())
-    picks = topics.pick_angles(n, avoid) if _listing(office, ref)["item"] == "topic" else strategy.pick(office, n, avoid=avoid)
+    lst = _listing(office, ref)
+    picks = (journey.pick_angles(journey.job_of(lst), n, avoid) if lst.get("job") or lst.get("moment") else topics.pick_angles(n, avoid) if lst["item"] == "topic"
+             else strategy.pick(office, n, avoid=avoid))
+    ways = idea.get("ideas") or [idea["pick"]]  # each script tells its own idea, when there are enough
     _pack(office, "mcopy", "Scripting " + "; ".join(f"{p['angle']} ({p['slot']}: {p['why']})" for p in picks), cause=cause, kind="assign")
     out = []
-    for p in picks:
-        sc = reviewed(office, "script", ref, lambda fb, p=p: script(office, ref, idea, tr, cause, fb, angle=p["angle"], why=f"{p['slot']}: {p['why']}"), cause)
-        if sc:
+    for i, p in enumerate(picks):
+        one = idea | {"pick": ways[i % len(ways)]}
+        sc = reviewed(office, "script", ref, lambda fb, p=p, one=one: script(office, ref, one, tr, cause, fb, angle=p["angle"], why=f"{p['slot']}: {p['why']}"), cause)
+        if sc and not any(sc["hook_en"] == x["hook_en"] and sc["lines_en"] == x["lines_en"] for x in out):  # without a model, topics can come out the same
             out.append(sc)
     return out
 
@@ -975,8 +995,23 @@ def playbook(office: Office, cause: int | None) -> dict | None:
 
 # ---------- editing ----------
 
+CAPTION_WORDS = 6  # a caption is read in a glance: longer spoken turns are split, each part timed by its share of the words
+
+
+def _short(rows: list[dict]) -> list[dict]:
+    out = []
+    for r in rows:
+        words = str(r.get("text") or "").split()
+        parts = [words[i:i + CAPTION_WORDS] for i in range(0, len(words), CAPTION_WORDS)]
+        at, each = r["start"], (r["end"] - r["start"]) / max(1, len(words))
+        for p in parts:
+            out.append({"start": at, "end": at + each * len(p), "text": " ".join(p)})
+            at += each * len(p)
+    return out
+
+
 def _srt(turns: list[dict], text: str, dur: float) -> str:
-    rows = [t for t in turns if t.get("start") is not None and t.get("end") is not None]
+    rows = _short([t for t in turns if t.get("start") is not None and t.get("end") is not None])
     if not rows:  # no timings from the API: spread the words evenly over the clip, five words a line
         words = text.split()
         chunks = [" ".join(words[i:i + 5]) for i in range(0, len(words), 5)] or [""]
@@ -989,9 +1024,9 @@ def _srt(turns: list[dict], text: str, dur: float) -> str:
 def _caption_png(text: str, path: Path, width: int) -> None:
     from PIL import Image, ImageDraw, ImageFont
     font = None
-    for f in ("/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/System/Library/Fonts/Helvetica.ttc", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
+    for f in ("C:/Windows/Fonts/arialbd.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/System/Library/Fonts/Helvetica.ttc", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
         try:
-            font = ImageFont.truetype(f, max(18, width // 20))
+            font = ImageFont.truetype(f, max(18, width // 15))
             break
         except OSError:
             continue
@@ -1023,7 +1058,10 @@ def captions(office: Office, ref: str, check: dict | None, cause: int | None) ->
     src = Path(f["path"])
     dur = _duration(src)
     srt = src.with_suffix(".srt")
-    if check and check["said"].strip():
+    if f.get("lines"):  # our own voice read our own script: its exact words, at the times they were spoken
+        srt.write_text(_srt(f["lines"], "", dur))
+        source = "the script, timed to the voice"
+    elif check and check["said"].strip():
         srt.write_text(_srt(check["turns"], check["said"], dur))
         source = f"what was said ({check.get('via', 'transcribed')})"
     elif (sc := made(office, "script", ref)):
@@ -1076,10 +1114,14 @@ def post_text(office: Office, ref: str, sc: dict, cause: int | None, feedback: s
     facts = " · ".join(x for x in (f"{lst['title']}{where}", _what(lst), feats, _price(lst)) if x) if lst["item"] != "topic" else \
         f"{lst['title']}: " + " ".join(f if f.endswith((".", "!", "?")) else f + "." for f in (lst.get("features") or [])[:2])
     permit = f"\nPermit {lst['permit']}" if business.permit_needed(office) and lst.get("permit") else ""
-    base = f"{sc['hook_en']}\n\n{facts}{permit}\n\n{brand.cta(office)}"
+    if sc.get("slides"):  # read, not watched: the caption is the post's own words
+        facts = "\n".join(x for x in sc["lines_en"] if x != brand.cta(office))
+    from diwan.agents import marketing
+    code = marketing.code_for(office, ref)  # how a lead is traced back to this post
+    base = f"{sc['hook_en']}\n\n{facts}{permit}\n\n{brand.cta(office)} Say {code}."
     ar = f"\n\n{sc['hook_ar']}" if sc.get("hook_ar") else ""
     tags = " " + " ".join(dict.fromkeys(brand.hashtags(office) + (["#" + re.sub(r"\W", "", lst["community"])] if lst.get("community") else [])))
-    m = _made(office, "mwriter", "post text", ref, {"text": base + ar + tags.rstrip()}, cause)
+    m = _made(office, "mwriter", "post text", ref, {"text": base + ar + tags.rstrip(), "code": code}, cause)
     _pack(office, "mwriter", f"Post text ready{' with permit ' + str(lst.get('permit')) if permit else ''} ({len(m['text'])} characters).", cause=cause,
           evidence=[Evidence(str(lst.get("permit") or lst["title"]), _key(office, ref))], sources={_key(office, ref): _brief(office, ref)})
     return m
@@ -1162,31 +1204,109 @@ def cross(office: Office, ref: str, text: dict, cause: int | None) -> dict:
     return m
 
 
-def ask_to_publish(office: Office, ref: str, cut: dict | None, text: dict, slot: dict, cause: int | None) -> int:
+def ask_to_publish(office: Office, ref: str, cut: dict | None, text: dict, slot: dict, cause: int | None, word: str = "reel", note: str = "") -> int:
     """One open publish request per listing: an older one is answered as replaced before the new one is asked."""
     for n in office.graph().of("request", status="open"):
         if n.props.get("agent") == "mpub" and ref in n.props.get("text", ""):
             office.log.append("decision.made", actor="mpub", agent="mpub", content={"card": n.id, "answer": "replaced by a newer request"})
-    what = f"Publish the {ref} reel {datetime.fromisoformat(slot['at']).strftime('%a %I:%M %p').replace(' 0', ' ')}" + ("" if cut else " (no cut yet: footage needed)")
+    if cut:
+        office.log.append("content.ready", actor="mpub", agent="mpub", caused_by=cause, content={"ref": ref})
+    what = f"Publish the {ref} {word} {datetime.fromisoformat(slot['at']).strftime('%a %I:%M %p').replace(' 0', ' ')}" + ("" if cut else " (no cut yet: footage needed)") + note
     _pack(office, "mpub", what, cause=cause, kind="publish")
     return 0
 
 
+def _missing(office: Office, ref: str) -> list[str]:
+    """What must exist before this post can go out, and whatever about it has stopped being true."""
+    from diwan.agents import marketing
+    sc = approved_script(office, ref)
+    pics = made(office, "slides", ref) if sc and sc.get("slides") else None
+    return [x for x, ok in (("the images" if sc and sc.get("slides") else "the captioned cut (upload footage)", pics or made(office, "cut", ref)), ("post text", made(office, "post text", ref)),
+                            ("Instagram connected", instagram.ready()), (f"PUBLIC_BASE_URL (a public https address for the {'images' if pics else 'video'})", env("PUBLIC_BASE_URL"))) if not ok] + marketing.blocked(office, ref)
+
+
+def approve_post(office: Office, ref: str, *, by: str, at: str | None = None) -> dict:
+    """Approved: it goes out at the time on the card (or the one the person chose), not before; a time already gone means now."""
+    if (needs := _missing(office, ref)):
+        _pack(office, "mpub", f"Approved by {name(by)}; not posted yet. Needs: {', '.join(needs)}.", kind=None)
+        return {"ok": False, "needs": needs}
+    slot = made(office, "slot", "next")
+    when_at = slot["at"] if slot else None
+    if at:
+        try:
+            chosen = datetime.fromisoformat(at)
+        except ValueError:
+            return {"ok": False, "needs": ["a time like 2026-11-02T19:30"]}
+        chosen = chosen if chosen.tzinfo else chosen.replace(tzinfo=business.tz(office))
+        if chosen <= datetime.now(timezone.utc):
+            return {"ok": False, "needs": ["a time still ahead"]}
+        when_at = chosen.isoformat()
+    if not when_at or datetime.fromisoformat(when_at) <= datetime.now(timezone.utc):
+        return publish(office, ref, by=by)
+    _made(office, "mpub", "scheduled", ref, {"at": when_at, "approved_by": by}, None)
+    office.log.append("post.approved", actor=by, agent="mpub", content={"ref": ref, "at": when_at})
+    when = datetime.fromisoformat(when_at).strftime("%a %I:%M %p").replace(" 0", " ")
+    _pack(office, "mpub", f"Approved by {name(by)}: {ref} goes out {when}.", kind=None)
+    return {"ok": True, "next": f"it goes out {when}"}
+
+
+def scheduled(office: Office) -> dict[str, dict]:
+    """Posts approved and waiting for their time, by ref. Posting, or cancelling, ends the wait."""
+    out: dict[str, dict] = {}
+    for e in office.log.list():
+        c = e["content"]
+        if e["type"] == "content.made" and c.get("kind") == "scheduled":
+            out[c["ref"]] = c
+        elif e["type"] == "content.made" and c.get("kind") in ("published", "unscheduled"):
+            out.pop(c.get("ref"), None)
+    return out
+
+
+def unschedule(office: Office, ref: str, *, by: str, why: str = "cancelled") -> None:
+    _made(office, "mpub", "unscheduled", ref, {"by": by, "why": why}, None)
+    _pack(office, "mpub", f"{ref} will not go out: {why} ({name(by)}).", kind=None)
+
+
+def publish_due(office: Office) -> list[str]:
+    """Called every minute: what was approved goes out at its time, or, with auto-posting off (the default), the person who
+    approved it is told it is time. A failure is said once, not retried for ever."""
+    from diwan import leads
+    from diwan.agents import marketing, rhythm
+    done = []
+    auto = rhythm.settings(office)["auto_post"] == "on"
+    for ref, s in scheduled(office).items():
+        if datetime.fromisoformat(s["at"]) <= datetime.now(timezone.utc):
+            if not auto:
+                if marketing._once(office, f"due:{ref}:{s['id']}", ref=ref):
+                    leads.notify(office, s["approved_by"], f"It's time to post {ref}. Press Post now in the Studio.", kind="info")
+                continue
+            r = publish(office, ref, by=s["approved_by"])
+            if r.get("ok"):
+                done.append(ref)
+            else:
+                unschedule(office, ref, by="mpub", why=f"it could not be posted: {r.get('error') or ', '.join(r.get('needs', []))}")
+    return done
+
+
 def publish(office: Office, ref: str, *, by: str) -> dict:
-    """After the owner approves: post to Instagram when everything needed is there; otherwise say what is missing."""
-    cut, text = made(office, "cut", ref), made(office, "post text", ref)
+    """Post to Instagram now, when everything needed is there; otherwise say what is missing."""
+    sc = approved_script(office, ref)
+    pics = made(office, "slides", ref) if sc and sc.get("slides") else None
+    cut, text = pics or made(office, "cut", ref), made(office, "post text", ref)
     base = env("PUBLIC_BASE_URL")
-    needs = [x for x, ok in (("the captioned cut (upload footage)", cut), ("post text", text), ("Instagram connected", instagram.ready()),
-                             ("PUBLIC_BASE_URL (a public https address for the video)", base)) if not ok]
+    needs = _missing(office, ref)
     if needs:
         _pack(office, "mpub", f"Approved by {name(by)}; not posted yet. Needs: {', '.join(needs)}.", kind=None)
         return {"ok": False, "needs": needs}
     try:
-        pid = instagram.publish_reel(f"{base.rstrip('/')}{cut['served']}", text["text"])
+        urls = [f"{base.rstrip('/')}{x['served']}" for x in pics["images"]] if pics else []
+        pid = (instagram.publish_carousel(urls, text["text"]) if len(urls) > 1 else instagram.publish_image(urls[0], text["text"]) if urls
+               else instagram.publish_reel(f"{base.rstrip('/')}{cut['served']}", text["text"]))
     except instagram.InstagramError as e:
         _pack(office, "mpub", f"Instagram refused the post: {e}", kind=None)
         return {"ok": False, "error": str(e)}
     _made(office, "mpub", "published", ref, {"instagram_id": pid, "approved_by": by}, None)
+    office.log.append("post.live", actor=by, agent="mpub", content={"ref": ref, "instagram_id": pid})
     _pack(office, "mpub", f"Posted to Instagram (id {pid}), approved by {name(by)}.", kind=None)
     return {"ok": True, "id": pid}
 
@@ -1233,7 +1353,7 @@ def permit_gate(office: Office, ref: str, sc: dict, text: dict, cause: int | Non
 
 # ---------- the run ----------
 
-async def run(office: Office, ref: str, pause: float = .6) -> None:
+async def run(office: Office, ref: str, pause: float = .6, auto: bool = False) -> None:
     step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
     lst = _listing(office, ref)
     needed = business.permit_needed(office) and lst["item"] != "topic"
@@ -1245,18 +1365,41 @@ async def run(office: Office, ref: str, pause: float = .6) -> None:
     await step(read_posts, office, start); await asyncio.sleep(pause)
     tr_cards = await step(trends, office, start); await asyncio.sleep(pause)
     tr = await step(transcript_of, office, top[0] | {"post": top[0]["id"]} if top else None, start); await asyncio.sleep(pause)
+    if lst.get("moment"):  # something real happened: look at what we have of it, and search for it once
+        from diwan.agents import eventpost
+        await step(eventpost.read, office, ref, start)
+        await step(eventpost.search, office, ref, start)
     pins = board(office)
     _pack(office, "research", f"Board: {len(pins)} card{'s' if len(pins) != 1 else ''} pinned, each with its source." if pins else "Board empty: see what research is waiting for.",
           cause=start, kind="assign")
     idea = await step(reviewed, office, "ideas", ref, lambda fb: ideas(office, ref, pins, start, fb), start); await asyncio.sleep(pause)
     if not idea:
         return
+    office.log.append("content.idea", actor="midea", agent="midea", caused_by=start, content={"ref": ref, "title": idea["pick"]["title"]})
+    from diwan.agents import rhythm
+    if auto and rhythm.settings(office)["approve_brief"] == "on":  # nobody pressed anything: a person says yes before scripts are written
+        _pack(office, "mcopy", f"Approve the brief for {ref}: \"{idea['pick']['title']}\"", cause=start, kind="approve_brief")
+        return
+    await write_scripts(office, ref, idea, tr, start, pause)
+
+
+async def write_scripts(office: Office, ref: str, idea: dict, tr: dict | None, start: int | None, pause: float = .6) -> None:
+    """The brief is approved (a person pressing Write approves it): the scripts."""
+    step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
+    office.log.append("content.briefed", actor="mkt", agent="mkt", caused_by=start, content={"ref": ref})
     await step(lanes, office, start); await asyncio.sleep(pause)
     scs = await step(variants, office, ref, idea, tr, start); await asyncio.sleep(pause)
     if not scs:
         return
     await step(playbook, office, start)
     ask_script_approval(office, ref, scs, start)  # nothing that costs filming, editing or model time starts before a person says yes
+
+
+async def after_brief(office: Office, ref: str, pause: float = .6) -> None:
+    """An automatic run's brief got its yes."""
+    idea = made(office, "ideas", ref)
+    if idea:
+        await write_scripts(office, ref, idea, made(office, "transcript"), None, pause)
 
 
 def _content(office: Office, cid: str) -> dict | None:
@@ -1270,6 +1413,7 @@ def ask_script_approval(office: Office, ref: str, scs: list[dict] | dict, cause:
     for n in office.graph().of("request", status="open"):
         if n.props.get("kind") == "use_script" and ref in n.props.get("text", ""):
             office.log.append("decision.made", actor="mcopy", agent="mcopy", content={"card": n.id, "answer": "replaced by a newer draft"})
+    office.log.append("content.scripted", actor="mcopy", agent="mcopy", caused_by=cause, content={"ref": ref})
     opts = " | ".join(f"script {x['id']} [{x.get('angle', 'price-reveal')}] \"{x['hook_en']}\"" for x in scs)
     _pack(office, "mcopy", f"Pick a script for {ref} ({len(scs)} checked by the Copywriter): {opts}", cause=cause, kind="use_script")
 
@@ -1348,12 +1492,93 @@ async def after_script(office: Office, ref: str, pause: float = .6) -> None:
     if not sc:
         return
     idea = made(office, "ideas", ref)
+    if sc.get("slides"):
+        await after_pictures(office, ref, sc, pause)
+        return
     start = _pack(office, "mkt", f"Script {sc['id']} for {ref} approved: filming can start.", kind="assign")
     film = await step(reviewed, office, "film list", ref, lambda fb: film_list(office, ref, idea, start, fb, sc), start); await asyncio.sleep(pause)
     if film:
         office.add_task(None, "mshoot", f"Film {ref}: " + "; ".join(film["shots"]) + f" ({film['when']})", needs_person=film["who"], by="mshoot", caused_by=start)
         _pack(office, "mshoot", f"Film list sent to {name(film['who'])} {film['when']}. Or make an AI presenter video from the studio.", cause=start)
     await step(reviewed, office, "post text", ref, lambda fb: post_text(office, ref, sc, start, fb), start)
+
+
+async def after_pictures(office: Office, ref: str, sc: dict, pause: float = .6) -> None:
+    """A carousel, an image or a graphic is approved: nothing to film. The images, the caption, the checks, the request."""
+    from diwan.agents import eventpost
+    step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
+    start = _pack(office, "mkt", f"Script {sc['id']} for {ref} approved: making the images.", kind="assign")
+    pics = await step(reviewed, office, "slides", ref, lambda fb: eventpost.render(office, ref, sc, start), start); await asyncio.sleep(pause)
+    if not pics:
+        return
+    text = await step(reviewed, office, "post text", ref, lambda fb: post_text(office, ref, sc, start, fb), start)
+    if not text:
+        return
+    await _to_approval(office, ref, sc, text, start)
+
+
+async def _to_approval(office: Office, ref: str, sc: dict, text: dict, start: int | None) -> None:
+    """The last gate, the platform versions, the time, and the request to the person who approves publishing."""
+    from diwan.agents import eventpost
+    step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
+    ok, sc, text = await step(permit_gate, office, ref, sc, text, start)
+    if not ok:
+        return
+    await step(reviewed, office, "versions", ref, lambda fb: cross(office, ref, text, start), start)
+    slot = made(office, "slot", "next")
+    if not slot or datetime.fromisoformat(slot["at"]) <= datetime.now(timezone.utc):  # an old time is no use
+        slot = await step(schedule, office, start)
+    pics = made(office, "slides", ref) if sc.get("slides") else None
+    if pics:
+        note = f" · {pics['people']} of the images show people: check they agreed" if pics.get("people") else ""
+        await step(ask_to_publish, office, ref, pics, text, slot, start, eventpost.FORMATS[sc["format"]].lower(), note)
+    else:
+        await step(ask_to_publish, office, ref, made(office, "cut", ref), text, slot, start, "reel", " · footage and music must be ours or licensed")
+
+
+CAPTION = r"\b(caption|hashtags?|post text|description|sign.?off)\b"
+REFILM = r"\b(video|footage|film|refilm|retake|reshoot|re-?shoot|clip|lighting|sound|audio)\b"
+CAPTION_SCHEMA = {"name": "post", "strict": True, "schema": {"type": "object", "additionalProperties": False, "required": ["text"], "properties": {"text": {"type": "string"}}}}
+
+
+def change_goes_to(sc: dict | None, note: str) -> str:
+    """Who fixes a change asked on the finished post: the words under it, the footage, or the script (and so the images)."""
+    low = note.lower()
+    if re.search(CAPTION, low):
+        return "mwriter"
+    return "mshoot" if sc and not sc.get("slides") and re.search(REFILM, low) else "mscript"
+
+
+def rewrite_caption(office: Office, ref: str, note: str, cause: int | None, feedback: str | None = None) -> dict:
+    """Only the post's text changes. Without a model it stays as it was, and says so."""
+    old, c = made(office, "post text", ref), get("mwriter")
+    system = runner.instructions(c, office.log, pack=False) + "\nAnswer in the `post` format: `text` is the post exactly as the public will read it, and nothing else. Change only what is asked and keep the rest, including the code word after \"Say\"."
+    user = runner.user_message(f"Change this post's text: {note}" + (f"\n\n{feedback}" if feedback else ""),
+                               {"post": old["text"], _key(office, ref): _brief(office, ref), "brand": brand.brief(office)})
+    if not runner.has_model(c, system, user, schema=CAPTION_SCHEMA):
+        _blocked(office, "mwriter", "Rewriting the post text needs Muse Spark (META_API_KEY): it is unchanged", cause=cause)
+        return old
+    return _made(office, "mwriter", "post text", ref, {"text": runner.call(c, system, user, schema=CAPTION_SCHEMA).data["text"], "code": old.get("code")}, cause)
+
+
+async def change_post(office: Office, ref: str, note: str, pause: float = .6) -> None:
+    """A change asked at the last step goes to whoever can fix it, then comes back through the same checks."""
+    step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
+    sc = approved_script(office, ref)
+    if not sc:
+        return
+    who = change_goes_to(sc, note)
+    start = _pack(office, "mkt", f"Change asked to the finished {ref} post: \"{note}\". Back to the {get(who).name}.", kind="assign")
+    if who == "mwriter":
+        text = await step(reviewed, office, "post text", ref, lambda fb: rewrite_caption(office, ref, note, start, fb), start)
+        if text:
+            await _to_approval(office, ref, sc, text, start)
+    elif who == "mshoot":
+        film = made(office, "film list", ref) or {}
+        office.add_task(None, "mshoot", f"Film {ref} again: {note}", needs_person=film.get("who"), by="mshoot", caused_by=start)
+        _pack(office, "mshoot", f"Asked {name(film.get('who') or '') or 'nobody assigned yet'} to film {ref} again. Editing starts when the new take is uploaded.", cause=start)
+    else:
+        await script_revise(office, ref, sc["id"], note, None, pause)
 
 
 async def script_rejected(office: Office, ref: str, note: str, pause: float = .6) -> None:
@@ -1377,14 +1602,12 @@ async def after_footage(office: Office, ref: str, pause: float = .6) -> None:
     start = _pack(office, "mart", f"Footage for {ref} arrived: checking, captioning and covering it.", kind="assign")
     chk = await step(video_check, office, ref, sc, start); await asyncio.sleep(pause)
     cut = await step(reviewed, office, "cut", ref, lambda fb: captions(office, ref, chk, start), start); await asyncio.sleep(pause)
-    text = made(office, "post text", ref) or await step(post_text, office, ref, sc, start)
+    text = made(office, "post text", ref) or await step(reviewed, office, "post text", ref, lambda fb: post_text(office, ref, sc, start, fb), start)
+    if not text:
+        return
     await step(cover, office, ref, sc, start); await asyncio.sleep(pause)
     await step(remix, office, ref, made(office, "transcript"), made(office, "film list", ref) or {"shots": ["our own shots"]}, start)
-    ok, sc, text = await step(permit_gate, office, ref, sc, text, start)
-    if ok:
-        await step(reviewed, office, "versions", ref, lambda fb: cross(office, ref, text, start), start)
-        slot = made(office, "slot", "next") or await step(schedule, office, start)
-        await step(ask_to_publish, office, ref, cut, text, slot, start)
+    await _to_approval(office, ref, sc, text, start)
 
 
 async def ai_video(office: Office, ref: str, *, by: str, consent: bool, poll: float = 10, wait: float = 900) -> dict:
@@ -1439,11 +1662,12 @@ def chain(office: Office, ref: str) -> list[dict]:
                     and sc and e["content"].get("choice") == sc["id"]), None)
     steps = [{"step": "Pick a script", "state": "waiting" if pick else "done" if sc else "not yet",
               "who": approvers.label(office, "script") if pick or not sc else f"picked by {name(decided)}" if decided else "picked"},
-             {"step": "Film it, or make the video", "state": "done" if foot else "waiting" if film else "not yet",
-              "who": (foot.get("source") or f"uploaded by {name(foot.get('by') or '')}".strip()) if foot else name(film["who"]) if film and film.get("who") else "nobody assigned yet"},
-             {"step": "Editing: take check, captions, cover", "state": "done" if cut else "working" if foot else "not yet", "who": "the studio's agents"},
-             {"step": "Approve publishing", "state": "done" if made(office, "published", ref) else "waiting" if pub else "not yet",
-              "who": approvers.label(office, "publish")}]
+             *([{"step": "Make the images", "state": "done" if made(office, "slides", ref) else "working", "who": "the studio's agents"}] if sc and sc.get("slides") else [
+                 {"step": "Film it, or make the video", "state": "done" if foot else "waiting" if film else "not yet",
+                  "who": (foot.get("source") or f"uploaded by {name(foot.get('by') or '')}".strip()) if foot else name(film["who"]) if film and film.get("who") else "nobody assigned yet"},
+                 {"step": "Editing: take check, captions, cover", "state": "done" if cut else "working" if foot else "not yet", "who": "the studio's agents"}]),
+             {"step": "Approve publishing", "state": "done" if made(office, "published", ref) or ref in scheduled(office) else "waiting" if pub else "not yet",
+              "who": f"goes out {datetime.fromisoformat(scheduled(office)[ref]['at']).strftime('%a %I:%M %p').replace(' 0', ' ')}" if ref in scheduled(office) else approvers.label(office, "publish")}]
     return steps
 
 

@@ -53,6 +53,15 @@ def _usage(d: dict) -> dict:
             "reasoning_tokens": (u.get("output_tokens_details") or u.get("completion_tokens_details") or {}).get("reasoning_tokens")}
 
 
+def _send(path: str, body: dict, timeout: float) -> httpx.Response:
+    """A call that took too long or lost the line is a failure the caller can report, not a crash of the whole run."""
+    try:
+        with _client(timeout) as c:
+            return c.post(f"{_base()}{path}", json=body)
+    except httpx.HTTPError as e:
+        raise MetaError(f"Muse did not answer in time or the line dropped ({type(e).__name__})") from None
+
+
 def search(prompt: str, *, country: str = "", timeout: float = 120, agent: str = "mtrend") -> dict:
     """{text (the final answer only), sources[{title,url,snippet}], cited[{title,url}], queries} from Muse Spark with web search.
     Paid: the tokens plus a fee per search, written to the ledger and stopped at the budget."""
@@ -62,8 +71,7 @@ def search(prompt: str, *, country: str = "", timeout: float = 120, agent: str =
             "tools": [{"type": "web_search", "search_context_size": env("DIWAN_SEARCH_CONTEXT", "low"),
                        **({"user_location": {"type": "approximate", "country": country}} if country else {})}]}
     t0 = time.monotonic()
-    with _client(timeout) as c:
-        r = c.post(f"{_base()}/responses", json=body)
+    r = _send("/responses", body, timeout)
     if r.status_code != 200:
         raise MetaError(f"web search returned {r.status_code}: {r.text[:200]}")
     text, sources, cited, queries = [], [], [], []
@@ -92,8 +100,7 @@ def look(system: str, text: str, images: list[bytes], schema: dict, *, agent: st
                                                  for b in images]
     body = {"model": env("META_MODEL_SPARK", "muse-spark-1.3"), "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
             "response_format": {"type": "json_schema", "json_schema": schema}, "reasoning_effort": "low", "max_tokens": 6000}
-    with _client(timeout) as c:
-        r = c.post(f"{_base()}/chat/completions", json=body)
+    r = _send("/chat/completions", body, timeout)
     if r.status_code != 200:
         raise MetaError(f"Muse Spark returned {r.status_code}: {r.text[:200]}")
     d = r.json()
@@ -108,9 +115,7 @@ def image(prompt: str, name: str, size: str = "1024x1792") -> str:
     """Generate with Muse Image, save under media/, return the served path. Paid per image; stopped at the budget."""
     from diwan import costs
     _guard("image", "mthumb")
-    with _client(120) as c:
-        r = c.post(f"{_base()}/images/generations", json={"model": env("META_MODEL_IMAGE", "muse-image-1.0"), "prompt": prompt[:3000],
-                                                          "n": 1, "size": size, "response_format": "b64_json"})
+    r = _send("/images/generations", {"model": env("META_MODEL_IMAGE", "muse-image-1.0"), "prompt": prompt[:3000], "n": 1, "size": size, "response_format": "b64_json"}, 120)
     if r.status_code != 200:
         raise MetaError(f"Muse Image returned {r.status_code}: {r.text[:200]}")
     MEDIA.mkdir(exist_ok=True)

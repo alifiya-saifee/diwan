@@ -89,6 +89,7 @@ function speak(text) {
   });
 }
 
+let stalled;
 async function talk() {
   if (ws) { stop(); return; }
   try {
@@ -101,8 +102,12 @@ async function talk() {
   ws.binaryType = "arraybuffer";
   ws.onmessage = (m) => {
     const d = JSON.parse(m.data);
-    if (d.partial) live(`You: ${d.partial}`);
-    if (d.heard) { add("person", d.heard); live("The Marketing lead is thinking…"); }
+    clearTimeout(stalled);
+    if (d.partial) {
+      live(`You: ${d.partial}`);
+      stalled = setTimeout(() => { el("mc-text").value = d.partial; live("I didn't catch the end of that. It's in the box: press Send, or keep talking."); }, 6000);
+    }
+    if (d.heard) { el("mc-text").value = ""; add("person", d.heard); live("The Marketing lead is thinking…"); }
     if (d.reply) show(d);
     if (d.stop) setTimeout(stop, 2500);  // let it finish saying goodbye
   };
@@ -119,6 +124,7 @@ async function talk() {
 }
 
 function stop() {
+  clearTimeout(stalled);
   if (ws && ws.readyState === 1) { ws.send("end"); ws.close(); }
   ws = null; ctx?.close(); ctx = null; stream?.getTracks().forEach((t) => t.stop()); stream = null;
   speechSynthesis.cancel(); speaking = false;

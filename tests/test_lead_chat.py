@@ -88,3 +88,22 @@ def test_an_uploaded_reel_is_measured_transcribed_and_read(office, monkeypatch, 
     u = lead_chat.uploads(office, "S4")[0]
     assert u["likes"] == "2400" and u["analysis"]["read"]["hook"] == "a question"  # what was told and what was measured, apart
     assert lead_chat.say(office, "S4", "I uploaded their.mp4.", by="maya")["reply"].endswith("How many likes and comments did it get?")
+
+
+def test_talking_says_so_when_the_listening_drops(monkeypatch):
+    from fastapi.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+    from diwan import app as server
+    from diwan.providers import voice
+
+    async def gone(audio, on_turn):
+        on_turn({"partial": "Uh yes I wanted to ask"})
+        raise voice.VoiceError("connection lost")
+
+    monkeypatch.setattr(voice, "available", lambda: True)
+    monkeypatch.setattr(voice, "stream", gone)
+    with TestClient(server.app) as c, c.websocket_connect("/api/marketing/chat/audio?session=s") as ws:
+        assert ws.receive_json() == {"partial": "Uh yes I wanted to ask"}
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_json()
+    assert closed.value.code == 4002 and "Press Talk" in closed.value.reason

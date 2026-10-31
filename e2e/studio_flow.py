@@ -54,7 +54,7 @@ with sync_playwright() as p:
         pg.click("#up")
         expect(pg.locator("#upres")).to_contain_text("Uploaded", timeout=60_000)
         expect(pg.locator("#made video")).to_be_visible(timeout=240_000)
-        expect(pg.get_by_role("button", name="Approve & publish")).to_be_visible(timeout=120_000)
+        expect(pg.get_by_role("button", name="Approve for this time")).to_be_visible(timeout=120_000)
         pg.screenshot(path=str(SHOTS / "4-cut-and-publish-request.png"), full_page=True)
         print("cut and publish request shown")
     b.close()

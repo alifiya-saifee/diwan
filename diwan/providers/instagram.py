@@ -121,16 +121,30 @@ def posts_between(username: str, since: str | None = None, until: str | None = N
 
 
 def publish_reel(video_url: str, caption: str, *, wait: float = 120) -> str:
-    box = _post(f"{env('IG_USER_ID')}/media", {"media_type": "REELS", "video_url": video_url, "caption": caption})["id"]
+    return _finish(_post(f"{env('IG_USER_ID')}/media", {"media_type": "REELS", "video_url": video_url, "caption": caption})["id"], wait)
+
+
+def publish_image(image_url: str, caption: str, *, wait: float = 60) -> str:
+    return _finish(_post(f"{env('IG_USER_ID')}/media", {"image_url": image_url, "caption": caption})["id"], wait)
+
+
+def publish_carousel(image_urls: list[str], caption: str, *, wait: float = 120) -> str:
+    """2 to 10 public JPEGs: each is uploaded on its own, then the album."""
+    kids = [_post(f"{env('IG_USER_ID')}/media", {"image_url": u, "is_carousel_item": "true"})["id"] for u in image_urls]
+    return _finish(_post(f"{env('IG_USER_ID')}/media", {"media_type": "CAROUSEL", "children": ",".join(kids), "caption": caption})["id"], wait)
+
+
+def _finish(box: str, wait: float) -> str:
+    """Wait for Instagram to process what was uploaded, then publish it."""
     t0 = time.monotonic()
     while time.monotonic() - t0 < wait:
         st = _get(box, {"fields": "status_code"}).get("status_code")
         if st == "FINISHED":
             return _post(f"{env('IG_USER_ID')}/media_publish", {"creation_id": box})["id"]
         if st == "ERROR":
-            raise InstagramError("Instagram could not process the video")
+            raise InstagramError("Instagram could not process it")
         time.sleep(3)
-    raise InstagramError("Instagram is still processing the video; try publishing again in a minute")
+    raise InstagramError("Instagram is still processing it; try publishing again in a minute")
 
 
 def reply_comment(comment_id: str, text: str) -> str:

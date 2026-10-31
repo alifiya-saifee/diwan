@@ -23,21 +23,36 @@ FIELDS = {  # key: (label, what to write)
     "permit": ("Do our posts need a permit or licence number?", "yes or no: when yes, every post shows it and is held without it"),
     "languages": ("Languages we post in", "e.g. English, Arabic: scripts carry the hook in each"),
     "website": ("Our website", "The home page; the studio reads it to learn the company and its products"),
+    "posted_before": ("Have we posted on this account before?", "yes or no: asked only when our posts can't be seen"),
 }
 NEEDED = ("industry", "country")
 ZONEINFO = Path("/usr/share/zoneinfo")
+
+
+def _zoneinfo() -> Path | None:
+    """The time-zone database: the system's (macOS, Linux), else the tzdata package (Windows has none of its own)."""
+    if (ZONEINFO / "zone.tab").exists():
+        return ZONEINFO
+    try:
+        import tzdata
+    except ImportError:
+        return None
+    return Path(tzdata.__file__).parent / "zoneinfo"
 
 
 @lru_cache(maxsize=1)
 def countries() -> list[dict]:
     """[{code, name, zones}] for every country in the time-zone database, by name."""
     names, zones = {}, {}
+    folder = _zoneinfo()
+    if not folder:
+        return []
     try:
-        for line in (ZONEINFO / "iso3166.tab").read_text().splitlines():
+        for line in (folder / "iso3166.tab").read_text(encoding="utf-8").splitlines():
             if line and not line.startswith("#"):
                 code, name = line.split("\t")[:2]
                 names[code] = name
-        for line in (ZONEINFO / "zone.tab").read_text().splitlines():
+        for line in (folder / "zone.tab").read_text(encoding="utf-8").splitlines():
             if line and not line.startswith("#"):
                 parts = line.split("\t")
                 zones.setdefault(parts[0], []).append(parts[2])
@@ -91,6 +106,9 @@ def save(office: Office, values: dict, *, by: str) -> list[str]:
     if new["permit"].lower() not in ("", "yes", "no"):
         raise Invalid("Answer the permit question with yes or no.")
     new["permit"] = new["permit"].lower()
+    new["posted_before"] = new["posted_before"].lower()
+    if new["posted_before"] not in ("", "yes", "no"):
+        raise Invalid("Answer with yes or no.")
     if new["country"]:
         c = country(new["country"])
         if not c:
