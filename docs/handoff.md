@@ -45,7 +45,7 @@ DIWAN_DB=diwan.db .venv/bin/uvicorn diwan.app:app --port 8030 --reload --reload-
 never against `diwan.db`:
 
 ```
-SP=<scratch dir>; DIWAN_DB=$SP/e2e.db DIWAN_MEDIA=$SP/media DIWAN_OFFLINE=1 DIWAN_TAPE=off \
+SP=<scratch dir>; DIWAN_AUTH=off DIWAN_DB=$SP/e2e.db DIWAN_MEDIA=$SP/media DIWAN_OFFLINE=1 DIWAN_TAPE=off \
   .venv/bin/uvicorn diwan.app:app --port 8031
 .venv/bin/python e2e/studio_flow.py http://127.0.0.1:8031 $SP <take.mp4>    # WATCH=1 for a visible window
 ```

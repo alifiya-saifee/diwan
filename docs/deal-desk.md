@@ -216,6 +216,70 @@ the same deals and one deal opens in a side panel:
     fills their blank lines. The usual fees are the owner's settings per path, each with who pays it (the DLD fee, the
     trustee office fee, Ejari), shown on the commission card; the transactions officer confirms the amounts.
 
+17. **Which property the deal is on** (design approved by the product owner 31 Oct). A deal opened from a WhatsApp,
+    Instagram or portal message has only a placeholder ("WhatsApp enquiry"). The box that takes the agreed price also asks
+    **whose property it is**, and the answer settles who is on the other side too, so the broker isn't asked twice:
+    - **Our listing:** search by ref, name or area and pick one; its price fills the agreed price and the discount check
+      runs against it. Asked next: did another agency bring the buyer? If yes, the other agency's details.
+    - **Another agency's listing:** the property is typed; the agency, its ORN, its agent, the agent's BRN and its share go
+      on the deal's terms as before (we act for the buyer: Form B and Form I on a ready sale). There is nothing to compare
+      the price with and nothing of ours to reserve.
+    - **From a developer** (off-plan only): the developer comes from the owner's agreements, plus the project and the unit.
+      The developer's rate and trigger apply. With no agreements yet the screen says the owner adds them first.
+    A ready sale and a rental offer the first two; off-plan offers all three, the developer first. Each agency used once
+    is offered again, filling its ORN and agent.
+    **The same form opens on the deal** for a deal already converted (it replaces the "other side" question) and to
+    change the property. Who may: the broker, the transactions officer, the owner.
+    **A change is recorded, never overwritten** (`setting.changed`, key "property", with who and when). Unsigned forms and
+    an unsigned Form F plan go back and are redrafted. A signed form, a signed or submitted Form F, a drafted commission
+    invoice or a closed deal fixes the property. On a converted deal, picking one of our listings compares it with the
+    price already agreed; a discount above the owner's limit needs the owner to do it.
+    **The listing follows the deal:** converting marks our listing reserved, so Rania stops offering it and no other deal
+    can pick it; changing the property or marking the deal Lost releases it; coming back from Lost takes it again if it
+    is still free; closing marks it sold, or let on a rental.
+    *Done means:* (1) a placeholder deal can't convert without a property; (2) picking our listing shows it on the deal
+    list, the Inbox, the forms and the closed sale, and compares the price; (3) a listing reserved by another deal is
+    not offered and is refused if sent; (4) an empty search says so, and search works at thousands of listings;
+    (5) another agency's listing drafts Form B and Form I with no "other side" question, and refuses a missing agency or
+    share; (6) a second deal offers that agency again, details filled; (7) a developer unit sets the developer's rate,
+    and an unknown developer is refused; (8) a rental doesn't offer the developer; (9) Ali-style deals already converted
+    get the form, which closes their open question; (10) a change sends back unsigned forms and redrafts them, and a signed
+    form refuses it; (11) Lost releases, closing sells; (12) someone else can't set it; the phone width has no sideways
+    scroll. Deals that already name one of our listings keep working unchanged.
+
+18. **The four rooms closed up** (asked for by the product owner, 31 Oct; from [closed-loop-spec.md](closed-loop-spec.md) and the
+    room lists in [closed-loop-checklist.md](closed-loop-checklist.md); decisions taken are in
+    [open-questions.md](open-questions.md)).
+    **Compliance gates the deal.** A clearance (`compliance.cleared`, `compliance.needs_info`, `compliance.blocked`) is the
+    officer's, pinned to the live money and party facts, and goes stale when one is replaced. Nothing binding happens
+    without it: Form F links, Form F submit, a paperwork tick, a release of money, closing. A possible match is a hit
+    (`screening.hit`) that stays open as a hold until the officer resolves it. Risk is rated low, medium or high; high risk or a
+    PEP needs the owner's sign-off. Price and finance corrections reach Compliance first. Needing more information asks
+    the client through their link, never saying why; a client is never told about a check. A marked payment is checked
+    for cash, a third party, a split, crypto and a mismatch with the words. Drafts: cash report and suspicious transaction
+    report, for the officer to file.
+    **Finance.** Mark received takes amount, date, method, reference, payer and an optional proof; a proof that disagrees
+    is flagged before saving; part payments leave the balance open; every mark can be undone with a reason, never deleted.
+    Cash at the limit or a third-party payer goes to Compliance and the receipt waits. Otherwise the client gets the receipt.
+    Invoices are drafted at the owner's trigger, carry a due date and move through draft, sent, overdue, part paid, received
+    or written off. Reminders on the owner's days. Broker commission and other agencies' shares become a payout list for
+    the owner. A Finance view shows cash this month, outstanding, the next 30 days, by broker.
+    **Deal.** The checklist follows the deal: a cash buyer has no mortgage steps, a seller with no mortgage no liability
+    letter, and the party's type picks the documents (resident, non-resident, GCC, company, offshore company, power of
+    attorney). Signatures are drawn on screen or photographed; a selfie, a document, a blank page and one line are refused.
+    Each upload is answered at once and on WhatsApp. The ladder is 24, 48, 72 hours (nudge, broker call, owner). Expired
+    links can be renewed. A gates panel shows Compliance, Finance, Review, Paperwork and the owner; `deal.ready_for_transfer`
+    needs all of them on the current facts. A board shows deals by stage. Lost has a reason from the owner's list.
+    **Operations.** Forms sent carry their version and are recalled with a short client message when a correction replaces
+    them. Each official step (NOC, trustee, Ejari, permit) has a draft listing exactly what to enter, from the record, and a
+    person submits and records the reference. `transfer.booked` carries date and place and tells the client what to
+    bring; `transfer.completed` is marked by a person and starts the handover; closing emits `case.closed`. Every task shows
+    what it waits on and for how long. An Operations view shows all of it.
+    **Not real yet, by nature:** no portal is driven (a person types the draft in), no sanctions list or PEP database is
+    connected (a person checks and records), IDs and cheques are not read by a vision provider (a person compares), the
+    signature check is a first filter on the picture, and messages stay in the sandbox until a WhatsApp line is connected.
+    *Done means:* tests for each rule, and `e2e/deal_flow.py` plus a new `e2e/rooms_flow.py` passing in the browser.
+
 ## States every section must handle
 
 Empty (no deals; a deal with no money facts; nothing to screen), errors (an action by the wrong person is refused with

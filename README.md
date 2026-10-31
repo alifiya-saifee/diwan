@@ -39,7 +39,8 @@ charter -> instructions -> model (live, or a marked recording) -> pack -> quote 
 Front desk and Sales: from a client's first message to the keys. Rania (the AI receptionist) talks to the client; people
 stay in charge. Everything below runs on a sandbox WhatsApp line with fictional data, and is checked in the browser as a
 person would use it. See [docs/sessions.md](docs/sessions.md) for who owns what and the changelog, and
-[docs/done-and-left.md](docs/done-and-left.md) for the detail.
+[docs/done-and-left.md](docs/done-and-left.md) for the detail. For the whole office against the
+[closed-loop spec](docs/closed-loop-spec.md), see the [checklist](docs/closed-loop-checklist.md).
 
 | Step | What happens | State |
 |---|---|---|
@@ -58,6 +59,12 @@ How it is checked: `pytest -q` (430 tests at the time of writing), 77 labelled c
 and Playwright checks in `e2e/` that drive the real pages on a scratch database. A few live Muse Spark passes cost cents.
 Known limits: no real WhatsApp line is connected; WhatsApp only allows free text within 24 hours of the client's last
 message, after that only approved templates; when no model is connected Rania falls back to plain rules, which are cruder.
+
+## Against the closed-loop spec
+
+[docs/closed-loop-checklist.md](docs/closed-loop-checklist.md) lists what is there and what still needs to be there, room by room, with the risks to fix
+first, the order to build and the questions only the office can answer. [docs/closed-loop-audit.md](docs/closed-loop-audit.md) has every requirement of
+[the spec](docs/closed-loop-spec.md) with where it was found in the code. Checked 31 Oct 2026: 1,377 requirements, 17% built, 35% partly, 44% missing.
 
 ## The content studio
 
