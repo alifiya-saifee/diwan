@@ -43,7 +43,7 @@ with sync_playwright() as p:
     conv.click()
     expect(pg.locator(".thread")).to_contain_text("Rania · AI", timeout=60_000)
     reply = pg.locator(".b.sent").last.inner_text()
-    step(f"Rania replied: {reply.splitlines()[0][:120]}")
+    step(f"Rania replied: {[x for x in reply.splitlines() if x and x != 'Rania · AI'][0][:120]}")
     assert ("Booked" in reply and "Saturday 31 Oct, 4:00 PM" in reply) or ("isn't available" in reply and "Saturday" in reply), f"wrong time: {reply}"
     pg.screenshot(path=str(SHOTS / "o1-rania.png"))
     pg.locator(".switch").click()

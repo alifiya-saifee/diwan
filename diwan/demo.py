@@ -10,13 +10,13 @@ from diwan.office import Office
 def company(office: Office) -> None:
     """What a brokerage tells the office once: listings (sample permit numbers) and the few facts customers ask about."""
     office.add_listing(ref="MC-1204", title="Unit 1204, Marina Crest", community="Dubai Marina", type="apartment", beds=2,
-                       price_aed=2_600_000, permit="SAMPLE-71204", features=["sea view", "balcony", "2 parking"])
+                       price_aed=2_600_000, permit="SAMPLE-71204", features=["sea view", "balcony", "2 parking"], agent="omar")
     office.add_listing(ref="JVC-88", title="Villa 88", community="Jumeirah Village Circle", type="villa", beds=4,
-                       price_aed=1_900_000, permit="SAMPLE-60088", features=["garden", "maid's room"])
+                       price_aed=1_900_000, permit="SAMPLE-60088", features=["garden", "maid's room"], agent="omar")
     office.add_listing(ref="BB-305", title="Apartment 305, Bay Square", community="Business Bay", type="apartment", beds=1,
-                       price_aed=1_150_000, permit="SAMPLE-30305", features=["canal view"])
+                       price_aed=1_150_000, permit="SAMPLE-30305", features=["canal view"], agent="hamza")
     office.add_listing(ref="DT-2210", title="Apartment 2210, Burj Vista", community="Downtown Dubai", type="apartment", beds=1,
-                       price_aed=1_450_000, permit=None)  # no permit yet: kept, never advertised
+                       price_aed=1_450_000, permit=None, agent="nadia")  # no permit yet: kept, never advertised
     office.add_knowledge("hours", "Office hours", "We're open Monday to Saturday, 10am to 7pm. Viewings run in the same hours.", by="layla")
     office.add_knowledge("policy", "Viewings", "Viewings are with one of our brokers. Please bring a photo ID for the building lobby.", by="layla")
     office.add_knowledge("fees", "Buyer fees", "Our buyer commission is 2% of the price plus VAT. The Dubai Land Department transfer fee is 4%.", by="layla")
@@ -45,6 +45,47 @@ def archive(office: Office) -> None:
             ("invoice", "Property Finder listings, October", "2026-10-02", 12_000, "Property Finder"),
             ("bill", "du internet and phones, October", "2026-10-15", 1_450, "du")]:
         office.file_document(kind=kind, title=title, date=day, amount_aed=amount, party=party)
+
+
+def catalog(office: Office) -> None:
+    """The demo catalog, arriving the way a brokerage's real one does: through its portal feed (diwan/demo_feed.xml:
+    fictional units, sample permits, free-licence photos of the area or a similar home). Loaded once."""
+    from pathlib import Path
+
+    from diwan import leads
+    if "listing:DR-135" not in office.graph().nodes:  # the newest demo listing: an office missing it reads the feed again
+        leads.sync_listings(office, (Path(__file__).parent / "demo_feed.xml").read_bytes(), by="demo-feed")
+
+
+def projects(office: Office) -> None:
+    """Two fictional off-plan projects in Knowledge → Projects, and one developer brochure in the archive (the other is
+    missing on purpose: the pitch deck asks the broker to get it). Loaded once."""
+    from diwan import knowledge
+    if any(n.props.get("title") == "Creek Vista Heights" for n in office.graph().of("knowledge")):
+        return
+    knowledge.add(office, "project", "Creek Vista Heights",
+                  "Harbour Lane Developments (fictional). Payment plan: 10% on booking, 50% during construction in 5 instalments, "
+                  "40% on handover. Handover Q4 2027. Dubai Land Department fee 4% on booking.", by="layla", valid_until="2027-12-31")
+    knowledge.add(office, "project", "Bayline Residences",
+                  "Canalside Developers (fictional). Payment plan: 20% on booking, 40% during construction, 40% on handover. "
+                  "Handover Q2 2028.", by="layla", valid_until="2028-06-30")
+    office.file_document(kind="brochure", title="Creek Vista Heights brochure, floor plans and payment plan", date="2026-09-20",
+                         party="Harbour Lane Developments", text="Fictional developer brochure for the demo.")
+
+
+def kinds(office: Office) -> None:
+    """The demo brokerage's deal kinds (its sales desks), as data the owner edits on the Settings page. Loaded once."""
+    from diwan import deal_kinds
+    if deal_kinds.kinds(office.graph()):
+        return
+    deal_kinds.save(office, [
+        {"id": "off_plan", "name": "Off-plan", "brokers": ["hamza"], "listings": {"offering": "sale", "completion": "off_plan"},
+         "serves": [{"type": "buyer", "when": {"field": "ready_or_offplan", "op": "=", "value": "Off-plan"}}]},
+        {"id": "ready_sales", "name": "Ready sales", "brokers": ["omar", "nadia"], "listings": {"offering": "sale", "completion": "ready"},
+         "serves": [{"type": "buyer"}, {"type": "seller"}]},
+        {"id": "leasing", "name": "Leasing", "brokers": ["nadia"], "listings": {"offering": "rent", "completion": ""},
+         "serves": [{"type": "tenant"}, {"type": "landlord"}]},
+    ], by="layla")
 
 
 def seed(office: Office) -> None:

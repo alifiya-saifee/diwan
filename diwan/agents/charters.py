@@ -70,6 +70,12 @@ ROSTER: list[Charter] = [
       "Meeting ends", "Compliance lead", "Asks for each missing document by name", ("draft",), ("send",),
       "Mention compliance reasons to the customer (tipping off)", hack=False),
 
+    C("visit", "Visit summarizer", "What the client said at the visit", "sales", None, "spark",
+      "Turns the visit recording or the broker's notes into a short summary: how keen, what they liked, what worried them, the next step.",
+      "The visit recording or notes", "The client's own words only", "A summary card, each point with the words it came from",
+      "A recorded visit ends, or the broker marks it Done with notes", "Broker", "Says it can't tell when the words don't say",
+      ("draft",), ("send",), "Guess how the client feels, or add anything they didn't say", hack=False),
+
     C("ops", "Operations lead", "Gets the deal to transfer", "nova", "lead", "rules",
       "Turns agreed terms into the paperwork sequence and tracks it to transfer.", "Deal pack", "Deal facts, portal states",
       "Transfer checklist with owners and dates", "Terms agreed", "Fact checker", "Names the person each blocked step waits for",

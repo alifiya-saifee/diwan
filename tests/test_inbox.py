@@ -25,7 +25,7 @@ def office():
 def test_list_shows_stage_interests_waiting_and_window(office):
     reception.message(office, PH, "Hi, looking to buy a 2 bed in the Marina, budget 2.7 million", name_="Ali Rahman")
     row = inbox.listing(office)[0]
-    assert row["name"] == "Ali Rahman" and row["stage"] == "Qualified" and row["window_open"]
+    assert row["name"] == "Ali Rahman" and row["stage"] == "Qualifying" and row["window_open"]
     assert {c["label"] for c in row["chips"]} >= {"Buy", "Marina", "2 bed", "AED 2.7M"}
     assert row["waiting_min"] is None  # Rania answered
 

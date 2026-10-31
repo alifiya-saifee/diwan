@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from diwan.people import PEOPLE, name, pid
+
+DUBAI = timezone(timedelta(hours=4))
 
 KIND = {"deal_term": "Deal terms", "payer": "Who pays", "payment_promise": "Payment promise", "income_claim": "Stated income",
         "party": "Who is involved", "document_shown": "Document shown", "commitment": "Next step"}
@@ -48,6 +50,8 @@ class Graph:
         self.settings: dict[str, dict] = {}
         self.autonomy: dict[str, str] = {}
         self.rounds: dict | None = None  # the latest round: {"event", "at", "reports": {lead: pack}}
+        self.qualify_form: dict | None = None  # the owner's latest qualification form (diwan/qualify.py)
+        self.custom_agents: dict[str, dict] = {}  # agents the owner added (diwan/agents/custom.py)
 
     # building
     def add(self, nid: str, type: str, label: str, e: dict, **kw) -> Node:
@@ -138,7 +142,7 @@ class Graph:
         if n.type in ("decision", "question", "check", "request"):
             return f"{n.id} · for {name(p.get('who'))}: {p['text']}{tag}"
         if n.type == "knowledge":
-            return f"{n.id} · {p['title']}: {p['text']}{'' if n.status == 'confirmed' else ' [not confirmed]'}"
+            return f"{n.id} · {p['title']}: {p['text']}{'' if n.status == 'confirmed' else ' [retired]' if n.status == 'retired' else ' [not confirmed]'}"
         if n.type == "listing":
             return (f"{p['ref']} · {p['title']}, {p['community']} · {p['beds']} bed {p['type']} · AED {p['price_aed']:,} · "
                     f"permit {p.get('permit') or 'MISSING'} · {n.status}")
@@ -153,9 +157,15 @@ class Graph:
                     f"broker {name(p['broker'])}")
         if n.type == "viewing":
             when = datetime.fromisoformat(p["at"]).strftime("%a %d %b, %I:%M %p").replace(" 0", " ")
-            return f"{n.id} · viewing of {p['listing']} with {name(p['broker'])}, {when}, for {p.get('customer')}{tag if n.status != 'booked' else ''}"
+            what = (f"viewing of {p['listing']}" if p.get("where", "property") == "property" and p.get("listing")
+                    else f"{(p.get('kind_name') or 'meeting').lower()}" + (f" about {p['listing']}" if p.get("listing") else ""))
+            return f"{n.id} · {what} with {name(p['broker'])}, {when}, for {p.get('customer')}{tag if n.status != 'booked' else ''}"
         if n.type == "deal":
             return f"{n.id.split(':', 1)[1]} · {p.get('property')} · customer {p.get('customer')} · broker {name(p.get('broker'))}"
+        if n.type == "attention":
+            due = datetime.fromisoformat(p["due"]).astimezone(DUBAI).strftime("%H:%M")
+            state = "in the Pool" if p.get("pooled") else "overdue" if p.get("overdue") and n.status == "open" else n.status
+            return f"{n.id} · for {name(p['who'])}: {p['reason']} ({'call' if p['kind'] == 'call' else 'reply'}) · due {due} · {state}"
         return f"{n.id} · {n.label}"
 
     def search(self, text: str, deal: str | None = None, types: set | None = None, k: int = 8) -> list[Node]:
@@ -208,6 +218,9 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
             for f in c.get("rests_on", []):
                 g.link(n.id, "rests_on", f, e)
             g.link(n.id, "assigned_to", f"agent:{c['agent']}", e)
+            if c.get("custom") and c["agent"] in g.custom_agents:
+                ca = g.custom_agents[c["agent"]]
+                ca.update(done_upto=max(ca["done_upto"], c.get("trigger_event") or 0), runs=ca["runs"] + 1)
         elif t in ("task.withdrawn", "task.done") and c.get("id") in g.nodes:
             n = g.nodes[c["id"]]
             n.status = t.split(".")[1]
@@ -247,8 +260,13 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
         elif t == "knowledge.confirmed" and c.get("id") in g.nodes:
             g.nodes[c["id"]].status = "confirmed"
             g.nodes[c["id"]].props["confirmed_by"] = e["actor"]
-        elif t == "listing.added":
-            g.add(f"listing:{c['ref']}", "listing", c["title"], e, status=c.get("status", "available"), props=dict(c))
+        elif t == "listing.added":  # a later one updates only the fields it carries; no status means the status is kept
+            old = g.nodes.get(f"listing:{c['ref']}")
+            g.add(f"listing:{c['ref']}", "listing", c.get("title") or (old.label if old else c["ref"]), e,
+                  status=c.get("status") or (old.status if old else "available"), props=dict(c) | {"updated_at": e["at"]})
+        elif t.startswith("item.") or t.startswith("change."):
+            from diwan import knowledge
+            knowledge.apply(g, e)
         elif t in ("chat.received", "chat.sent", "chat.suggested", "chat.handover"):
             ch = g.nodes.get(f"chat:{c['chat']}") or g.add(f"chat:{c['chat']}", "chat", c.get("name") or c["chat"], e, deal=deal,
                                                             props={"phone": c["chat"], "mode": "ai", "messages": []})
@@ -263,7 +281,8 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                 ch.props["messages"].append({"event": e["id"], "at": e["at"], "type": t.split(".")[1], "by": e["actor"],
                                              "text": c["text"], "refs": c.get("refs", []), "via": c.get("via"),
                                              "status": c.get("status"), "error": c.get("error"), "template": c.get("template"),
-                                             "comment_id": c.get("comment_id"), "channel": c.get("channel")})
+                                             "comment_id": c.get("comment_id"), "channel": c.get("channel"), "nudge": c.get("nudge"),
+                                             "reminder": c.get("reminder")})
                 ch.props["last_at"] = e["at"]
         elif t == "stage.changed" and f"deal:{deal}" in g.nodes:
             g.nodes[f"deal:{deal}"].props["stage"] = c["stage"]
@@ -304,13 +323,123 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
         elif t == "sale.closed":
             g.add(c["id"], "sale", c["listing"], e, status="closed", props=dict(c))
         elif t == "appointment.booked":
-            v = g.add(c["id"], "viewing", f"Viewing {c['listing']}", e, deal=deal, status="booked", props=dict(c))
-            g.link(v.id, "of", f"listing:{c['listing']}", e)
+            v = g.add(c["id"], "viewing", f"{c.get('kind_name') or 'Viewing'} {c.get('listing') or ''}".strip(), e, deal=deal, status="booked", props=dict(c))
+            if c.get("listing"):
+                g.link(v.id, "of", f"listing:{c['listing']}", e)
             g.link(v.id, "with", g.person(c["broker"], e), e)
             if c.get("chat"):
                 g.link(f"chat:{c['chat']}", "booked", v.id, e)
+        elif t in ("appointment.link", "appointment.link_removed") and c.get("id") in g.nodes:  # a video call's link
+            v = g.nodes[c["id"]]
+            if t == "appointment.link_removed":
+                v.props.pop("link", None)
+            else:
+                v.props["link"] = {k: c.get(k) for k in ("provider", "url", "meeting_id", "error")}
+        elif t == "calendar.blocked":  # the broker's own busy time or day off; the same id changes it
+            b = g.nodes.get(c["id"]) or g.add(c["id"], "block", c.get("reason") or "Busy", e, status="active", props={})
+            b.props.clear()
+            b.props.update(c)
+            b.label = c.get("reason") or ("Day off" if c.get("kind") == "off" else "Busy")
+        elif t == "calendar.unblocked" and c.get("id") in g.nodes:
+            g.nodes[c["id"]].status = "removed"
         elif t == "appointment.cancelled" and c.get("id") in g.nodes:
             g.nodes[c["id"]].status = "cancelled"
+        elif t in ("appointment.moved", "appointment.reminded", "appointment.done", "appointment.noshow") and c.get("id") in g.nodes:
+            v = g.nodes[c["id"]]
+            if t == "appointment.moved":
+                v.props["at"], v.props["moved_from"] = c["at"], c.get("from")
+                v.props.pop("reminded", None)  # a new time gets its reminders again
+            elif t == "appointment.reminded":
+                v.props.setdefault("reminded", []).append(c["which"])
+            else:
+                v.status = "done" if t == "appointment.done" else "no_show"
+        elif t == "lead.assigned" and f"deal:{deal}" in g.nodes:
+            d = g.nodes[f"deal:{deal}"]
+            d.props.update(broker=c["to"], assigned_at=c.get("at") or e["at"], assigned_why=c.get("why"))
+            g.link(g.person(c["to"], e), "broker_on", d.id, e)
+            for n in g.of("attention", deal, "open"):
+                n.props["who"] = c["to"]
+        elif t == "attention.raised":
+            if c.get("replaces") in g.nodes:
+                g.nodes[c["replaces"]].status = "replaced"
+            n = g.add(f"AT{e['id']}", "attention", c["reason"], e, deal=deal, status="open", props=dict(c))
+            g.link(n.id, "about", f"chat:{c['chat']}", e)
+        elif t in ("attention.overdue", "attention.cleared", "lead.pooled", "lead.claimed") and c.get("id") in g.nodes:
+            n = g.nodes[c["id"]]
+            if t == "attention.overdue":
+                n.props["overdue"] = True
+            elif t == "attention.cleared":
+                n.status = "cleared"
+                n.props.update(action=c["action"], note=c.get("note"), cleared_by=e["actor"], cleared_at=e["at"])
+            elif t == "lead.pooled":
+                n.props["pooled"] = True
+                if f"deal:{deal}" in g.nodes:
+                    g.nodes[f"deal:{deal}"].props["pool"] = True
+            else:
+                n.props.update(pooled=False, who=c["to"])
+                if f"deal:{deal}" in g.nodes:
+                    g.nodes[f"deal:{deal}"].props.update(pool=False, broker=c["to"], assigned_at=e["at"], assigned_why="claimed from the Pool")
+        elif t == "agent.added":
+            g.custom_agents[c["id"]] = dict(c) | {"status": "active", "added_by": e["actor"], "added_at": e["at"],
+                                                  "done_upto": c.get("from_event", e["id"]), "runs": 0}
+        elif t in ("agent.paused", "agent.resumed", "agent.removed") and c.get("id") in g.custom_agents:
+            a = g.custom_agents[c["id"]]
+            a["status"] = {"agent.paused": "paused", "agent.resumed": "active", "agent.removed": "removed"}[t]
+            if t == "agent.resumed":
+                a["done_upto"] = e["id"]  # a resumed agent starts from now, not from what it missed
+        elif t == "qualify.form":
+            g.qualify_form = dict(c) | {"saved_by": e["actor"], "saved_at": e["at"]}
+        elif t in ("qualify.type", "qualify.answer", "qualify.asked", "qualify.passed", "qualify.not_fit", "qualify.open") \
+                and f"deal:{deal}" in g.nodes:
+            d = g.nodes[f"deal:{deal}"].props
+            if t == "qualify.asked":
+                d["qualify_asked"], d["qualify_asked_event"] = c["field"], e["id"]
+            elif t == "qualify.type":
+                d.update(qtype=c["type"], qtype_quote=c.get("quote"), qtype_source=c.get("source"))
+            elif t == "qualify.answer":
+                old = d.setdefault("answers", {}).get(c["field"]) or {}
+                d["answers"][c["field"]] = {"value": c["value"], "quote": c.get("quote"), "at": e["at"], "by": e["actor"],
+                                            "cause": e.get("caused_by"), "unsure": bool(c.get("unsure")), "source": c.get("source"),
+                                            "times": old.get("times", 0) + 1 if c.get("unsure") else 0}
+            elif t == "qualify.open":
+                d.setdefault("open_questions", []).append(c["question"])
+            else:
+                d.update(qualify_status="qualified" if t == "qualify.passed" else "not_a_fit", qualify_reason=c.get("reason"),
+                         qualify_at=e["at"], qualify_version=c.get("version"))
+        elif t == "visit.summarized" and f"deal:{deal}" in g.nodes:  # what the client said at the visit, with their words
+            g.nodes[f"deal:{deal}"].props["visit"] = dict(c) | {"at": e["at"], "id": e["id"]}
+        elif t in ("followup.drafted", "followup.sent", "followup.dismissed") and f"deal:{deal}" in g.nodes:
+            d = g.nodes[f"deal:{deal}"].props
+            if t == "followup.drafted":
+                d["followup"] = dict(c) | {"status": "draft", "at": e["at"], "id": e["id"]}
+            elif d.get("followup"):
+                d["followup"]["status"] = "sent" if t == "followup.sent" else "dismissed"
+        elif t in ("lead.recommended", "lead.hot", "lead.kind", "lead.nurture", "lead.reopened", "followup.nudged", "lead.optout",
+                   "lead.went_quiet") and f"deal:{deal}" in g.nodes:
+            d = g.nodes[f"deal:{deal}"].props
+            if t == "followup.nudged":  # a follow-up while the client was quiet, sent or skipped (and why)
+                d.setdefault("nudges", []).append({"event": e["id"], "at": e["at"], "n": c["n"], "sent": c.get("sent"), "why": c.get("why")})
+            elif t == "lead.optout":
+                d["optout"] = {"quote": c.get("quote"), "at": e["at"]}
+            elif t == "lead.went_quiet":
+                d["went_quiet"] = e["id"]
+            elif t == "lead.kind":
+                d["kind"], d["kind_name"] = c["kind"], c["name"]
+            elif t == "lead.recommended":
+                d["recommended"] = list(c["refs"])
+            elif t == "lead.nurture":  # not ready yet: nurtured (by Marketing, by default) until they come back
+                d["nurture"] = {"reason": c.get("reason"), "quote": c.get("quote"), "to": c.get("to"), "at": e["at"]}
+            elif t == "lead.reopened":
+                d.pop("nurture", None)
+                d["reopened"] = {"quote": c.get("quote"), "at": e["at"]}
+            else:
+                d["hot"] = {"listing": c.get("listing"), "why": c.get("why"), "quote": c.get("quote"), "at": e["at"]}
+        elif t == "notify.sent":
+            g.add(f"NT{e['id']}", "notice", c["text"], e, status="new", props=dict(c))
+        elif t == "notify.read":
+            for i in c.get("ids", []):
+                if i in g.nodes:
+                    g.nodes[i].status = "read"
         elif t in ("decision.made", "question.answered") and c.get("card") in g.nodes:
             g.nodes[c["card"]].status = "closed"
             g.nodes[c["card"]].props["answer"] = c.get("answer")

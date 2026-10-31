@@ -7,111 +7,182 @@
 <style>
   html, body { height: 100%; overflow: hidden; }
   .wrap { height: calc(100vh - 56px); display: flex; flex-direction: column; }
-  .bar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--line); background: rgba(10, 13, 19, .6); }
-  .bar .ttl { font-family: var(--display); font-size: 24px; margin-right: 6px; }
-  .stages { display: flex; gap: 4px; overflow-x: auto; flex: 1; scrollbar-width: none; }
-  .stages button { font-size: 12px; padding: 6px 11px; border-radius: 99px; background: transparent; border-color: var(--line); color: var(--muted); white-space: nowrap; }
-  .stages button b { font-weight: 600; color: var(--ink); margin-left: 5px; }
-  .stages button.on { background: var(--gold-soft); border-color: rgba(232, 199, 122, .45); color: var(--gold-2); }
-  .line { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
-  .cols { flex: 1; display: grid; grid-template-columns: 330px 1fr 340px; min-height: 0; }
-  .col { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+  /* the top bar: title, the honest line status, who is viewing, the few things a broker opens */
+  .bar { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: rgba(10, 13, 19, .7); position: relative; }
+  .bar .ttl { font-family: var(--display); font-size: 24px; margin-right: 4px; }
+  .bar .grow { flex: 1; }
+  .bar select { width: auto; padding: 6px 10px; font-size: 12.5px; }
+  .bar .btn, .bar button { font-size: 12.5px; padding: 7px 12px; }
+  .line { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; min-width: 0; }
+  .line .pill { overflow: hidden; text-overflow: ellipsis; }
+  .line .dot.warn { background: var(--warn); }
+  .more { position: absolute; top: 46px; right: 16px; z-index: 50; background: var(--panel-solid); border: 1px solid var(--line-2); border-radius: 12px; padding: 6px; min-width: 200px; box-shadow: 0 20px 40px -12px rgba(0,0,0,.7); }
+  .more a { display: block; padding: 9px 12px; border-radius: 8px; color: var(--ink); font-size: 13px; }
+  .more a:hover { background: var(--chip); }
+  .bell { position: relative; }
+  .bell .n { position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px; border-radius: 99px; background: var(--bad); color: #fff; font: 600 10px/17px var(--font); text-align: center; padding: 0 4px; }
+  .notes { position: absolute; top: 46px; right: 16px; width: 360px; max-height: 420px; overflow: auto; background: var(--panel-solid); border: 1px solid var(--line-2); border-radius: 12px; padding: 6px; z-index: 50; box-shadow: 0 20px 40px -12px rgba(0, 0, 0, .7); }
+  .notes .q { padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px; border-bottom: 1px solid var(--line); }
+  .notes .q:hover { background: var(--chip); }
+  .notes .q.new { border-left: 3px solid var(--gold); }
+  .notes .q small { display: block; color: var(--faint); margin-top: 3px; }
+
+  .cols { flex: 1; display: grid; grid-template-columns: 340px minmax(0, 1fr) 340px; min-height: 0; }
+  .col { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); min-width: 0; }
   .col:last-child { border-right: 0; }
-  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 10px 12px 8px; }
-  .tabs button { font-size: 11.5px; padding: 7px 4px; border-radius: 9px; background: transparent; border-color: transparent; color: var(--muted); }
-  .tabs button b { display: block; font-size: 15px; color: var(--ink); font-weight: 600; }
-  .tabs button.on { background: var(--raise); border-color: var(--line-2); color: var(--ink); }
-  .search { padding: 0 12px 10px; }
+
+  /* the chats list */
+  .lhead { padding: 12px 12px 8px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--line); }
+  .search { position: relative; }
+  .search input { padding: 9px 12px 9px 34px; border-radius: 10px; background: rgba(255,255,255,.04); }
+  .search::before { content: "⌕"; position: absolute; left: 12px; top: 50%; transform: translateY(-52%); color: var(--faint); font-size: 16px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tabs button { font-size: 12.5px; padding: 5px 11px; border-radius: 99px; background: rgba(255,255,255,.04); border-color: transparent; color: var(--muted); white-space: nowrap; flex: 0 0 auto; }
+  .tabs button.on { background: var(--gold-soft); color: var(--gold-2); border-color: rgba(232,199,122,.4); }
+  .tabs button i { font-style: normal; margin-left: 6px; font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 99px; background: var(--raise); color: var(--ink); }
+  .tabs button.hot i { background: var(--bad); color: #fff; }
+  .lfoot { display: flex; gap: 8px; align-items: center; }
+  .lfoot select { padding: 6px 10px; font-size: 12.5px; }
+  .lfoot .cnt { font-size: 12px; color: var(--faint); white-space: nowrap; }
   .rows { overflow: auto; flex: 1; }
-  .conv { display: grid; grid-template-columns: 40px 1fr auto; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; transition: .12s; position: relative; }
-  .conv:hover { background: rgba(255, 255, 255, .025); }
-  .conv.on { background: var(--gold-soft); }
+  .conv { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 12px; padding: 11px 14px; cursor: pointer; transition: .12s; position: relative; }
+  .conv::after { content: ""; position: absolute; left: 72px; right: 0; bottom: 0; border-bottom: 1px solid var(--line); }
+  .conv:hover { background: rgba(255, 255, 255, .03); }
+  .conv.on { background: rgba(255,255,255,.06); }
   .conv.on::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--gold); }
-  .av { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 14px; color: #0b0d12; flex: 0 0 auto; }
-  .conv .nm { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .conv .pv { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .av { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 15px; color: #0b0d12; flex: 0 0 auto; }
+  .conv .top { display: flex; align-items: baseline; gap: 8px; }
+  .conv .nm { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  .conv .tm { font-size: 11.5px; color: var(--faint); white-space: nowrap; }
+  .conv .tm.wait { color: var(--warn); font-weight: 600; }
+  .conv .pv { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
   .conv .pv i { font-style: normal; color: var(--teal); }
-  .conv .meta { text-align: right; font-size: 11px; color: var(--faint); display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
-  .ichips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; }
-  .ic { font-size: 10.5px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
-  .ic.intent { color: var(--blue); border-color: rgba(126, 166, 248, .3); background: rgba(126, 166, 248, .08); }
-  .ic.area { color: var(--teal); border-color: rgba(92, 207, 181, .3); background: rgba(92, 207, 181, .07); }
-  .ic.budget { color: var(--gold-2); border-color: rgba(232, 199, 122, .3); background: var(--gold-soft); }
-  .ic.size { color: var(--violet); border-color: rgba(181, 145, 243, .3); background: rgba(181, 145, 243, .07); }
-  .wait { font: 600 10.5px var(--font); padding: 2px 7px; border-radius: 99px; background: var(--warn-soft); color: var(--warn); }
-  .wait.hot { background: var(--bad-soft); color: var(--bad); }
-  .mode { font: 600 10px var(--font); padding: 2px 7px; border-radius: 99px; letter-spacing: .4px; }
-  .mode.ai { background: rgba(92, 207, 181, .12); color: var(--teal); }
-  .mode.human { background: rgba(126, 166, 248, .14); color: var(--blue); }
-  .vbanner { grid-column: 2 / -1; font-size: 11px; color: var(--blue); background: rgba(126, 166, 248, .08); border: 1px solid rgba(126, 166, 248, .18); padding: 3px 8px; border-radius: 8px; margin-top: 2px; }
+  .conv .pv .tick { color: var(--faint); margin-right: 3px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .att, .tg { font: 600 10.5px var(--font); padding: 2px 8px; border-radius: 99px; white-space: nowrap; background: var(--chip); color: var(--muted); }
+  .att { background: var(--warn-soft); color: var(--warn); }
+  .att.late, .tg.hot, .tg.bad { background: var(--bad-soft); color: var(--bad); }
+  .tg.nur { background: rgba(92, 207, 181, .12); color: var(--teal); }
+  .att.pool { background: rgba(181, 145, 243, .14); color: var(--violet); }
+  .tg.view { background: rgba(126, 166, 248, .12); color: var(--blue); }
+  .tg.person { background: rgba(126, 166, 248, .12); color: var(--blue); }
   .empty { padding: 30px 20px; text-align: center; color: var(--muted); font-size: 13px; }
-  .chead { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
-  .chead .nm { font-weight: 600; font-size: 15px; } .chead .ph { font-size: 12px; color: var(--muted); }
+  .welcome { margin: auto; max-width: 380px; text-align: center; color: var(--muted); padding: 24px; }
+  .welcome .wic { font-size: 40px; margin-bottom: 10px; }
+  .welcome h2 { color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+
+  /* the conversation, WhatsApp-like */
+  .chead { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.02); flex-wrap: wrap; }
+  .chead .av { width: 40px; height: 40px; font-size: 14px; }
+  .chead .who { flex: 1 1 180px; min-width: 0; }
+  .chead .nm { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chead .ph { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .chead select { width: auto; padding: 6px 10px; font-size: 12px; }
+  .chead select.own { max-width: 150px; }
+  .chead .back, .chead .pbtn { display: none; padding: 6px 10px; }
   .switch { display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 6px; border-radius: 99px; border: 1px solid var(--line-2); cursor: pointer; font-size: 12px; user-select: none; white-space: nowrap; }
   .switch .knob { width: 30px; height: 18px; border-radius: 99px; background: var(--faint); position: relative; transition: .2s; }
   .switch .knob::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: .2s; }
-  .switch.on .knob { background: var(--teal); } .switch.on .knob::after { left: 14px; }
-  .chan { display: flex; gap: 2px; padding: 0 18px; border-bottom: 1px solid var(--line); }
-  .chan span { font-size: 12px; padding: 9px 12px; color: var(--muted); border-bottom: 2px solid transparent; }
-  .chan span.on { color: var(--ink); border-color: #25d366; }
-  .banner { margin: 10px 18px 0; padding: 8px 12px; border-radius: 10px; font-size: 12.5px; display: flex; gap: 10px; align-items: center; }
+  .switch.on .knob { background: #25d366; } .switch.on .knob::after { left: 14px; }
+  .banner { margin: 8px 16px 0; padding: 8px 12px; border-radius: 10px; font-size: 12.5px; display: flex; gap: 10px; align-items: center; }
   .banner.view { background: rgba(126, 166, 248, .1); border: 1px solid rgba(126, 166, 248, .22); color: #c9d7ff; }
   .banner.warn { background: var(--warn-soft); border: 1px solid rgba(240, 179, 94, .25); color: var(--warn); }
   .banner.bad { background: var(--bad-soft); border: 1px solid rgba(242, 125, 125, .25); color: var(--bad); }
-  .thread { flex: 1; overflow: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
-  .day { align-self: center; font-size: 11px; color: var(--faint); padding: 3px 10px; border-radius: 99px; background: var(--chip); margin: 6px 0; }
-  .b { max-width: 70%; padding: 9px 12px 7px; border-radius: 14px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; border: 1px solid var(--line); }
-  .b.received { align-self: flex-start; background: #161b27; border-top-left-radius: 4px; }
-  .b.sent { align-self: flex-end; background: rgba(92, 207, 181, .12); border-color: rgba(92, 207, 181, .22); border-top-right-radius: 4px; }
-  .b.sent.person { background: rgba(126, 166, 248, .14); border-color: rgba(126, 166, 248, .25); }
-  .b.suggested { align-self: flex-end; background: transparent; border-style: dashed; border-color: rgba(92, 207, 181, .35); }
-  .b.failed { border-color: rgba(242, 125, 125, .6); }
-  .b .m { font-size: 10.5px; color: var(--faint); margin-top: 4px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; white-space: normal; }
-  .b .m .who { color: var(--muted); font-weight: 600; }
+  .banner.att { background: var(--warn-soft); border: 1px solid rgba(240, 179, 94, .3); color: var(--warn); flex-wrap: wrap; white-space: normal; border-radius: 10px; font: 400 12.5px var(--font); padding: 8px 12px; }
+  .banner.att .why { flex: 1 1 200px; overflow-wrap: anywhere; }
+  .banner.att.late { background: var(--bad-soft); border-color: rgba(242, 125, 125, .3); color: var(--bad); }
+  .banner.att button { font-size: 11.5px; padding: 4px 10px; }
+  .thread { flex: 1; overflow: auto; padding: 14px 7% 18px; display: flex; flex-direction: column; gap: 4px;
+            background: radial-gradient(circle at 1px 1px, rgba(255,255,255,.035) 1px, transparent 0) 0 0 / 22px 22px, #0c1018; }
+  .day { align-self: center; font-size: 11.5px; color: var(--muted); padding: 4px 12px; border-radius: 8px; background: #1a2030; margin: 10px 0 6px; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .b { max-width: min(72%, 560px); padding: 6px 9px 5px 10px; border-radius: 10px; font-size: 13.8px; line-height: 1.42; white-space: pre-wrap; position: relative; box-shadow: 0 1px 1.5px rgba(0,0,0,.35); margin-top: 2px; }
+  .b.received { align-self: flex-start; background: #1f2633; border-top-left-radius: 2px; }
+  .b.sent { align-self: flex-end; background: #0b4a3e; border-top-right-radius: 2px; }
+  .b.sent.person { background: #1d3557; }
+  .b.suggested { align-self: flex-end; background: transparent; border: 1px dashed rgba(37, 211, 102, .45); box-shadow: none; }
+  .b.failed { outline: 1px solid rgba(242, 125, 125, .7); }
+  .b .by { display: block; font-size: 11.5px; font-weight: 600; color: #53bdeb; margin-bottom: 1px; }
+  .b.sent .by { color: #7fe0b5; } .b.sent.person .by { color: #9cc2ff; }
+  .b .m { font-size: 10.5px; color: rgba(255,255,255,.55); margin-top: 3px; display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; white-space: normal; }
+  .b .m .chip { margin: 0; font-size: 10px; padding: 0 6px; }
   .b .err { color: var(--bad); font-size: 11px; margin-top: 4px; }
-  .compose { border-top: 1px solid var(--line); padding: 10px 14px 14px; }
-  .compose .tools { display: flex; gap: 6px; margin-bottom: 8px; position: relative; }
-  .compose .tools button { font-size: 12px; padding: 6px 10px; }
-  .compose textarea { min-height: 46px; max-height: 140px; resize: none; }
-  .drop { position: absolute; bottom: 38px; left: 0; width: 360px; max-height: 300px; overflow: auto; background: var(--panel-solid); border: 1px solid var(--line-2); border-radius: 12px; padding: 6px; z-index: 30; box-shadow: 0 20px 40px -12px rgba(0, 0, 0, .7); }
+  .compose { border-top: 1px solid var(--line); padding: 8px 12px 10px; background: rgba(255,255,255,.02); }
+  .compose .rowc { display: flex; gap: 8px; align-items: flex-end; position: relative; }
+  .compose .ib { padding: 8px 10px; border-radius: 10px; font-size: 15px; line-height: 1; flex: 0 0 auto; background: transparent; border-color: transparent; color: var(--muted); }
+  .compose .ib:hover { color: var(--ink); background: var(--raise); }
+  .compose textarea { min-height: 42px; max-height: 140px; resize: none; border-radius: 12px; background: rgba(255,255,255,.05); flex: 1; }
+  .compose .sendb { width: 42px; height: 42px; border-radius: 50%; padding: 0; display: grid; place-items: center; font-size: 17px; flex: 0 0 auto; background: #25d366; border-color: #25d366; color: #06281a; }
+  .compose .sendb:disabled { background: var(--raise); border-color: var(--line-2); color: var(--faint); }
+  .drop { position: absolute; bottom: 50px; left: 0; width: 360px; max-width: calc(100vw - 40px); max-height: 300px; overflow: auto; background: var(--panel-solid); border: 1px solid var(--line-2); border-radius: 12px; padding: 6px; z-index: 30; box-shadow: 0 20px 40px -12px rgba(0, 0, 0, .7); }
   .drop .q { padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px; }
   .drop .q:hover { background: var(--chip); }
   .drop .q b { display: block; font-size: 12px; color: var(--gold-2); }
-  .prof { overflow: auto; padding: 18px; }
-  .prof .big { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
-  .prof .big .av { width: 52px; height: 52px; font-size: 18px; }
-  .prof h3 { font-family: var(--display); font-weight: 400; font-size: 22px; margin: 0; }
-  .sec { margin-top: 18px; }
-  .pipe { display: flex; gap: 3px; margin-top: 12px; }
+
+  /* the lead profile */
+  .prof { overflow: auto; padding: 0 0 18px; background: rgba(255,255,255,.012); position: relative; }
+  .prof .big { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 22px 18px 16px; border-bottom: 1px solid var(--line); }
+  .prof .big .av { width: 72px; height: 72px; font-size: 24px; }
+  .prof h3 { font-family: var(--font); font-weight: 600; font-size: 17px; margin: 4px 0 0; }
+  .prof .big .tags { justify-content: center; }
+  .prof > .kv, .prof > .sec, .prof > .pipe, .prof > .ichips { margin-left: 18px; margin-right: 18px; }
+  .prof .pclose { display: none; position: absolute; right: 12px; top: 12px; }
+  .sec { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .sec h2 { margin-bottom: 8px; }
+  .pipe { display: flex; gap: 3px; margin-top: 14px; }
   .pipe i { flex: 1; height: 5px; border-radius: 3px; background: var(--chip); }
   .pipe i.done { background: var(--gold); }
-  .fact { font-size: 12.5px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .pipe + .small { margin: 6px 18px 0; }
+  .fact { font-size: 12.5px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .fact:last-of-type { border-bottom: 0; }
   .fact s { color: var(--faint); }
-  .kv { display: grid; grid-template-columns: 90px 1fr; gap: 6px 10px; font-size: 12.5px; }
+  .kv { display: grid; grid-template-columns: 84px 1fr; gap: 7px 10px; font-size: 12.8px; margin-top: 14px; }
   .kv span:nth-child(odd) { color: var(--muted); }
+  .ichips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
+  .ic { font-size: 10.5px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .ic.intent { color: var(--blue); border-color: rgba(126, 166, 248, .3); background: rgba(126, 166, 248, .08); }
+  .ic.area { color: var(--teal); border-color: rgba(92, 207, 181, .3); background: rgba(92, 207, 181, .07); }
+  .ic.dk { color: var(--gold-2, #e8c77a); border-color: rgba(232, 199, 122, .45); background: rgba(232, 199, 122, .1); font-weight: 600; }
+  .ic.budget { color: var(--gold-2); border-color: rgba(232, 199, 122, .3); background: var(--gold-soft); }
+  .ic.size { color: var(--violet); border-color: rgba(181, 145, 243, .3); background: rgba(181, 145, 243, .07); }
   .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: grid; place-items: center; z-index: 60; }
   .modal .panel { width: 520px; max-width: calc(100vw - 32px); max-height: 80vh; overflow: auto; }
   .tpl { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
   .tpl.on { border-color: rgba(232, 199, 122, .55); background: var(--gold-soft); }
-  .preview { background: rgba(92, 207, 181, .1); border: 1px solid rgba(92, 207, 181, .22); border-radius: 12px; padding: 10px 12px; font-size: 13px; white-space: pre-wrap; margin: 10px 0; }
+  .preview { background: rgba(37, 211, 102, .1); border: 1px solid rgba(37, 211, 102, .25); border-radius: 12px; padding: 10px 12px; font-size: 13px; white-space: pre-wrap; margin: 10px 0; }
   .phone { position: fixed; left: 18px; bottom: 18px; width: 310px; z-index: 40; }
   .phone .panel { padding: 14px; }
-  @media (max-width: 1150px) { .cols { grid-template-columns: 300px 1fr; } .col.p { display: none; } }
-  @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } .col.c { display: none; } .cols.open .col.l { display: none; } .cols.open .col.c { display: flex; } }
+  @media (max-width: 1280px) { .cols { grid-template-columns: 300px minmax(0, 1fr) 300px; } }
+  @media (max-width: 1050px) {  /* the profile opens over the chat from its header */
+    .cols { grid-template-columns: 300px minmax(0, 1fr); }
+    .col.p { display: none; position: fixed; right: 0; top: 56px; bottom: 0; width: min(360px, 100vw); z-index: 45; background: var(--panel-solid); border-left: 1px solid var(--line-2); box-shadow: -20px 0 40px rgba(0,0,0,.5); }
+    .cols.prof-open .col.p { display: flex; }
+    .chead .pbtn, .prof .pclose { display: inline-block; }
+  }
+  @media (max-width: 760px) {
+    .cols { grid-template-columns: 1fr; } .col.c { display: none; } .cols.open .col.l { display: none; } .cols.open .col.c { display: flex; }
+    .chead .back { display: inline-block; } .thread { padding: 12px 10px; } .b { max-width: 86%; }
+    .bar .hide-s { display: none; } .bar { flex-wrap: wrap; } .bar .ttl { font-size: 20px; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="bar"><span class="ttl">Inbox</span><div class="stages" id="stages"></div>
-    <span class="line" id="line"></span><button id="phonebtn">Sandbox phone</button><a class="btn" href="settings.html">Settings</a></div>
+  <div class="bar"><span class="ttl">Inbox</span><span class="line" id="line"></span><span class="grow"></span>
+    <select id="me" title="Viewing as" aria-label="Viewing as"></select>
+    <button class="bell" id="bell" title="Notices" aria-label="Notices">🔔<span class="n" id="belln" hidden></span></button>
+    <a class="btn" href="calendar.html">📅 Calendar</a><button id="phonebtn">📱 Sandbox phone</button>
+    <button id="morebtn" aria-haspopup="true">More ▾</button>
+    <div class="more" id="more" hidden><a href="qualify.html">Qualification and follow-ups</a><a href="test.html">🧪 Test Rania</a><a href="settings.html">Settings and connections</a></div></div>
   <div class="cols" id="cols">
     <section class="col l">
-      <div class="tabs" id="tabs"></div>
-      <div class="search"><input id="q" placeholder="Search name, phone, area…"></div>
+      <div class="lhead">
+        <div class="search"><input id="q" type="search" placeholder="Search name, phone, area…" aria-label="Search conversations"></div>
+        <div class="tabs" id="tabs" role="tablist" aria-label="Show"></div>
+        <div class="lfoot"><select id="stage" aria-label="Stage"></select><span class="cnt" id="cnt"></span></div>
+      </div>
       <div class="rows" id="rows"></div>
     </section>
-    <section class="col c" id="chat"><div class="empty" style="margin:auto">Pick a conversation.</div></section>
+    <section class="col c" id="chat"><div class="welcome"><div class="wic">💬</div><h2>Your WhatsApp conversations</h2>Pick a conversation on the left.</div></section>
     <section class="col p prof" id="prof"></section>
   </div>
 </div>
@@ -125,8 +196,12 @@
 import { h, api, post, follow, header, toast, NAMES } from "./app.js";
 header("inbox.html");
 const $ = (id) => document.getElementById(id);
-const ME = "omar";
-let view = "all", stage = null, current = null, data = { rows: [], counts: {}, stages: [] }, detail = null, integ = null;
+const params = new URLSearchParams(location.search);
+let ME = params.get("as") || (() => { try { return localStorage.getItem("diwan.inbox.as"); } catch { return null; } })() || "omar";
+let view = "all", stage = null, current = params.get("chat"), data = { rows: [], counts: {}, stages: [] }, detail = null, integ = null, team = [];
+const PORTAL = { propertyfinder: "Property Finder", bayut: "Bayut", dubizzle: "Dubizzle", instagram: "Instagram" };
+const ACTS = [["called", "📞 Called"], ["messaged", "💬 Messaged"], ["no_answer", "No answer"], ["not_needed", "Not needed…"]];
+const left = (a) => a.pooled ? "in the Pool" : a.overdue ? `overdue ${-a.minutes_left}m` : `${a.minutes_left}m left`;
 
 const COLORS = ["#e8c77a", "#5ccfb5", "#7ea6f8", "#b591f3", "#f0b35e", "#82d99f", "#f27d7d"];
 const avatar = (name) => { const n = name || "?"; const c = COLORS[[...n].reduce((a, ch) => a + ch.charCodeAt(0), 0) % COLORS.length];
@@ -145,29 +220,48 @@ async function load() {
   if (current) loadDetail();
 }
 
+const TABS = [["all", "All"], ["attention", "Needs you"], ["mine", "Mine"], ["new", "New"], ["waiting", "Waiting"], ["pool", "Pool"], ["nurture", "Nurture"]];
 function renderBar() {
   const c = data.counts;
-  $("stages").replaceChildren(h("button", { class: stage ? "" : "on", onclick: () => { stage = null; load(); } }, "All stages", h("b", {}, c.all || 0)),
-    ...data.stages.map((s) => h("button", { class: stage === s ? "on" : "", onclick: () => { stage = s; load(); } }, s, h("b", {}, c.stages?.[s] || 0))));
-  $("tabs").replaceChildren(...[["mine", "My inbox"], ["all", "All"], ["new", "New leads"], ["waiting", "Waiting"]].map(([k, l]) =>
-    h("button", { class: view === k ? "on" : "", onclick: () => { view = k; load(); } }, h("b", {}, c[k] ?? 0), l)));
+  $("tabs").replaceChildren(...TABS.map(([k, l]) => h("button", { role: "tab", "aria-selected": view === k, class: `${view === k ? "on" : ""} ${(k === "attention" || k === "pool") && c[k] ? "hot" : ""}`,
+    onclick: () => { view = k; load(); } }, l, c[k] && k !== "all" ? h("i", {}, c[k]) : null)));
+  $("stage").replaceChildren(h("option", { value: "" }, "All stages"),
+    ...data.stages.map((st) => h("option", { value: st, selected: stage === st }, c.stages?.[st] ? `${st} · ${c.stages[st]}` : st)));
+  $("cnt").textContent = `${data.rows.length} conversation${data.rows.length === 1 ? "" : "s"}`;
 }
 
+const when = (iso) => { if (!iso) return ""; const d = new Date(iso), now = new Date();
+  if (d.toDateString() === now.toDateString()) return clock(iso);
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return "Yesterday";
+  return (now - d) < 6 * 864e5 ? d.toLocaleDateString("en-GB", { weekday: "short" }) : d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
 function renderList() {
   $("rows").replaceChildren(...(data.rows.length ? data.rows.map((r) => {
     const last = r.last;
     const who = !last ? "" : last.type === "received" ? "" : last.by === "rania" ? "Rania: " : `${NAMES[last.by] || last.by}: `;
+    const waiting = r.waiting_min != null;
     return h("div", { class: `conv ${r.phone === current ? "on" : ""}`, onclick: () => { current = r.phone; $("cols").classList.add("open"); renderList(); loadDetail(); } },
       avatar(r.name),
-      h("div", { style: "min-width:0" }, h("div", { class: "nm" }, r.name),
-        h("div", { class: "pv" }, who ? h("i", {}, who) : null, last ? last.text : ""),
-        r.chips.length ? h("div", { class: "ichips" }, r.chips.slice(0, 4).map((ch) => h("span", { class: `ic ${ch.kind}` }, ch.label))) : null),
-      h("div", { class: "meta" }, ago(r.last_at),
-        r.waiting_min != null ? h("span", { class: `wait ${r.waiting_min > 30 ? "hot" : ""}` }, `waiting ${r.waiting_min < 60 ? r.waiting_min + "m" : ((r.waiting_min / 60) | 0) + "h"}`) : null,
-        h("span", { class: `mode ${r.mode}` }, r.mode === "ai" ? "RANIA" : (NAMES[r.handled_by] || "PERSON").toUpperCase()),
-        r.failed ? h("span", { class: "wait hot" }, `${r.failed} not sent`) : null),
-      r.viewing ? h("div", { class: "vbanner" }, "📅 ", r.viewing.replace(/^viewing of /, "Viewing ")) : null);
-  }) : [h("div", { class: "empty" }, "No conversations here. Open the sandbox phone and message the office.")]));
+      h("div", { style: "min-width:0" },
+        h("div", { class: "top" }, h("div", { class: "nm" }, r.name),
+          h("span", { class: `tm ${waiting ? "wait" : ""}`, title: waiting ? "The customer is waiting for a reply" : "" }, waiting ? `waiting ${r.waiting_min < 60 ? r.waiting_min + "m" : ((r.waiting_min / 60) | 0) + "h"}` : when(r.last_at))),
+        h("div", { class: "pv", dir: "auto" }, last && last.type !== "received" ? h("span", { class: "tick" }, last.status === "failed" ? "⚠" : "✓") : null,
+          who ? h("i", {}, who) : null, last ? last.text : ""),
+        h("div", { class: "tags" },
+          r.attention ? h("span", { class: `att ${r.attention.pooled ? "pool" : r.attention.overdue ? "late" : ""}`, title: r.attention.reason },
+            r.attention.kind === "call" ? "📞 " : "", left(r.attention)) : null,
+          r.hot ? h("span", { class: "tg hot", title: r.hot === "yes" ? "Hot lead" : `Hot lead: interested in ${r.hot}` }, r.hot === "yes" ? "🔥 hot" : `🔥 ${r.hot}`) : null,
+          r.nurture ? h("span", { class: "tg nur", title: r.nurture.reason === "not a fit" ? "Not a fit: Marketing nurtures them" : `Only looking for now: "${r.nurture.quote || ""}"` }, "🌱 nurture") : null,
+          r.viewing ? h("span", { class: "tg view", title: r.viewing }, "📅 booked") : null,
+          r.stage && r.stage !== "New" && !r.viewing ? h("span", { class: "tg" }, r.stage) : null,
+          PORTAL[r.source] ? h("span", { class: "tg" }, PORTAL[r.source]) : null,
+          r.mode !== "ai" ? h("span", { class: "tg person" }, `${NAMES[r.handled_by] || "A person"} has it`) : null,
+          r.failed ? h("span", { class: "tg bad" }, `${r.failed} not sent`) : null)));
+  }) : [h("div", { class: "empty" }, $("q").value.trim() || stage || view !== "all" ? "Nothing matches. Try All, or clear the search." : "No conversations yet. Messages from WhatsApp, portals and Instagram arrive here.")]));
+  if (!data.rows.length && !current) $("chat").replaceChildren(h("div", { class: "welcome" }, h("div", { class: "wic" }, "💬"), h("h2", {}, "No conversations yet"),
+    "When a client writes on WhatsApp, a portal sends a lead, or someone comments on a post, it opens here with their profile beside it.",
+    h("div", { style: "margin-top:14px" }, h("button", { class: "primary", onclick: () => { $("phone").hidden = false; $("ptext").focus(); } }, "📱 Try it with the sandbox phone"))));
+  if (!current) $("prof").replaceChildren(h("div", { class: "welcome" }, h("div", { class: "wic" }, "👤"), "The lead's profile shows here: what they want, in their words, their stage, appointments and follow-ups."));
 }
 
 async function loadDetail() {
@@ -179,43 +273,96 @@ async function loadDetail() {
 const shown = (p) => p.startsWith("ig:") ? `Instagram @${p.slice(3)}` : `+${p}`;
 function renderChat() {
   const d = detail, on = d.mode === "ai";
-  const head = h("div", { class: "chead" }, avatar(d.name),
-    h("div", { style: "flex:1;min-width:0" }, h("div", { class: "nm" }, d.name), h("div", { class: "ph" }, shown(d.phone), d.linked ? ` · linked to ${d.property}` : "")),
-    h("select", { onchange: async (e) => { await post(`/api/chats/${d.phone}/stage`, { stage: e.target.value, by: ME }); load(); } },
-      d.stages.map((s) => h("option", { value: s, selected: s === d.stage }, s))),
-    h("div", { class: `switch ${on ? "on" : ""}`, title: "AI auto-reply", onclick: async () => { await post(`/api/chats/${d.phone}/${on ? "take" : "release"}?by=${ME}`); load(); } },
-      h("span", { class: "knob" }), on ? "Rania replying" : `${NAMES[d.handled_by] || "You"} has it`));
   const ig = d.phone.startsWith("ig:");
-  const via = ig ? "comment reply" : integ?.provider === "aisensy" ? "via AiSensy" : integ?.provider === "cloud" ? "via Meta Cloud API" : "sandbox line";
-  const chan = h("div", { class: "chan" }, h("span", { class: "on" }, ig ? "Instagram" : "WhatsApp"), h("span", {}, via));
+  const live = integ && ((integ.provider === "aisensy" && integ.aisensy.connected) || (integ.provider === "cloud" && integ.cloud.connected));
+  const via = ig ? "Instagram comment reply" : live ? (integ.provider === "aisensy" ? "WhatsApp via AiSensy" : "WhatsApp via Meta Cloud API") : "WhatsApp · sandbox line";
+  const head = h("div", { class: "chead" },
+    h("button", { class: "back", "aria-label": "Back to the list", onclick: () => $("cols").classList.remove("open") }, "←"),
+    avatar(d.name),
+    h("div", { class: "who" }, h("div", { class: "nm" }, d.name), h("div", { class: "ph" }, `${shown(d.phone)} · ${via}${PORTAL[d.source] && !ig ? ` · lead from ${PORTAL[d.source]}` : ""}`)),
+    h("select", { title: "Stage", "aria-label": "Stage", onchange: async (e) => { await post(`/api/chats/${d.phone}/stage`, { stage: e.target.value, by: ME }); load(); } },
+      d.stages.map((st) => h("option", { value: st, selected: st === d.stage }, st))),
+    h("select", { class: "own", title: "Who owns this lead", "aria-label": "Broker", onchange: async (e) => {
+        try { await post(`/api/chats/${d.phone}/assign`, { to: e.target.value, by: ME }); toast(`Moved to ${NAMES[e.target.value]}`); } catch (er) { toast(er.message); }
+        load(); } },
+      team.map((t) => h("option", { value: t.id, selected: t.id === d.broker }, `${t.name}${t.on_shift ? "" : " (off)"}`))),
+    h("div", { class: `switch ${on ? "on" : ""}`, title: on ? "Rania replies. Click to take over." : "You reply. Click to hand back to Rania.", onclick: async () => { await post(`/api/chats/${d.phone}/${on ? "take" : "release"}?by=${ME}`); load(); } },
+      h("span", { class: "knob" }), on ? "Rania replying" : `${NAMES[d.handled_by] || "You"} has it`),
+    h("button", { class: "pbtn", "aria-label": "Lead profile", onclick: () => $("cols").classList.add("prof-open") }, "👤 Profile"));
   const banners = [];
+  if (d.attention) banners.push(attentionBanner(d));
   if (d.viewing) banners.push(h("div", { class: "banner view" }, "📅 ", d.viewing.replace(/^viewing of /, "Viewing booked: ")));
   const left = d.window_closes ? (new Date(d.window_closes) - Date.now()) / 36e5 : 0;
-  if (!d.window_open) banners.push(h("div", { class: "banner bad" }, "24-hour window closed. WhatsApp only allows an approved template until the customer replies."));
+  if (!d.window_open && !d.window_closes && PORTAL[d.source]) banners.push(h("div", { class: "banner warn" },
+    d.messages.some((m) => m.type === "sent" && m.template)
+      ? `This lead came from ${PORTAL[d.source]}. Rania sent the approved template; once they reply, the chat opens. Call them meanwhile.`
+      : `This lead came from ${PORTAL[d.source]}, not WhatsApp. Call them, or start on WhatsApp with an approved template.`));
+  else if (!d.window_open) banners.push(h("div", { class: "banner bad" }, "24-hour window closed. WhatsApp only allows an approved template until the customer replies."));
   else if (left < 3) banners.push(h("div", { class: "banner warn" }, `24-hour window closes in ${left < 1 ? Math.max(1, (left * 60) | 0) + " min" : left.toFixed(1) + " h"}.`));
   const thread = h("div", { class: "thread" });
   let lastDay = "";
   for (const m of d.messages) {
     const dd = day(m.at);
-    if (dd !== lastDay) { thread.append(h("div", { class: "day" }, dd)); lastDay = dd; }
+    if (dd !== lastDay) { thread.append(h("div", { class: "day" }, new Date(m.at).toDateString() === new Date().toDateString() ? "Today" : dd)); lastDay = dd; }
     const person = m.type === "sent" && m.by !== "rania";
-    thread.append(h("div", { class: `b ${m.type} ${person ? "person" : ""} ${m.status === "failed" ? "failed" : ""}` }, m.text,
-      h("div", { class: "m" }, h("span", { class: "who" }, m.type === "received" ? d.name : m.by === "rania" ? "Rania · AI" : NAMES[m.by] || m.by),
-        clock(m.at), m.template ? h("span", { class: "chip" }, `template · ${m.template}`) : null,
-        m.type === "sent" && m.via ? h("span", {}, m.via === "sandbox" ? "· sandbox" : `· ${m.via}`) : null,
-        ...(m.refs || []).map((r) => h("span", { class: "chip" }, r.replace("listing:", "")))),
+    const by = m.type === "received" ? null : m.type === "suggested" ? "Rania · suggested reply" : m.by === "rania" ? "Rania · AI" : NAMES[m.by] || m.by;
+    thread.append(h("div", { class: `b ${m.type} ${person ? "person" : ""} ${m.status === "failed" ? "failed" : ""}`, dir: "auto" },
+      by ? h("span", { class: "by" }, by) : null, m.text,
+      h("div", { class: "m" }, m.nudge ? h("span", { class: "chip" }, `follow-up ${m.nudge}`) : null, m.template ? h("span", { class: "chip" }, `template · ${m.template}`) : null,
+        m.reminder ? h("span", { class: "chip" }, `reminder ${m.reminder}`) : null,
+        ...(m.refs || []).filter((r) => r.startsWith("listing:")).map((r) => h("span", { class: "chip" }, r.replace("listing:", ""))),
+        clock(m.at), m.type === "sent" ? h("span", { title: m.via === "sandbox" ? "Sandbox: not sent to WhatsApp" : `Sent via ${m.via}` }, m.status === "failed" ? "⚠" : m.via === "sandbox" ? "✓ sandbox" : "✓") : null),
       m.status === "failed" ? h("div", { class: "err" }, `Not delivered: ${m.error || "the provider refused it"}`) : null,
       m.type === "suggested" ? h("button", { style: "margin-top:6px;font-size:11.5px;padding:4px 10px", onclick: () => { $("box").value = m.text; $("box").focus(); } }, "Use this reply") : null));
   }
-  const box = h("textarea", { id: "box", placeholder: d.window_open ? (on ? "Type to take over from Rania…" : "Reply on WhatsApp…") : "Window closed: send a template", disabled: !d.window_open });
+  const box = h("textarea", { id: "box", rows: 1, dir: "auto", placeholder: d.window_open ? (on ? "Type to take over from Rania…" : "Type a message") : "24-hour window closed: send a template", disabled: !d.window_open });
   box.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
-  const tools = h("div", { class: "tools" },
-    h("button", { onclick: (e) => quick(e.currentTarget.parentNode), disabled: !d.window_open }, "⚡ Quick replies"),
-    h("button", { onclick: templates }, "📋 Template"),
-    h("span", { style: "flex:1" }),
-    h("button", { class: "primary", onclick: send, disabled: !d.window_open }, "Send"));
-  $("chat").replaceChildren(head, chan, ...banners, thread, h("div", { class: "compose" }, tools, box));
+  const tools = h("div", { class: "rowc tools" },
+    h("button", { class: "ib", title: "Quick replies", "aria-label": "Quick replies", onclick: (e) => quick(e.currentTarget.parentNode), disabled: !d.window_open }, "⚡"),
+    h("button", { class: "ib", title: "Send an approved template", "aria-label": "Template", onclick: templates }, "📋"),
+    box,
+    h("button", { class: "sendb primary", title: "Send", "aria-label": "Send", onclick: send, disabled: !d.window_open }, "➤"));
+  $("chat").replaceChildren(head, ...banners, thread, h("div", { class: "compose" }, tools));
   thread.scrollTop = 1e9;
+}
+
+// The card for this conversation: why it needs a person, by when, and the only ways it leaves Attention.
+function attentionBanner(d) {
+  const a = d.attention;
+  const due = new Date(a.due).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const why = h("span", { class: "why" }, a.kind === "call" ? "📞 Wants a call: " : "Needs a reply: ", a.reason, ` · ${NAMES[a.who] || a.who} · due ${due} (${left(a)})`);
+  if (a.pooled) return h("div", { class: "banner att late" }, why,
+    h("button", { class: "primary", onclick: async () => { try { await post(`/api/chats/${d.phone}/claim?by=${ME}`); toast("Claimed: it's yours"); } catch (e) { toast(e.message); } load(); } }, "Claim this lead"));
+  return h("div", { class: `banner att ${a.overdue ? "late" : ""}` }, why, ...ACTS.map(([k, l]) => h("button", { onclick: async () => {
+    let note = "";
+    if (k === "not_needed") { note = prompt("Why is it not needed?") || ""; if (!note.trim()) return; }
+    try { await post(`/api/attention/${a.id}/clear`, { action: k, by: ME, note }); } catch (e) { toast(e.message); }
+    load(); } }, l)));
+}
+
+// Notices: the bell, and a browser notification when one arrives for whoever is viewing.
+async function loadNotices() {
+  const r = await api(`/api/notices/${ME}`);
+  $("belln").hidden = !r.unread; $("belln").textContent = r.unread;
+  return r;
+}
+$("bell").onclick = async (e) => {
+  e.stopPropagation();
+  document.querySelector(".notes")?.remove();
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+  const r = await loadNotices();
+  const box = h("div", { class: "notes" }, r.items.length ? r.items.map((n) => h("div", { class: `q ${n.read ? "" : "new"}`, onclick: () => {
+    if (n.chat) { current = n.chat; view = "all"; stage = null; load(); } box.remove(); } },
+    n.text, h("small", {}, `${ago(n.at) === "now" ? "just now" : ago(n.at) + " ago"}${n.via === "whatsapp" ? ` · WhatsApp ${n.status}` : ""}`))) : [h("div", { class: "empty" }, "No notices.")]);
+  document.body.append(box);
+  await post(`/api/notices/${ME}/read`); loadNotices();
+  setTimeout(() => addEventListener("click", function off(ev) { if (!box.contains(ev.target)) { box.remove(); removeEventListener("click", off); } }), 0);
+};
+function ping(evs) {
+  for (const e of evs) if (e.type === "notify.sent" && e.content.to === ME && "Notification" in window && Notification.permission === "granted") {
+    const n = new Notification("Diwan", { body: e.content.text, tag: `diwan-${e.id}` });
+    n.onclick = () => { focus(); if (e.content.chat) { current = e.content.chat; load(); } };
+  }
 }
 
 async function send() {
@@ -254,15 +401,110 @@ async function templates() {
   document.body.append(m);
 }
 
+// The owner's qualification form, for this lead: type, answers with the customer's words, what is still needed.
+// After the meeting or viewing: the follow-up the drafter wrote, for the broker to edit and send.
+function followPanel(d) {
+  const f = d.followup;
+  const make = h("button", { onclick: async () => {
+    try { await post(`/api/chats/${encodeURIComponent(d.phone)}/followup`, { by: ME }); toast("Follow-up drafted"); loadDetail(); } catch (e) { toast(e.message); } } }, "Draft a follow-up");
+  if (!f) return d.hot || d.stage === "Viewed" ? h("div", { class: "sec followsec" }, h("h2", {}, "Follow-up"), make) : null;
+  const box = h("textarea", { rows: 6, dir: "auto", style: "width:100%" }, f.text);
+  return h("div", { class: "sec followsec" }, h("h2", {}, "Follow-up ", h("span", { class: "chip warn" }, f.why), f.by_model ? h("span", { class: "chip" }, "Muse Spark") : null),
+    h("p", { class: "small muted", style: "margin:0 0 6px" }, "Written from this deal's records only. Edit it, then send. It never mentions checks or compliance."),
+    box,
+    !d.window_open ? h("div", { class: "small", style: "color:var(--warn);margin-top:4px" }, "More than 24 hours since the customer's last message: send it as an approved template.") : null,
+    h("div", { class: "row", style: "margin-top:6px;flex-wrap:wrap" },
+      h("button", { class: "primary", disabled: !d.window_open, onclick: async () => {
+        try { await post(`/api/chats/${encodeURIComponent(d.phone)}/followup/send`, { by: ME, text: box.value }); toast("Follow-up sent"); loadDetail(); } catch (e) { toast(e.message); } } }, "Send on WhatsApp"),
+      h("button", { onclick: async () => { await post(`/api/chats/${encodeURIComponent(d.phone)}/followup/dismiss`, { by: ME, text: "not needed" }); toast("Dismissed"); loadDetail(); } }, "Not needed")));
+}
+
+// The pitch deck for the meeting: made when the lead turns hot, from records only; the broker approves it.
+function deckPanel(d) {
+  const k = d.deck;
+  const remake = h("button", { onclick: async () => {
+    try { await post(`/api/chats/${encodeURIComponent(d.phone)}/deck`, { by: ME }); toast("Deck made from what stands now"); loadDetail(); } catch (e) { toast(e.message); } } },
+    k ? "Remake" : "Make the pitch deck");
+  if (!k) return d.hot ? h("div", { class: "sec decksec" }, h("h2", {}, "Pitch deck"), remake) : null;
+  const ok = k.approved.find((a) => !a.stale && a.status === "given");
+  const state = k.status === "sent_back" ? ["bad", "Sent back"] : ok ? ["ok", `Approved by ${ok.by}`] : ["warn", "Waiting for the broker"];
+  return h("div", { class: "sec decksec" }, h("h2", {}, "Pitch deck ", h("span", { class: `chip ${state[0]}` }, state[1]), h("span", { class: "chip" }, `v${k.version}`)),
+    k.status === "sent_back" ? h("div", { class: "small", style: "color:var(--bad);margin-bottom:6px" }, k.reason || "A statement it rests on was replaced.") : null,
+    ...k.slides.map((s) => h("div", { class: "fact small" }, h("b", {}, `${s.n}. ${s.title}`), s.stale ? h("span", { class: "chip bad", style: "margin-left:6px" }, "uses replaced words") : null,
+      h("div", { class: "muted" }, s.text.length > 140 ? s.text.slice(0, 139) + "…" : s.text),
+      s.sources.length ? h("div", {}, ...s.sources.map((r) => h("span", { class: "chip" }, r.replace("listing:", "")))) : null)),
+    h("div", { class: "row", style: "margin-top:6px;flex-wrap:wrap" },
+      h("a", { class: "btn", href: `deck.html?d=${k.id}`, target: "_blank" }, "Open for the meeting"),
+      !ok && k.status !== "sent_back" ? h("button", { class: "primary", onclick: async () => {
+        try { await post(`/api/decks/${k.id}/approve`, { by: ME }); toast("Approved for the meeting"); loadDetail(); } catch (e) { toast(e.message); } } }, "Approve") : null,
+      remake));
+}
+
+// What the client said at the visit (the Visit summarizer): each point with the words it came from
+function visitPanel(v) {
+  if (!v) return null;
+  const tone = { keen: "ok", thinking: "warn", not_for_them: "bad" }[v.interest] || "";
+  const label = { keen: "Keen", thinking: "Thinking it over", not_for_them: "Not for them" }[v.interest] || "Can't tell yet";
+  const q = (x) => h("div", { class: "small muted", dir: "auto" }, `"${x}"`);
+  return h("div", { class: "sec visitsec" }, h("h2", {}, "After the visit ", h("span", { class: `chip ${tone}` }, label)),
+    v.interest_quote ? q(v.interest_quote) : null,
+    ...(v.liked || []).map((x) => h("div", { class: "fact small" }, "👍 Liked", q(x))),
+    ...(v.worries || []).map((x) => h("div", { class: "fact small" }, "⚠ Worried about", q(x))),
+    v.budget_quote ? h("div", { class: "fact small" }, "Budget", q(v.budget_quote)) : null,
+    v.next_step ? h("div", { class: "fact small" }, "Next step: ", h("b", {}, v.next_step)) : null,
+    h("div", { class: "small muted", style: "margin-top:4px" }, `From ${v.source === "recording" ? "the recorded visit" : "the broker's notes"}${v.by_model ? " · Muse Spark" : " · rules"}`));
+}
+
+// Follow-ups while the client is quiet: the owner's schedule, never daily, stopped by "stop"
+function quietPanel(s) {
+  if (!s) return null;
+  const when = (iso) => `${day(iso)}, ${clock(iso)}`;
+  const line = s.why_not ? (s.why_not.startsWith("stopped") ? `🛑 No follow-ups: ${s.why_not}.` : `None due: ${s.why_not}.`)
+    : s.next ? `${s.sent} of ${s.of} sent · next ${when(s.next)}`
+    : s.then ? `${s.sent} of ${s.of} sent · after ${when(s.then)}, the owner's last step` : `${s.sent} of ${s.of} sent`;
+  return h("div", { class: "sec quietsec" }, h("h2", {}, "Follow-ups when quiet"), h("div", { class: "fact small" }, line),
+    s.last && s.last.sent === false ? h("div", { class: "small muted" }, `Follow-up ${s.last.n} was skipped: ${s.last.why}.`) : null,
+    h("a", { class: "small", href: "qualify.html#quietbox" }, "Schedule and quiet hours →"));
+}
+
+function qualifyPanel(q) {
+  const label = { DISCOVERY: "Finding out what they want", ASK_QUESTION: "Qualifying", PASS_TO_AGENT: "Qualified", NOT_A_FIT: "Not a fit" }[q.verdict] || q.verdict;
+  const color = { PASS_TO_AGENT: "ok", NOT_A_FIT: "bad" }[q.verdict] || "warn";
+  return h("div", { class: "sec" }, h("h2", {}, "Qualification ", h("span", { class: `chip ${color}` }, label)),
+    q.type_label ? h("div", { class: "fact" }, h("b", {}, q.type_label), q.type_source ? h("span", { class: "small muted" }, ` · ${q.type_source}`)
+      : q.type_quote ? h("span", { class: "small muted" }, ` · "${q.type_quote}"`) : null) : null,
+    ...q.answers.map((a) => h("div", { class: "fact" }, h("span", { class: a.unsure ? "chip warn" : "chip" }, a.label), " ", String(a.value),
+      a.source ? h("div", { class: "small muted" }, a.source) : a.quote && a.quote !== String(a.value) ? h("div", { class: "small muted" }, `"${a.quote}"`) : null)),
+    q.next && !q.nurture ? h("div", { class: "fact small" }, "Rania asks next: ", h("b", {}, q.next)) : null,
+    q.recommended?.length ? h("div", { class: "fact small" }, "Rania recommended: ", h("b", {}, q.recommended.join(", "))) : null,
+    q.nurture ? h("div", { class: "fact small" }, `🌱 ${q.nurture.reason && q.nurture.reason !== "not ready yet" ? q.nurture.reason[0].toUpperCase() + q.nurture.reason.slice(1) : "Not ready yet"}, nurtured`, q.nurture.to === "marketing" ? " by Marketing" : q.nurture.to === "broker" ? " by the broker" : " (parked)",
+      ". Rania still answers them; they come back here when they show they're ready.", q.nurture.quote ? h("div", { class: "small muted" }, `"${q.nurture.quote}"`) : null) : null,
+    q.reopened && !q.nurture ? h("div", { class: "fact small" }, "↩ Came back ready: ", h("span", { class: "small muted" }, `"${q.reopened.quote}"`)) : null,
+    q.hot ? h("div", { class: "fact small", style: "color:var(--bad)" }, "🔥 Hot lead: ", h("b", {}, q.hot.listing ? `${q.hot.listing.replace("listing:", "")} (${q.hot.why})` : q.hot.why),
+      q.hot.quote ? h("div", { class: "small muted" }, `"${q.hot.quote}"`) : null) : null,
+    ...(q.open_questions || []).map((x) => h("div", { class: "fact small" }, "Asked, not answered yet: ", h("b", { dir: "auto" }, x))),
+    h("div", { class: "small muted", style: "margin-top:6px" }, q.reasons.join("; "), ` · rules version ${q.version}`),
+    h("a", { class: "small", href: "qualify.html" }, "Questions and conditions →"));
+}
+
 function renderProfile() {
   const d = detail;
   const idx = d.stages.indexOf(d.stage);
   $("prof").replaceChildren(
-    h("div", { class: "big" }, avatar(d.name), h("div", {}, h("h3", {}, d.name), h("div", { class: "small muted" }, shown(d.phone)))),
+    h("button", { class: "pclose", "aria-label": "Close the profile", onclick: () => $("cols").classList.remove("prof-open") }, "✕"),
+    h("div", { class: "big" }, avatar(d.name), h("h3", {}, d.name), h("div", { class: "small muted" }, shown(d.phone)),
+      h("div", { class: "tags" }, h("span", { class: "tg" }, d.stage), d.hot ? h("span", { class: "tg hot" }, "🔥 hot") : null,
+        d.qualify?.nurture ? h("span", { class: "tg nur" }, "🌱 nurture") : null, PORTAL[d.source] ? h("span", { class: "tg" }, PORTAL[d.source]) : null)),
     h("div", { class: "kv" }, h("span", {}, "Stage"), h("span", {}, d.stage), h("span", {}, "Deal"), h("span", {}, d.property || "—"),
       h("span", {}, "Broker"), h("span", {}, NAMES[d.broker] || d.broker || "—"), h("span", {}, "Replying"), h("span", {}, d.mode === "ai" ? "Rania (AI)" : NAMES[d.handled_by] || "A person")),
-    h("div", { class: "pipe" }, d.stages.slice(0, 8).map((s, i) => h("i", { class: i <= idx ? "done" : "", title: s }))),
+    h("div", { class: "pipe", title: d.stage }, d.stages.slice(0, 8).map((s, i) => h("i", { class: i <= idx ? "done" : "", title: s }))),
+    h("div", { class: "small muted" }, `${d.stage}${idx >= 0 && idx < 8 ? ` · step ${idx + 1} of 8` : ""}`),
     d.chips.length ? h("div", { class: "ichips", style: "margin-top:12px" }, d.chips.map((c) => h("span", { class: `ic ${c.kind}` }, c.label))) : null,
+    d.qualify ? qualifyPanel(d.qualify) : null,
+    visitPanel(d.visit),
+    quietPanel(d.quiet),
+    deckPanel(d),
+    followPanel(d),
     h("div", { class: "sec" }, h("h2", {}, "What the office learned"),
       d.facts.length ? h("div", {}, d.facts.map((f) => h("div", { class: "fact" }, h("span", { class: "chip" }, f.id), " ", f.text))) : h("p", { class: "small muted" }, "Nothing yet. Facts appear as the customer states them."),
       ...d.replaced.map((f) => h("div", { class: "fact" }, h("span", { class: "chip bad" }, f.id), " ", h("s", {}, `"${f.quote}"`), h("span", { class: "small muted" }, ` replaced by ${f.by}`)))),
@@ -273,6 +515,9 @@ function renderProfile() {
 }
 
 $("phonebtn").onclick = () => $("phone").hidden = !$("phone").hidden;
+$("morebtn").onclick = (e) => { e.stopPropagation(); $("more").hidden = !$("more").hidden; };
+addEventListener("click", (e) => { if (!e.target.closest("#more")) $("more").hidden = true; });
+$("stage").onchange = (e) => { stage = e.target.value || null; load(); };
 $("phoneclose").onclick = () => $("phone").hidden = true;
 const psend = async () => {
   const t = $("ptext").value.trim(); if (!t) return;
@@ -282,16 +527,28 @@ const psend = async () => {
   load();
 };
 $("psend").onclick = psend;
-$("ptext").onkeydown = (e) => e.key === "Enter" && psend();
+$("ptext").onkeydown = (e) => { if (e.key === "Enter") psend(); };
 let qt; $("q").oninput = () => { clearTimeout(qt); qt = setTimeout(load, 200); };
 
+team = await api("/api/team");
+$("me").replaceChildren(...[...team.map((t) => [t.id, `${t.name} · broker`]), ["layla", "Layla · owner"]].map(([id, l]) => h("option", { value: id, selected: id === ME }, `Viewing as ${l}`)));
+$("me").onchange = (e) => { ME = e.target.value; try { localStorage.setItem("diwan.inbox.as", ME); } catch {} view = "attention"; load(); loadNotices(); };
+loadNotices();
 integ = await api("/api/integrations");
 const p = integ.provider;
-$("line").replaceChildren(h("span", { class: "pill" }, h("span", { class: `dot ${p !== "sandbox" ? "on" : ""}` }),
-  p === "aisensy" ? "WhatsApp via AiSensy" : p === "cloud" ? "WhatsApp via Meta Cloud API" : "Sandbox · no WhatsApp line yet"));
-if (p !== "sandbox") $("phonehint").textContent = "WhatsApp is connected: real messages arrive too. This sandbox still works for testing.";
+// the line as it really is: a provider that is chosen but not connected is said so, and nothing leaves the sandbox
+const connected = (p === "aisensy" && integ.aisensy.connected) || (p === "cloud" && integ.cloud.connected);
+const pname = { aisensy: "AiSensy", cloud: "Meta Cloud API" }[p];
+$("line").replaceChildren(h("a", { class: "pill", href: "settings.html", title: connected ? "Real WhatsApp messages are sent and received" : "Replies stay in the sandbox until a line is connected (Settings)" },
+  h("span", { class: `dot ${connected ? "on" : pname ? "warn" : ""}` }),
+  connected ? `WhatsApp via ${pname}` : pname ? `${pname} chosen · not connected · sandbox only` : "Sandbox · no WhatsApp line yet"));
+if (connected) $("phonehint").textContent = "WhatsApp is connected: real messages arrive too. This sandbox still works for testing.";
 load();
-follow((evs) => { if (evs.some((e) => /^(chat\.|fact\.|appointment\.|stage\.|task\.)/.test(e.type))) load(); });
+follow((evs) => {
+  if (evs.some((e) => /^(chat\.|fact\.|appointment\.|stage\.|task\.|lead\.|attention\.)/.test(e.type))) load();
+  if (evs.some((e) => e.type.startsWith("notify."))) { loadNotices(); ping(evs); }
+});
+setInterval(() => { if (data.rows.some((r) => r.attention)) load(); }, 60000);  // countdowns move even when nothing happens
 </script>
 </body>
 </html>

@@ -86,9 +86,12 @@ def eval_scribe() -> list[dict]:
 
 RANIA = [
     (["Hi"], {"contains": "I'm Rania"}),
-    (["Hi", "2 bed in the Marina around 2.7 million"], {"refs": "listing:MC-1204"}),
+    # the owner's default: listings once the lead qualifies; a brief before that is noted and qualifying goes on
+    (["Hi", "2 bed in the Marina around 2.7 million"], {"no_listings": True, "asks_one": True}),
+    (["I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now"], {"refs": "listing:MC-1204", "contains": "Which one interests you?"}),
+    (["I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "The first one"], {"contains": "Great choice", "hot": True}),
     (["Hi", "Any villa in JVC?"], {"refs": "listing:JVC-88"}),
-    (["Hi", "Any 1 bed in Downtown?"], {"not_contains": "DT-2210", "handover": True}),
+    (["Hi", "Any 1 bed in Downtown?"], {"not_contains": "DT-2210", "handover_or_asks": True}),  # no permitted listing: hand over, or first ask for the missing brief
     (["Hi", "What are your fees?"], {"refs": "K3"}),
     (["Hi", "Do you accept cash?"], {"handover": True, "not_contains": "complian"}),
     (["Hi", "Can I pay in crypto?"], {"handover": True}),
@@ -100,7 +103,8 @@ RANIA = [
 ]
 
 
-def eval_rania() -> list[dict]:
+def eval_rania(on_case=None) -> list[dict]:
+    """`on_case(result, done, total)` is told after each case, so a screen can show progress."""
     from diwan.agents import reception
     out = []
     for i, (msgs, want) in enumerate(RANIA):
@@ -118,9 +122,19 @@ def eval_rania() -> list[dict]:
             fails.append(f"did not cite {want['refs']} (cited {r.get('refs')})")
         if want.get("handover") and r.get("mode") != "human":
             fails.append("did not hand over to a person")
+        if want.get("handover_or_asks") and r.get("mode") != "human" and text.count("?") != 1:
+            fails.append("neither handed over nor asked one question")
+        if want.get("no_listings") and any(x.startswith("listing:") for x in r.get("refs", [])):
+            fails.append("listed properties before the lead qualified")
+        if want.get("asks_one") and text.count("?") != 1:
+            fails.append("did not ask exactly one question")
+        if want.get("hot") and not any(d.props.get("hot") for d in o.graph().deals()):
+            fails.append("no hot lead")
         if want.get("booked") and not o.graph().of("viewing", status="booked"):
             fails.append("no viewing booked")
         out.append({"case": " → ".join(msgs), "pass": not fails, "why": "; ".join(fails), "reply": text[:160], "by": r.get("by")})
+        if on_case:
+            on_case(out[-1], len(out), len(RANIA))
     return out
 
 

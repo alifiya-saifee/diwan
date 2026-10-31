@@ -59,7 +59,7 @@ async function send() {
   $("answer").replaceChildren(box);
 }
 $("go").onclick = send;
-$("say").onkeydown = (e) => e.key === "Enter" && send();
+$("say").onkeydown = (e) => { if (e.key === "Enter") send(); };
 
 async function brief() {
   $("people").replaceChildren(...Object.entries(NAMES).map(([k, v]) => h("button", { class: k === person ? "on" : "", onclick: () => { person = k; brief(); } }, v)));

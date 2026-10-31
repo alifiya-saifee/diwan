@@ -29,6 +29,7 @@ def msg(o, text, **kw):
 
 
 def test_greets_then_answers_from_listings_with_permit(office):
+    reception.set_recommend(office, {"when": "as_soon_as_fit"}, by="layla")  # the owner's setting: list as soon as something fits
     assert "I'm Rania" in msg(office, "Hi")["reply"]
     r = msg(office, "2 bed in the Marina, around 2.7 million")
     assert r["refs"] == ["listing:MC-1204"] and "permit SAMPLE-71204" in r["reply"]
@@ -101,7 +102,7 @@ def test_model_reply_with_an_unlisted_price_is_not_sent(office, monkeypatch, tmp
         out = replies[body["response_format"]["json_schema"]["name"]]
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(out)}}], "usage": {}})
     monkeypatch.setattr(PROVIDERS["meta"], "transport", httpx.MockTransport(handle))
-    r = msg(office, "Best price for MC-1204?", tape_root=tmp_path)
+    r = msg(office, "How much is MC-1204?", tape_root=tmp_path)
     assert "2,300,000" not in r["reply"] and r["mode"] == "human" and r["handover"] == "reply named an amount not on any listing"
 
 

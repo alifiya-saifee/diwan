@@ -20,7 +20,9 @@ TYPES = {
     "task.created", "task.withdrawn", "task.done", "check.raised", "review.returned", "review.passed",
     "draft.made", "question.asked", "question.answered", "decision.made",
     # what the office knows, and the front door
-    "knowledge.added", "knowledge.confirmed", "listing.added", "document.filed", "sale.closed",
+    "knowledge.added", "knowledge.confirmed", "listing.added",
+    # changing an item (knowledge or a listing): new versions, retire and restore, proposals that wait for the owner
+    "item.edited", "item.retired", "item.restored", "item.reconfirmed", "change.proposed", "change.decided", "document.filed", "sale.closed",
     # the front desk: settings, Nova's rounds, the Lobby board
     "setting.changed", "rounds.started", "briefing.ready",
     "stage.changed", "autonomy.changed", "lesson.added", "lesson.removed",
@@ -32,6 +34,13 @@ TYPES = {
     "qa.passed", "qa.failed", "qa.escalated",
     "lobby.posted", "lobby.seen", "lobby.reminded", "lobby.late", "lobby.done", "lobby.cancelled",
     "chat.received", "chat.sent", "chat.suggested", "chat.handover", "appointment.booked", "appointment.cancelled",
+    # the lead desk: who owns a lead, what needs a person by when, the Pool, and notices to people
+    "lead.assigned", "lead.pooled", "lead.claimed", "attention.raised", "attention.overdue", "attention.cleared",
+    "notify.sent", "notify.read", "listings.synced", 
+    # qualification: the owner's form, the customer type, answers with quotes, and the verdict
+    "qualify.form", "qualify.type", "qualify.answer", "qualify.asked", "qualify.passed", "qualify.not_fit", "qualify.open",
+    "agent.added", "agent.paused", "agent.resumed", "agent.removed", "lead.recommended", "lead.hot", "lead.kind",
+    "followup.drafted", "followup.sent", "followup.dismissed", "lead.nurture", "lead.reopened", "followup.nudged", "lead.optout", "lead.went_quiet", "appointment.moved", "appointment.reminded", "appointment.done", "appointment.noshow", "calendar.morning", "visit.summarized", "calendar.blocked", "calendar.unblocked", "appointment.link", "appointment.link_removed",
 }
 
 

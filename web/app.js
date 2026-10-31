@@ -1,5 +1,5 @@
 // Shared helpers for every Diwan screen. Text from the server always goes on the page through textContent.
-export const NAMES = { layla: "Layla", omar: "Omar", priya: "Priya", joseph: "Joseph", ahmed: "Ahmed", maya: "Maya" };
+export const NAMES = { layla: "Layla", omar: "Omar", hamza: "Hamza", nadia: "Nadia", priya: "Priya", joseph: "Joseph", ahmed: "Ahmed", maya: "Maya", rashid: "Rashid" };
 export const AGENTS = {};
 
 // Like h(), screens may pass null or false for "nothing here"; never print them as text.
@@ -83,6 +83,15 @@ export function describe(e) {
     case "chat.sent": return `replied on WhatsApp: "${c.text}"`;
     case "chat.suggested": return `suggested a reply: "${c.text}"`;
     case "chat.handover": return c.mode === "human" ? `chat handed to ${NAMES[c.by] || c.by}` : "chat back with Rania";
+    case "lead.assigned": return `lead to ${NAMES[c.to] || c.to} (${c.why})`;
+    case "attention.raised": return `${c.kind === "call" ? "call" : "reply"} needed from ${NAMES[c.who] || c.who}: ${c.reason}`;
+    case "attention.overdue": return `${c.id} is overdue`;
+    case "attention.cleared": return `${c.id} done: ${{ called: "called", messaged: "messaged", no_answer: "no answer", not_needed: `not needed (${c.note})` }[c.action] || c.action}`;
+    case "lead.pooled": return `lead moved to the Pool: ${NAMES[c.from] || c.from} had not acted`;
+    case "lead.claimed": return `${NAMES[c.to] || c.to} claimed the lead from the Pool`;
+    case "notify.sent": return `told ${NAMES[c.to] || c.to}: ${c.text}`;
+    case "notify.read": return `read ${c.ids?.length || 0} notices`;
+    case "listings.synced": return `listing feed: ${c.in_feed} listings, ${c.added} new, ${c.changed} changed, ${c.off_market} off the market`;
     case "appointment.booked": return `booked a viewing of ${c.listing} with ${NAMES[c.broker] || c.broker}`;
     case "knowledge.added": return `knowledge: ${c.title}${c.confirmed ? "" : " (to confirm)"}`;
     case "knowledge.confirmed": return `confirmed ${c.id}`;
@@ -132,6 +141,38 @@ export function header(active) {
   const brand = h("a", { class: "brand", href: "office3d.html" });
   brand.innerHTML = LOGO;
   brand.append(h("span", { class: "word" }, "Diwan"), h("span", { class: "tag" }, "The office you can correct"));
-  document.body.prepend(h("header", { class: "top" }, brand,
-    h("nav", {}, pages.map(([href, label]) => h("a", { href, class: href === active ? "on" : "" }, label))), status));
+  const top = h("header", { class: "top" }, brand,
+    h("nav", {}, pages.map(([href, label]) => h("a", { href, class: href === active ? "on" : "" }, label))), search(), status);
+  top.insertBefore(h("button", { class: "hsbtn", "aria-label": "Search", onclick: () => { top.classList.toggle("searching"); top.querySelector(".hsearch input").focus(); } }, "Search"), status);
+  document.body.prepend(top);
+}
+
+const TAB = { company: "Company", answer: "Approved answer", project: "Project", area: "Area", people: "People", brand: "Brand", listing: "Listing" };
+
+/** The header search: knowledge and the catalog in one box (the same search Rania uses, but every status). "/" focuses it. */
+function search() {
+  const box = h("input", { type: "search", placeholder: "Search knowledge and listings", "aria-label": "Search knowledge and listings", autocomplete: "off" });
+  const res = h("div", { class: "hresults", hidden: true });
+  let timer, seq = 0;
+  const row = (x) => h("a", { href: x.listing ? `catalog.html?q=${encodeURIComponent(x.listing.ref)}` : `knowledge.html?tab=${x.tab}&q=${encodeURIComponent(x.title)}` },
+    h("span", { class: "chip" }, TAB[x.tab] || x.tab), !["confirmed", "available"].includes(x.status) ? h("span", { class: "chip warn" }, x.status) : null, " ",
+    h("strong", {}, x.listing ? `${x.listing.ref} · ${x.title}` : x.title), h("div", { class: "small muted" }, x.text.slice(0, 140)));
+  const go = async () => {
+    const q = box.value.trim(), n = ++seq;
+    if (!q) { res.hidden = true; return; }
+    const r = await api(`/api/search?q=${encodeURIComponent(q)}&k=10`).catch(() => ({ items: [] }));
+    if (n !== seq) return;
+    res.replaceChildren(...(r.items.length ? r.items.map(row) : [h("div", { class: "small muted", style: "padding:12px" }, `Nothing found for "${q}".`)]));
+    res.hidden = false;
+  };
+  box.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(go, 150); });
+  box.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { res.hidden = true; box.blur(); box.closest("header")?.classList.remove("searching"); }
+    if (e.key === "Enter") res.querySelector("a")?.click();
+  });
+  document.addEventListener("click", (e) => { if (!e.target.closest(".hsearch, .hsbtn")) { res.hidden = true; document.querySelector("header.top")?.classList.remove("searching"); } });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "/" && !e.target.closest("input, textarea, select, [contenteditable]")) { e.preventDefault(); box.focus(); }
+  });
+  return h("div", { class: "hsearch" }, box, res);
 }

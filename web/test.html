@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test Rania</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  main { max-width: 1240px; }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; }
+  .chat { display: flex; flex-direction: column; height: calc(100vh - 230px); min-height: 480px; padding: 0; overflow: hidden; }
+  .chat .top { display: flex; gap: 10px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .chat .top input { width: 170px; }
+  .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 99px; padding: 2px; }
+  .seg button { border: 0; background: transparent; border-radius: 99px; padding: 6px 12px; font-size: 12px; color: var(--muted); }
+  .seg button.on { background: var(--gold-soft); color: var(--gold-2); }
+  .thread { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .b { max-width: 78%; padding: 9px 12px; border-radius: 14px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; border: 1px solid var(--line); }
+  .b.me { align-self: flex-end; background: #161b27; border-top-right-radius: 4px; }
+  .b.her { align-self: flex-start; background: rgba(92, 207, 181, .12); border-color: rgba(92, 207, 181, .22); border-top-left-radius: 4px; }
+  .b.her.human { background: rgba(240, 179, 94, .1); border-color: rgba(240, 179, 94, .3); }
+  .why { align-self: flex-start; max-width: 88%; font-size: 12px; color: var(--muted); border-left: 2px solid var(--line-2); padding: 2px 0 2px 12px; display: grid; gap: 5px; }
+  .why b { color: var(--ink); font-weight: 600; }
+  .why .bad { color: var(--bad); } .why .warn { color: var(--warn); } .why .ok { color: var(--teal); }
+  .why .ref { font-size: 11.5px; color: var(--faint); }
+  .compose { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .compose input { flex: 1; }
+  .quick { display: flex; flex-wrap: wrap; gap: 6px; }
+  .quick button { font-size: 12px; padding: 5px 10px; }
+  .case { padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .case .r { color: var(--muted); margin-top: 3px; }
+  .pf { font: 600 10.5px var(--font); padding: 2px 7px; border-radius: 99px; margin-right: 6px; }
+  .pf.ok { background: rgba(92, 207, 181, .14); color: var(--teal); } .pf.no { background: var(--bad-soft); color: var(--bad); }
+  .empty { margin: auto; text-align: center; color: var(--muted); font-size: 13px; max-width: 420px; }
+  .typing { align-self: flex-start; color: var(--faint); font-size: 12px; }
+  .prompt summary { cursor: pointer; color: var(--gold-2); font-size: 12px; }
+  .prompt pre { white-space: pre-wrap; font: 11.5px/1.5 var(--mono); background: rgba(0, 0, 0, .25); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin: 6px 0 10px; max-height: 320px; overflow: auto; color: var(--muted); }
+  @media (max-width: 980px) { .cols { grid-template-columns: 1fr; } .chat { height: 70vh; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Test <em>Rania</em></h1>
+  <p class="sub">Talk to her as a customer and see why she answers the way she does. This runs on a private copy of the office: nothing appears in the Inbox, and nothing is sent to WhatsApp, Instagram or anyone's phone.</p>
+  <div class="cols">
+    <section class="panel chat">
+      <div class="top">
+        <input id="who" value="Test Buyer" title="Customer name">
+        <span class="seg" id="brain"><button data-b="spark" title="Muse Spark on Meta's API: uses your credits, about $0.006 a message">Muse Spark</button><button data-b="rules">Rules only</button><button data-b="free" title="Muse Glimmer on NVIDIA's free endpoint: no cost, but usually slower than the 25 seconds a customer is given, so the rules answer instead">Free · Glimmer (slow)</button></span>
+        <span style="flex:1"></span>
+        <button id="restart">New conversation</button>
+      </div>
+      <div class="thread" id="thread"><div class="empty">Type a message below, or pick one on the right. Switch between the model and the rules to compare them on the same words.</div></div>
+      <div class="compose"><input id="msg" placeholder="Write as the customer… (English or Arabic)"><button class="primary" id="send" disabled>Send</button></div>
+    </section>
+    <aside>
+      <section class="panel">
+        <h2>Her brain right now</h2>
+        <div id="status" class="small"></div>
+      </section>
+      <section class="panel" style="margin-top:14px">
+        <h2>Try these</h2>
+        <div class="quick" id="quick"></div>
+      </section>
+      <section class="panel" style="margin-top:14px">
+        <h2>Her test cases</h2>
+        <p class="small muted" style="margin-top:-4px">12 labelled situations, each on a fresh demo office: listings, fees, cash, crypto, discounts, returns, a person, a booking.</p>
+        <div class="row"><button id="cases-rules">Rules</button><button id="cases-free">Free · Glimmer</button><button id="cases-spark">Muse Spark</button></div>
+        <div id="cases" style="margin-top:8px"></div>
+      </section>
+    </aside>
+  </div>
+</main>
+<script type="module">
+import { h, api, post, header, toast } from "./app.js";
+header("inbox.html");
+const $ = (id) => document.getElementById(id);
+let sid = null, brain = null, info = null, busy = false;  // no brain until the page knows which models are connected
+
+const QUICK = ["Hi", "Looking for a 2 bed in the Marina around 2.7 million", "Any villa in JVC?", "What are your fees?",
+  "Can I see MC-1204 Saturday at 4pm?", "Do you accept cash?", "Can you give me a discount?", "What ROI is guaranteed?",
+  "Can you call me please?", "مرحبا، عندكم شقة غرفتين في المارينا؟", "Actually my budget is 2.5 million"];
+$("quick").replaceChildren(...QUICK.map((q) => h("button", { onclick: () => say(q) }, q)));
+
+async function loadInfo() {
+  info = await api("/api/playground");
+  $("status").replaceChildren(
+    ...[["free", "Free · Muse Glimmer (NVIDIA)", "NVIDIA_API_KEY", "no cost, but often slower than the 25 seconds a waiting customer is given, so the rules answer instead; fictional data only"],
+        ["spark", "Muse Spark (Meta)", "META_API_KEY", "uses your Meta credits, about $0.006 a test message"]].map(([k, l, key, note]) =>
+      h("div", { class: "row", style: "justify-content:flex-start;gap:8px;margin-bottom:6px" }, h("span", { class: `dot ${info.brains[k] ? "on" : ""}`, style: "flex:0 0 auto" }),
+        h("span", {}, h("b", {}, l), info.brains[k] ? ` · ${note}` : ` · not connected (add ${key})`))),
+    h("p", { class: "muted", style: "margin:6px 0 0" }, h("b", {}, "Live office uses: "), info.model || "the rules (no model connected)"),
+    h("p", { class: "muted", style: "margin:8px 0 0" }, `She can only use ${info.listings} listings with a permit and ${info.knowledge} confirmed knowledge cards, and code checks every reply before it goes out.`));
+}
+
+async function restart() {
+  const r = await post("/api/playground/start", { customer: $("who").value.trim() || "Test Buyer" });
+  sid = r.session;
+  $("thread").replaceChildren(h("div", { class: "empty" }, `New conversation as ${$("who").value.trim() || "Test Buyer"}. Write as the customer.`));
+}
+
+function explain(t) {
+  const lines = [];
+  const asked = { spark: "Muse Spark", free: "Free · Glimmer", rules: "Rules only", model: "the office default" }[t.brain] || t.brain;
+  const mismatch = t.brain !== "rules" && t.by === "rules";
+  lines.push(h("div", {}, h("b", {}, "You asked for: "), asked, mismatch ? h("span", { class: "warn" }, " · it did not answer, see below") : null));
+  if (t.by === "policy") lines.push(h("div", { class: "ok" }, h("b", {}, "Fixed reply: "), "cash, crypto, discounts, negotiation and guaranteed returns always get the same safe answer, whichever model is on. The model is not asked."));
+  lines.push(h("div", {}, h("b", {}, "Answered by: "), t.by === "model" ? h("span", { class: "ok" }, t.who) : t.by === "policy" ? h("span", {}, "Fixed reply") : h("span", { class: t.brain === "rules" ? "" : "warn" }, "Rules"),
+    ` · ${(t.ms / 1000).toFixed(1)}s`, t.usage?.output_tokens ? ` · ${t.usage.input_tokens}→${t.usage.output_tokens} tokens` : "",
+    t.usage?.cost_usd ? ` · ~$${t.usage.cost_usd.toFixed(4)}` : ""));
+  if (t.why_rules && t.brain !== "rules") lines.push(h("div", { class: "warn" }, t.why_rules));
+  if (t.held) lines.push(h("div", { class: "bad" }, h("b", {}, "Stopped by a guard: "), `she wanted to say "${t.held}"`));
+  if (t.used.length) lines.push(h("div", {}, h("b", {}, "Used: "), ...t.used.map((u) => h("div", { class: "ref" }, u.text))));
+  else if (t.mode === "ai") lines.push(h("div", {}, h("b", {}, "Used: "), "no listing or knowledge card"));
+  if (t.heard.length) lines.push(h("div", {}, h("b", {}, "The Scribe heard: "), ...t.heard.map((f) => h("div", { class: "ref" }, f.text))));
+  if (t.handover) lines.push(h("div", { class: "warn" }, h("b", {}, "Handed to a person: "), `${t.to || t.broker || "the broker"}, because ${t.handover}`,
+    t.card ? ` · a ${t.card.kind} card, due ${new Date(t.card.due).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : "",
+    ". The customer is not told why."));
+  if (t.booked.length) lines.push(h("div", { class: "ok" }, h("b", {}, "Booked: "), t.booked.join("; ")));
+  if (t.mode === "review") lines.push(h("div", { class: "warn" }, "She is set to have replies reviewed: this would wait for the broker, not be sent."));
+  if (t.qualify?.verdict) {
+    const q = t.qualify, v = { DISCOVERY: "finding out what they want", ASK_QUESTION: "qualifying", PASS_TO_AGENT: "QUALIFIED, passed to the broker", NOT_A_FIT: "not a fit" }[q.verdict];
+    lines.push(h("div", { class: q.verdict === "PASS_TO_AGENT" ? "ok" : q.verdict === "NOT_A_FIT" ? "bad" : "" }, h("b", {}, "Qualification: "),
+      [q.type_label, v, q.answers?.length ? `${q.answers.length} answered` : null, q.next ? `next: ${q.next}` : null].filter(Boolean).join(" · "),
+      h("a", { href: "qualify.html", style: "margin-left:8px" }, "rules v" + q.version)));
+    if (q.answers?.length) lines.push(h("div", { class: "ref" }, q.answers.map((a) => `${a.label}: ${a.value}`).join(" · ")));
+  }
+  lines.push(h("div", { class: "ref" }, `Lead: stage ${t.stage} · broker ${t.broker}`));
+  if (t.prompt) lines.push(h("details", { class: "prompt" }, h("summary", {}, t.by === "policy" ? "What she would have been told (the model was not asked)" : "What she was told"),
+    h("div", { class: "ref" }, "Instructions"), h("pre", {}, t.prompt.system), h("div", { class: "ref" }, "This message, with what she may read"), h("pre", {}, t.prompt.user)));
+  return h("div", { class: "why" }, lines);
+}
+
+async function say(text) {
+  text = (text ?? $("msg").value).trim();
+  if (!text || busy || !brain) return;
+  if (!sid) await restart();
+  busy = true; $("msg").value = "";
+  $("thread").querySelector(".empty")?.remove();
+  $("thread").append(h("div", { class: "b me", dir: "auto" }, text));
+  const dots = h("div", { class: "typing" }, brain !== "rules" ? "Rania is thinking (the model can take a few seconds)…" : "Rania is answering…");
+  $("thread").append(dots); $("thread").scrollTop = 1e9;
+  try {
+    const t = await post(`/api/playground/${sid}/say`, { text, brain });
+    dots.remove();
+    $("thread").append(h("div", { class: `b her ${t.mode !== "ai" ? "human" : ""}`, dir: "auto" }, t.reply || "(no reply)"), explain(t));
+  } catch (e) {
+    dots.remove();
+    if (/ended/.test(e.message)) {  // the server restarted (code was saved): the test conversation lived in its memory
+      sid = null;
+      $("thread").append(h("div", { class: "why" }, h("div", { class: "warn" }, h("b", {}, "The server restarted, so this test conversation was reset. "),
+        "Your message was not answered. Send it again to start a fresh conversation (earlier messages are not remembered).")));
+    } else toast(e.message);
+  }
+  busy = false; $("thread").scrollTop = 1e9; $("msg").focus();
+}
+
+async function runCases(b) {
+  const box = $("cases");
+  const draw = (j) => {
+    const head = j.finished
+      ? h("p", { class: "small" }, h("b", {}, `${j.passed} of ${j.total ?? 12} passed`), ` · ${j.model || "rules"} · ${j.seconds}s`)
+      : h("p", { class: "small muted" }, `Running on ${j.model || "rules"}: case ${j.done + 1} of ${j.total ?? 12}… (${j.seconds}s)`);
+    box.replaceChildren(head, j.error ? h("p", { class: "small", style: "color:var(--bad)" }, j.error) : null,
+      ...j.cases.map((c) => h("div", { class: "case" }, h("span", { class: `pf ${c.pass ? "ok" : "no"}` }, c.pass ? "PASS" : "FAIL"), c.case,
+        c.why ? h("div", { class: "r", style: "color:var(--bad)" }, c.why) : null, h("div", { class: "r" }, `${c.by === "model" ? "Model" : c.by === "policy" ? "Fixed reply" : "Rules"}: ${c.reply}`))));
+  };
+  box.replaceChildren(h("p", { class: "small muted" }, "Starting…"));
+  for (const x of ["cases-rules", "cases-free", "cases-spark"]) $(x).disabled = true;
+  try {
+    let j = await post(`/api/playground/cases?brain=${b}`);
+    draw(j);
+    while (!j.finished) {
+      await new Promise((r) => setTimeout(r, 1500));
+      j = await api(`/api/playground/cases/${j.id}`);
+      draw(j);
+    }
+  } catch (e) { box.replaceChildren(h("p", { class: "small", style: "color:var(--bad)" }, e.message)); }
+  for (const x of ["cases-rules", "cases-free", "cases-spark"]) $(x).disabled = false;
+}
+
+$("brain").onclick = (e) => { const b = e.target.dataset.b; if (!b) return; brain = b; [...$("brain").children].forEach((x) => x.classList.toggle("on", x.dataset.b === b)); };
+$("send").onclick = () => say();
+$("msg").onkeydown = (e) => { if (e.key === "Enter") say(); };
+$("restart").onclick = restart;
+$("cases-rules").onclick = () => runCases("rules");
+$("cases-free").onclick = () => runCases("free");
+$("cases-spark").onclick = () => runCases("spark");
+await loadInfo();
+// start on what the live office uses; the free endpoint is one click away
+brain = info.brains.spark ? "spark" : info.brains.free ? "free" : "rules";
+[...$("brain").children].forEach((x) => { x.classList.toggle("on", x.dataset.b === brain); if (x.dataset.b !== "rules" && !info.brains[x.dataset.b]) x.disabled = true; });
+$("send").disabled = false;
+</script>
+</body>
+</html>

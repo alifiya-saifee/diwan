@@ -4,16 +4,19 @@ from __future__ import annotations
 PEOPLE = {
     "layla": {"name": "Layla", "role": "Owner", "team": None},
     "omar": {"name": "Omar", "role": "Broker", "team": "sales"},
+    "hamza": {"name": "Hamza", "role": "Broker", "team": "sales"},
+    "nadia": {"name": "Nadia", "role": "Broker", "team": "sales"},
     "priya": {"name": "Priya", "role": "Compliance officer", "team": "comp"},
     "joseph": {"name": "Joseph", "role": "Transactions officer", "team": "ops"},
     "ahmed": {"name": "Ahmed", "role": "Finance", "team": "fin"},
     "maya": {"name": "Maya", "role": "Marketing manager", "team": "mkt"},
+    "rashid": {"name": "Rashid", "role": "Sales manager", "team": None},
 }
 
 # A charter names its reviewer by role; this is who that is today.
 BY_ROLE = {"The owner": "layla", "Owner": "layla", "Broker": "omar", "Compliance officer": "priya",
            "Transactions officer": "joseph", "Finance": "ahmed", "Finance lead": "ahmed",
-           "Marketing manager": "maya"}
+           "Marketing manager": "maya", "Sales manager": "rashid"}
 
 # Who decides what an agent may not.
 ONLY_PEOPLE = {

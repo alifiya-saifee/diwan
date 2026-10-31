@@ -24,7 +24,7 @@ from diwan.config import env
 from diwan.events import EventLog
 from diwan.office import Office
 from diwan.people import PEOPLE
-from diwan.providers import meta, voice, whatsapp
+from diwan.providers import meta, portals, voice, whatsapp
 from diwan.providers.chat import PROVIDERS
 
 WEB = Path(__file__).resolve().parents[1] / "web"
@@ -42,6 +42,9 @@ def fresh() -> Office:
     o = Office(EventLog(env("DIWAN_DB", ":memory:")))
     if not o.log.list():
         demo.seed(o)
+    demo.catalog(o)
+    demo.kinds(o)
+    demo.projects(o)
     compliance.catch_up(o)  # deals recorded before a Compliance rule existed get it now (adds only what is missing)
     return o
 
@@ -50,8 +53,11 @@ S.office = fresh()
 
 
 async def morning_loop():
-    """Every minute: chase the Lobby board, and do Nova's rounds 30 minutes before the earliest briefing time."""
-    from diwan.agents import lobby
+    """Every minute: chase the Lobby board and the lead desk's Attention cards, do Nova's rounds 30 minutes before the
+    earliest briefing time, and every 30 minutes read the listing feed when one is set."""
+    from diwan import leads
+    from diwan.agents import lobby, nudge, reminders
+    ticks = 0
     while True:
         now = datetime.now(slots.DUBAI)
         gr = S.office.graph()
@@ -62,20 +68,40 @@ async def morning_loop():
         lobby.chase(S.office, now)
         from diwan import documents
         documents.sweep(S.office, now)  # the Deal desk: remind clients of documents still missing
+        leads.sweep(S.office, now)
+        nudge.sweep(S.office, now)  # follow-ups when a client goes quiet (the owner's schedule)
+        reminders.sweep(S.office, now)  # appointment reminders; each broker's morning list
         from diwan.agents import rhythm, studio
         if (ref := rhythm.due(S.office)):  # the studio's automatic run, when the Marketing manager turned it on
             asyncio.create_task(studio.run(S.office, ref))
-        if rhythm.refresh_due(S.office):  # the daily refresh of competitor posts, when the Marketing manager turned it on
-            asyncio.create_task(asyncio.to_thread(studio.refresh_competitors, S.office, by="mrival", auto=True))
+        if env("LISTING_FEED_URL") and ticks % 30 == 0:
+            try:
+                xml = await asyncio.to_thread(portals.fetch_feed)
+                leads.sync_listings(S.office, xml)
+            except (portals.PortalError, httpx.HTTPError) as e:
+                S.office.log.append("step.blocked", actor="portal-feed", content={"step": "listing feed", "needs": str(e)[:300]})
+        ticks += 1
         await asyncio.sleep(60)
+
+
+async def custom_loop():
+    """Every few seconds: the agents the owner added hand new triggers to their person (diwan/agents/custom.py)."""
+    from diwan.agents import custom
+    while True:
+        try:
+            await asyncio.to_thread(custom.run_pending, S.office)
+        except Exception as e:  # noqa: BLE001  a bad turn must not stop the loop
+            S.office.log.append("agent.failed", actor="custom-agents", content={"error": str(e)[:300]})
+        await asyncio.sleep(3)
 
 
 @contextlib.asynccontextmanager
 async def lifespan(_):
     S.last_brief = None
-    task = asyncio.create_task(morning_loop())
+    task, task2 = asyncio.create_task(morning_loop()), asyncio.create_task(custom_loop())
     yield
     task.cancel()
+    task2.cancel()
 
 
 app = FastAPI(title="Diwan", lifespan=lifespan)
@@ -99,7 +125,7 @@ def g():
 
 
 def node_json(gr, n) -> dict:
-    return {"id": n.id, "type": n.type, "label": n.label, "status": n.status, "deal": n.deal, "record": gr.record(n.id),
+    return {"id": n.id, "type": n.type, "label": n.label, "status": n.status, "deal": n.deal, "record": gr.record(n.id), "event": n.event,
             "props": {k: v for k, v in n.props.items() if k != "messages"}}
 
 
@@ -114,7 +140,58 @@ def health():
 @app.get("/api/roster")
 def roster():
     from dataclasses import asdict
-    return [asdict(c) for c in ROSTER]
+
+    from diwan.agents import custom
+    mine = [asdict(custom.charter(a)) | {"custom": True, "status": a["status"]} for a in g().custom_agents.values() if a["status"] != "removed"]
+    return [asdict(c) for c in ROSTER] + mine
+
+
+class AgentIn(BaseModel):
+    by: str
+    name: str = ""
+    role: str = ""
+    job: str = ""
+    trigger: str = ""
+    team: str = ""
+    to: str = ""
+
+
+@app.get("/api/memory/agents")
+def memory_agents(upto: int | None = None):
+    """The Memory screen's Agents view: every agent, who it reports to, and the handoffs the log shows."""
+    from diwan.agents import custom
+    return custom.connections(S.office, upto)
+
+
+@app.get("/api/memory/flow")
+def memory_flow(upto: int | None = None):
+    """The Memory screen's Agents view: departments, their agents, and the numbered flows between them."""
+    from diwan.agents import custom
+    return custom.office_flow(S.office, upto)
+
+
+@app.post("/api/agents/custom")
+def agent_add(body: AgentIn):
+    from diwan.agents import custom
+    try:
+        return custom.add(S.office, body.model_dump(), by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.post("/api/agents/custom/{aid}/{what}")
+def agent_change(aid: str, what: str, body: AgentIn):
+    from diwan.agents import custom
+    try:
+        return custom.change(S.office, aid, what, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except KeyError:
+        raise HTTPException(404, "no such agent") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
 
 
 @app.post("/api/marketing/run")
@@ -528,9 +605,16 @@ def reset(correction: bool = False):
     with old.lock:  # a page reading the log in another thread must not have the file closed and renamed under it
         if path != ":memory:" and Path(path).exists():
             old.db.close()
-            Path(path).rename(f"{path}.{datetime.now().strftime('%Y%m%d-%H%M%S')}.bak")
+            bak = f"{path}.{datetime.now().strftime('%Y%m%d-%H%M%S')}.bak"
+            Path(path).rename(bak)
+            for side in ("-wal", "-shm"):  # SQLite's journal files go with it, or the new log would read the old journal
+                if Path(path + side).exists():
+                    Path(path + side).rename(bak + side)
         S.office = Office(EventLog(path))
     demo.seed(S.office)
+    demo.catalog(S.office)
+    demo.kinds(S.office)
+    demo.projects(S.office)
     if correction:
         demo.correction(S.office)
     return {"events": len(S.office.log.list())}
@@ -547,7 +631,8 @@ def events(deal: str | None = None, agent: str | None = None, after: int = 0):
 def graph(deal: str | None = None, upto: int | None = None):
     gr = S.office.graph(upto)
     keep = {n.id for n in gr.nodes.values() if deal is None or n.deal in (deal, None) or n.type == "person"}
-    return {"last_event": gr.last_event,
+    steps = [e["id"] for e in S.office.log.list() if deal and e.get("deal") == deal]  # the slider steps through this deal only
+    return {"last_event": gr.last_event, "steps": steps,
             "nodes": [node_json(gr, gr.nodes[i]) for i in keep],
             "edges": [{"src": e.src, "rel": e.rel, "dst": e.dst, "via": e.via} for e in gr.edges if e.src in keep and e.dst in keep]}
 
@@ -686,8 +771,14 @@ def turn(mid: str, body: TurnIn):
 
 @app.post("/api/meetings/{mid}/end")
 def end(mid: str):
-    S.office.end_meeting(mid)
-    return S.office.meeting(mid)
+    from diwan.agents import followup, visit
+    ev = S.office.end_meeting(mid)
+    m = S.office.meeting(mid)
+    if not ev.get("duplicate"):  # the meeting just ended: the visit summary, then the follow-up built on it, for the broker
+        visit.from_meeting(S.office, mid, cause=ev["id"])
+        followup.draft(S.office, m["deal"], why="after the meeting", cause=ev["id"])
+    chat = followup._chat(g(), m["deal"])
+    return m | {"followup": followup.current(g(), m["deal"]), "visit": visit.latest(g(), m["deal"]), "chat": chat.props["phone"] if chat else None}
 
 
 @app.websocket("/api/meetings/{mid}/audio")
@@ -772,6 +863,7 @@ class ListingIn(BaseModel):
     price_aed: int
     permit: str | None = None
     features: list[str] = []
+    agent: str | None = None
     by: str = "omar"
 
 
@@ -851,10 +943,37 @@ def chat_detail(phone: str):
     return inbox.detail(S.office, phone) | {"quick": inbox.quick_replies(g())}
 
 
+def reply_wait() -> float:
+    """Seconds Rania waits after a message for the next one, so a burst gets one reply (0: each at once)."""
+    try:
+        return max(0.0, min(30.0, float(env("DIWAN_REPLY_WAIT") or 4)))
+    except ValueError:
+        return 4.0
+
+
+async def client_message(phone: str, text: str, name: str | None = None) -> dict:
+    """A client's message: kept at once; after a short wait, one reply to everything they sent since the office last
+    wrote. If another message arrives meanwhile, that one answers (this returns {"merged": true})."""
+    r = await asyncio.to_thread(reception.receive, S.office, phone, text, name_=name)
+    if (wait := reply_wait()):
+        await asyncio.sleep(wait)
+    if any(m["type"] == "received" and m["event"] > r["got"]["id"] for m in g().nodes[f"chat:{phone}"].props["messages"]):
+        return {"merged": True, "reply": None, "mode": "ai"}
+    return await asyncio.to_thread(reception.message, S.office, phone, text, name_=name, received=r)
+
+
+async def _later(work) -> None:
+    """A webhook is acknowledged at once; with a wait, the reply follows in the background."""
+    if reply_wait():
+        asyncio.create_task(work)
+    else:
+        await work
+
+
 @app.post("/api/chats/incoming")
-def incoming(body: ChatIn):
+async def incoming(body: ChatIn):
     """The sandbox phone: the same path a real WhatsApp message takes."""
-    return reception.message(S.office, body.phone, body.text, name_=body.name)
+    return await client_message(body.phone, body.text, body.name)
 
 
 @app.post("/api/chats/{phone}/send")
@@ -906,6 +1025,649 @@ def chat_stage(phone: str, body: StageIn):
     return {"ok": True}
 
 
+# ---------- the lead desk: Attention, the Pool, the sales team, notices ----------
+
+class ClearIn(BaseModel):
+    action: str
+    by: str = "omar"
+    note: str = ""
+
+
+@app.post("/api/attention/{card}/clear")
+def attention_clear(card: str, body: ClearIn):
+    from diwan import leads
+    try:
+        return leads.clear(S.office, card, body.action, by=body.by, note=body.note)
+    except KeyError:
+        raise HTTPException(404, "no such card")
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.post("/api/chats/{phone}/claim")
+def chat_claim(phone: str, by: str = "omar"):
+    from diwan import leads
+    try:
+        return leads.claim(S.office, phone, by=by)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+class AssignIn(BaseModel):
+    to: str
+    by: str = "layla"
+
+
+@app.post("/api/chats/{phone}/assign")
+def chat_assign(phone: str, body: AssignIn):
+    from diwan import leads
+    if f"chat:{phone}" not in g().nodes:
+        raise HTTPException(404, "no such conversation")
+    try:
+        return leads.reassign(S.office, phone, body.to, by=body.by)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/api/team")
+def sales_team():
+    from diwan import leads
+    return leads.team(g(), datetime.now(slots.DUBAI))
+
+
+class TeamIn(BaseModel):
+    shift: str | None = None
+    days: list[int] | None = None
+    away: bool | None = None
+    phone: str | None = None
+    by: str = "layla"
+
+
+@app.post("/api/team/{person}")
+def sales_team_set(person: str, body: TeamIn):
+    from diwan import leads
+    try:
+        for k in ("shift", "days", "away", "phone"):
+            if (v := getattr(body, k)) is not None:
+                leads.set_agent(S.office, person, k, v, by=body.by)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return sales_team()
+
+
+@app.get("/api/notices/{person}")
+def person_notices(person: str):
+    from diwan import leads
+    ns = leads.notices(g(), person)
+    return {"unread": sum(1 for n in ns if not n["read"]), "items": ns}
+
+
+@app.post("/api/notices/{person}/read")
+def person_notices_read(person: str):
+    from diwan import leads
+    leads.read_all(S.office, person)
+    return {"ok": True}
+
+
+# ---------- property portals: the listing feed and enquiry webhooks ----------
+
+@app.post("/api/listings/sync")
+def listings_sync():
+    from diwan import leads
+    try:
+        return leads.sync_listings(S.office, portals.fetch_feed())
+    except portals.PortalError as e:
+        raise HTTPException(422, str(e))
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Could not reach the feed: {e}")
+
+
+@app.post("/api/portals/{portal}/lead")
+async def portal_lead(portal: str, request: Request, token: str = ""):
+    from diwan import leads
+    if portal not in portals.PORTALS:
+        raise HTTPException(404, "unknown portal")
+    body = await request.body()
+    if not portals.signed(portal, body, request.headers.get("x-signature"), token):
+        raise HTTPException(401, f"bad or missing signature (set PORTAL_SECRET_{portal.upper()})")
+    try:
+        lead = portals.parse_lead(portal, await request.json())
+    except portals.PortalError as e:
+        raise HTTPException(422, str(e))
+    return leads.portal_lead(S.office, lead)
+
+
+# ---------- qualification: the owner's questions and conditions ----------
+
+class QualifyFormIn(BaseModel):
+    form: dict
+    by: str
+
+
+class ByIn(BaseModel):
+    by: str
+
+
+@app.get("/api/decks/{did}")
+def deck_get(did: str):
+    """A pitch deck for the meeting page: its slides with their sources, the customer, the review and the approval."""
+    from diwan.agents import deck
+    gr = g()
+    if did not in gr.nodes or gr.nodes[did].type != "draft":
+        raise HTTPException(404, "no such deck")
+    v = deck.view(gr, did)
+    d = gr.nodes[f"deal:{v['deal']}"].props
+    chat = next((c.props["phone"] for c in gr.of("chat") if c.deal == v["deal"]), None)
+    return v | {"customer": d.get("customer"), "broker": d.get("broker"), "chat": chat,
+                "sources": {r: gr.record(r) for s in v["slides"] for r in s["sources"] if r in gr.nodes}}
+
+
+@app.post("/api/chats/{phone}/deck")
+def deck_make(phone: str, body: ByIn):
+    """Make the pitch deck again from what stands now (the deal's broker or the owner)."""
+    from diwan import qualify
+    from diwan.agents import deck
+    gr = g()
+    if f"chat:{phone}" not in gr.nodes or not gr.nodes[f"chat:{phone}"].deal:
+        raise HTTPException(404, "no such lead")
+    deal = gr.nodes[f"chat:{phone}"].deal
+    if body.by != gr.nodes[f"deal:{deal}"].props["broker"] and body.by not in qualify.owner_ids():
+        raise HTTPException(403, "Only the deal's broker or the owner makes the deck")
+    did = deck.build(S.office, deal, by="deck")
+    if not did:
+        raise HTTPException(400, "The customer hasn't chosen a property yet")
+    return deck.view(g(), did)
+
+
+@app.post("/api/decks/{did}/approve")
+def deck_approve(did: str, body: ByIn):
+    from diwan.agents import deck
+    try:
+        deck.approve(S.office, did, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    return deck.view(g(), did)
+
+
+class FollowIn(BaseModel):
+    by: str
+    text: str = ""
+
+
+def _deal_of(phone: str) -> str:
+    gr = g()
+    if f"chat:{phone}" not in gr.nodes or not gr.nodes[f"chat:{phone}"].deal:
+        raise HTTPException(404, "no such lead")
+    return gr.nodes[f"chat:{phone}"].deal
+
+
+@app.post("/api/chats/{phone}/followup")
+def followup_make(phone: str, body: FollowIn):
+    """Draft the follow-up now (the deal's broker or the owner)."""
+    from diwan import qualify
+    from diwan.agents import followup
+    deal = _deal_of(phone)
+    if body.by != g().nodes[f"deal:{deal}"].props["broker"] and body.by not in qualify.owner_ids():
+        raise HTTPException(403, "Only the deal's broker or the owner")
+    return followup.draft(S.office, deal, why="asked by the broker")
+
+
+@app.post("/api/chats/{phone}/followup/send")
+def followup_send(phone: str, body: FollowIn):
+    from diwan.agents import followup
+    try:
+        return followup.send(S.office, _deal_of(phone), body.text, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except reception.WindowClosed as e:
+        raise HTTPException(409, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.post("/api/chats/{phone}/followup/dismiss")
+def followup_dismiss(phone: str, body: FollowIn):
+    from diwan.agents import followup
+    followup.dismiss(S.office, _deal_of(phone), by=body.by, why=body.text)
+    return {"ok": True}
+
+
+class KindsIn(BaseModel):
+    by: str
+    kinds: list[dict]
+
+
+@app.get("/api/deal-kinds")
+def deal_kinds_get():
+    """The brokerage's deal kinds (sales desks), and what the editor needs: brokers, customer types and their questions."""
+    from diwan import deal_kinds, leads, qualify
+    f = qualify.form(g())
+    return {"kinds": deal_kinds.kinds(g()), "brokers": [{"id": b, "name": PEOPLE[b]["name"]} for b in leads.brokers()],
+            "types": {t: {"label": s["label"], "fields": [{"key": x["key"], "label": x["label"], "options": x.get("options") or []}
+                                                           for x in qualify.fields_for(f, t)]} for t, s in f["types"].items()},
+            "offerings": deal_kinds.OFFERINGS, "completions": deal_kinds.COMPLETIONS, "ops": list(qualify.OPS),
+            "owners": sorted(qualify.owner_ids())}
+
+
+@app.post("/api/deal-kinds")
+def deal_kinds_set(body: KindsIn):
+    from diwan import deal_kinds
+    try:
+        return {"kinds": deal_kinds.save(S.office, body.kinds, by=body.by)}
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class RecommendIn(BaseModel):
+    by: str
+    when: str | None = None
+    how_many: int | None = None
+    hot_on: list[str] | None = None
+
+
+@app.get("/api/rania/recommend")
+def recommend_get():
+    """When Rania recommends properties, how many, and what makes a lead hot (the owner's setting)."""
+    return reception.recommend_settings(g()) | {"whens": reception.WHEN, "hots": reception.HOT_ON}
+
+
+@app.post("/api/rania/recommend")
+def recommend_set(body: RecommendIn):
+    try:
+        return reception.set_recommend(S.office, {k: v for k, v in body.model_dump().items() if k != "by" and v is not None}, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class FrontIn(BaseModel):
+    by: str
+    nurture_to: str | None = None
+    portal_template: str | None = None
+
+
+@app.get("/api/rania/front")
+def front_get():
+    """Who nurtures leads that are not ready yet, and the first message to a portal lead (the owner's setting)."""
+    from diwan import inbox
+    return reception.front_settings(g()) | {"nurture_tos": reception.NURTURE_TO,
+                                            "templates": [{"name": t["name"], "body": t["body"], "params": t.get("params")} for t in inbox.templates()]}
+
+
+@app.post("/api/rania/front")
+def front_set(body: FrontIn):
+    try:
+        return reception.set_front(S.office, {k: v for k, v in body.model_dump().items() if k != "by"}, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class QuietIn(BaseModel):
+    by: str
+    after_hours: list[float] | None = None
+    quiet_from: str | None = None
+    quiet_to: str | None = None
+    friday_prayer: bool | None = None
+    template: str | None = None
+    then: str | None = None
+    then_after_hours: float | None = None
+
+
+@app.get("/api/rania/quiet")
+def quiet_get():
+    """When a client goes quiet: the owner's schedule, quiet hours, template and last step, and what is due next."""
+    from diwan import inbox
+    from diwan.agents import nudge
+    return nudge.settings(g()) | {"thens": nudge.THEN, "upcoming": nudge.upcoming(g(), datetime.now(slots.DUBAI)),
+                                  "templates": [{"name": t["name"], "body": t["body"], "params": t.get("params")} for t in inbox.templates()]}
+
+
+@app.post("/api/rania/quiet")
+def quiet_set(body: QuietIn):
+    from diwan.agents import nudge
+    try:
+        return nudge.set_settings(S.office, {k: v for k, v in body.model_dump().items() if k != "by" and (v is not None or k == "template")}, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class SweepIn(BaseModel):
+    at: str
+
+
+@app.post("/api/nudges/run")
+def nudges_run(body: SweepIn):
+    """The sandbox only (no WhatsApp line connected): run the follow-up sweep as if it were `at`, to see what goes out."""
+    from diwan.agents import nudge
+    from diwan.providers import aisensy
+    if aisensy.available() or whatsapp.available():
+        raise HTTPException(403, "Only in the sandbox: a connected WhatsApp line would really send these")
+    try:
+        at = datetime.fromisoformat(body.at)
+    except ValueError:
+        raise HTTPException(400, "Use a time like 2026-11-02T10:00:00+04:00") from None
+    from diwan.agents import reminders
+    return {"done": nudge.sweep(S.office, at) + reminders.sweep(S.office, at)}
+
+
+def _range(start: str | None, days: int | None):
+    from datetime import date as _date, timedelta as _td
+    try:
+        d = _date.fromisoformat(start) if start else datetime.now(slots.DUBAI).date()
+    except ValueError:
+        raise HTTPException(400, "Use a date like 2026-11-02") from None
+    return (d, days) if days else (d - _td(days=d.weekday()), 7)  # no length: the week of that day
+
+
+@app.get("/api/calendar")
+def calendar(person: str, start: str | None = None, broker: str | None = None, days: int | None = None):
+    """From `start` for `days` days (default: the week of that day, from Monday): the owner sees every broker, a broker their own."""
+    from diwan import qualify, video
+    from diwan.agents import reminders
+    d, n = _range(start, days)
+    try:
+        out = slots.week(g(), d, person=person, broker=broker or None, n=n) | {"reminders": reminders.settings(g()), "video": video.settings(g())}
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    if person in qualify.owner_ids():
+        out["video_status"] = video.status()
+    return out
+
+
+@app.get("/api/calendar/search")
+def calendar_search(person: str, q: str = ""):
+    try:
+        return {"results": slots.search(g(), q, person=person)}
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+
+
+@app.get("/api/calendar.ics")
+def calendar_ics(person: str, start: str | None = None, broker: str | None = None, days: int | None = None):
+    """The shown range as a calendar file any phone, Outlook or Google imports."""
+    from fastapi.responses import Response
+    d, n = _range(start, days)
+    try:
+        body = slots.ics(g(), slots.week(g(), d, person=person, broker=broker or None, n=n))
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    return Response(body, media_type="text/calendar; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="diwan-{d.isoformat()}-{n}d.ics"'})
+
+
+class VideoIn(BaseModel):
+    by: str
+    provider: str | None = None
+    auto: bool = False
+
+
+@app.post("/api/calendar/video")
+def calendar_video(body: VideoIn):
+    from diwan import video
+    try:
+        return video.set_settings(S.office, {"provider": body.provider or None, "auto": body.auto}, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class CalSetIn(BaseModel):
+    by: str
+    hours: dict | None = None
+    kinds: list[dict] | None = None
+    reminders: dict | None = None
+
+
+@app.post("/api/calendar/settings")
+def calendar_set(body: CalSetIn):
+    """The owner's opening hours, kinds of appointment and reminders."""
+    from diwan.agents import reminders
+    try:
+        if body.hours is not None:
+            slots.set_hours(S.office, body.hours, by=body.by)
+        if body.kinds is not None:
+            slots.set_appointments(S.office, body.kinds, by=body.by)
+        if body.reminders is not None:
+            reminders.set_settings(S.office, body.reminders, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    return {"ok": True}
+
+
+class BlockIn(BaseModel):
+    by: str
+    broker: str
+    kind: str = "busy"  # "busy" (start, end) or "off" (first, last day)
+    start: str | None = None
+    end: str | None = None
+    first: str | None = None
+    last: str | None = None
+    reason: str = ""
+    repeat: str | None = None
+    until: str | None = None
+
+
+def _when(v: str | None, what: str) -> datetime:
+    try:
+        t = datetime.fromisoformat(v or "")
+    except ValueError:
+        raise HTTPException(400, f"The {what}: a day and a time") from None
+    return t if t.tzinfo else t.replace(tzinfo=slots.DUBAI)
+
+
+@app.post("/api/calendar/blocks")
+@app.post("/api/calendar/blocks/{bid}")
+def calendar_block(body: BlockIn, bid: str | None = None):
+    """The broker's own busy time (once or every week) or days off; the same id changes it."""
+    try:
+        if body.kind == "off":
+            if bid:
+                raise ValueError("To change a day off, delete it and add it again")
+            return slots.day_off(S.office, by=body.by, broker=body.broker, first=body.first or "", last=body.last or "", reason=body.reason)
+        return slots.block(S.office, by=body.by, broker=body.broker, start=_when(body.start, "start"), end=_when(body.end, "end"),
+                           reason=body.reason, repeat=body.repeat or None, until=body.until or None, bid=bid)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.post("/api/calendar/blocks/{bid}/delete")
+def calendar_unblock(bid: str, body: ByIn):
+    try:
+        slots.unblock(S.office, bid, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from None
+    return {"ok": True}
+
+
+class HandIn(BaseModel):
+    by: str
+    broker: str
+    phone: str
+    name: str | None = None
+    kind: str
+    listing: str | None = None
+    at: str
+
+
+@app.post("/api/appointments")
+def appointment_add(body: HandIn):
+    """An appointment the broker agreed with the client on the phone: the same checks and reminders as Rania's."""
+    try:
+        return reception.add_by_hand(S.office, by=body.by, broker=body.broker, phone=body.phone, name_=body.name, kind_id=body.kind,
+                                     ref=body.listing, when=_when(body.at, "time"), now=datetime.now(slots.DUBAI))
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class ChangeIn(BaseModel):
+    by: str
+    at: str | None = None
+    cancel: bool = False
+    reason: str = ""
+
+
+@app.post("/api/appointments/{vid}/change")
+def appointment_change(vid: str, body: ChangeIn):
+    """The broker or the owner moves or cancels it from the calendar; the client is told in one message."""
+    try:
+        return reception.change_from_calendar(S.office, vid, by=body.by, when=_when(body.at, "new time") if not body.cancel else None,
+                                              cancel=body.cancel, reason=body.reason, now=datetime.now(slots.DUBAI))
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.post("/api/appointments/{vid}/link")
+def appointment_link(vid: str, body: ByIn):
+    """Make the video link with the owner's service and send it to the client."""
+    try:
+        return reception.send_link(S.office, vid, by=body.by, now=datetime.now(slots.DUBAI))
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class ApptIn(BaseModel):
+    by: str
+    notes: str | None = None
+
+
+@app.post("/api/appointments/{vid}/{what}")
+def appointment_after(vid: str, what: str, body: ApptIn):
+    """After the time: Done (the lead moves to Viewed, which drafts the follow-up) or No-show. The broker or the owner."""
+    from diwan import inbox, qualify
+    v = g().nodes.get(vid)
+    if not v or v.type != "viewing" or what not in ("done", "noshow"):
+        raise HTTPException(404, "no such appointment")
+    if body.by != v.props["broker"] and body.by not in qualify.owner_ids():
+        raise HTTPException(403, "Only the appointment's broker or the owner marks it")
+    if v.status != "booked":
+        raise HTTPException(409, f"It is already {v.status.replace('_', '-')}")
+    if datetime.fromisoformat(v.props["at"]) > datetime.now(slots.DUBAI):
+        raise HTTPException(409, "It hasn't happened yet")
+    from diwan.agents import followup, visit
+    ev = S.office.log.append(f"appointment.{what}", actor=body.by, deal=v.deal, content={"id": vid, "notes": (body.notes or "").strip() or None})
+    if what == "done" and (body.notes or "").strip():  # the broker's notes: the visit summary the follow-up is built on
+        visit.summarize(S.office, v.deal, said=body.notes, source="notes", appointment=vid, by=body.by, cause=ev["id"])
+    if what == "done" and v.props.get("chat") and v.props.get("where", "property") == "property":
+        inbox.set_stage(S.office, v.props["chat"], "Viewed", by=body.by)  # drafts the follow-up
+    elif what == "done" and (body.notes or "").strip():
+        followup.draft(S.office, v.deal, why="after the meeting", cause=ev["id"])
+    return {"ok": True, "visit": visit.latest(g(), v.deal)}
+
+
+@app.get("/api/leads/nurture")
+def nurture_list():
+    """For Marketing: leads that are not ready yet (in their words) or not a fit (the owner's reason)."""
+    return {"leads": reception.nurture_list(g())}
+
+
+@app.get("/api/qualify/form")
+def qualify_form():
+    from diwan import qualify
+    f = qualify.form(g())
+    return f | {"can_edit": sorted(qualify.owner_ids()), "kinds": list(qualify.KINDS), "ops": list(qualify.OPS)}
+
+
+@app.post("/api/qualify/form")
+def qualify_form_save(body: QualifyFormIn):
+    from diwan import qualify
+    try:
+        ev = qualify.save_form(S.office, body.form, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"version": ev["content"]["version"]}
+
+
+class QualifyCheckIn(BaseModel):
+    form: dict
+    type: str
+    answers: dict[str, str]
+
+
+@app.post("/api/qualify/check")
+def qualify_check(body: QualifyCheckIn):
+    """Try a form before saving it: these answers under these questions and conditions give this verdict."""
+    from diwan import qualify
+    f = {k: body.form.get(k) for k in ("common", "types", "rules")} | {"version": body.form.get("version", 0)}
+    answers = {k: {"value": v, "quote": v, "unsure": qualify.unsure(v)} for k, v in body.answers.items() if str(v).strip()}
+    v = qualify.evaluate(f, body.type, answers)
+    return {k: v.get(k) for k in ("verdict", "reasons", "missing", "reply")} | {"next": (v.get("next") or {}).get("label")}
+
+
+# ---------- the test console: talk to Rania on a copy of the office ----------
+
+class TrialStart(BaseModel):
+    customer: str = "Test Buyer"
+
+
+class TrialSay(BaseModel):
+    text: str
+    brain: str = "model"
+
+
+@app.get("/api/playground")
+def playground_info():
+    from diwan import playground
+    return {"model": playground.model_name(), "brains": playground.brains(), "listings": len([n for n in g().of("listing", status="available") if n.props.get("permit")]),
+            "knowledge": len(g().of("knowledge", status="confirmed"))}
+
+
+@app.post("/api/playground/start")
+def playground_start(body: TrialStart):
+    from diwan import playground
+    return playground.start(S.office, body.customer.strip() or "Test Buyer")
+
+
+@app.post("/api/playground/{sid}/say")
+def playground_say(sid: str, body: TrialSay):
+    from diwan import playground
+    if sid not in playground.SESSIONS:
+        raise HTTPException(404, "This test conversation has ended. Start a new one.")
+    if body.brain not in ("model", "spark", "free", "rules") or not body.text.strip():
+        raise HTTPException(422, "Say something, with brain 'spark', 'free', 'model' or 'rules'")
+    return playground.say(sid, body.text.strip(), brain=body.brain)
+
+
+@app.post("/api/playground/cases")
+def playground_cases(brain: str = "rules"):
+    """Starts the 12 cases in the background; poll /api/playground/cases/{id} for progress."""
+    from diwan import playground
+    return playground.start_cases(brain=brain if brain in ("model", "spark", "free") else "rules")
+
+
+@app.get("/api/playground/cases/{jid}")
+def playground_cases_status(jid: str):
+    from diwan import playground
+    if jid not in playground.JOBS:
+        raise HTTPException(404, "This run is gone (the server restarted). Run the cases again.")
+    return playground.job_status(jid)
+
+
 @app.post("/api/chats/{phone}/take")
 def take(phone: str, by: str = "omar"):
     reception.hand_over(S.office, phone, to=by, by=by, reason="taken from the Inbox")
@@ -936,7 +1698,13 @@ def integrations(request: Request):
                       "webhook": f"{base}/api/instagram/webhook"},
         "heygen": {"connected": all(is_set(k) for k in ("HEYGEN_API_KEY", "HEYGEN_AVATAR_ID", "HEYGEN_VOICE_ID")),
                    "fields": {k: is_set(k) for k in ("HEYGEN_API_KEY", "HEYGEN_AVATAR_ID", "HEYGEN_VOICE_ID")}},
+        "zoom": {"connected": all(is_set(k) for k in ("ZOOM_ACCOUNT_ID", "ZOOM_CLIENT_ID", "ZOOM_CLIENT_SECRET")),
+                 "fields": {k: is_set(k) for k in ("ZOOM_ACCOUNT_ID", "ZOOM_CLIENT_ID", "ZOOM_CLIENT_SECRET")}},
         "meta": {p.id: p.available() for p in PROVIDERS.values()} | {"voice": voice.available()},
+        "portals": {"feed": is_set("LISTING_FEED_URL"), "notify_template": is_set("NOTIFY_TEMPLATE"),
+                    "last_sync": next((e["content"] | {"at": e["at"]} for e in reversed(S.office.log.list()) if e["type"] == "listings.synced"), None),
+                    "hooks": {p: {"name": n, "secret": is_set(f"PORTAL_SECRET_{p.upper()}"), "webhook": f"{base}/api/portals/{p}/lead"}
+                              for p, n in portals.PORTALS.items()}},
     }
 
 
@@ -986,7 +1754,7 @@ async def aisensy_webhook(request: Request, token: str = ""):
         raise HTTPException(401, "bad token")
     for m in aisensy.parse(await request.json()):
         if m["text"]:
-            reception.message(S.office, m["phone"], m["text"], name_=m["name"])
+            await _later(client_message(m["phone"], m["text"], m["name"]))
     return {"ok": True}
 
 
@@ -1004,7 +1772,7 @@ async def wa_receive(request: Request):
     if not whatsapp.signed(body, request.headers.get("x-hub-signature-256")):
         raise HTTPException(401, "bad signature")
     for m in whatsapp.parse(await request.json()):
-        reception.message(S.office, m["phone"], m["text"], name_=m["name"])
+        await _later(client_message(m["phone"], m["text"], m["name"]))
     return {"ok": True}
 
 

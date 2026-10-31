@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Calendar</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  main { max-width: 1440px; }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .head .sub { margin: 0; font-size: 14px; }
+  .head select { width: auto; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .bar select, .bar input { width: auto; }
+  .bar .grow { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; color: var(--muted); padding: 7px 13px; }
+  .seg button.on { background: var(--gold-soft); color: var(--gold-2); }
+  .range { font-weight: 600; min-width: 150px; text-align: center; }
+  .icon { padding: 7px 11px; }
+  #openSet { font-size: 16px; line-height: 1; padding: 7px 10px; }
+  .bar input[type=date] { padding: 7px 10px; }
+  .search { position: relative; flex: 1 1 220px; max-width: 320px; }
+  .search input { width: 100%; padding: 7px 12px; }
+  .results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30; background: var(--panel-solid); border: 1px solid var(--line-2);
+             border-radius: 12px; padding: 6px; max-height: 340px; overflow: auto; box-shadow: 0 12px 30px rgba(0,0,0,.4); }
+  .results button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 8px 10px; font-weight: 400; border-radius: 8px; }
+  .results button:hover { background: var(--raise); }
+  .results .sm { font-size: 12px; color: var(--muted); }
+  .listrange { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+  .listrange[hidden], [hidden] { display: none !important; }
+
+  .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 4px 0 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+  .kpi .t { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+  .kpi .v { font-size: 26px; font-weight: 600; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .kpi .s { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kpi .up { color: var(--green); } .kpi .down { color: var(--warn); }
+  .kpi.warn .v { color: var(--warn); }
+  .kpi button.kpilink { all: unset; cursor: pointer; display: block; }
+  .kinds-mini { display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; margin-top: 4px; }
+  .kinds-mini b { font-variant-numeric: tabular-nums; display: inline-block; min-width: 22px; }
+
+  .load { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .lb { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; padding: 9px 12px; border: 1px solid var(--line);
+        border-radius: 10px; background: rgba(255,255,255,.02); text-align: left; font-weight: 400; }
+  .lb.on { border-color: rgba(232,199,122,.5); }
+  .lb i { width: 9px; height: 9px; border-radius: 50%; }
+  .lb .track { grid-column: 1 / -1; height: 5px; border-radius: 9px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .lb .fill { height: 100%; border-radius: 9px; }
+  .lb .meta { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); }
+
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; align-items: start; }
+  .cols > * { min-width: 0; }
+  .gridwrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  .grid { display: grid; position: relative; padding-bottom: 14px; }
+  .dh { padding: 10px 8px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); text-align: center; }
+  .dh b { display: block; color: var(--ink); font-size: 15px; font-weight: 600; }
+  .dh button { all: unset; cursor: pointer; display: block; width: 100%; }
+  .dh.today b { color: #1b1608; background: var(--gold); border-radius: 99px; width: 28px; margin: 2px auto 0; }
+  .dh .n { font-size: 11px; color: var(--faint); }
+  .hours { position: relative; }
+  .hours div { position: absolute; right: 8px; font-size: 11px; color: var(--faint); transform: translateY(-7px); font-variant-numeric: tabular-nums; }
+  .col { position: relative; border-left: 1px solid var(--line); cursor: copy; }
+  .col.today { background: rgba(232,199,122,.025); }
+  .col .off { position: absolute; left: 0; right: 0; background: repeating-linear-gradient(135deg, rgba(255,255,255,.035) 0 6px, transparent 6px 12px); pointer-events: none; }
+  .col .line { position: absolute; left: 0; right: 0; border-top: 1px solid rgba(255,255,255,.05); pointer-events: none; }
+  .col .half { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(255,255,255,.025); pointer-events: none; }
+  .now { position: absolute; left: -1px; right: 0; border-top: 2px solid var(--bad); z-index: 3; pointer-events: none; }
+  .now::before { content: ""; position: absolute; left: -4px; top: -5px; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+  .ev { position: absolute; border-radius: 7px; padding: 3px 7px 3px 9px; font-size: 11.5px; line-height: 1.3; overflow: hidden; cursor: pointer; text-align: left;
+        border: 1px solid rgba(255,255,255,.06); color: var(--ink); font-weight: 400; z-index: 2;
+        display: flex; flex-direction: column; justify-content: flex-start; background: color-mix(in srgb, var(--c) 16%, #151a26); }
+  .ev::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--c); }
+  .ev b { display: block; font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ev span { display: block; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ev.short { flex-direction: row; align-items: center; gap: 6px; padding-top: 0; padding-bottom: 0; }
+  .ev.short b { flex: 0 1 auto; } .ev.short span { flex: 1 1 0; min-width: 0; }  /* one line: "10:30 Ali Rahman  🎥 Video call" */
+  .ev.done, .ev.no_show, .ev.cancelled { opacity: .55; } .ev.no_show b, .ev.cancelled b { text-decoration: line-through; }
+  .ev.sel, .ev:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+  .ev.blk { background: repeating-linear-gradient(135deg, rgba(160,168,186,.16) 0 5px, rgba(160,168,186,.07) 5px 10px); border-style: dashed; border-color: rgba(255,255,255,.14); z-index: 1; }
+  .ev.blk::before { display: none; }
+  .ev.blk b { color: var(--muted); }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .legend span { display: inline-flex; gap: 6px; align-items: center; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+  .month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--panel); }
+  .month .mh { padding: 8px; font-size: 12px; color: var(--muted); text-align: center; border-bottom: 1px solid var(--line); }
+  .mc { min-height: 112px; padding: 6px 7px; border-top: 1px solid var(--line); border-left: 1px solid var(--line); cursor: pointer; min-width: 0; text-align: left;
+        background: transparent; border-radius: 0; font-weight: 400; display: flex; flex-direction: column; gap: 2px; }
+  .mc:nth-child(7n + 1) { border-left: 0; }
+  .mc.out { opacity: .4; }
+  .mc.closed { background: repeating-linear-gradient(135deg, rgba(255,255,255,.025) 0 6px, transparent 6px 12px); }
+  .mc .d { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .mc .d b { color: var(--ink); font-size: 13px; }
+  .mc.today .d b { color: #1b1608; background: var(--gold); border-radius: 99px; padding: 0 7px; }
+  .mc .it { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 6px; border-left: 3px solid var(--c); }
+  .mc .it.blk { border-left-style: dashed; color: var(--muted); }
+  .mc .more { font-size: 11px; color: var(--muted); }
+
+  .side .panel { margin-bottom: 14px; padding: 16px; }
+  .side h2 { display: flex; justify-content: space-between; align-items: center; }
+  .item { display: grid; grid-template-columns: 52px 1fr; gap: 2px 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; cursor: pointer; }
+  .item:first-of-type { border-top: 0; }
+  .item .tm { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .item .sm { grid-column: 2; font-size: 12px; color: var(--muted); }
+  .att { padding: 8px 10px; border-radius: 9px; background: var(--warn-soft); border: 1px solid rgba(240,179,94,.18); margin-bottom: 6px; font-size: 12.5px; cursor: pointer; }
+  .att b { display: block; color: var(--warn); font-weight: 600; font-size: 12px; }
+  .kv { display: grid; grid-template-columns: 84px 1fr; gap: 5px 10px; font-size: 13px; margin: 8px 0 12px; }
+  .kv span:nth-child(odd) { color: var(--muted); }
+  .kv a { word-break: break-all; }
+  .visit { background: rgba(255,255,255,.03); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 8px 0; font-size: 13px; }
+  .box { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-top: 10px; background: rgba(255,255,255,.02); }
+  .hint { font-size: 12px; color: var(--muted); margin: 2px 0 10px; }
+  .warnline { font-size: 12px; color: var(--warn); margin: 4px 0; }
+  .empty { padding: 30px; text-align: center; color: var(--muted); }
+
+  .agenda .day { margin-bottom: 14px; }
+  .agenda h3 { font-size: 13px; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
+  .agenda h3.today { color: var(--gold-2); }
+  .arow { display: grid; grid-template-columns: 110px 10px 1fr auto; gap: 10px; align-items: center; padding: 9px 12px; border: 1px solid var(--line);
+          border-radius: 10px; margin-bottom: 6px; background: rgba(255,255,255,.02); cursor: pointer; font-size: 13px; }
+  .arow i { width: 9px; height: 9px; border-radius: 50%; }
+  .arow .tm { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .arow.blk { border-style: dashed; color: var(--muted); }
+  .arow.cancelled { opacity: .55; }
+
+  dialog { background: var(--panel-solid); color: var(--ink); border: 1px solid var(--line-2); border-radius: 16px; padding: 20px; width: min(480px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(0,0,0,.55); backdrop-filter: blur(2px); }
+  dialog h2 { margin-bottom: 10px; }
+  dialog .two, .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  dialog .acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .err { color: var(--bad); font-size: 12.5px; margin-top: 8px; min-height: 1em; }
+  .chk { display: flex; gap: 8px; align-items: center; font-size: 13px; margin-top: 10px; }
+  .chk input { width: auto; margin: 0; }
+  #setdlg { width: min(580px, calc(100vw - 32px)); }
+  #setdlg h3 { font-size: 13px; margin: 18px 0 2px; }
+  .krow { display: grid; grid-template-columns: 1fr 76px 1fr auto; gap: 6px; margin-bottom: 8px; }
+  .krow button { padding: 4px 9px; }
+  .days { display: inline-flex; gap: 3px; }
+  .days button { padding: 4px 0; width: 28px; font-size: 11px; border-radius: 6px; color: var(--muted); }
+  .days button.on { background: var(--gold-soft); color: var(--gold-2); border-color: rgba(232, 199, 122, .45); }
+
+  #print { display: none; }
+  @media print {
+    body { background: #fff !important; color: #000; }
+    body > *:not(#print) { display: none !important; }
+    #print { display: block; font: 12px/1.45 var(--font); color: #000; }
+    #print h1 { font-size: 20px; margin: 0 0 4px; color: #000; font-family: var(--font); }
+    #print h3 { font-size: 13px; margin: 14px 0 4px; border-bottom: 1px solid #999; }
+    #print table { width: 100%; border-collapse: collapse; }
+    #print td { padding: 5px 6px; border-bottom: 1px solid #ddd; vertical-align: top; }
+    #print .t { width: 90px; font-variant-numeric: tabular-nums; }
+  }
+
+  @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .cols { grid-template-columns: 1fr; } }
+  @media (max-width: 600px) {
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kpi .v { font-size: 22px; }
+    .range { min-width: 0; } .krow { grid-template-columns: 1fr 70px; } .arow { grid-template-columns: 84px 10px 1fr; } .arow .who { display: none; }
+    dialog .two, .two { grid-template-columns: 1fr; } .search { max-width: none; }
+    .mc { min-height: 64px; padding: 4px; } .mc .it { display: none; } .month .mh { font-size: 11px; padding: 6px 2px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="head">
+    <div>
+      <h1>Calendar</h1>
+      <p class="sub">Every broker's site visits, meetings and video calls, their busy time and days off. Rania only books what is free here.</p>
+    </div>
+    <select id="as" title="Viewing as" aria-label="Viewing as"></select>
+  </div>
+
+  <div class="bar">
+    <div class="seg" role="tablist" aria-label="View">
+      <button data-v="day" role="tab">Day</button><button data-v="week" role="tab">Week</button><button data-v="month" role="tab">Month</button><button data-v="list" role="tab">List</button>
+    </div>
+    <button id="prev" class="icon" aria-label="Previous">←</button><span class="range" id="range"></span><button id="next" class="icon" aria-label="Next">→</button>
+    <button id="today">Today</button>
+    <input type="date" id="jump" title="Go to a date" aria-label="Go to a date">
+    <span class="listrange" id="listrange" hidden>From <input type="date" id="lfrom" aria-label="From"> to <input type="date" id="lto" aria-label="To"></span>
+    <span class="grow"></span>
+    <button class="primary" id="addAppt">+ Appointment</button>
+    <button id="addBusy">+ Busy</button>
+    <button id="addOff">Day off</button>
+    <button id="openSet" class="icon" title="Hours, kinds, reminders and video links" aria-label="Settings">⚙</button>
+  </div>
+  <div class="bar">
+    <div class="search"><input id="q" type="search" placeholder="Search a client, phone or property ref" aria-label="Search appointments" autocomplete="off"><div class="results" id="results" hidden></div></div>
+    <select id="who" title="Whose calendar" aria-label="Whose calendar"></select>
+    <select id="fkind" aria-label="Kind of appointment"></select>
+    <select id="fstatus" aria-label="Status">
+      <option value="active">Booked, done and no-show</option><option value="booked">Booked</option><option value="done">Done</option>
+      <option value="no_show">No-show</option><option value="cancelled">Cancelled</option><option value="all">All, with cancelled</option>
+    </select>
+    <span class="grow"></span>
+    <a class="btn" id="ics" download>⤓ Calendar file</a>
+    <button id="printBtn">Print</button>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+  <div class="load" id="load"></div>
+
+  <div class="cols">
+    <section>
+      <div id="main"></div>
+      <div class="legend" id="legend"></div>
+    </section>
+    <aside class="side" id="side"></aside>
+  </div>
+</main>
+
+<dialog id="dlg"><form method="dialog" id="form"></form></dialog>
+
+<dialog id="setdlg">
+  <h2>Hours, kinds, reminders and video</h2>
+  <p class="hint">Rania only offers times inside the office's hours and each broker's own shift and working days (Settings → Team).</p>
+  <label>Open</label>
+  <div class="row"><input id="hopen" type="time" aria-label="Opens"><input id="hclose" type="time" aria-label="Closes"></div>
+  <div style="margin-top:8px" class="days" id="hdays"></div>
+  <label style="margin-top:14px">Kinds of appointment</label>
+  <div id="kinds"></div>
+  <button id="kadd" type="button">+ Kind</button>
+  <label style="margin-top:14px">Remind the client (hours before)</label><input id="rhours" placeholder="24, 2">
+  <label>After 24 hours of silence, as the template</label><select id="rtpl"></select>
+  <label>When an appointment is moved or cancelled and the client last wrote over 24 hours ago, tell them with the template</label>
+  <div class="two"><select id="ctpl" aria-label="Moved template"></select><select id="xtpl" aria-label="Cancelled template"></select></div>
+  <label class="chk"><input type="checkbox" id="rmorning"> Each broker gets the day's list every working morning</label>
+  <h3>Video calls</h3>
+  <label>Links made with</label>
+  <select id="vprov"><option value="">None: the broker sends a link</option><option value="zoom">Zoom</option><option value="google_meet">Google Meet</option></select>
+  <div class="small muted" id="vstate" style="margin-top:6px"></div>
+  <label class="chk"><input type="checkbox" id="vauto"> Create the link when Rania confirms a call (it goes in her confirmation and the reminders)</label>
+  <div class="small muted" style="margin-top:4px">Off: brokers make it with "Create link" on the appointment.</div>
+  <div class="err" id="snote"></div>
+  <div class="acts"><button type="button" id="sclose">Close</button><button class="primary" type="button" id="ssave">Save</button></div>
+</dialog>
+
+<div id="print"></div>
+<datalist id="chatlist"></datalist><datalist id="listinglist"></datalist>
+
+<script type="module">
+import { h, api, post, header, toast } from "./app.js";
+header("inbox.html");
+const $ = (id) => document.getElementById(id);
+const COLORS = ["#e8c77a", "#5ccfb5", "#7ea6f8", "#b591f3", "#f0b35e", "#82d99f"];
+const DAYN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const PX = 56;  // one hour
+const qs = new URLSearchParams(location.search);
+const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { return null; } };
+const local = (iso) => new Date(new Date(iso).getTime() + 4 * 36e5);  // Dubai wall time, read with getUTC*
+const hhmm = (d) => `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+const dayOf = (iso) => local(iso).toISOString().slice(0, 10);
+const minOf = (iso) => { const d = local(iso); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
+const mins = (t) => { const [a, b] = t.split(":").map(Number); return a * 60 + b; };
+const fmtDay = (d, o = { weekday: "short", day: "numeric", month: "short" }) => new Date(d + "T00:00:00Z").toLocaleDateString("en-GB", { ...o, timeZone: "UTC" });
+const todayIso = () => local(new Date().toISOString()).toISOString().slice(0, 10);
+const addDays = (d, n) => { const x = new Date(d + "T00:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+const monday = (d) => addDays(d, -((new Date(d + "T00:00:00Z").getUTCDay() + 6) % 7));
+const spanDays = (a, b) => Math.round((new Date(b + "T00:00:00Z") - new Date(a + "T00:00:00Z")) / 864e5) + 1;
+
+let me = qs.get("as") || store("diwan.cal.as") || "layla";
+let view = qs.get("view") || store("diwan.cal.view") || "week";
+if (view === "agenda") view = "list";
+let anchor = qs.get("start") || todayIso();  // the day the view is about
+let lfrom = null, lto = null, who = "", sel = null, C = null, TPL = [], kinds = [], hdays = [], color = {};
+let fkind = "", fstatus = "active";
+
+function request() {  // what to ask the server for, by view
+  if (view === "month") { const first = anchor.slice(0, 8) + "01"; const s = monday(first); return { start: s, days: 42 }; }
+  if (view === "list") {
+    lfrom = lfrom || anchor; lto = lto && lto >= lfrom ? lto : addDays(lfrom, 13);
+    return { start: lfrom, days: Math.min(92, spanDays(lfrom, lto)) };
+  }
+  return { start: anchor };  // Day and Week: the week of that day
+}
+
+async function load() {
+  const r = request();
+  const p = new URLSearchParams({ person: me, start: r.start });
+  if (r.days) p.set("days", r.days);
+  if (who) p.set("broker", who);
+  try { C = await api(`/api/calendar?${p}`); }
+  catch (e) { $("main").replaceChildren(h("div", { class: "empty panel" }, e.message)); return; }
+  C.req = p;
+  color = Object.fromEntries((C.all_brokers.length ? C.all_brokers : C.brokers).map((b, i) => [b.id, COLORS[i % COLORS.length]]));
+  if (!TPL.length) api("/api/rania/quiet").then((x) => { TPL = x.templates; }).catch(() => {});
+  render();
+}
+
+const bname = (id) => C.viewers.find((v) => v.id === id)?.name || id;
+const brokersICanEdit = () => (C.owner ? C.all_brokers : C.brokers);
+const okStatus = (s) => fstatus === "all" || (fstatus === "active" ? s !== "cancelled" : s === fstatus);
+const shown = () => C.appointments.filter((a) => (!fkind || a.kind === fkind) && okStatus(a.status));
+const filtered = () => !!fkind || fstatus !== "active";
+
+function render() {
+  $("as").replaceChildren(...C.viewers.map((v) => h("option", { value: v.id, selected: v.id === me }, `Viewing as ${v.name} · ${v.owner ? "owner" : "broker"}`)));
+  $("who").hidden = !C.owner;
+  if (C.owner) $("who").replaceChildren(h("option", { value: "" }, "All brokers"), ...C.all_brokers.map((b) => h("option", { value: b.id, selected: b.id === who }, b.name)));
+  $("fkind").replaceChildren(h("option", { value: "" }, "All kinds"), ...C.kinds.map((k) => h("option", { value: k.name, selected: k.name === fkind }, k.name)));
+  $("fstatus").value = fstatus;
+  document.querySelectorAll(".seg button[data-v]").forEach((b) => { b.classList.toggle("on", b.dataset.v === view); b.setAttribute("aria-selected", b.dataset.v === view); });
+  $("range").textContent = view === "day" ? fmtDay(anchor, { weekday: "long", day: "numeric", month: "short" })
+    : view === "month" ? fmtDay(anchor.slice(0, 8) + "01", { month: "long", year: "numeric" })
+    : `${fmtDay(C.days[0], { day: "numeric", month: "short" })} – ${fmtDay(C.days.at(-1), { day: "numeric", month: "short" })}`;
+  $("jump").value = anchor;
+  $("listrange").hidden = view !== "list";
+  if (view === "list") { $("lfrom").value = lfrom; $("lto").value = addDays(lfrom, C.days.length - 1); }
+  $("openSet").hidden = !C.owner;
+  $("ics").href = `/api/calendar.ics?${C.req}`;
+  renderKpis(); renderLoad();
+  if (view === "list") renderList(); else if (view === "month") renderMonth(); else renderGrid();
+  renderSide();
+}
+
+// ---------- the numbers: they follow the filters ----------
+function renderKpis() {
+  const I = C.insights, A = shown().filter((a) => a.status !== "cancelled");
+  const byKind = {}; for (const a of A) byKind[a.kind] = (byKind[a.kind] || 0) + 1;
+  const used = A.reduce((s, a) => s + a.minutes, 0), open = I.load.reduce((s, l) => s + l.open, 0);
+  const diff = I.total - I.last_week;
+  const per = C.days.length === 7 ? "last week" : C.days.length % 7 === 0 ? `the ${C.days.length / 7} weeks before` : `the ${C.days.length} days before`;
+  const nx = A.filter((a) => a.status === "booked" && new Date(a.at) > new Date()).sort((a, b) => a.at.localeCompare(b.at))[0];
+  const tile = (t, v, s, cls = "", on) => h("div", { class: `kpi ${cls}` }, on ? h("button", { class: "kpilink", onclick: on }, h("div", { class: "t" }, t), v, s) : [h("div", { class: "t" }, t), v, s]);
+  $("kpis").replaceChildren(
+    tile("Appointments", h("div", { class: "v" }, A.length),
+      h("div", { class: `s ${!filtered() && diff > 0 ? "up" : !filtered() && diff < 0 ? "down" : ""}` },
+        filtered() ? "with the filters shown" : I.last_week || I.total ? (diff === 0 ? `Same as ${per}` : `${diff > 0 ? "+" : ""}${diff} vs ${per}`) : `None ${per} either`)),
+    tile("By kind", h("div", { class: "kinds-mini" }, ...(Object.keys(byKind).length ? Object.entries(byKind).map(([k, n]) => h("div", {}, h("b", {}, n), k)) : [h("div", { class: "muted" }, "Nothing booked")]))),
+    tile("Time booked", h("div", { class: "v" }, open ? `${Math.min(100, Math.round(100 * used / open))}%` : "–"),
+      h("div", { class: "s" }, open ? `${Math.round(Math.max(0, open - used) / 60)} h still free to book` : "No bookable hours here")),
+    tile("Needs attention", h("div", { class: "v" }, I.attention.length + I.attention_more),
+      h("div", { class: "s" }, I.attention.length ? I.attention[0].why : "All clear"), I.attention.length ? "warn" : "",
+      I.attention.length ? () => pick(I.attention[0].id, I.attention[0].at) : null),
+    tile("Next up", h("div", { class: "v", style: "font-size:20px" }, nx ? `${fmtDay(dayOf(nx.at), { weekday: "short" })} ${hhmm(local(nx.at))}` : "–"),
+      h("div", { class: "s" }, nx ? `${nx.customer} · ${nx.kind}${nx.listing ? " · " + nx.listing : ""}${C.owner && !who ? " · " + bname(nx.broker) : ""}` : "Nothing booked ahead here"),
+      "", nx ? () => pick(nx.id, nx.at) : null));
+}
+
+function renderLoad() {
+  const A = shown().filter((a) => a.status !== "cancelled");
+  $("load").replaceChildren(...C.insights.load.map((l) => {
+    const mine = A.filter((a) => a.broker === l.broker), used = mine.reduce((s, a) => s + a.minutes, 0);
+    const pct = l.open ? Math.min(100, Math.round(100 * used / l.open)) : null;
+    const off = l.off.map((d) => fmtDay(d, { weekday: "short", day: "numeric" }));
+    return h(C.owner ? "button" : "div", { class: `lb ${who === l.broker ? "on" : ""}`, title: C.owner ? (who === l.broker ? "Show all brokers" : `Show only ${l.name}`) : "",
+        onclick: C.owner ? () => { who = who === l.broker ? "" : l.broker; sel = null; load(); } : null },
+      h("i", { style: `background:${color[l.broker]}` }), h("b", {}, l.name), h("span", { class: "small muted" }, pct == null ? "no hours" : `${pct}% booked`),
+      h("div", { class: "track" }, h("div", { class: "fill", style: `width:${pct || 0}%;background:${color[l.broker]}` })),
+      h("div", { class: "meta" }, `${mine.length} appointment${mine.length === 1 ? "" : "s"} · ${Math.round(Math.max(0, l.open - used) / 60)} h free${off.length ? " · off " + off.slice(0, 4).join(", ") + (off.length > 4 ? "…" : "") : ""}`));
+  }));
+}
+
+// ---------- Week (a column a day) and Day (a column a broker) ----------
+function lanes(items) {  // overlapping items side by side
+  items.sort((a, b) => a.s - b.s || b.e - a.e);
+  const groups = [];
+  for (const it of items) {
+    const g = groups.find((gr) => gr.end > it.s);
+    if (g) { g.items.push(it); g.end = Math.max(g.end, it.e); } else groups.push({ end: it.e, items: [it] });
+  }
+  for (const g of groups) {
+    const ends = [];
+    for (const it of g.items) { let k = ends.findIndex((e) => e <= it.s); if (k < 0) { k = ends.length; ends.push(0); } ends[k] = it.e; it.lane = k; }
+    for (const it of g.items) it.of = ends.length;
+  }
+  return items;
+}
+
+function blocksOn(date, brokers) {  // busy time and days off falling on a date, in minutes
+  const out = [];
+  for (const b of C.blocks.filter((x) => brokers.includes(x.broker))) {
+    const ds = dayOf(b.start), de = dayOf(b.end);
+    if (date < ds || date > de) continue;
+    const s = date === ds ? minOf(b.start) : 0, e = date === de ? minOf(b.end) : 24 * 60;
+    if (date === de && e === 0) continue;  // ends at midnight
+    out.push({ s, e, block: b });
+  }
+  return out;
+}
+
+function renderGrid() {
+  const t0 = todayIso(), A = shown();
+  const cols = view === "day"
+    ? C.brokers.map((b) => ({ date: anchor, brokers: [b.id], title: b.name, broker: b.id }))
+    : C.days.map((d, i) => ({ date: d, brokers: C.brokers.map((b) => b.id), title: DAYN[i], sub: new Date(d + "T00:00:00Z").getUTCDate(), broker: null }));
+  let lo = mins(C.hours.open), hi = mins(C.hours.close);
+  for (const a of A) { const m = minOf(a.at); lo = Math.min(lo, m); hi = Math.max(hi, m + a.minutes); }
+  lo = Math.max(0, Math.floor(lo / 60) * 60 - 60); hi = Math.min(24 * 60, Math.ceil(hi / 60) * 60 + 60);
+  const H = (hi - lo) / 60 * PX, y = (m) => (m - lo) / 60 * PX;
+  const nowM = minOf(new Date().toISOString()), cw = view === "day" ? 160 : 118;
+  const grid = h("div", { class: "grid", style: `grid-template-columns:56px repeat(${cols.length}, minmax(${cw}px, 1fr));min-width:${56 + cols.length * cw}px` });
+  grid.append(h("div", { class: "dh" }, ""));
+  for (const c of cols) {
+    const n = A.filter((a) => c.brokers.includes(a.broker) && dayOf(a.at) === c.date && a.status !== "cancelled").length;
+    grid.append(h("div", { class: `dh ${view === "week" && c.date === t0 ? "today" : ""}` },
+      view === "week" ? h("button", { title: "Open this day", onclick: () => { anchor = c.date; setView("day"); } }, c.title, h("b", {}, c.sub), h("div", { class: "n" }, n ? `${n} booked` : " "))
+        : [h("span", { style: `color:${color[c.broker]}` }, "● "), h("b", { style: "display:inline" }, c.title), h("div", { class: "n" }, n ? `${n} booked` : "no appointments")]));
+  }
+  const hours = h("div", { class: "hours", style: `height:${H}px` });
+  for (let m = lo; m <= hi; m += 60) hours.append(h("div", { style: `top:${y(m)}px` }, `${String(m / 60).padStart(2, "0")}:00`));
+  grid.append(hours);
+  for (const c of cols) {
+    const col = h("div", { class: `col ${c.date === t0 ? "today" : ""}`, style: `height:${H}px`, title: "Click to add here" });
+    for (let m = lo; m < hi; m += 60) { col.append(h("div", { class: "line", style: `top:${y(m)}px` })); col.append(h("div", { class: "half", style: `top:${y(m + 30)}px` })); }
+    const ws = c.brokers.map((b) => C.brokers.find((x) => x.id === b)?.days[c.date]).filter(Boolean);
+    const open = ws.length ? [Math.min(...ws.map((w) => w[0])), Math.max(...ws.map((w) => w[1]))] : null;
+    if (!open) col.append(h("div", { class: "off", style: `top:0;height:${H}px` }));
+    else {
+      if (open[0] > lo) col.append(h("div", { class: "off", style: `top:0;height:${y(open[0])}px` }));
+      if (open[1] < hi) col.append(h("div", { class: "off", style: `top:${y(open[1])}px;height:${H - y(open[1])}px` }));
+    }
+    const items = blocksOn(c.date, c.brokers).map((x) => ({ ...x, s: Math.max(x.s, lo), e: Math.min(x.e, hi) })).filter((x) => x.e > x.s);
+    for (const a of A.filter((x) => c.brokers.includes(x.broker) && dayOf(x.at) === c.date)) { const s = minOf(a.at); items.push({ s, e: s + a.minutes, appt: a }); }
+    for (const it of lanes(items)) {
+      const w = 100 / it.of, st = `top:${y(it.s) + 1}px;height:${Math.max(22, (it.e - it.s) / 60 * PX - 2)}px;left:calc(${it.lane * w}% + 3px);width:calc(${w}% - 6px)`;
+      if (it.block) {
+        const b = it.block, lbl = b.kind === "off" ? "Day off" : "Busy";
+        col.append(h("button", { class: `ev blk ${sel === b.id ? "sel" : ""}`, style: st, title: `${bname(b.broker)} · ${lbl}${b.reason ? ": " + b.reason : ""}`,
+          onclick: (ev) => { ev.stopPropagation(); sel = b.id; render(); } },
+          h("b", {}, `${lbl}${b.reason ? " · " + b.reason : ""}`),
+          h("span", {}, [C.brokers.length > 1 && view === "week" ? bname(b.broker) : "", b.repeat ? "every week" : b.kind === "off" ? "" : `${hhmm(local(b.start))}–${hhmm(local(b.end))}`].filter(Boolean).join(" · "))));
+      } else {
+        const a = it.appt, s = local(a.at);
+        col.append(h("button", { class: `ev ${a.status} ${sel === a.id ? "sel" : ""} ${a.minutes < 40 ? "short" : ""}`, style: `${st};--c:${color[a.broker]}`, title: `${a.kind} · ${a.customer} · ${bname(a.broker)}`,
+          onclick: (ev) => { ev.stopPropagation(); sel = a.id; render(); } },
+          h("b", {}, `${hhmm(s)} ${a.customer}`), h("span", {}, `${a.where === "video" ? "🎥 " : a.where === "phone" ? "📞 " : ""}${a.kind}${a.listing ? " · " + a.listing : ""}`),
+          C.brokers.length > 1 && view === "week" ? h("span", {}, bname(a.broker)) : null));
+      }
+    }
+    if (c.date === t0 && nowM >= lo && nowM <= hi) col.append(h("div", { class: "now", style: `top:${y(nowM)}px` }));
+    col.addEventListener("click", (ev) => {
+      const m = Math.floor((lo + ev.offsetY / PX * 60) / 30) * 30;
+      openForm("appt", { date: c.date, time: `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`, broker: c.broker || who || (C.owner ? null : me) });
+    });
+    grid.append(col);
+  }
+  $("main").replaceChildren(h("div", { class: "gridwrap" }, grid));
+  legend("Click an empty time to add an appointment.");
+}
+
+function legend(tip) {
+  $("legend").replaceChildren(...C.brokers.map((b) => h("span", {}, h("i", { style: `background:${color[b.id]}` }), b.name)),
+    h("span", {}, h("i", { style: "background:repeating-linear-gradient(135deg,#777 0 3px,transparent 3px 6px)" }), "Busy or day off"),
+    h("span", {}, h("i", { style: "background:repeating-linear-gradient(135deg,#444 0 3px,transparent 3px 6px)" }), "Closed"),
+    tip ? h("span", {}, tip) : null);
+}
+
+// ---------- Month ----------
+function renderMonth() {
+  const t0 = todayIso(), month = anchor.slice(0, 7), A = shown();
+  const cells = DAYN.map((d) => h("div", { class: "mh" }, d));
+  for (const d of C.days) {
+    const appts = A.filter((a) => dayOf(a.at) === d).sort((p, q) => p.at.localeCompare(q.at));
+    const blks = blocksOn(d, C.brokers.map((b) => b.id));
+    const closed = C.brokers.every((b) => !b.days[d]);
+    const items = [...blks.map((x) => h("div", { class: "it blk", style: `--c:${color[x.block.broker]}` }, `${x.block.kind === "off" ? "Off" : "Busy"}${C.brokers.length > 1 ? " · " + bname(x.block.broker) : ""}`)),
+      ...appts.map((a) => h("div", { class: "it", style: `--c:${color[a.broker]}` }, `${hhmm(local(a.at))} ${a.customer}`))];
+    const live = appts.filter((a) => a.status !== "cancelled").length;
+    cells.push(h("button", { class: `mc ${d.slice(0, 7) !== month ? "out" : ""} ${d === t0 ? "today" : ""} ${closed ? "closed" : ""}`, title: `Open ${fmtDay(d)}`,
+        onclick: () => { anchor = d; setView("day"); } },
+      h("div", { class: "d" }, h("b", {}, new Date(d + "T00:00:00Z").getUTCDate()), live ? h("span", {}, `${live}`) : ""),
+      ...items.slice(0, 3), items.length > 3 ? h("div", { class: "more" }, `+${items.length - 3} more`) : null));
+  }
+  $("main").replaceChildren(h("div", { class: "month" }, ...cells));
+  legend("Click a day to open it.");
+}
+
+// ---------- List (any range) ----------
+function rowsOn(d, A) {
+  return [
+    ...A.filter((a) => dayOf(a.at) === d).map((a) => ({ s: a.at, a })),
+    ...blocksOn(d, C.brokers.map((b) => b.id)).map((x) => ({ s: `${d}T${String(Math.floor(x.s / 60)).padStart(2, "0")}:${String(x.s % 60).padStart(2, "0")}:00+04:00`, b: x.block })),
+  ].sort((x, y) => new Date(x.s) - new Date(y.s));
+}
+function renderList() {
+  const t0 = todayIso(), A = shown(), long = C.days.length > 14;
+  const days = C.days.map((d) => {
+    const rows = rowsOn(d, A);
+    if (!rows.length && long) return null;
+    return h("div", { class: "day" }, h("h3", { class: d === t0 ? "today" : "" }, `${fmtDay(d, { weekday: "long", day: "numeric", month: "short" })}${d === t0 ? " · today" : ""}`),
+      rows.length ? rows.map((r) => r.a
+        ? h("div", { class: `arow ${r.a.status}`, onclick: () => { sel = r.a.id; render(); } }, h("span", { class: "tm" }, `${hhmm(local(r.a.at))}–${hhmm(new Date(local(r.a.at).getTime() + r.a.minutes * 6e4))}`),
+            h("i", { style: `background:${color[r.a.broker]}` }), h("span", {}, h("b", {}, r.a.customer), ` · ${r.a.kind}${r.a.listing ? " · " + r.a.listing : ""}`,
+              r.a.status !== "booked" ? h("span", { class: `chip ${r.a.status === "done" ? "ok" : "bad"}` }, { done: "Done", no_show: "No-show", cancelled: "Cancelled" }[r.a.status]) : null),
+            h("span", { class: "who small muted" }, bname(r.a.broker)))
+        : h("div", { class: "arow blk", onclick: () => { sel = r.b.id; render(); } }, h("span", { class: "tm" }, r.b.kind === "off" ? "All day" : `${hhmm(local(r.b.start))}–${hhmm(local(r.b.end))}`),
+            h("i", { style: `background:${color[r.b.broker]};opacity:.5` }), h("span", {}, r.b.kind === "off" ? "Day off" : "Busy", r.b.reason ? ` · ${r.b.reason}` : "", r.b.repeat ? " · every week" : ""),
+            h("span", { class: "who small" }, bname(r.b.broker))))
+        : h("div", { class: "small muted", style: "padding:4px 2px 6px" }, "Nothing booked"));
+  }).filter(Boolean);
+  $("main").replaceChildren(h("div", { class: "agenda" }, ...(days.length ? days : [h("div", { class: "empty panel" }, "Nothing in this range.")])));
+  $("legend").replaceChildren(h("span", {}, `${C.days.length} days · ${A.filter((a) => a.status !== "cancelled").length} appointments`));
+}
+
+// ---------- the side ----------
+function pick(id, at) {  // an appointment that may be in another range: go to its week first
+  sel = id;
+  if (C.appointments.some((a) => a.id === id)) { render(); return; }
+  if (at) { anchor = dayOf(at); if (view === "list") lfrom = lto = null; if (view === "month") view = "week"; load(); } else render();
+}
+
+function renderSide() {
+  const a = C.appointments.find((x) => x.id === sel), b = C.blocks.find((x) => x.id === sel);
+  const parts = [];
+  if (a) parts.push(apptPanel(a));
+  else if (b) parts.push(blockPanel(b));
+  const I = C.insights;
+  parts.push(h("section", { class: "panel" }, h("h2", {}, "Needs attention", h("span", { class: `chip ${I.attention.length ? "warn" : "ok"}` }, I.attention.length + I.attention_more)),
+    I.attention.length ? I.attention.map((x) => h("div", { class: "att", onclick: () => pick(x.id, x.at) }, h("b", {}, x.why), `${x.text}${C.owner && !who ? " · " + bname(x.broker) : ""}`))
+      : h("p", { class: "hint", style: "margin:0" }, "Nothing waiting. Past appointments get marked Done or No-show here."),
+    I.attention_more ? h("p", { class: "hint" }, `and ${I.attention_more} more`) : null));
+  const t0 = todayIso();
+  const todays = shown().filter((x) => dayOf(x.at) === t0 && x.status !== "cancelled").sort((p, q) => p.at.localeCompare(q.at));
+  if (C.days.includes(t0)) parts.push(h("section", { class: "panel" }, h("h2", {}, "Today"),
+    todays.length ? todays.map((x) => h("div", { class: "item", onclick: () => { sel = x.id; render(); } }, h("span", { class: "tm" }, hhmm(local(x.at))),
+      h("span", {}, h("b", {}, x.customer), ` · ${x.kind}`), h("span", { class: "sm" }, `${x.listing ? x.listing + " · " : ""}${bname(x.broker)}`)))
+      : h("p", { class: "hint", style: "margin:0" }, "Nothing booked today.")));
+  $("side").replaceChildren(...parts);
+}
+
+const TOLD = { sent: "the client was told on WhatsApp", template: "the client was told with an approved template (over 24 hours since they wrote)", card: "it's over 24 hours since the client's last message, so you have a card to tell them",
+               no_chat: "there is no chat to tell them in", window_closed: "the link goes in their reminders (it's over 24 hours since their last message)" };
+
+function apptPanel(a) {
+  const s = local(a.at), past = new Date(a.at) < new Date(), can = me === a.broker || C.owner, live = a.status === "booked";
+  const mark = (what) => async () => {
+    try { const r = await post(`/api/appointments/${a.id}/${what}`, { by: me, notes: what === "done" ? ($("notes")?.value || null) : null });
+      toast(what === "done" ? (r.visit ? "Done: the visit summary and a follow-up built on it are with the lead" : "Done: the lead is Viewed and a follow-up is drafted") : "Marked no-show"); load(); }
+    catch (e) { toast(e.message); } };
+  const change = async (body, done) => {
+    try { const r = await post(`/api/appointments/${a.id}/change`, { by: me, ...body }); toast(`${done}: ${TOLD[r.told]}`); load(); }
+    catch (e) { $("cerr").textContent = e.message; } };
+  const link = a.link || {};
+  const box = h("div", { id: "changebox" });
+  const showMove = () => box.replaceChildren(h("div", { class: "box" }, h("b", { class: "small" }, "Move to"),
+    h("div", { class: "two", style: "margin-top:6px" }, h("input", { type: "date", id: "mdate", value: dayOf(a.at), "aria-label": "New day" }),
+      h("input", { type: "time", id: "mtime", step: 900, value: hhmm(s), "aria-label": "New time" })),
+    h("div", { class: "err", id: "cerr" }),
+    h("div", { class: "row", style: "gap:6px;justify-content:flex-end" }, h("button", { onclick: () => box.replaceChildren() }, "Back"),
+      h("button", { class: "primary", onclick: () => change({ at: `${$("mdate").value}T${$("mtime").value}:00+04:00` }, "Moved") }, "Move and tell the client"))));
+  const showCancel = () => box.replaceChildren(h("div", { class: "box" }, h("b", { class: "small" }, "Cancel this appointment"),
+    h("input", { id: "creason", placeholder: "Reason, for the office only (optional)", style: "margin-top:6px" }),
+    h("div", { class: "err", id: "cerr" }),
+    h("div", { class: "row", style: "gap:6px;justify-content:flex-end" }, h("button", { onclick: () => box.replaceChildren() }, "Back"),
+      h("button", { class: "primary", onclick: () => change({ cancel: true, reason: $("creason").value }, "Cancelled") }, "Cancel and tell the client"))));
+  return h("section", { class: "panel", id: "detail" }, h("h2", {}, a.kind, h("button", { class: "icon", "aria-label": "Close", onclick: () => { sel = null; render(); } }, "✕")),
+    h("div", { style: "font-size:17px;font-weight:600" }, a.customer),
+    h("div", { class: "kv" },
+      h("span", {}, "When"), h("span", {}, `${fmtDay(dayOf(a.at))}, ${hhmm(s)} · ${a.minutes} min`),
+      h("span", {}, "Broker"), h("span", {}, bname(a.broker)),
+      h("span", {}, "Where"), h("span", {}, C.where[a.where] + (a.listing ? ` · ${a.listing}` : "")),
+      a.where === "video" ? h("span", {}, "Link") : null,
+      a.where === "video" ? h("span", {}, link.url ? h("a", { href: link.url, target: "_blank", rel: "noopener" }, link.url) : "Not made yet") : null,
+      h("span", {}, "Status"), h("span", {}, { booked: "Booked", done: "Done", no_show: "No-show", cancelled: "Cancelled" }[a.status] || a.status),
+      h("span", {}, "Booked by"), h("span", {}, a.by_hand ? `${bname(a.by_hand)}, by hand` : "Rania, in the chat"),
+      a.moved_from ? h("span", {}, "Moved") : null, a.moved_from ? h("span", {}, `from ${fmtDay(dayOf(a.moved_from))} ${hhmm(local(a.moved_from))}`) : null,
+      h("span", {}, "Reminders"), h("span", {}, a.reminded.length ? a.reminded.join(", ") + " before" : "none sent yet")),
+    link.error ? h("div", { class: "warnline" }, `⚠ ${link.error}`) : null,
+    a.visit ? h("div", { class: "visit" }, h("b", {}, "After the visit: "), { keen: "Keen", thinking: "Thinking it over", not_for_them: "Not for them" }[a.visit.interest] || "Can't tell yet",
+      ...(a.visit.worries || []).map((x) => h("div", { class: "small muted" }, `⚠ "${x}"`)), a.visit.next_step ? h("div", { class: "small" }, `Next: ${a.visit.next_step}`) : null) : null,
+    h("div", { class: "row", style: "gap:6px;flex-wrap:wrap" },
+      a.chat ? h("a", { class: "btn", href: `inbox.html?chat=${a.chat}&as=${me}` }, "Open the chat") : null,
+      a.where === "video" && !link.url && live && can && !past ? h("button", { onclick: async () => {
+        try { const r = await post(`/api/appointments/${a.id}/link`, { by: me }); toast(`Link made: ${TOLD[r.told] || "sent"}`); load(); } catch (e) { toast(e.message); } } }, "🎥 Create link") : null,
+      a.deal && live && can && a.where !== "phone" ? h("a", { class: "btn", href: `meeting.html?deal=${encodeURIComponent(a.deal)}&title=${encodeURIComponent(a.kind)}` }, "🎙 Record the visit") : null),
+    live && can && !past ? h("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin-top:8px" },
+      h("button", { onclick: showMove }, "Move"), h("button", { onclick: showCancel }, "Cancel")) : null,
+    box,
+    live && can ? h("div", {},
+      h("label", { style: "margin-top:12px" }, "How did it go? (optional, for the summary and the follow-up)"),
+      h("textarea", { id: "notes", rows: 3, placeholder: "e.g. Loved the view. Kitchen too small. Will talk to his wife." })) : null,
+    live && can ? h("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin-top:8px" },
+      h("button", { class: "primary", disabled: !past, onclick: mark("done") }, "Done"),
+      h("button", { disabled: !past, onclick: mark("noshow") }, "No-show")) : null,
+    live && can && !past ? h("p", { class: "hint", style: "margin-top:8px" }, "Done and No-show open after the time.") : null);
+}
+
+function blockPanel(b) {
+  const lbl = b.kind === "off" ? "Day off" : "Busy";
+  const lastDay = dayOf(new Date(new Date(b.last) - 1).toISOString());
+  return h("section", { class: "panel", id: "detail" }, h("h2", {}, lbl, h("button", { class: "icon", "aria-label": "Close", onclick: () => { sel = null; render(); } }, "✕")),
+    h("div", { style: "font-size:17px;font-weight:600" }, b.reason || (b.can ? "No reason given" : "Busy")),
+    h("div", { class: "kv" },
+      h("span", {}, "Broker"), h("span", {}, bname(b.broker)),
+      h("span", {}, "When"), h("span", {}, b.kind === "off"
+        ? `${fmtDay(dayOf(b.first))}${dayOf(b.first) !== lastDay ? " – " + fmtDay(lastDay) : ""}, all day`
+        : `${fmtDay(dayOf(b.start))}, ${hhmm(local(b.start))}–${hhmm(local(b.end))}`),
+      h("span", {}, "Repeats"), h("span", {}, b.repeat ? `Every ${fmtDay(dayOf(b.first), { weekday: "long" })}${b.until ? " until " + fmtDay(b.until) : ""}` : "No")),
+    h("p", { class: "hint" }, "Rania never books a client in this time."),
+    b.can ? h("div", { class: "row", style: "gap:6px" },
+      b.kind === "busy" ? h("button", { onclick: () => openForm("busy", { edit: b }) }, "Change") : null,
+      h("button", { onclick: async () => { try { await post(`/api/calendar/blocks/${b.id}/delete`, { by: me }); toast(`${lbl} removed`); sel = null; load(); } catch (e) { toast(e.message); } } }, "Delete")) : null);
+}
+
+// ---------- adding: an appointment, busy time, a day off ----------
+const field = (label, el) => h("div", {}, h("label", {}, label), el);
+function openForm(mode, pre = {}) {
+  const f = $("form");
+  const mine = brokersICanEdit();
+  const brokerSel = () => h("select", { id: "fbroker", disabled: !C.owner }, ...mine.map((b) => h("option", { value: b.id, selected: b.id === (pre.edit?.broker || pre.broker || (C.owner ? who || mine[0]?.id : me)) }, b.name)));
+  const tabs = pre.edit ? null : h("div", { class: "seg", style: "margin-bottom:6px" }, ...[["appt", "Appointment"], ["busy", "Busy"], ["off", "Day off"]].map(([m, t]) =>
+    h("button", { type: "button", class: m === mode ? "on" : "", onclick: () => openForm(m, pre) }, t)));
+  const date = pre.date || (C.days.includes(todayIso()) ? todayIso() : anchor);
+  let body = [];
+  if (mode === "appt") {
+    if (!$("chatlist").children.length) {
+      api("/api/chats").then((r) => $("chatlist").replaceChildren(...r.rows.map((c) => h("option", { value: c.phone }, c.name)))).catch(() => {});
+      api("/api/listings").then((r) => $("listinglist").replaceChildren(...r.filter((l) => l.status === "available").map((l) => h("option", { value: l.props.ref }, l.label)))).catch(() => {});
+    }
+    const kindSel = h("select", { id: "fkindsel", onchange: () => { $("fprop").parentElement.hidden = C.kinds.find((k) => k.id === $("fkindsel").value)?.where !== "property"; } },
+      ...C.kinds.map((k) => h("option", { value: k.id }, `${k.name} · ${k.minutes} min`)));
+    body = [h("h2", {}, "Add an appointment"),
+      h("p", { class: "hint" }, "One you agreed with the client on the phone. Nothing is sent to them now; they get the usual reminders, and Rania knows about it."),
+      field("Broker", brokerSel()),
+      h("div", { class: "two" }, field("Client's phone", h("input", { id: "fphone", list: "chatlist", placeholder: "971501234567", autocomplete: "off",
+        oninput: (e) => { const o = [...$("chatlist").options].find((x) => x.value === e.target.value); if (o) $("fname").value = o.textContent; } })),
+        field("Client's name", h("input", { id: "fname", placeholder: "For a new client" }))),
+      field("Kind", kindSel),
+      field("Property", h("input", { id: "fprop", list: "listinglist", placeholder: "Listing ref, e.g. MC-1204", autocomplete: "off" })),
+      h("div", { class: "two" }, field("Day", h("input", { id: "fdate", type: "date", value: date })), field("Time", h("input", { id: "ftime", type: "time", step: 900, value: pre.time || "10:00" })))];
+  } else if (mode === "busy") {
+    const e = pre.edit;
+    body = [h("h2", {}, e ? "Change busy time" : "Busy time"),
+      h("p", { class: "hint" }, "Rania won't book clients in it. The reason is for you and the owner only."),
+      field("Broker", brokerSel()),
+      field("Day", h("input", { id: "fdate", type: "date", value: e ? dayOf(e.first) : date })),
+      h("div", { class: "two" }, field("From", h("input", { id: "ffrom", type: "time", step: 900, value: e ? hhmm(local(e.first)) : pre.time || "13:00" })),
+        field("To", h("input", { id: "fto", type: "time", step: 900, value: e ? hhmm(local(e.last)) : "14:00" }))),
+      field("Reason (optional)", h("input", { id: "freason", value: e?.reason || "", placeholder: "e.g. Dentist, school run" })),
+      h("label", { class: "chk" }, h("input", { type: "checkbox", id: "frepeat", checked: !!e?.repeat, onchange: (ev) => { $("funtil").parentElement.hidden = !ev.target.checked; } }), "Every week"),
+      Object.assign(field("Stop repeating after (optional)", h("input", { id: "funtil", type: "date", value: e?.until || "" })), { hidden: !e?.repeat })];
+  } else {
+    body = [h("h2", {}, "Day off"),
+      h("p", { class: "hint" }, "Rania books nobody on these days. Appointments already booked must be moved first."),
+      field("Broker", brokerSel()),
+      h("div", { class: "two" }, field("First day", h("input", { id: "ffirst", type: "date", value: date })), field("Last day", h("input", { id: "flast", type: "date", value: date }))),
+      field("Reason (optional)", h("input", { id: "freason", placeholder: "e.g. Annual leave" }))];
+  }
+  f.replaceChildren(tabs || "", ...body, h("div", { class: "err", id: "ferr", role: "alert" }),
+    h("div", { class: "acts" }, h("button", { type: "button", onclick: () => $("dlg").close() }, "Cancel"),
+      h("button", { type: "button", class: "primary", id: "fsave", onclick: () => save(mode, pre.edit) }, mode === "appt" ? "Add appointment" : "Save")));
+  if (mode === "appt") $("fprop").parentElement.hidden = C.kinds.find((k) => k.id === $("fkindsel").value)?.where !== "property";
+  if (!$("dlg").open) $("dlg").showModal();
+}
+
+async function save(mode, edit) {
+  const v = (id) => $(id)?.value?.trim() || "";
+  const broker = v("fbroker"), at = (d, t) => `${d}T${t}:00+04:00`;
+  try {
+    let r;
+    if (mode === "appt") {
+      if (!v("fdate") || !v("ftime")) throw new Error("Pick a day and a time");
+      r = await post("/api/appointments", { by: me, broker, phone: v("fphone"), name: v("fname") || null, kind: v("fkindsel"), listing: v("fprop") || null, at: at(v("fdate"), v("ftime")) });
+    } else if (mode === "busy") {
+      if (!v("fdate") || !v("ffrom") || !v("fto")) throw new Error("Pick a day and the times");
+      r = await post(`/api/calendar/blocks${edit ? "/" + edit.id : ""}`, { by: me, broker, kind: "busy", start: at(v("fdate"), v("ffrom")), end: at(v("fdate"), v("fto")),
+        reason: v("freason"), repeat: $("frepeat").checked ? "weekly" : null, until: $("frepeat").checked ? v("funtil") || null : null });
+    } else {
+      r = await post("/api/calendar/blocks", { by: me, broker, kind: "off", first: v("ffirst"), last: v("flast"), reason: v("freason") });
+    }
+    sel = r.id;
+    $("dlg").close();
+    toast(mode === "appt" ? "Appointment added" : mode === "busy" ? "Busy time saved: Rania won't book it" : "Day off saved");
+    anchor = mode === "off" ? v("ffirst") : v("fdate");
+    if (view === "list" && (anchor < lfrom || anchor > lto)) lfrom = lto = null;
+    load();
+  } catch (e) { $("ferr").textContent = e.message; }
+}
+
+// ---------- search ----------
+let qt = null;
+$("q").addEventListener("input", () => {
+  clearTimeout(qt);
+  const q = $("q").value.trim();
+  if (q.length < 2) { $("results").hidden = true; return; }
+  qt = setTimeout(async () => {
+    const r = await api(`/api/calendar/search?${new URLSearchParams({ person: me, q })}`).catch(() => ({ results: [] }));
+    $("results").replaceChildren(...(r.results.length ? r.results.map((x) => h("button", { onclick: () => {
+        $("results").hidden = true;
+        if (x.status === "cancelled" && fstatus !== "all" && fstatus !== "cancelled") fstatus = "all";
+        if (view === "month" || view === "list") view = "week";
+        anchor = dayOf(x.at); sel = x.id; load();
+      } }, h("div", {}, h("b", {}, x.customer), ` · ${x.kind}${x.listing ? " · " + x.listing : ""}`),
+        h("div", { class: "sm" }, `${fmtDay(dayOf(x.at), { weekday: "short", day: "numeric", month: "short", year: "numeric" })}, ${hhmm(local(x.at))} · ${bname(x.broker)} · ${{ booked: "Booked", done: "Done", no_show: "No-show", cancelled: "Cancelled" }[x.status]}`)))
+      : [h("div", { class: "small muted", style: "padding:8px 10px" }, "No appointments match.")]));
+    $("results").hidden = false;
+  }, 220);
+});
+document.addEventListener("click", (e) => { if (!e.target.closest(".search")) $("results").hidden = true; });
+
+// ---------- print: the shown range as a clean sheet ----------
+$("printBtn").onclick = async () => {
+  const A = shown().filter((a) => a.status !== "cancelled");
+  const L = await api("/api/listings").catch(() => []);
+  const where = (a) => { const l = L.find((x) => x.props.ref === a.listing); return l ? `${l.props.title}, ${l.props.community}` : C.where[a.where]; };
+  const days = (view === "day" ? [anchor] : C.days).map((d) => {
+    const rows = rowsOn(d, A);
+    return rows.length ? [h("h3", {}, fmtDay(d, { weekday: "long", day: "numeric", month: "long" })), h("table", {}, ...rows.map((r) => r.a
+      ? h("tr", {}, h("td", { class: "t" }, `${hhmm(local(r.a.at))}–${hhmm(new Date(local(r.a.at).getTime() + r.a.minutes * 6e4))}`),
+          h("td", {}, h("b", {}, r.a.customer), r.a.phone ? ` · +${r.a.phone}` : "", h("br"), `${r.a.kind} · ${where(r.a)}${r.a.listing ? " (" + r.a.listing + ")" : ""}`,
+            r.a.link?.url ? [h("br"), `Link: ${r.a.link.url}`] : "", r.a.visit?.next_step ? [h("br"), `Next: ${r.a.visit.next_step}`] : ""),
+          h("td", {}, bname(r.a.broker)))
+      : h("tr", {}, h("td", { class: "t" }, r.b.kind === "off" ? "All day" : `${hhmm(local(r.b.start))}–${hhmm(local(r.b.end))}`), h("td", {}, r.b.kind === "off" ? "Day off" : "Busy"), h("td", {}, bname(r.b.broker)))))] : [];
+  }).flat();
+  $("print").replaceChildren(h("h1", {}, `${who ? bname(who) : C.owner ? "All brokers" : bname(me)} · ${$("range").textContent}`),
+    h("div", {}, `${A.length} appointment${A.length === 1 ? "" : "s"} · printed ${new Date().toLocaleString("en-GB")}`), ...(days.length ? days : [h("p", {}, "Nothing booked.")]));
+  window.print();
+};
+
+// ---------- the owner's settings ----------
+function openSettings() {
+  $("hopen").value = C.hours.open; $("hclose").value = C.hours.close;
+  hdays = [...C.hours.days];
+  const drawDays = () => $("hdays").replaceChildren(...DAYN.map((d, i) => h("button", { type: "button", class: hdays.includes(i) ? "on" : "", title: d,
+    onclick: () => { hdays = hdays.includes(i) ? hdays.filter((x) => x !== i) : [...hdays, i]; drawDays(); } }, d[0])));
+  drawDays();
+  kinds = C.kinds.map((k) => ({ ...k }));
+  drawKinds();
+  $("rhours").value = C.reminders.hours_before.join(", ");
+  $("rtpl").replaceChildren(h("option", { value: "" }, "None: no reminder after 24 hours"),
+    ...TPL.map((t) => h("option", { value: t.name, selected: t.name === C.reminders.template }, t.name)));
+  const pickT = (el, cur, none) => el.replaceChildren(h("option", { value: "" }, none), ...TPL.map((t) => h("option", { value: t.name, selected: t.name === cur }, t.name)));
+  pickT($("ctpl"), C.reminders.change_template, "Moved: none (the broker gets a card)"); pickT($("xtpl"), C.reminders.cancel_template, "Cancelled: none (the broker gets a card)");
+  $("rmorning").checked = C.reminders.broker_morning;
+  $("vprov").value = C.video.provider || ""; $("vauto").checked = C.video.auto;
+  drawVideo();
+  $("snote").textContent = "";
+  $("setdlg").showModal();
+}
+function drawVideo() {
+  const p = $("vprov").value, st = C.video_status?.[p];
+  $("vstate").replaceChildren(!p ? "" : st?.ready ? h("span", { class: "chip ok" }, "Connected")
+    : h("span", {}, h("span", { class: "chip warn" }, "Not connected"), ` Needs ${st?.missing.join(", ")}. `, p === "zoom" ? h("a", { href: "settings.html" }, "Add the keys in Settings") : ""));
+  $("vauto").disabled = !p;
+  if (!p) $("vauto").checked = false;
+}
+$("vprov").onchange = drawVideo;
+function drawKinds() {
+  $("kinds").replaceChildren(...kinds.map((k, i) => h("div", { class: "krow" },
+    h("input", { value: k.name, "aria-label": "Name", oninput: (e) => { k.name = e.target.value; } }),
+    h("input", { value: k.minutes, type: "number", step: 15, min: 15, "aria-label": "Minutes", oninput: (e) => { k.minutes = +e.target.value; } }),
+    h("select", { "aria-label": "Where", onchange: (e) => { k.where = e.target.value; } },
+      ...Object.entries(C.where).map(([w, t]) => h("option", { value: w, selected: w === k.where }, t))),
+    h("button", { type: "button", title: "Remove", onclick: () => { kinds.splice(i, 1); drawKinds(); } }, "✕"))));
+}
+$("kadd").onclick = () => { kinds.push({ name: "", minutes: 30, where: "video" }); drawKinds(); };
+$("ssave").onclick = async () => {
+  try {
+    await post("/api/calendar/settings", { by: me, hours: { open: $("hopen").value, close: $("hclose").value, days: hdays },
+      kinds: kinds.map(({ id, name, minutes, where }) => ({ id, name, minutes, where })),
+      reminders: { hours_before: $("rhours").value.split(",").map((x) => x.trim()).filter(Boolean).map(Number), template: $("rtpl").value || null,
+                   broker_morning: $("rmorning").checked, change_template: $("ctpl").value || null, cancel_template: $("xtpl").value || null } });
+    await post("/api/calendar/video", { by: me, provider: $("vprov").value || null, auto: $("vauto").checked });
+    $("setdlg").close(); toast("Saved: Rania uses it from her next booking."); load();
+  } catch (e) { $("snote").textContent = e.message; }
+};
+$("sclose").onclick = () => $("setdlg").close();
+$("openSet").onclick = openSettings;
+
+// ---------- navigation ----------
+function setView(v) { view = v; store("diwan.cal.view", v); sel = null; if (v === "list") lfrom = lto = null; load(); }
+document.querySelectorAll(".seg button[data-v]").forEach((b) => { b.onclick = () => setView(b.dataset.v); });
+$("as").onchange = (e) => { me = e.target.value; who = ""; sel = null; store("diwan.cal.as", me); load(); };
+$("who").onchange = (e) => { who = e.target.value; sel = null; load(); };
+$("fkind").onchange = (e) => { fkind = e.target.value; render(); };
+$("fstatus").onchange = (e) => { fstatus = e.target.value; render(); };
+const shift = (n) => {
+  sel = null;
+  if (view === "day") anchor = addDays(anchor, n);
+  else if (view === "week") anchor = addDays(anchor, 7 * n);
+  else if (view === "month") { const d = new Date(anchor.slice(0, 8) + "01T00:00:00Z"); d.setUTCMonth(d.getUTCMonth() + n); anchor = d.toISOString().slice(0, 10); }
+  else { const len = C.days.length; lfrom = addDays(lfrom, n * len); lto = addDays(lfrom, len - 1); anchor = lfrom; }
+  if (view === "day" && C.days.includes(anchor)) { render(); return; }
+  load();
+};
+$("prev").onclick = () => shift(-1); $("next").onclick = () => shift(1);
+$("today").onclick = () => { anchor = todayIso(); sel = null; if (view === "list") lfrom = lto = null; load(); };
+$("jump").onchange = (e) => { if (!e.target.value) return; anchor = e.target.value; sel = null; if (view === "list") { lfrom = anchor; lto = null; } load(); };
+const setRange = () => {
+  const a = $("lfrom").value, b = $("lto").value;
+  if (!a || !b) return;
+  if (b < a) { toast("The end is before the start"); return; }
+  if (spanDays(a, b) > 92) { toast("Up to 3 months at a time"); return; }
+  lfrom = a; lto = b; anchor = a; load();
+};
+$("lfrom").onchange = setRange; $("lto").onchange = setRange;
+$("addAppt").onclick = () => openForm("appt", { broker: who || (C.owner ? null : me) });
+$("addBusy").onclick = () => openForm("busy", { broker: who || (C.owner ? null : me) });
+$("addOff").onclick = () => openForm("off", { broker: who || (C.owner ? null : me) });
+load();
+</script>
+</body>
+</html>

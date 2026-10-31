@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Qualification</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  main { max-width: 1240px; }
+  .qtop { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .qtop select { width: auto; }
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; }
+  .tabs button { border-radius: 99px; font-size: 13px; padding: 7px 14px; }
+  .tabs button.on { background: var(--gold-soft); border-color: rgba(232, 199, 122, .45); color: var(--gold-2); }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+  .q { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; background: rgba(255, 255, 255, .015); }
+  .q .grid { display: grid; grid-template-columns: 1.3fr 1fr .9fr 1.3fr; gap: 8px; }
+  .q .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .q label { font-size: 11px; color: var(--muted); margin: 0 0 3px; display: block; }
+  .q .row { margin-top: 8px; gap: 8px; align-items: center; }
+  .q .req { display: flex; gap: 6px; align-items: center; font-size: 12.5px; white-space: nowrap; }
+  .q .req input { width: auto; }
+  .q .tools { display: flex; gap: 4px; }
+  .q .tools button { padding: 4px 9px; font-size: 12px; }
+  .cond { display: grid; grid-template-columns: 1.5fr .7fr 1fr auto; gap: 6px; margin-bottom: 6px; }
+  .cond button { padding: 4px 9px; }
+  .hint { font-size: 12px; color: var(--muted); margin: 2px 0 10px; }
+  .verdict { font: 600 12px var(--font); padding: 4px 10px; border-radius: 99px; display: inline-block; margin: 8px 0; }
+  .verdict.PASS_TO_AGENT { background: rgba(92, 207, 181, .15); color: var(--teal); }
+  .verdict.ASK_QUESTION, .verdict.DISCOVERY { background: var(--warn-soft); color: var(--warn); }
+  .verdict.NOT_A_FIT { background: var(--bad-soft); color: var(--bad); }
+  .ro { background: var(--warn-soft); border: 1px solid rgba(240, 179, 94, .3); color: var(--warn); padding: 8px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 12px; }
+  fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } .q .grid { grid-template-columns: 1fr 1fr; } }
+  .chk { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink); }
+  .chk input { width: auto; margin: 0; }
+  #qnext div { padding: 4px 0; border-bottom: 1px solid var(--line); display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+  #rhot label { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink); }
+  #rhot input { width: auto; margin: 0; }
+  @media (max-width: 600px) { .q .row { flex-wrap: wrap; } .q .grid, .q .grid2, .cond { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Qualification · <em>what a lead must tell us</em></h1>
+  <p class="sub">The owner decides which answers a lead needs before a broker takes over, and the conditions, like an IF node.
+    Rania asks the next missing required question, one at a time, and keeps each answer with the customer's own words.
+    Code, not the AI, applies the conditions, so the same answers always get the same verdict.</p>
+  <div class="qtop">
+    <select id="as"></select>
+    <span class="chip" id="ver"></span>
+    <span style="flex:1"></span>
+    <button id="addtype">+ Customer type</button>
+    <button class="primary" id="save">Save as a new version</button>
+  </div>
+  <div id="ro" class="ro" hidden>Only the owner can change the questions and conditions. You are viewing them.</div>
+  <div class="tabs" id="tabs"></div>
+  <div class="cols">
+    <fieldset id="edit"><section class="panel" id="main"></section></fieldset>
+    <aside>
+      <section class="panel" id="rulesbox"></section>
+      <section class="panel" style="margin-top:14px">
+        <h2>Try it</h2>
+        <p class="hint">Fill in sample answers to see the verdict under the form as it is on screen, before you save. Type "not sure" to try how strict a question is. ** must answer · * "not sure" is OK.</p>
+        <div id="try"></div>
+        <div id="tryout"></div>
+      </section>
+      <section class="panel" style="margin-top:14px" id="recbox">
+        <h2>After qualifying · recommendations</h2>
+        <p class="hint">Qualified → Rania sends the best-fitting properties → the customer picks one → 🔥 the broker gets a
+          "hot lead, ready to close" call card with the property and the customer's words.</p>
+        <label>When Rania recommends properties</label><select id="rwhen"></select>
+        <label style="margin-top:8px">At most, in one message</label><select id="rmany"></select>
+        <label style="margin-top:8px">A lead is hot when</label><div id="rhot"></div>
+        <button class="primary" id="rsave" style="margin-top:10px">Save</button>
+        <div class="small muted" id="rnote" style="margin-top:6px"></div>
+      </section>
+      <section class="panel" style="margin-top:14px" id="frontbox">
+        <h2>The front door</h2>
+        <p class="hint">A client who says they're only looking gets a warm reply and is not chased: their lead moves to
+          🌱 Nurture. Rania still answers them, and when they show they're ready (a budget, a viewing, a call) the lead
+          comes back and the broker is told. "Can someone call me?" always reaches the broker.</p>
+        <label>Leads that aren't ready yet</label><select id="fnur"></select>
+        <label style="margin-top:8px">First message to a portal lead</label><select id="ftpl"></select>
+        <div class="small muted" id="ftplbody" style="margin-top:4px"></div>
+        <button class="primary" id="fsave" style="margin-top:10px">Save</button>
+        <div class="small muted" id="fnote" style="margin-top:6px"></div>
+      </section>
+      <section class="panel" style="margin-top:14px" id="quietbox">
+        <h2>When a client goes quiet</h2>
+        <p class="hint">Rania follows up only when it helps: a new listing that fits, the one question still open, or the
+          door left open. Never in quiet hours, never after "stop", and at most as many as you set. A reply starts the
+          count again.</p>
+        <label>Follow up after (from their last message)</label><input id="qafter" placeholder="20h, 3d, 7d">
+        <div class="row" style="margin-top:8px;gap:8px"><div style="flex:1"><label>Quiet from</label><input id="qfrom" type="time"></div>
+          <div style="flex:1"><label>until</label><input id="qto" type="time"></div></div>
+        <label class="chk" style="margin-top:8px"><input type="checkbox" id="qfri"> Not during Friday prayer (11:30 to 13:30)</label>
+        <label style="margin-top:8px">After 24 hours (WhatsApp allows only an approved template)</label><select id="qtpl"></select>
+        <div class="small muted" id="qtplbody" style="margin-top:4px"></div>
+        <label style="margin-top:8px">No reply after the last one</label><select id="qthen"></select>
+        <label style="margin-top:8px">…this long after the last follow-up</label><input id="qthenafter" placeholder="3d">
+        <button class="primary" id="qsave" style="margin-top:10px">Save</button>
+        <div class="small muted" id="qnote" style="margin-top:6px"></div>
+        <h3 style="margin:14px 0 6px;font-size:13px">Due next</h3><div id="qnext" class="small"></div>
+      </section>
+    </aside>
+  </div>
+</main>
+<script type="module">
+import { h, api, post, header, toast, NAMES } from "./app.js";
+header("settings.html");
+const $ = (id) => document.getElementById(id);
+let F = null, tab = "buyer", owners = [], kinds = [], ops = [];
+let me = (() => { try { return localStorage.getItem("diwan.qualify.as"); } catch { return null; } })() || "layla";
+const tryAnswers = {};
+
+// how strict a question is: a real answer, "not sure" accepted, or optional
+const STRICT = [["must", "Must answer"], ["unsure_ok", "'Not sure' is OK"], ["optional", "Optional"]];
+const strictOf = (x) => !x.required ? "optional" : x.strict ? "must" : "unsure_ok";
+const keyOf = (label) => label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "field";
+const fields = () => tab === "common" ? F.common : F.types[tab].fields;
+const allKeys = () => [...F.common, ...(tab === "common" ? [] : F.types[tab].fields)].map((x) => x.key);
+const labelOf = (k) => [...F.common, ...Object.values(F.types).flatMap((t) => t.fields)].find((x) => x.key === k)?.label || k;
+
+async function load() {
+  const r = await api("/api/qualify/form");
+  owners = r.can_edit; kinds = r.kinds; ops = r.ops;
+  F = { common: r.common, types: r.types, rules: r.rules, version: r.version };
+  $("ver").textContent = r.version ? `Version ${r.version} · saved by ${NAMES[r.saved_by] || r.saved_by || "the owner"}` : "Version 0 · the starting form";
+  render();
+}
+
+function render() {
+  const canEdit = owners.includes(me);
+  $("ro").hidden = canEdit; $("edit").disabled = !canEdit;
+  if (REC) renderRec();
+  for (const id of ["save", "addtype"]) $(id).disabled = !canEdit;
+  $("as").replaceChildren(...Object.entries(NAMES).map(([id, n]) => h("option", { value: id, selected: id === me }, `Viewing as ${n}${owners.includes(id) ? " · owner" : ""}`)));
+  $("tabs").replaceChildren(h("button", { class: tab === "common" ? "on" : "", onclick: () => { tab = "common"; render(); } }, `Common · ${F.common.length}`),
+    ...Object.entries(F.types).map(([t, s]) => h("button", { class: tab === t ? "on" : "", onclick: () => { tab = t; render(); } },
+      `${s.label} · ${s.fields.filter((x) => x.required).length} required`)));
+  renderQuestions(canEdit); renderRules(canEdit); renderTry();
+}
+
+function renderQuestions(canEdit) {
+  const list = fields();
+  const head = tab === "common"
+    ? [h("h2", {}, "Common questions"), h("p", { class: "hint" }, "Asked of every customer type, after the type is known (name, email, contact preference…).")]
+    : [h("div", { class: "row" }, h("h2", { style: "margin:0" }, `${F.types[tab].label} questions`),
+        h("input", { value: F.types[tab].label, style: "max-width:180px", title: "Name of this customer type", oninput: (e) => { F.types[tab].label = e.target.value; } }),
+        canEdit && !["buyer", "tenant", "seller", "landlord"].includes(tab) ? h("button", { onclick: () => { delete F.types[tab]; delete F.rules[tab]; tab = "buyer"; render(); } }, "Remove type") : null),
+       h("p", { class: "hint" }, "In the order Rania asks them. Must answer: \"not sure\" doesn't count, so Rania helps and asks once more, and after a second \"not sure\" the broker calls to help. 'Not sure' is OK: \"not sure\" counts as the answer. Optional: never holds the lead back.")];
+  $("main").replaceChildren(...head, ...list.map((x, i) => question(x, i, list)),
+    h("button", { onclick: () => { list.push({ key: "", label: "", question_en: "", question_ar: "", kind: "text", options: [], required: true, strict: false, ask_if: null }); render(); } }, "+ Question"));
+}
+
+function question(x, i, list) {
+  const others = allKeys().filter((k) => k !== x.key);
+  const set = (k, v) => { x[k] = v; };
+  return h("div", { class: "q" },
+    h("div", { class: "grid" },
+      h("div", {}, h("label", {}, "Label"), h("input", { value: x.label, placeholder: "e.g. Budget (AED)", oninput: (e) => { set("label", e.target.value); if (!x._keyed) x.key = keyOf(e.target.value); } })),
+      h("div", {}, h("label", {}, "Kind"), h("select", { onchange: (e) => { set("kind", e.target.value); render(); } }, kinds.map((k) => h("option", { value: k, selected: k === x.kind }, k)))),
+      h("div", {}, h("label", {}, "Key"), h("input", { value: x.key, title: "Used in conditions", oninput: (e) => { x._keyed = true; set("key", e.target.value); } })),
+      h("div", {}, h("label", {}, "Options (comma separated)"), h("input", { value: (x.options || []).join(", "), disabled: x.kind !== "choice",
+        placeholder: x.kind === "choice" ? "Cash, Mortgage" : "only for choice", oninput: (e) => set("options", e.target.value.split(",").map((s) => s.trim()).filter(Boolean)) }))),
+    h("div", { class: "grid2" },
+      h("div", {}, h("label", {}, "Question, English"), h("input", { value: x.question_en, oninput: (e) => set("question_en", e.target.value) })),
+      h("div", {}, h("label", {}, "Question, Arabic"), h("input", { value: x.question_ar || "", dir: "auto", oninput: (e) => set("question_ar", e.target.value) }))),
+    h("div", { class: "row" },
+      h("select", { class: "strict", style: "max-width:170px;min-width:150px", title: "How strict: what counts as an answer",
+        onchange: (e) => { set("required", e.target.value !== "optional"); set("strict", e.target.value === "must"); render(); } },
+        ...STRICT.map(([v, t]) => h("option", { value: v, selected: v === strictOf(x) }, t))),
+      h("span", { class: "small muted" }, "Ask only if"),
+      h("select", { style: "max-width:170px", onchange: (e) => { x.ask_if = e.target.value ? { field: e.target.value, op: "=", value: "" } : null; render(); } },
+        h("option", { value: "" }, "always"), ...others.map((k) => h("option", { value: k, selected: x.ask_if?.field === k }, labelOf(k)))),
+      x.ask_if ? h("select", { style: "max-width:90px", onchange: (e) => { x.ask_if.op = e.target.value; } }, ops.map((o) => h("option", { value: o, selected: o === x.ask_if.op }, o))) : null,
+      x.ask_if ? h("input", { style: "max-width:140px", value: x.ask_if.value ?? "", placeholder: "value", oninput: (e) => { x.ask_if.value = e.target.value; } }) : null,
+      h("span", { style: "flex:1" }),
+      h("span", { class: "tools" },
+        h("button", { title: "Move up", disabled: i === 0, onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; render(); } }, "↑"),
+        h("button", { title: "Move down", disabled: i === list.length - 1, onclick: () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; render(); } }, "↓"),
+        h("button", { title: "Remove", onclick: () => { list.splice(i, 1); render(); } }, "✕"))));
+}
+
+function condRows(arr, canEdit) {
+  const keys = allKeys();
+  return [...arr.map((c, i) => h("div", { class: "cond" },
+    h("select", { title: c.field, onchange: (e) => { c.field = e.target.value; } }, keys.map((k) => h("option", { value: k, selected: k === c.field }, labelOf(k)))),
+    h("select", { onchange: (e) => { c.op = e.target.value; render(); } }, ops.map((o) => h("option", { value: o, selected: o === c.op }, o))),
+    h("input", { value: c.value ?? "", placeholder: c.op === "in" || c.op === "not in" ? "Dubai Marina, JVC" : "value", disabled: /is (not )?set/.test(c.op), oninput: (e) => { c.value = e.target.value; } }),
+    h("button", { onclick: () => { arr.splice(i, 1); render(); } }, "✕"))),
+    h("button", { onclick: () => { arr.push({ field: keys[0], op: ">=", value: "" }); render(); } }, "+ Condition")];
+}
+
+function renderRules(canEdit) {
+  if (tab === "common") { $("rulesbox").replaceChildren(h("h2", {}, "Conditions"), h("p", { class: "hint" }, "Conditions are set per customer type. Pick a type tab.")); return; }
+  const r = F.rules[tab] ||= { qualify_when: [], not_fit_when: [], not_fit_reply: "" };
+  $("rulesbox").replaceChildren(
+    h("h2", {}, `When a ${F.types[tab].label.toLowerCase()} qualifies`),
+    h("p", { class: "hint" }, "Qualified (PASS_TO_AGENT) when every required answer is in and all of these hold. Leave empty to qualify on the answers alone."),
+    ...condRows(r.qualify_when, canEdit),
+    h("h2", { style: "margin-top:18px" }, "Not a fit when"),
+    h("p", { class: "hint" }, "If any of these holds, Rania sends the reply below and the lead is closed with the reason. It is kept for later."),
+    ...condRows(r.not_fit_when, canEdit),
+    h("label", { style: "margin-top:8px" }, "Polite reply for leads that are not a fit"),
+    h("textarea", { rows: 3, placeholder: "Thank you! Our homes start above that budget, but we'll keep your details and let you know.", oninput: (e) => { r.not_fit_reply = e.target.value; } }, r.not_fit_reply || ""));
+}
+
+function renderTry() {
+  const t = tab === "common" ? Object.keys(F.types)[0] : tab;
+  const list = [...F.common, ...F.types[t].fields];
+  $("try").replaceChildren(h("p", { class: "small muted" }, `As a ${F.types[t].label.toLowerCase()}:`),
+    ...list.map((x) => h("div", { style: "display:grid;grid-template-columns:130px 1fr;gap:6px;margin-bottom:5px;align-items:center" },
+      h("span", { class: "small", title: STRICT.find(([v]) => v === strictOf(x))[1] }, x.label + (x.required ? (x.strict ? " **" : " *") : "")),
+      x.kind === "choice" ? h("select", { onchange: (e) => { tryAnswers[x.key] = e.target.value; check(t); } }, h("option", { value: "" }, "—"),
+        ...[...x.options, "not sure"].map((o) => h("option", { value: o, selected: tryAnswers[x.key] === o }, o)))
+        : h("input", { value: tryAnswers[x.key] || "", placeholder: x.kind, oninput: (e) => { tryAnswers[x.key] = e.target.value; check(t); } }))));
+  check(t);
+}
+
+let ct;
+function check(t) {
+  clearTimeout(ct);
+  ct = setTimeout(async () => {
+    const answers = Object.fromEntries(Object.entries(tryAnswers).filter(([k, v]) => v && [...F.common, ...F.types[t].fields].some((x) => x.key === k)));
+    try {
+      const v = await post("/api/qualify/check", { form: F, type: t, answers });
+      $("tryout").replaceChildren(h("span", { class: `verdict ${v.verdict}` }, v.verdict.replaceAll("_", " ")),
+        h("div", { class: "small" }, v.reasons.join("; ")), v.next ? h("div", { class: "small muted" }, `Rania would ask next: ${v.next}`) : null,
+        v.reply ? h("div", { class: "small muted" }, `Reply: ${v.reply}`) : null);
+    } catch (e) { $("tryout").replaceChildren(h("div", { class: "small", style: "color:var(--bad)" }, e.message)); }
+  }, 200);
+}
+
+// Rania's recommendations: the owner's setting, used from her next message
+let REC = null;
+async function loadRec() {
+  REC = await api("/api/rania/recommend");
+  $("rwhen").replaceChildren(...Object.entries(REC.whens).map(([k, v]) => h("option", { value: k, selected: k === REC.when }, v)));
+  $("rmany").replaceChildren(...[1, 2, 3, 4, 5].map((n) => h("option", { value: n, selected: n === REC.how_many }, `${n} propert${n === 1 ? "y" : "ies"}`)));
+  $("rhot").replaceChildren(...Object.entries(REC.hots).map(([k, v]) => h("label", { class: "req", style: "margin:4px 0" },
+    h("input", { type: "checkbox", value: k, checked: REC.hot_on.includes(k) }), v)));
+  renderRec();
+}
+let FR = null;
+async function loadFront() {
+  FR = await api("/api/rania/front");
+  $("fnur").replaceChildren(...Object.entries(FR.nurture_tos).map(([k, v]) => h("option", { value: k, selected: k === FR.nurture_to }, v)));
+  $("ftpl").replaceChildren(h("option", { value: "" }, "None: the broker calls them"),
+    ...FR.templates.map((t) => h("option", { value: t.name, selected: t.name === FR.portal_template }, t.name)));
+  showTpl(); renderRec();
+}
+function showTpl() {
+  const t = FR.templates.find((x) => x.name === $("ftpl").value);
+  $("ftplbody").textContent = t ? `"${t.body}" · its blanks are filled in order: their first name, the property, the broker.` : "Portal leads get a call card either way.";
+}
+$("ftpl").onchange = showTpl;
+$("fsave").onclick = async () => {
+  try {
+    const r = await post("/api/rania/front", { by: me, nurture_to: $("fnur").value, portal_template: $("ftpl").value || null });
+    toast(`Saved: ${FR.nurture_tos[r.nurture_to]}${r.portal_template ? `; portal leads get "${r.portal_template}"` : ""}.`); loadFront();
+  } catch (e) { toast(e.message); }
+};
+// When a client goes quiet: the owner's schedule (hours in the log; written as 20h, 3d here)
+let QS = null;
+const dur = (h) => h % 24 === 0 ? `${h / 24}d` : `${h}h`;
+const hours = (s) => { const m = String(s).trim().match(/^(\d+(?:\.\d+)?)\s*(h|d)?$/i); if (!m) throw new Error(`"${s}": use hours or days, like 20h or 3d`);
+  return +m[1] * ((m[2] || "h").toLowerCase() === "d" ? 24 : 1); };
+async function loadQuiet() {
+  QS = await api("/api/rania/quiet");
+  $("qafter").value = QS.after_hours.map(dur).join(", ");
+  $("qfrom").value = QS.quiet_from; $("qto").value = QS.quiet_to; $("qfri").checked = QS.friday_prayer;
+  $("qtpl").replaceChildren(h("option", { value: "" }, "None: skip follow-ups after 24 hours"),
+    ...QS.templates.map((t) => h("option", { value: t.name, selected: t.name === QS.template }, t.name)));
+  $("qthen").replaceChildren(...Object.entries(QS.thens).map(([k, v]) => h("option", { value: k, selected: k === QS.then }, v)));
+  $("qthenafter").value = dur(QS.then_after_hours);
+  qTpl();
+  $("qnext").replaceChildren(...(QS.upcoming.length ? QS.upcoming.map((u) => h("div", {}, h("span", {}, u.name),
+    h("span", { class: "muted" }, `${u.n ? `follow-up ${u.n} of ${u.of}` : QS.thens[u.what]} · ${new Date(u.at).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`)))
+    : [h("span", { class: "muted" }, "Nothing due: no client is waiting on a follow-up.")]));
+  renderRec();
+}
+function qTpl() {
+  const t = QS.templates.find((x) => x.name === $("qtpl").value);
+  $("qtplbody").textContent = t ? `"${t.body}" · blanks: first name, area, broker. Pick one whose words are true for every client.` : "";
+}
+$("qtpl").onchange = qTpl;
+$("qsave").onclick = async () => {
+  try {
+    const after = $("qafter").value.split(",").filter((x) => x.trim()).map(hours);
+    const r = await post("/api/rania/quiet", { by: me, after_hours: after, quiet_from: $("qfrom").value, quiet_to: $("qto").value,
+      friday_prayer: $("qfri").checked, template: $("qtpl").value || null, then: $("qthen").value, then_after_hours: hours($("qthenafter").value) });
+    toast(`Saved: up to ${r.after_hours.length} follow-ups, after ${r.after_hours.map(dur).join(", ")}.`); loadQuiet();
+  } catch (e) { toast(e.message); }
+};
+function renderRec() {
+  const can = owners.includes(me);
+  if (QS) { for (const el of ["qafter", "qfrom", "qto", "qfri", "qtpl", "qthen", "qthenafter", "qsave"]) $(el).disabled = !can; $("qnote").textContent = can ? "" : "Only the owner changes this."; }
+  if (FR) { for (const el of [$("fnur"), $("ftpl"), $("fsave")]) el.disabled = !can; $("fnote").textContent = can ? "" : "Only the owner changes this."; }
+  for (const el of [$("rwhen"), $("rmany"), $("rsave"), ...$("rhot").querySelectorAll("input")]) el.disabled = !can;
+  $("rnote").textContent = can ? "" : "Only the owner changes this.";
+}
+$("rsave").onclick = async () => {
+  try {
+    const r = await post("/api/rania/recommend", { by: me, when: $("rwhen").value, how_many: +$("rmany").value,
+      hot_on: [...$("rhot").querySelectorAll("input:checked")].map((x) => x.value) });
+    toast(`Saved: up to ${r.how_many} properties. Rania uses it from her next message.`); loadRec();
+  } catch (e) { toast(e.message); }
+};
+$("as").onchange = (e) => { me = e.target.value; try { localStorage.setItem("diwan.qualify.as", me); } catch {} render(); };
+$("addtype").onclick = () => {
+  const label = prompt("Name of the new customer type (e.g. Investor)"); if (!label) return;
+  const id = keyOf(label); if (F.types[id]) return toast("That type exists");
+  F.types[id] = { label, fields: [] }; F.rules[id] = { qualify_when: [], not_fit_when: [], not_fit_reply: "" }; tab = id; render();
+};
+$("save").onclick = async () => {
+  for (const list of [F.common, ...Object.values(F.types).map((t) => t.fields)]) for (const x of list) delete x._keyed;
+  try { const r = await post("/api/qualify/form", { form: F, by: me }); toast(`Saved: version ${r.version}. Rania uses it from her next message.`); load(); }
+  catch (e) { toast(e.message); }
+};
+load().then(loadRec).then(loadFront).then(loadQuiet);
+</script>
+</body>
+</html>

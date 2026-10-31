@@ -4,75 +4,345 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Diwan Knowledge</title>
 <link rel="stylesheet" href="app.css">
+<style>
+  .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .bar > select, .bar > input { width: auto; }
+  [hidden] { display: none !important; }
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+  .tabs a, .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); padding: 9px 12px; font-weight: 500; }
+  .tabs .on { color: var(--ink); border-bottom-color: var(--gold); }
+  .tabs .n { font: 500 11px var(--mono); margin-left: 6px; color: var(--faint); }
+  .tabs .cat { margin-left: auto; color: var(--gold); }
+  .item.retired { opacity: .55; }
+  .item .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .item .acts button { padding: 5px 10px; font-size: 12px; }
+  .item h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .item .text { margin: 6px 0 2px; white-space: pre-wrap; }
+  .sub2 { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line-2); }
+  .hist div { padding: 4px 0; font-size: 12px; border-bottom: 1px solid var(--line); }
+  .empty { padding: 28px; text-align: center; border: 1px dashed var(--line-2); border-radius: 12px; color: var(--muted); }
+  .empty strong { display: block; color: var(--ink); margin-bottom: 6px; }
+  .layout { display: grid; grid-template-columns: 1fr 360px; gap: 18px; }
+  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .tabs > * { white-space: nowrap; }
+  @media (max-width: 600px) { .bar > select, .bar > label, #fq { flex: 1 1 45%; } .tabs .cat { margin-left: 0; } .hint { display: none; } }
+</style>
 </head>
 <body>
 <main>
   <h1>Tell the office <em>once</em></h1>
-  <p class="sub">Tell the office once. Rania and Nova answer only from what is confirmed here, and always say which item they used.</p>
-  <div class="grid cols-2">
-    <section class="panel">
-      <h2>Company knowledge</h2>
-      <div class="list" id="knowledge"></div>
-      <h2 style="margin-top:18px">Add an item</h2>
-      <div class="row"><input id="ktitle" placeholder="Title, e.g. Parking"><select id="kkind" style="max-width:140px">
-        <option value="faq">FAQ</option><option value="policy">Policy</option><option value="fees">Fees</option><option value="hours">Hours</option><option value="company">Company</option></select></div>
-      <textarea id="ktext" placeholder="What customers should be told, in your words" style="margin-top:8px"></textarea>
-      <div class="row" style="margin-top:8px"><span class="small muted">Typed by a person, so it is confirmed at once.</span><button class="primary" id="kadd">Add</button></div>
-      <h2 style="margin-top:18px">Paste a document</h2>
-      <textarea id="doc" placeholder="Paste a brochure, price list or FAQ. Each line becomes an item, word for word, waiting for you to confirm it."></textarea>
-      <div class="row" style="margin-top:8px"><span class="small muted">Nothing reaches a customer until a person confirms it.</span><button id="docadd">Propose items</button></div>
+  <p class="sub">Rania, Nova and the writers answer only from confirmed, customer-facing items here, and say which item they used. Every change is kept.</p>
+  <div class="bar">
+    <span class="small muted hint" style="flex:1">Search knowledge and listings from the box at the top of any page (press /).</span>
+    <label style="margin:0">Acting as</label>
+    <select id="as" style="width:auto"></select>
+  </div>
+  <nav class="tabs" id="tabs"></nav>
+  <div class="layout">
+    <section>
+      <div class="bar" id="filters">
+        <select id="fstatus"><option value="">Any status</option><option value="confirmed">Confirmed</option><option value="proposed">Proposed</option></select>
+        <select id="faudience"><option value="">Any audience</option><option value="customer">Customer-facing</option><option value="internal">Internal only</option></select>
+        <select id="farea"><option value="">Any area</option></select>
+        <label style="margin:0"><input type="checkbox" id="fstale" style="width:auto"> Stale only</label>
+        <label style="margin:0"><input type="checkbox" id="fretired" style="width:auto"> Show retired</label>
+        <input id="fq" placeholder="Filter this tab" style="flex:1;min-width:160px">
+      </div>
+      <div class="list" id="list"></div>
+      <div class="bar" id="lfilters" hidden>
+        <select id="lt"><option value="">Any type</option></select>
+        <select id="lh"><option value="">Any stage (ready, off-plan)</option></select>
+        <select id="la"><option value="">Any area</option></select>
+        <select id="lc" hidden><option value="">Any country</option></select>
+        <select id="lb"><option value="">Any beds</option><option value="0">Studio</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5+</option></select>
+        <select id="lo"><option value="">Sale or rent</option><option value="sale">For sale</option><option value="rent">For rent</option></select>
+        <select id="ls"><option value="">Any status</option></select>
+        <select id="lp"><option value="">Permit: any</option><option value="yes">With a permit</option><option value="no">No permit</option></select>
+        <input id="lmin" type="number" min="0" placeholder="Min AED" style="width:120px"><input id="lmax" type="number" min="0" placeholder="Max AED" style="width:120px">
+        <input id="lq" placeholder="Search listings" style="flex:1;min-width:160px">
+        <label style="margin:0"><input type="checkbox" id="lretired" style="width:auto"> Show retired</label>
+        <button id="lclear">Clear</button>
+      </div>
+      <div class="small muted" id="lcount" hidden></div>
+      <div class="list" id="llist" hidden></div>
+      <div class="row" id="lpager" hidden style="justify-content:center;gap:12px"><button id="lprev">← Previous</button><span class="small muted" id="lpage"></span><button id="lnext">Next →</button></div>
     </section>
-    <section class="panel">
-      <h2>Listings</h2>
-      <table><thead><tr><th>Ref</th><th>Listing</th><th>Price</th><th>Permit</th><th></th></tr></thead><tbody id="listings"></tbody></table>
-      <h2 style="margin-top:18px">Add a listing</h2>
-      <div class="row"><input id="lref" placeholder="Ref, e.g. PJ-901"><input id="ltitle" placeholder="Title"></div>
-      <div class="row" style="margin-top:8px"><input id="lcomm" placeholder="Community"><select id="ltype"><option>apartment</option><option>villa</option><option>townhouse</option></select></div>
-      <div class="row" style="margin-top:8px"><input id="lbeds" type="number" min="0" placeholder="Beds"><input id="lprice" type="number" min="0" placeholder="Price (AED)"><input id="lpermit" placeholder="Permit number"></div>
-      <div class="row" style="margin-top:8px"><span class="small muted">Without a permit number a listing is kept but never advertised.</span><button class="primary" id="ladd">Add listing</button></div>
-    </section>
+    <aside>
+      <section class="panel" id="propbox">
+        <h2>Waiting for a decision</h2>
+        <div class="list" id="props"></div>
+      </section>
+      <section class="panel" id="lbox" hidden style="margin-top:14px">
+        <h2>Add a listing</h2>
+        <p class="small muted">A property typed in by hand. The same record the portal feed and the website finder make. Without a permit number it is kept, but never advertised.</p>
+        <label>Title</label><input id="n-title" placeholder="e.g. Corner 2BR with canal view">
+        <div class="grid2"><div><label>Community or building</label><input id="n-community"></div><div><label>Type</label><input id="n-type" list="n-types" placeholder="apartment, villa…"><datalist id="n-types"></datalist></div></div>
+        <div class="grid2"><div><label>Bedrooms (0 = studio)</label><input id="n-beds" inputmode="numeric"></div><div><label>Bathrooms</label><input id="n-baths" inputmode="numeric"></div></div>
+        <div class="grid2"><div><label>Price</label><input id="n-price" inputmode="numeric" placeholder="e.g. 1,250,000"></div><div><label>Currency</label><input id="n-currency" maxlength="3"></div></div>
+        <div class="grid2"><div><label>Sale or rent</label><select id="n-offering"><option value="">Not set</option><option value="sale">For sale</option><option value="rent">For rent</option></select></div>
+          <div><label>Stage</label><select id="n-completion"><option value="">Not set</option><option value="ready">Ready</option><option value="off-plan">Off-plan</option></select></div></div>
+        <div class="grid2"><div><label>Size (sqft)</label><input id="n-size" inputmode="numeric"></div><div><label>Permit number</label><input id="n-permit"></div></div>
+        <div class="grid2"><div><label>Country</label><input id="n-country"></div><div><label>Photo link (optional)</label><input id="n-photo" placeholder="https://…"></div></div>
+        <div class="row" style="margin-top:10px"><span class="small" id="nmsg"></span><button class="primary" id="nadd">Add listing</button></div>
+      </section>
+      <section class="panel" id="kbox" style="margin-top:14px">
+        <h2>Add an item</h2>
+        <div class="grid2">
+          <div><label>Kind</label><select id="akind"></select></div>
+          <div><label>Audience</label><select id="aaud"><option value="customer">Customer-facing</option><option value="internal">Internal only</option></select></div>
+        </div>
+        <label>Title</label><input id="atitle" placeholder="e.g. Parking for viewings">
+        <label>Text</label><textarea id="atext" placeholder="What the agents may say, in your words"></textarea>
+        <div class="grid2">
+          <div><label>Review by</label><input id="areview" type="date"></div>
+          <div><label>Valid until (optional)</label><input id="auntil" type="date"></div>
+        </div>
+        <label>Applies to (optional)</label><select id="aapplies"><option value="">Everything</option></select>
+        <div class="row" style="margin-top:10px"><span class="small muted" id="anote"></span><button class="primary" id="aadd">Add</button></div>
+      </section>
+      <section class="panel" style="margin-top:14px">
+        <details><summary class="small">Paste a document</summary>
+          <textarea id="doc" placeholder="Paste a brochure, price list or FAQ. Each line becomes a proposed item, word for word." style="margin-top:8px"></textarea>
+          <div class="row" style="margin-top:8px"><span class="small muted">Nothing reaches a customer until its owner confirms it.</span><button id="docadd">Propose items</button></div>
+        </details>
+      </section>
+    </aside>
   </div>
 </main>
 <script type="module">
-import { h, api, post, header, toast } from "./app.js";
+import { h, api, post, header, toast, NAMES } from "./app.js";
 header("knowledge.html");
 const $ = (id) => document.getElementById(id);
+const PEOPLE = [["layla", "Layla · Owner"], ["rashid", "Rashid · Sales manager"], ["maya", "Maya · Marketing manager"], ["omar", "Omar · Broker"], ["hamza", "Hamza · Broker"], ["nadia", "Nadia · Broker"]];
+const store = { get: (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+let tab = new URLSearchParams(location.search).get("tab") || store.get("kn.tab", "company"), data = null, open = {};
+$("as").replaceChildren(...PEOPLE.map(([v, l]) => h("option", { value: v }, l)));
+$("as").value = store.get("kn.as", "layla");
+const by = () => $("as").value;
+const day = (iso) => iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+
+let lpage = 1;
+const lids = ["lt", "lh", "la", "lc", "lb", "lo", "ls", "lp", "lmin", "lmax", "lq"];
+async function loadListings(keep) {
+  if (!keep) lpage = 1;
+  const v = (id) => $(id).value;
+  const q = new URLSearchParams({ type: v("lt"), area: v("la"), country: v("lc"), completion: v("lh"), beds: v("lb"), offering: v("lo"), status: v("ls"), permit: v("lp"), q: v("lq"), page: lpage, by: by(), retired: $("lretired").checked });
+  if (v("lmin")) q.set("min_price", v("lmin"));
+  if (v("lmax")) q.set("max_price", v("lmax"));
+  const d = await api(`/api/catalog?${q}`);
+  const fill = (id, label, vals) => { const cur = $(id).value; $(id).replaceChildren(h("option", { value: "" }, label), ...vals.map((x) => h("option", { value: x }, x))); $(id).value = vals.includes(cur) ? cur : ""; };
+  const cur = $("lh").value; $("lh").replaceChildren(h("option", { value: "" }, "Any stage (ready, off-plan)"), ...d.completions.map((x) => h("option", { value: x }, x.replace(/^./, (c) => c.toUpperCase())))); $("lh").value = d.completions.includes(cur) ? cur : "";
+  fill("lt", "Any type", d.types); fill("la", "Any area", d.areas.filter(Boolean)); fill("lc", "Any country", d.countries); fill("ls", "Any status", d.statuses);
+  $("n-types").replaceChildren(...d.types.map((x) => h("option", { value: x })));
+  if (!$("n-currency").value) $("n-currency").value = d.currency || "";
+  $("lc").hidden = !d.countries.length;  // shown once any listing carries a country
+  $("lcount").textContent = `${d.total} of ${d.all} listings · showing ${d.rows.length ? (d.page - 1) * d.size + 1 : 0}–${(d.page - 1) * d.size + d.rows.length}`;
+  const money = (r) => r.price_aed ? `AED ${Number(r.price_aed).toLocaleString()}` : r.price ? `${r.currency || ""} ${Number(r.price).toLocaleString()}`.trim() : "price not set";
+  $("llist").replaceChildren(...(d.rows.length ? d.rows.map((r) => {
+    const l = r.listing || r;
+    return h("div", { class: "item" }, h("div", { class: "row" }, h("strong", {}, r.title || l.title), h("span", { class: "small muted" }, l.ref)),
+      h("div", {}, money(l), " · ", [l.beds === 0 ? "studio" : l.beds != null ? `${l.beds} bed` : "", l.type, l.community, l.country].filter(Boolean).join(" · ")),
+      h("div", {}, h("span", { class: `chip ${r.status === "available" ? "ok" : "warn"}` }, r.status), " ",
+        h("span", { class: `chip ${l.permit ? "" : "bad"}` }, l.permit ? `permit ${l.permit}` : "no permit: not advertised"), " ",
+        l.offering ? h("span", { class: "chip" }, l.offering) : "", l.source === "website" ? h("span", { class: "chip" }, "from the website") : ""),
+      h("div", { class: "acts" }, r.can_edit && r.status !== "retired" ? h("button", { onclick: async () => {
+          const w = (prompt("Why is this listing retired?") || "").trim(); if (!w) return;
+          try { await post(`/api/items/${encodeURIComponent(r.id)}/retire`, { by: by(), why: w }); toast("Retired"); loadListings(true); } catch (e) { toast(e.message); } } }, "Retire") : "",
+        r.can_edit && r.status === "retired" ? h("button", { onclick: async () => { await post(`/api/items/${encodeURIComponent(r.id)}/restore`, { by: by() }); toast("Restored"); loadListings(true); } }, "Restore") : "",
+        h("a", { href: `catalog.html?q=${encodeURIComponent(l.ref)}`, title: "Change the price, see the history and the area guide" }, "Open to change the price or see history"),
+        l.page ? h("span", {}, " · ", h("a", { href: l.page, target: "_blank", rel: "noopener" }, "Website page ↗")) : ""));
+  }) : [h("div", { class: "empty" }, h("strong", {}, "No listings match these filters."), "Clear a filter to see the rest.")]));
+  const pages = Math.max(1, Math.ceil(d.total / d.size));
+  $("lpage").textContent = `page ${d.page} of ${pages}`; $("lprev").disabled = d.page <= 1; $("lnext").disabled = d.page >= pages;
+  $("lpager").hidden = pages <= 1;
+}
+$("lretired").onchange = () => loadListings();
+for (const id of lids) $(id).addEventListener(id === "lq" || id === "lmin" || id === "lmax" ? "input" : "change", () => loadListings());
+async function addListing(anyway) {
+  const g = (k) => $(`n-${k}`).value;
+  const values = { title: g("title"), community: g("community"), type: g("type"), beds: g("beds"), baths: g("baths"), price: g("price"), currency: g("currency"),
+    offering: g("offering"), completion: g("completion"), size_sqft: g("size"), permit: g("permit"), country: g("country"), photo: g("photo") };
+  const m = $("nmsg");
+  let r; try { r = await post("/api/listings/new", { values, anyway, by: by() }); } catch (e) { m.className = "small bad"; m.textContent = e.message; return; }
+  if (r.duplicate) {
+    m.className = "small"; m.replaceChildren(`${r.error}. `, h("a", { href: `catalog.html?q=${encodeURIComponent(r.duplicate)}` }, "Look at it"), " · ", h("a", { href: "#", onclick: (e) => { e.preventDefault(); addListing(true); } }, "Add it anyway"));
+    return;
+  }
+  m.className = r.ok ? "small ok" : "small bad"; m.textContent = r.ok ? `✓ Added ${r.ref}${r.advertised ? "" : ": no permit, so it won't be advertised"}.` : (r.error || r.detail || "Could not add it.");
+  if (r.ok) { for (const k of ["title", "community", "type", "beds", "baths", "price", "size", "permit", "photo"]) $(`n-${k}`).value = ""; $("n-offering").value = ""; $("n-completion").value = ""; await loadListings(); await load(); }
+}
+$("nadd").onclick = () => addListing(false);
+$("lprev").onclick = () => { lpage--; loadListings(true); };
+$("lnext").onclick = () => { lpage++; loadListings(true); };
+$("lclear").onclick = () => { for (const id of lids) $(id).value = ""; $("lretired").checked = false; loadListings(); };
 
 async function load() {
-  const ks = await api("/api/knowledge");
-  $("knowledge").replaceChildren(...ks.map((k) => h("div", { class: "item" },
-    h("div", { class: "row" }, h("strong", {}, `${k.id} · ${k.props.title}`), h("span", { style: "flex:0" },
-      k.status === "confirmed" ? h("span", { class: "chip ok" }, "confirmed") :
-        h("button", { onclick: async () => { await post(`/api/knowledge/${k.id}/confirm?by=layla`); load(); } }, "Confirm"))),
-    h("div", {}, k.props.text),
-    h("div", { class: "small muted" }, k.props.source ? `from ${k.props.source}` : `${k.props.kind}`))));
-  const ls = await api("/api/listings");
-  $("listings").replaceChildren(...ls.map((l) => h("tr", {},
-    h("td", {}, l.props.ref), h("td", {}, `${l.props.title}, ${l.props.community}`, h("div", { class: "small muted" }, `${l.props.beds} bed ${l.props.type}`)),
-    h("td", {}, `AED ${l.props.price_aed.toLocaleString()}`), h("td", {}, l.props.permit || "—"),
-    h("td", {}, h("span", { class: `chip ${l.advertised ? "ok" : "bad"}` }, l.advertised ? "advertised" : "not advertised")))));
+  const q = new URLSearchParams({ tab, by: by(), status: $("fstatus").value, audience: $("faudience").value, area: $("farea").value,
+    stale: $("fstale").checked, retired: $("fretired").checked, q: $("fq").value });
+  data = await api(`/api/items?${q}`);
+  const K = data.kinds;
+  $("tabs").replaceChildren(...Object.entries(K).map(([k, v]) => h("button", { class: k === tab ? "on" : "", "data-tab": k, onclick: () => { tab = k; store.set("kn.tab", k); $("akind").value = k; load(); } },
+    v.label, h("span", { class: "n" }, data.counts[k]))),
+    h("button", { class: tab === "listing" ? "on" : "", "data-tab": "listing", onclick: () => { tab = "listing"; store.set("kn.tab", "listing"); load(); } }, "Listings", h("span", { class: "n" }, data.counts.listing)),
+    h("a", { class: "cat", href: "catalog.html" }, "Full catalog (photos, map) →"));
+  const onl = tab === "listing";
+  for (const id of ["filters", "list"]) $(id).hidden = onl;
+  for (const id of ["lfilters", "lcount", "llist", "lbox"]) $(id).hidden = !onl;
+  $("kbox").hidden = onl;
+  if (onl) { $("lpager").hidden = true; await loadListings(true); return; }
+  if (!$("akind").options.length) { $("akind").replaceChildren(...Object.entries(K).map(([k, v]) => h("option", { value: k }, v.label))); $("akind").value = tab; }
+  const keepArea = $("farea").value;
+  $("farea").replaceChildren(h("option", { value: "" }, "Any area"), ...data.areas.map((a) => h("option", { value: a }, a)));
+  $("farea").value = keepArea;
+  if ($("aapplies").options.length <= 1) $("aapplies").append(...data.areas.map((a) => h("option", { value: a }, a)));
+  noteAdd();
+  $("list").replaceChildren(...(data.rows.length ? data.rows.map(row) : [empty()]));
+  const mine = data.proposals.filter((p) => p.can_decide), others = data.proposals.filter((p) => !p.can_decide);
+  $("props").replaceChildren(...(data.proposals.length ? [...mine.map(proposal), ...others.map(proposal)] :
+    [h("div", { class: "small muted" }, "Nothing waiting. When someone who does not own a kind edits an item, the change waits here for its owner.")]));
 }
 
-$("kadd").onclick = async () => {
-  if (!$("ktitle").value.trim() || !$("ktext").value.trim()) return toast("Add a title and the text");
-  await post("/api/knowledge", { kind: $("kkind").value, title: $("ktitle").value.trim(), text: $("ktext").value.trim(), by: "layla" });
-  $("ktitle").value = $("ktext").value = "";
-  load();
+function empty() {
+  const filtered = $("fstatus").value || $("faudience").value || $("farea").value || $("fstale").checked || $("fq").value;
+  if (filtered) return h("div", { class: "empty" }, h("strong", {}, "Nothing matches these filters."), "Clear a filter to see the rest of this tab.");
+  const K = data.kinds[tab];
+  return h("div", { class: "empty", id: "empty" }, h("strong", {}, `No ${K.label.toLowerCase()} yet.`), K.empty,
+    h("div", { class: "small", style: "margin-top:8px" }, `Use "Add an item" on the right with kind ${K.label}. ${K.owners.join(" or ")} confirm${K.owners.length > 1 ? "" : "s"} it; anyone else's waits for them.`));
+}
+
+function chips(r) {
+  return [
+    h("span", { class: `chip ${r.status === "confirmed" ? "ok" : r.status === "retired" ? "bad" : "warn"}` }, r.status),
+    h("span", { class: `chip ${r.audience === "internal" ? "warn" : ""}` }, r.audience === "internal" ? "internal only" : "customer-facing"),
+    r.version > 1 && h("span", { class: "chip" }, `v${r.version}`),
+    r.stale && h("span", { class: "chip bad", title: r.stale }, `stale: ${r.stale}`),
+    r.valid_until && !r.stale && h("span", { class: "chip" }, `valid until ${day(r.valid_until)}`),
+    r.review_by && !r.stale && h("span", { class: "chip", title: "re-confirm by" }, `review by ${day(r.review_by)}`),
+    r.applies_to && h("span", { class: "chip" }, r.applies_to),
+  ];
+}
+
+function row(r) {
+  const el = h("div", { class: `item ${r.status}`, "data-id": r.id });
+  const used = r.used.week ? `used in ${r.used.week} repl${r.used.week === 1 ? "y" : "ies"} this week` : "used in 0 replies this week";
+  const last = r.used.last_chat ? h("a", { href: `inbox.html?chat=${encodeURIComponent(r.used.last_chat)}` }, ` · last: ${r.used.last_name || r.used.last_chat}`) : null;
+  const src = r.source && r.source !== "typed" ? ` · from ${r.source}` : "";
+  el.append(
+    h("div", { class: "row" }, h("h3", {}, r.title), h("span", { class: "small muted", style: "flex:0;white-space:nowrap" }, r.id)),
+    h("div", {}, ...chips(r)),
+    h("div", { class: "text" }, r.text),
+    r.quote && r.source !== "typed" && h("div", { class: "small muted quote" }, `“${r.quote}”`),
+    r.retired && h("div", { class: "small", style: "color:var(--bad)" }, `Retired by ${NAMES[r.retired.by] || r.retired.by} on ${day(r.retired.at)}: ${r.retired.why}`),
+    h("div", { class: "small muted usage" }, used, last, src),
+    h("div", { class: "acts" }, ...actions(r, el)));
+  if (open[r.id]) showHistory(r, el);
+  return el;
+}
+
+function actions(r, el) {
+  const out = [];
+  if (r.status === "retired") {
+    if (r.can_edit) out.push(h("button", { onclick: () => act(`/api/items/${r.id}/restore`, {}, "Restored") }, "Restore"));
+  } else {
+    if (r.status === "proposed" && r.can_edit) out.push(h("button", { class: "primary", onclick: async () => { await post(`/api/knowledge/${r.id}/confirm?by=${by()}`); toast("Confirmed"); load(); } }, "Confirm"));
+    if (r.stale && r.can_edit) out.push(h("button", { class: "primary", onclick: () => act(`/api/items/${r.id}/reconfirm`, {}, "Re-confirmed") }, "Re-confirm"));
+    out.push(h("button", { onclick: () => editForm(r, el) }, r.can_edit ? "Edit" : "Propose a change"));
+    if (r.can_edit) out.push(h("button", { onclick: () => retireForm(r, el) }, "Retire"));
+  }
+  out.push(h("button", { onclick: () => { open[r.id] = !open[r.id]; open[r.id] ? showHistory(r, el) : el.querySelector(".hist")?.remove(); } }, "History"));
+  return out;
+}
+
+async function act(path, body, msg) {
+  try { await post(path, { by: by(), ...body }); toast(msg); load(); } catch (e) { toast(e.message); }
+}
+
+function editForm(r, el) {
+  el.querySelector(".sub2")?.remove();
+  const f = h("div", { class: "sub2" },
+    h("label", {}, "Title"), h("input", { name: "title", value: r.title }),
+    h("label", {}, "Text"), h("textarea", { name: "text" }, r.text),
+    h("div", { class: "grid2" },
+      h("div", {}, h("label", {}, "Audience"), h("select", { name: "audience" }, h("option", { value: "customer" }, "Customer-facing"), h("option", { value: "internal" }, "Internal only"))),
+      h("div", {}, h("label", {}, "Review by"), h("input", { name: "review_by", type: "date", value: r.review_by || "" }))),
+    h("label", {}, "Why (kept in the history)"), h("input", { name: "why", placeholder: "e.g. new fee from January" }),
+    h("div", { class: "row", style: "margin-top:8px" }, h("span", { class: "small muted" }, r.can_edit ? "Saves version " + (r.version + 1) + "; the old one stays in the history." : `Goes to ${data.kinds[r.tab].owners.join(" or ")} to accept or reject.`),
+      h("button", { onclick: () => f.remove() }, "Cancel"),
+      h("button", { class: "primary", onclick: async () => {
+        const v = (n) => f.querySelector(`[name=${n}]`).value;
+        try {
+          const res = await post(`/api/items/${r.id}/edit`, { by: by(), why: v("why"), changes: { title: v("title"), text: v("text"), audience: v("audience"), review_by: v("review_by") || null } });
+          toast(res.proposal ? `Proposed (${res.proposal}): waits for ${res.waits_for.join(" or ")}` : res.version ? `Saved as version ${res.version}` : "Nothing changed");
+          load();
+        } catch (e) { toast(e.message); }
+      } }, r.can_edit ? "Save" : "Propose")));
+  f.querySelector("[name=audience]").value = r.audience;
+  el.append(f);
+}
+
+function retireForm(r, el) {
+  el.querySelector(".sub2")?.remove();
+  const f = h("div", { class: "sub2" }, h("label", {}, "Why is it retired? Agents stop using it at once; it stays in the history and can be restored."),
+    h("div", { class: "row" }, h("input", { name: "why", placeholder: "e.g. the offer ended" }),
+      h("button", { onclick: () => f.remove() }, "Cancel"),
+      h("button", { class: "primary", onclick: () => { const why = f.querySelector("[name=why]").value.trim(); if (!why) return toast("Say why"); act(`/api/items/${r.id}/retire`, { why }, "Retired: hidden from every agent"); } }, "Retire")));
+  el.append(f);
+}
+
+async function showHistory(r, el) {
+  const d = await api(`/api/items/${r.id}/history`);
+  el.querySelector(".hist")?.remove();
+  el.append(h("div", { class: "sub2 hist" }, h("h2", {}, "History"),
+    ...d.history.map((x) => h("div", {}, h("strong", {}, x.what), ` · ${x.by} · ${day(x.at)} ${new Date(x.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`,
+      x.text ? h("div", { class: "muted" }, x.text) : null, x.why ? h("div", { class: "muted" }, `why: ${x.why}`) : null)),
+    ...d.versions.map((v) => h("div", { class: "muted" }, `version ${v.version} (replaced): ${v.title}: ${v.text}`)),
+    d.related.length ? h("div", { style: "margin-top:8px" }, h("h2", {}, r.tab === "area" ? `Listings in ${r.title} (${d.related.length})` : "Related"),
+      ...d.related.map((x) => h("div", {}, h("a", { href: `catalog.html?q=${encodeURIComponent(x.listing ? x.listing.ref : x.title)}` }, x.listing ? x.listing.ref : x.id), ` · ${x.title} · ${x.text}`))) : null));
+}
+
+function proposal(p) {
+  const ch = Object.entries(p.changes).map(([k, v]) => `${k}: ${k === "price_aed" ? "AED " + (+v).toLocaleString() : v}`).join("; ");
+  return h("div", { class: "item", "data-proposal": p.id },
+    h("div", {}, h("strong", {}, `${p.id} · ${p.title || p.item}`)),
+    h("div", { class: "small muted" }, `${NAMES[p.by] || p.by} proposes: ${ch}`),
+    p.why ? h("div", { class: "small muted" }, `why: ${p.why}`) : null,
+    p.can_decide ? h("div", { class: "acts" },
+      h("button", { class: "primary", onclick: () => act(`/api/proposals/${p.id}/decide`, { accept: true }, "Accepted: saved as a new version") }, "Accept"),
+      h("button", { onclick: () => act(`/api/proposals/${p.id}/decide`, { accept: false }, "Rejected") }, "Reject"))
+      : h("div", { class: "small muted" }, `Waits for ${(p.owners || []).map((o) => NAMES[o] || o).join(" or ")}`));
+}
+
+function noteAdd() {
+  const K = data.kinds[$("akind").value];
+  const mine = K.owners.includes(NAMES[by()] || "");
+  $("anote").textContent = mine ? "You own this kind: it is confirmed at once." : `Waits for ${K.owners.join(" or ")} to confirm.`;
+}
+
+$("aadd").onclick = async () => {
+  if (!$("atitle").value.trim() || !$("atext").value.trim()) return toast("Add a title and the text");
+  try {
+    const r = await post("/api/items", { kind: $("akind").value, title: $("atitle").value.trim(), text: $("atext").value.trim(), audience: $("aaud").value,
+      review_by: $("areview").value || null, valid_until: $("auntil").value || null, applies_to: $("aapplies").value || null, by: by() });
+    toast(`${r.id} added (${r.status})`);
+    ["atitle", "atext", "areview", "auntil"].forEach((i) => $(i).value = "");
+    tab = $("akind").value; load();
+  } catch (e) { toast(e.message); }
 };
 $("docadd").onclick = async () => {
-  const r = await post("/api/knowledge/document", { text: $("doc").value, by: "layla" });
+  const r = await post("/api/knowledge/document", { text: $("doc").value, by: by() });
   toast(`${r.proposed.length} item(s) waiting for confirmation`);
-  $("doc").value = "";
-  load();
+  $("doc").value = ""; load();
 };
-$("ladd").onclick = async () => {
-  try {
-    await post("/api/listings", { ref: $("lref").value.trim(), title: $("ltitle").value.trim(), community: $("lcomm").value.trim(), type: $("ltype").value,
-      beds: +$("lbeds").value, price_aed: +$("lprice").value, permit: $("lpermit").value.trim() || null });
-    ["lref", "ltitle", "lcomm", "lbeds", "lprice", "lpermit"].forEach((i) => $(i).value = "");
-    load();
-  } catch (e) { toast("Fill in ref, title, community, beds and price"); }
-};
+$("akind").onchange = noteAdd;
+$("as").onchange = () => { store.set("kn.as", by()); load(); };
+for (const id of ["fstatus", "faudience", "farea", "fstale", "fretired"]) $(id).onchange = load;
+let t1;
+$("fq").oninput = () => { clearTimeout(t1); t1 = setTimeout(load, 200); };
+
+const pre = new URLSearchParams(location.search).get("q");
+if (pre) $("fq").value = pre;
 load();
 </script>
 </body>

@@ -29,10 +29,14 @@ class Result:
     usage: dict = field(default_factory=dict)
 
 
-def instructions(c: Charter, log: EventLog | None = None) -> str:
-    """The charter as the model's instructions, plus any lessons the team has taught this agent."""
+def instructions(c: Charter, log: EventLog | None = None, *, pack: bool = True) -> str:
+    """The charter as the model's instructions, plus any lessons the team has taught this agent. `pack=False` leaves
+    out the agent_pack answer format, for an agent that answers in its own format (Rania talks to customers)."""
     from diwan.agents import lessons
-    return _instructions(c) + lessons.instructions(log, c.id)
+    text = _instructions(c)
+    if not pack:
+        text = text.split("\n\nAnswer in the agent_pack format:")[0]
+    return text + lessons.instructions(log, c.id)
 
 
 def _instructions(c: Charter) -> str:

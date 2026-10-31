@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Pitch Deck</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  main { max-width: 980px; }
+  .slide { border: 1px solid var(--line); border-radius: 16px; background: var(--panel); padding: 22px 24px; margin-bottom: 16px; page-break-inside: avoid; }
+  .slide .n { font: 600 11px var(--font); letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+  .slide h2 { font-family: var(--display); font-weight: 400; font-size: 28px; margin: 4px 0 10px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+  .slide p { font-size: 16px; line-height: 1.55; margin: 0; }
+  .slide img { width: 100%; max-height: 360px; object-fit: cover; border-radius: 12px; margin-bottom: 14px; display: block; }
+  .src { margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .src div { padding: 2px 0; }
+  .stale { border-color: rgba(242, 125, 125, .55); }
+  .banner { padding: 10px 14px; border-radius: 12px; margin-bottom: 14px; font-size: 14px; }
+  .banner.bad { background: var(--bad-soft); color: var(--bad); }
+  .banner.ok { background: rgba(92, 207, 181, .12); color: var(--teal); }
+  .banner.warn { background: var(--warn-soft); color: var(--warn); }
+  @media print { header, .noprint { display: none !important; } body { background: #fff; color: #000; } .slide { border-color: #ccc; background: #fff; } .slide h2, .slide p { color: #000; } }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Pitch <em>deck</em></h1>
+  <p class="sub" id="sub"></p>
+  <div id="state"></div>
+  <div class="row noprint" style="margin-bottom:14px"><button id="print" style="flex:0 0 auto">Print or save as PDF</button><a class="btn" id="back" href="inbox.html" style="flex:0 0 auto">← Back to the lead</a></div>
+  <div id="slides"></div>
+</main>
+<script type="module">
+import { h, api, header, NAMES } from "./app.js";
+header("inbox.html");
+const $ = (id) => document.getElementById(id);
+const did = new URLSearchParams(location.search).get("d");
+$("print").onclick = () => print();
+async function load() {
+  if (!did) { $("slides").replaceChildren(h("p", { class: "muted" }, "No deck chosen. Open one from a lead in the Inbox.")); return; }
+  let k;
+  try { k = await api(`/api/decks/${encodeURIComponent(did)}`); }
+  catch (e) { $("slides").replaceChildren(h("p", { class: "muted" }, `This deck doesn't exist (${e.message}).`)); return; }
+  if (k.chat) $("back").href = `inbox.html?chat=${encodeURIComponent(k.chat)}`;
+  $("title").replaceChildren(`For ${k.customer} · `, h("em", {}, `deck v${k.version}`));
+  $("sub").textContent = `Made by the Deck builder from the office's records only; every slide names where it came from. Broker: ${NAMES[k.broker] || k.broker}.`;
+  const ok = k.approved.find((a) => !a.stale && a.status === "given");
+  $("state").replaceChildren(k.status === "sent_back"
+    ? h("div", { class: "banner bad" }, `Sent back: ${k.reason || "a statement it rests on was replaced"}. Remake it from the lead before the meeting.`)
+    : ok ? h("div", { class: "banner ok" }, `Approved for the meeting by ${ok.by}.`)
+    : h("div", { class: "banner warn" }, "Not approved yet: the broker approves it from the lead in the Inbox."));
+  $("slides").replaceChildren(...k.slides.map((s) => h("section", { class: `slide${s.stale ? " stale" : ""}` },
+    h("div", { class: "n" }, `${s.n} of ${k.slides.length}${s.stale ? " · uses words the customer replaced" : ""}`),
+    h("h2", {}, s.title),
+    s.photo ? h("img", { src: s.photo, alt: "" }) : null,
+    h("p", { dir: "auto" }, s.text),
+    s.sources.length ? h("div", { class: "src" }, h("b", {}, "Sources"), ...s.sources.map((r) => h("div", {}, k.sources[r] || r))) : null)));
+}
+load();
+</script>
+</body>

@@ -18,6 +18,7 @@ def clean_env(monkeypatch, tmp_path):
     for p in PROVIDERS.values():
         monkeypatch.setattr(p, "transport", None)
     monkeypatch.setenv("DIWAN_LOCAL_ASR", "0")  # tests never load the local Whisper model
+    monkeypatch.setenv("DIWAN_REPLY_WAIT", "0")  # each message answered at once; tests/test_burst.py sets a wait
 
 
 def fake(reply: dict, seen: list | None = None):

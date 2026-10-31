@@ -2,9 +2,14 @@
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# The test console runs Rania on a copy of the office. For that one request it can force rules only or a live model,
+# and it always keeps every message in the sandbox, without touching the environment the rest of the server reads.
+TRIAL: ContextVar[dict] = ContextVar("diwan_trial", default={})
 
 
 def env(name: str, default: str | None = None) -> str | None:
@@ -21,13 +26,18 @@ def env(name: str, default: str | None = None) -> str | None:
 
 def offline() -> bool:
     """DIWAN_OFFLINE=1 forces every agent onto recorded tapes, even when keys are present."""
-    return env("DIWAN_OFFLINE") == "1"
+    return TRIAL.get().get("offline", env("DIWAN_OFFLINE") == "1")
 
 
 def tape_mode() -> str:
     """cache (default): a recorded reply first, else live and save it. replay: live if possible, else tape.
     record: live, and save every reply. off: live only."""
-    return env("DIWAN_TAPE", "cache")
+    return TRIAL.get().get("tape") or env("DIWAN_TAPE", "cache")
+
+
+def sandbox_only() -> bool:
+    """True inside a test-console run: nothing is sent to WhatsApp, Instagram or anyone's phone."""
+    return bool(TRIAL.get().get("sandbox"))
 
 
 # Settings a person may enter from the Settings screen. Values go into the local .env (never into the event log), and
@@ -35,7 +45,9 @@ def tape_mode() -> str:
 SETTABLE = {"AISENSY_PROJECT_ID", "AISENSY_PROJECT_API_PWD", "AISENSY_API_KEY", "AISENSY_WEBHOOK_TOKEN",
             "WHATSAPP_PROVIDER", "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_VERIFY_TOKEN", "WHATSAPP_APP_SECRET",
             "IG_ACCESS_TOKEN", "IG_USER_ID", "IG_VERIFY_TOKEN", "PUBLIC_BASE_URL",
-            "HEYGEN_API_KEY", "HEYGEN_AVATAR_ID", "HEYGEN_VOICE_ID"}
+            "HEYGEN_API_KEY", "HEYGEN_AVATAR_ID", "HEYGEN_VOICE_ID",
+            "LISTING_FEED_URL", "PORTAL_SECRET_PROPERTYFINDER", "PORTAL_SECRET_BAYUT", "PORTAL_SECRET_DUBIZZLE", "NOTIFY_TEMPLATE",
+            "ZOOM_ACCOUNT_ID", "ZOOM_CLIENT_ID", "ZOOM_CLIENT_SECRET"}
 
 
 def set_env(updates: dict[str, str]) -> list[str]:

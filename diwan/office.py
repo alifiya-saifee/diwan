@@ -183,11 +183,12 @@ class Office:
         return self.log.append("knowledge.confirmed", actor=by, key=f"confirm:{kid}", content={"id": kid})
 
     def add_listing(self, *, ref: str, title: str, community: str, type: str, beds: int, price_aed: int, permit: str | None,
-                    status: str = "available", features: list[str] | None = None, by: str = "omar") -> str:
-        """A listing without a permit number is kept but never advertised: Dubai requires a permit for every ad."""
+                    status: str = "available", features: list[str] | None = None, agent: str | None = None, by: str = "omar") -> str:
+        """A listing without a permit number is kept but never advertised: Dubai requires a permit for every ad.
+        `agent`: the broker who holds the listing; its enquiries and viewings go to them."""
         self.log.append("listing.added", actor=by, content={"ref": ref, "title": title, "community": community, "type": type,
                                                             "beds": beds, "price_aed": price_aed, "permit": permit,
-                                                            "status": status, "features": features or []})
+                                                            "status": status, "features": features or [], "agent": agent})
         return f"listing:{ref}"
 
     # the archive

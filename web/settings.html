@@ -16,7 +16,17 @@
   .url { font: 12px var(--mono); background: rgba(0, 0, 0, .3); border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px; word-break: break-all; }
   ol { margin: 8px 0 0 18px; padding: 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
   .result { font-size: 13px; margin-top: 10px; }
+  .dk { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 10px; background: rgba(255, 255, 255, .015); }
+  .dk .sub2 { font-size: 11px; color: var(--muted); margin: 10px 0 4px; text-transform: uppercase; letter-spacing: .5px; }
+  .dk .serve { display: grid; grid-template-columns: 1.1fr 1.3fr .7fr 1.1fr auto; gap: 6px; margin-bottom: 6px; }
+  .dk .brk { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; }
+  .dk .brk label { display: flex; gap: 6px; align-items: center; margin: 0; }
+  .dk .brk input { width: auto; }
+  @media (max-width: 900px) { .dk .serve { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 900px) { .lines, .fields { grid-template-columns: 1fr; } }
+  .days { display: inline-flex; gap: 2px; flex: 0 0 auto; }
+  .days button { padding: 4px 0; width: 24px; font-size: 11px; border-radius: 6px; color: var(--muted); }
+  .days button.on { background: var(--gold-soft); color: var(--gold-2); border-color: rgba(232, 199, 122, .45); }
 </style>
 </head>
 <body>
@@ -63,6 +73,12 @@
   </div>
 
   <section class="panel card" style="margin-top:18px">
+    <h3>Qualification</h3>
+    <p class="small muted">What a lead must tell us before a broker takes over, and the conditions that decide it, per customer type. Only the owner edits it; every save is a new version.</p>
+    <div class="row" style="margin-top:8px"><span></span><a class="btn primary" href="qualify.html">Open the questions and conditions →</a></div>
+  </section>
+
+  <section class="panel card" style="margin-top:18px">
     <h3>Instagram <span class="chip" id="ig-state"></span></h3>
     <p class="small muted">An Instagram professional account connected to your Meta app. The studio reads your posts and their insights, studies competitors' public posts (business discovery), publishes approved reels, and passes comments to Rania.</p>
     <div class="fields">
@@ -72,6 +88,37 @@
       <div class="full"><label>Public address of this app, for publishing videos (https://…) <span class="set" id="s-PUBLIC_BASE_URL"></span></label><input id="PUBLIC_BASE_URL"></div>
     </div>
     <div class="row" style="margin-top:12px"><span class="small muted" id="ig-hook"></span><button class="primary" id="ig-save">Save</button></div>
+  </section>
+
+  <section class="panel card" style="margin-top:18px">
+    <h3>Property portals <span class="chip" id="pf-state"></span></h3>
+    <p class="small muted">Your own listings and enquiries, through the access your brokerage already has. Diwan reads the same listing feed you give Property Finder, Bayut and Dubizzle, so it only ever offers what you advertise; nothing is scraped. A listing without a permit number is kept and never offered.</p>
+    <div class="fields">
+      <div class="full"><label>Listing feed address (the XML URL you give the portals) <span class="set" id="s-LISTING_FEED_URL"></span></label><input id="LISTING_FEED_URL" placeholder="https://your-crm.example/feeds/propertyfinder.xml"></div>
+    </div>
+    <div class="row" style="margin-top:12px"><span class="small muted" id="pf-sync-state"></span><button id="pf-sync">Sync listings now</button><button class="primary" id="pf-save">Save</button></div>
+    <h2 style="margin-top:20px">Enquiry webhooks</h2>
+    <p class="small muted" style="margin-top:-4px">Give each portal (or your lead connector) its address and a shared secret. Each enquiry must be signed with it (HMAC-SHA256 in X-Signature), or carry it as ?token=. Without a secret, the address refuses everything.</p>
+    <div id="pf-hooks"></div>
+  </section>
+
+  <section class="panel card" style="margin-top:18px">
+    <h3>Sales team</h3>
+    <p class="small muted">New leads go to the listing's agent, otherwise round-robin among brokers on shift. Calls are due in 15 minutes, replies in 30; untouched after an hour, a lead goes to the Pool. Notices show in the Inbox, and on each broker's own WhatsApp when you name an approved AiSensy template with one variable.</p>
+    <div class="fields"><div class="full"><label>Notice template (AiSensy, one variable) <span class="set" id="s-NOTIFY_TEMPLATE"></span></label>
+      <div class="row"><input id="NOTIFY_TEMPLATE" placeholder="e.g. staff_alert"><button class="primary" id="nt-save" style="flex:0">Save</button></div></div></div>
+    <div id="team" style="margin-top:12px"></div>
+  </section>
+
+  <section class="panel card" style="margin-top:18px" id="kindsbox">
+    <h3>Deal kinds · sales desks</h3>
+    <p class="small muted">The kinds of deal your sales team works (like Ready sales, Off-plan, Leasing), each with the customers it serves,
+      the listings it covers and its brokers. When a lead qualifies, the first kind whose rule matches is its kind: Rania recommends only
+      that kind's listings, and the lead goes to one of its brokers (the listing's agent first). Your CRM's pipelines can fill this list too.</p>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap"><select id="dk-as" style="flex:1 1 220px;max-width:280px"></select><span style="flex:1"></span>
+      <button id="dk-add">+ Deal kind</button><button class="primary" id="dk-save">Save</button></div>
+    <div id="dk-ro" class="small" style="color:var(--warn);margin-top:6px" hidden>Only the owner changes the deal kinds. You are viewing them.</div>
+    <fieldset id="dk-edit" style="border:0;padding:0;margin:0;min-width:0"><div id="kinds"></div></fieldset>
   </section>
 
   <section class="panel card" style="margin-top:18px">
@@ -85,6 +132,17 @@
     <div class="row" style="margin-top:12px"><span></span><button class="primary" id="hg-save">Save</button></div>
   </section>
 
+  <section class="panel card" style="margin-top:18px">
+    <h3>Zoom · links for video calls <span class="chip" id="zm-state"></span></h3>
+    <p class="small muted">From your Zoom account: Zoom App Marketplace → Develop → Build app → Server-to-Server OAuth, with the scopes to create, update and delete meetings. Whether links are made, and when, is set on the Calendar (⚙).</p>
+    <div class="fields">
+      <div class="full"><label>Account ID <span class="set" id="s-ZOOM_ACCOUNT_ID"></span></label><input id="ZOOM_ACCOUNT_ID" autocomplete="off"></div>
+      <div><label>Client ID <span class="set" id="s-ZOOM_CLIENT_ID"></span></label><input id="ZOOM_CLIENT_ID" autocomplete="off"></div>
+      <div><label>Client secret <span class="set" id="s-ZOOM_CLIENT_SECRET"></span></label><input id="ZOOM_CLIENT_SECRET" type="password" autocomplete="off"></div>
+    </div>
+    <div class="row" style="margin-top:12px"><span></span><button class="primary" id="zm-save">Save</button></div>
+  </section>
+
   <section class="panel" style="margin-top:18px">
     <h2>Meta models</h2>
     <p class="small muted" style="margin-top:-4px">These keys go in the .env file directly (see .env.example), never into a web form.</p>
@@ -92,7 +150,7 @@
   </section>
 </main>
 <script type="module">
-import { h, api, post, header, toast } from "./app.js";
+import { h, api, post, header, toast, NAMES } from "./app.js";
 header("settings.html");
 const $ = (id) => document.getElementById(id);
 let info;
@@ -109,6 +167,8 @@ async function load() {
   for (const [k, v] of Object.entries(info.instagram.fields)) { const s = $(`s-${k}`); if (s) s.textContent = v ? "✓ saved" : ""; }
   st($("hg-state"), info.heygen.connected);
   for (const [k, v] of Object.entries(info.heygen.fields)) { const s = $(`s-${k}`); if (s) s.textContent = v ? "✓ saved" : ""; }
+  st($("zm-state"), info.zoom.connected);
+  for (const [k, v] of Object.entries(info.zoom.fields)) { const s = $(`s-${k}`); if (s) s.textContent = v ? "✓ saved" : ""; if ($(k)) $(k).placeholder = v ? "•••••••• saved, type to replace" : ""; }
   $("ig-hook").textContent = `Comments webhook: ${info.instagram.webhook}`;
   $("cloud-hook").textContent = info.cloud.webhook;
   if (info.aisensy.webhook) {
@@ -116,6 +176,26 @@ async function load() {
       h("button", { onclick: async () => { const r = await api("/api/integrations/aisensy/webhook-url"); $("hookurl").textContent = r.url;
         navigator.clipboard?.writeText(r.url).then(() => toast("Webhook address copied")).catch(() => {}); } }, "Show & copy")));
   }
+  const pp = info.portals;
+  st($("pf-state"), pp.feed);
+  $("s-LISTING_FEED_URL").textContent = pp.feed ? "✓ saved" : "";
+  $("s-NOTIFY_TEMPLATE").textContent = pp.notify_template ? "✓ saved" : "";
+  $("pf-sync-state").textContent = pp.last_sync ? `Last sync ${new Date(pp.last_sync.at).toLocaleString("en-GB")}: ${pp.last_sync.in_feed} in the feed, ${pp.last_sync.without_permit} without a permit` : "Not synced yet";
+  $("pf-hooks").replaceChildren(...Object.entries(pp.hooks).map(([k, p]) => h("div", { class: "fields" },
+    h("div", { class: "full" }, h("label", {}, `${p.name} `, h("span", { class: "set" }, p.secret ? "✓ secret saved" : "no secret: refusing")), h("div", { class: "url" }, p.webhook)),
+    h("div", { class: "full row" }, h("input", { id: `PORTAL_SECRET_${k.toUpperCase()}`, type: "password", autocomplete: "off", placeholder: p.secret ? "•••••••• saved, type to replace" : "Shared secret" }),
+      h("button", { style: "flex:0", onclick: () => save([`PORTAL_SECRET_${k.toUpperCase()}`]) }, "Save")))));
+  const team = await api("/api/team");
+  $("team").replaceChildren(...team.map((t) => h("div", { class: "row", style: "padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap" },
+    h("span", { style: "flex:0 0 120px" }, h("b", {}, t.name), h("div", { class: "small muted" }, t.on_shift ? `on shift · ${t.leads_today} leads today` : "off shift")),
+    h("input", { value: t.shift, title: "Shift", style: "flex:0 0 130px", onchange: (e) => teamSet(t.id, { shift: e.target.value }) }),
+    h("span", { class: "days", title: "Working days (the office's opening days apply too)" }, ..."MTWTFSS".split("").map((d, i) => {
+      const on = !t.days || t.days.includes(i);
+      return h("button", { class: on ? "on" : "", "aria-pressed": String(on), title: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][i],
+        onclick: () => { const cur = t.days || [0, 1, 2, 3, 4, 5, 6]; teamSet(t.id, { days: on ? cur.filter((x) => x !== i) : [...cur, i] }); } }, d);
+    })),
+    h("input", { placeholder: t.phone ? "WhatsApp ✓ saved" : "WhatsApp for notices", style: "flex:1", onchange: (e) => teamSet(t.id, { phone: e.target.value }) }),
+    h("label", { style: "flex:0 0 auto;display:flex;gap:6px;align-items:center;margin:0" }, h("input", { type: "checkbox", checked: t.away, style: "width:auto", onchange: (e) => teamSet(t.id, { away: e.target.checked }) }), "Away today"))));
   $("models").replaceChildren(...Object.entries(info.meta).map(([k, on]) => h("span", { class: "pill" }, h("span", { class: `dot ${on ? "on" : ""}` }),
     { meta: "Muse Spark (Meta Model API)", baseten: "Muse Spark Open · Baseten", fireworks: "Muse Spark Open · Fireworks", modal: "Muse Spark Open · Modal", voice: "Muse Voice Transcribe" }[k] || k)));
 }
@@ -131,7 +211,72 @@ async function save(keys) {
 }
 async function choose(k) { await post("/api/integrations", { values: { WHATSAPP_PROVIDER: k === "sandbox" ? "sandbox" : k } }); load(); }
 
+// ---------- deal kinds (the owner's list; nothing about them is fixed in code) ----------
+let DK = null;
+let dkAs = (() => { try { return localStorage.getItem("diwan.settings.as"); } catch { return null; } })() || "layla";
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 30) || "kind";
+async function loadKinds() {
+  DK = await api("/api/deal-kinds");
+  renderKinds();
+}
+function renderKinds() {
+  const can = DK.owners.includes(dkAs);
+  $("dk-as").replaceChildren(...Object.entries(NAMES).map(([id, n]) => h("option", { value: id, selected: id === dkAs }, `Acting as ${n}${DK.owners.includes(id) ? " · owner" : ""}`)));
+  $("dk-ro").hidden = can; $("dk-edit").disabled = !can; $("dk-add").disabled = !can; $("dk-save").disabled = !can;
+  const types = Object.entries(DK.types);
+  $("kinds").replaceChildren(...DK.kinds.map((k, i) => {
+    const serve = (s, j) => {
+      const fields = DK.types[s.type]?.fields || [];
+      const f = fields.find((x) => x.key === s.when?.field);
+      return h("div", { class: "serve" },
+        h("select", { title: "Customer type", onchange: (e) => { s.type = e.target.value; s.when = null; renderKinds(); } }, ...types.map(([t, v]) => h("option", { value: t, selected: t === s.type }, v.label))),
+        h("select", { title: "Only when", onchange: (e) => { s.when = e.target.value ? { field: e.target.value, op: "=", value: "" } : null; renderKinds(); } },
+          h("option", { value: "" }, "always"), ...fields.map((x) => h("option", { value: x.key, selected: x.key === s.when?.field }, `when ${x.label}`))),
+        s.when ? h("select", { onchange: (e) => { s.when.op = e.target.value; } }, ...DK.ops.map((o) => h("option", { value: o, selected: o === s.when.op }, o))) : h("span"),
+        s.when ? (f?.options.length ? h("select", { onchange: (e) => { s.when.value = e.target.value; } }, h("option", { value: "" }, "—"), ...f.options.map((o) => h("option", { value: o, selected: o === s.when.value }, o)))
+          : h("input", { value: s.when.value || "", placeholder: "value", oninput: (e) => { s.when.value = e.target.value; } })) : h("span"),
+        h("button", { title: "Remove", onclick: () => { k.serves.splice(j, 1); renderKinds(); } }, "✕"));
+    };
+    return h("div", { class: "dk", "data-kind": k.id },
+      h("div", { class: "row" }, h("input", { value: k.name, placeholder: "e.g. Off-plan", style: "flex:1", oninput: (e) => { k.name = e.target.value; if (k._new) k.id = slug(e.target.value); } }),
+        h("button", { title: "Move up", disabled: i === 0, onclick: () => { [DK.kinds[i - 1], DK.kinds[i]] = [DK.kinds[i], DK.kinds[i - 1]]; renderKinds(); } }, "↑"),
+        h("button", { title: "Move down", disabled: i === DK.kinds.length - 1, onclick: () => { [DK.kinds[i + 1], DK.kinds[i]] = [DK.kinds[i], DK.kinds[i + 1]]; renderKinds(); } }, "↓"),
+        h("button", { title: "Remove this deal kind", onclick: () => { DK.kinds.splice(i, 1); renderKinds(); } }, "✕")),
+      h("div", { class: "sub2" }, "Serves"), ...k.serves.map(serve),
+      h("button", { style: "font-size:12px", onclick: () => { k.serves.push({ type: types[0][0], when: null }); renderKinds(); } }, "+ Customer type"),
+      h("div", { class: "sub2" }, "Listings it covers"),
+      h("div", { class: "row" },
+        h("select", { onchange: (e) => { k.listings.offering = e.target.value; } }, ...Object.entries(DK.offerings).map(([v, l]) => h("option", { value: v, selected: v === (k.listings.offering || "") }, l))),
+        h("select", { onchange: (e) => { k.listings.completion = e.target.value; } }, ...Object.entries(DK.completions).map(([v, l]) => h("option", { value: v, selected: v === (k.listings.completion || "") }, l)))),
+      h("div", { class: "sub2" }, "Its brokers"),
+      h("div", { class: "brk" }, ...DK.brokers.map((b) => h("label", {}, h("input", { type: "checkbox", value: b.id, checked: k.brokers.includes(b.id),
+        onchange: (e) => { k.brokers = e.target.checked ? [...k.brokers, b.id] : k.brokers.filter((x) => x !== b.id); } }), b.name))));
+  }), DK.kinds.length ? "" : h("p", { class: "small muted", style: "margin-top:10px" }, "No deal kinds yet: every lead goes to any broker. Add one, or connect your CRM's pipelines."));
+}
+$("dk-as").onchange = (e) => { dkAs = e.target.value; try { localStorage.setItem("diwan.settings.as", dkAs); } catch {} renderKinds(); };
+$("dk-add").onclick = () => { DK.kinds.push({ id: "", name: "", _new: true, brokers: [], listings: { offering: "", completion: "" }, serves: [{ type: Object.keys(DK.types)[0], when: null }] }); renderKinds(); };
+$("dk-save").onclick = async () => {
+  try {
+    const r = await post("/api/deal-kinds", { by: dkAs, kinds: DK.kinds.map(({ _new, ...k }) => k) });
+    toast(`Saved ${r.kinds.length} deal kinds. Rania and the dispatcher use them from the next lead.`); loadKinds();
+  } catch (e) { toast(e.message); }
+};
+loadKinds();
+
+async function teamSet(id, body) {
+  try { await post(`/api/team/${id}`, { ...body, by: "layla" }); toast("Saved"); } catch (e) { toast(e.message); }
+  load();
+}
+$("pf-save").onclick = () => save(["LISTING_FEED_URL"]);
+$("nt-save").onclick = () => save(["NOTIFY_TEMPLATE"]);
+$("pf-sync").onclick = async () => {
+  $("pf-sync-state").textContent = "Reading the feed…";
+  try { const r = await post("/api/listings/sync"); toast(`${r.added} new, ${r.changed} changed, ${r.off_market} off the market`); }
+  catch (e) { $("pf-sync-state").textContent = e.message; return; }
+  load();
+};
 $("hg-save").onclick = () => save(["HEYGEN_API_KEY", "HEYGEN_AVATAR_ID", "HEYGEN_VOICE_ID"]);
+$("zm-save").onclick = () => save(["ZOOM_ACCOUNT_ID", "ZOOM_CLIENT_ID", "ZOOM_CLIENT_SECRET"]);
 $("ig-save").onclick = () => save(["IG_ACCESS_TOKEN", "IG_USER_ID", "IG_VERIFY_TOKEN", "PUBLIC_BASE_URL"]);
 $("aisensy-save").onclick = () => save(["AISENSY_PROJECT_ID", "AISENSY_PROJECT_API_PWD", "AISENSY_API_KEY"]);
 $("cloud-save").onclick = () => save(["WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_VERIFY_TOKEN", "WHATSAPP_APP_SECRET"]);

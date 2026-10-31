@@ -34,7 +34,8 @@ def test_inbox_sandbox_takeover_and_listings():
     chat = c.get("/api/chats/971500000001").json()
     assert chat["mode"] == "human" and chat["messages"][-1]["by"] == "omar" and chat["messages"][-1]["via"] == "sandbox"
     ls = {x["props"]["ref"]: x["advertised"] for x in c.get("/api/listings").json()}
-    assert ls == {"MC-1204": True, "JVC-88": True, "BB-305": True, "DT-2210": False}
+    assert {k: ls[k] for k in ("MC-1204", "JVC-88", "BB-305", "DT-2210")} == {"MC-1204": True, "JVC-88": True, "BB-305": True, "DT-2210": False}
+    assert len(ls) == 39 and ls["DR-114"] is False  # the demo feed: no permit, never advertised
 
 
 def test_pasted_document_waits_for_confirmation():

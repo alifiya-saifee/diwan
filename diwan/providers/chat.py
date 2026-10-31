@@ -136,9 +136,13 @@ PROVIDERS: dict[str, ChatProvider] = {
 def for_tier(tier: str) -> ChatProvider | None:
     """`spark` runs on Meta's API; `open` runs on the first open-weight host that is set up (DIWAN_OPEN_ORDER)."""
     if tier == "spark":  # Muse Spark on Meta's API; without it, Meta's open Muse Glimmer on NVIDIA's endpoint
-        for pid in ("meta", "nvidia"):
-            if PROVIDERS[pid].available():
-                return PROVIDERS[pid]
+        from diwan.config import TRIAL
+        # DIWAN_SPARK_ORDER=nvidia,meta keeps everyday development on the free endpoint; the test console can pick one
+        order = [TRIAL.get()["provider"]] if TRIAL.get().get("provider") else env("DIWAN_SPARK_ORDER", "meta,nvidia").split(",")
+        for pid in order:
+            p = PROVIDERS.get(pid.strip())
+            if p and p.available():
+                return p
         return None
     if tier == "open":
         for pid in env("DIWAN_OPEN_ORDER", "baseten,fireworks,modal,nvidia").split(","):

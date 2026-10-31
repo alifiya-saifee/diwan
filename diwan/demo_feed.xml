@@ -1,0 +1,825 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fictional demo feed for Diwan Realty: made-up units, sample permits. Photos are free-licence pictures of the area or a similar home, not these units (credits: web/img/demo/credits.json). -->
+<list>
+  <property>
+    <reference_number>MC-1204</reference_number>
+    <permit_number>SAMPLE-71204</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Unit 1204, Marina Crest</title_en>
+    <community>Dubai Marina</community>
+    <bedroom>2</bedroom>
+    <price>2600000</price>
+    <size>1340</size>
+    <description_en>Sea view, balcony, 2 parking.</description_en>
+    <agent_name>Omar</agent_name>
+    <geopoints>25.07600,55.13490</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/marina.jpg</photo>
+      <photo>/web/img/demo/marina-night.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>JVC-88</reference_number>
+    <permit_number>SAMPLE-60088</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>villa</property_type>
+    <title_en>Villa 88</title_en>
+    <community>Jumeirah Village Circle</community>
+    <bedroom>4</bedroom>
+    <price>1900000</price>
+    <size>3100</size>
+    <description_en>Private garden and a maid's room.</description_en>
+    <agent_name>Omar</agent_name>
+    <geopoints>25.05850,55.20400</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/the-villa-2.jpg</photo>
+      <photo>/web/img/demo/pool.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>BB-305</reference_number>
+    <permit_number>SAMPLE-30305</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 305, Bay Square</title_en>
+    <community>Business Bay</community>
+    <bedroom>1</bedroom>
+    <price>1150000</price>
+    <size>760</size>
+    <description_en>Canal view.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.18830,55.26160</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/business-bay.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DT-2210</reference_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 2210, Burj Vista</title_en>
+    <community>Downtown Dubai</community>
+    <bedroom>1</bedroom>
+    <price>1450000</price>
+    <size>820</size>
+    <description_en>Permit pending.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.19190,55.27380</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/downtown.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-101</reference_number>
+    <permit_number>SAMPLE-80101</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 1802, Marina Promenade</title_en>
+    <community>Dubai Marina</community>
+    <bedroom>1</bedroom>
+    <price>1350000</price>
+    <size>810</size>
+    <description_en>Marina view, walk to the tram.</description_en>
+    <agent_name>Omar</agent_name>
+    <geopoints>25.08050,55.13850</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/marina.jpg</photo>
+      <photo>/web/img/demo/marina-night.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-102</reference_number>
+    <permit_number>SAMPLE-80102</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 3301, Marina Crown</title_en>
+    <community>Dubai Marina</community>
+    <bedroom>3</bedroom>
+    <price>3900000</price>
+    <size>1980</size>
+    <description_en>High floor, full sea view.</description_en>
+    <agent_name>Omar</agent_name>
+    <geopoints>25.08410,55.13940</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/marina.jpg</photo>
+      <photo>/web/img/demo/marina-night.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-103</reference_number>
+    <permit_number>SAMPLE-80103</permit_number>
+    <offering_type>rent</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Studio 907, Marina Heights</title_en>
+    <community>Dubai Marina</community>
+    <bedroom>studio</bedroom>
+    <price>85000</price>
+    <size>450</size>
+    <description_en>Furnished studio, yearly rent.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.07780,55.14030</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/marina.jpg</photo>
+      <photo>/web/img/demo/marina-night.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-104</reference_number>
+    <permit_number>SAMPLE-80104</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>penthouse</property_type>
+    <title_en>Penthouse 52, Marina Sky</title_en>
+    <community>Dubai Marina</community>
+    <bedroom>4</bedroom>
+    <price>12500000</price>
+    <size>5200</size>
+    <description_en>Private terrace and pool.</description_en>
+    <agent_name>Omar</agent_name>
+    <geopoints>25.08140,55.14120</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/marina.jpg</photo>
+      <photo>/web/img/demo/marina-night.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-105</reference_number>
+    <permit_number>SAMPLE-80105</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 1408, Shams 2</title_en>
+    <community>Jumeirah Beach Residence</community>
+    <bedroom>2</bedroom>
+    <price>2300000</price>
+    <size>1450</size>
+    <description_en>Beach access, community pool.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.08270,55.13530</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/jbr.jpg</photo>
+      <photo>/web/img/demo/marina.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-106</reference_number>
+    <permit_number>SAMPLE-80106</permit_number>
+    <offering_type>rent</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 2203, Rimal 4</title_en>
+    <community>Jumeirah Beach Residence</community>
+    <bedroom>3</bedroom>
+    <price>210000</price>
+    <size>1900</size>
+    <description_en>Sea view, yearly rent.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.07640,55.13620</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/jbr.jpg</photo>
+      <photo>/web/img/demo/marina.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-107</reference_number>
+    <permit_number>SAMPLE-80107</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 1110, Lake View Tower</title_en>
+    <community>Jumeirah Lakes Towers</community>
+    <bedroom>2</bedroom>
+    <price>1250000</price>
+    <size>1280</size>
+    <description_en>Lake view, near the metro.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.07110,55.14760</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/jlt.jpg</photo>
+      <photo>/web/img/demo/jlt-view.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-108</reference_number>
+    <permit_number>SAMPLE-80108</permit_number>
+    <offering_type>rent</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 605, Goldcrest Views</title_en>
+    <community>Jumeirah Lakes Towers</community>
+    <bedroom>1</bedroom>
+    <price>75000</price>
+    <size>780</size>
+    <description_en>Yearly rent, 2 cheques.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.06480,55.14850</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/jlt.jpg</photo>
+      <photo>/web/img/demo/jlt-view.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-109</reference_number>
+    <permit_number>SAMPLE-80109</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 3905, The Address Residences</title_en>
+    <community>Downtown Dubai</community>
+    <bedroom>2</bedroom>
+    <price>4200000</price>
+    <size>1500</size>
+    <description_en>Burj Khalifa and fountain view.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.19460,55.28190</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/downtown.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-110</reference_number>
+    <permit_number>SAMPLE-80110</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 1206, South Ridge</title_en>
+    <community>Downtown Dubai</community>
+    <bedroom>1</bedroom>
+    <price>1600000</price>
+    <size>850</size>
+    <description_en>Boulevard view.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.19820,55.27110</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/downtown.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-111</reference_number>
+    <permit_number>SAMPLE-80111</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 4410, Opera Grand</title_en>
+    <community>Downtown Dubai</community>
+    <bedroom>3</bedroom>
+    <price>7800000</price>
+    <size>2300</size>
+    <description_en>Opera district, two balconies.</description_en>
+    <agent_name>Omar</agent_name>
+    <geopoints>25.19190,55.27200</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/downtown.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-112</reference_number>
+    <permit_number>SAMPLE-80112</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 802, Executive Towers</title_en>
+    <community>Business Bay</community>
+    <bedroom>2</bedroom>
+    <price>1750000</price>
+    <size>1250</size>
+    <description_en>Canal and city view.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.18560,55.26160</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/business-bay.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-113</reference_number>
+    <permit_number>SAMPLE-80113</permit_number>
+    <offering_type>rent</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Studio 1504, Damac Maison</title_en>
+    <community>Business Bay</community>
+    <bedroom>studio</bedroom>
+    <price>70000</price>
+    <size>420</size>
+    <description_en>Serviced studio, yearly rent.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.18920,55.26250</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/business-bay.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-114</reference_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 2710, Peninsula One</title_en>
+    <community>Business Bay</community>
+    <bedroom>1</bedroom>
+    <price>1300000</price>
+    <size>700</size>
+    <description_en>Off-plan, handover 2027. Permit pending.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.18290,55.26340</geopoints>
+    <completion_status>off_plan</completion_status>
+    <project_name>Peninsula One</project_name>
+    <photos>
+      <photo>/web/img/demo/business-bay.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-115</reference_number>
+    <permit_number>SAMPLE-80115</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>villa</property_type>
+    <title_en>Villa 14, Frond K</title_en>
+    <community>Palm Jumeirah</community>
+    <bedroom>5</bedroom>
+    <price>28000000</price>
+    <size>7000</size>
+    <description_en>Beachfront, private pool.</description_en>
+    <agent_name>Omar</agent_name>
+    <geopoints>25.11330,55.13810</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/palm.jpg</photo>
+      <photo>/web/img/demo/pool.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-116</reference_number>
+    <permit_number>SAMPLE-80116</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 610, Shoreline 8</title_en>
+    <community>Palm Jumeirah</community>
+    <bedroom>2</bedroom>
+    <price>3100000</price>
+    <size>1560</size>
+    <description_en>Beach access, Palm views.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.11690,55.13900</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/palm.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-117</reference_number>
+    <permit_number>SAMPLE-80117</permit_number>
+    <offering_type>rent</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 1903, Tiara Residences</title_en>
+    <community>Palm Jumeirah</community>
+    <bedroom>1</bedroom>
+    <price>145000</price>
+    <size>980</size>
+    <description_en>Yearly rent, sea view.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.11060,55.13990</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/palm.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-118</reference_number>
+    <permit_number>SAMPLE-80118</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 2402, Creek Rise</title_en>
+    <community>Dubai Creek Harbour</community>
+    <bedroom>2</bedroom>
+    <price>2050000</price>
+    <size>1180</size>
+    <description_en>Creek and skyline view.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.20240,55.34730</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/creek.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-119</reference_number>
+    <permit_number>SAMPLE-80119</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 1507, Harbour Gate</title_en>
+    <community>Dubai Creek Harbour</community>
+    <bedroom>1</bedroom>
+    <price>1250000</price>
+    <size>760</size>
+    <description_en>Near the marina walk.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.19610,55.34820</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/creek.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-120</reference_number>
+    <permit_number>SAMPLE-80120</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 3108, Creek Edge</title_en>
+    <community>Dubai Creek Harbour</community>
+    <bedroom>3</bedroom>
+    <price>3300000</price>
+    <size>1750</size>
+    <description_en>Corner unit, wraparound balcony.</description_en>
+    <agent_name>Omar</agent_name>
+    <geopoints>25.19970,55.34910</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/creek.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-121</reference_number>
+    <permit_number>SAMPLE-80121</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>villa</property_type>
+    <title_en>Villa 7, Saheel</title_en>
+    <community>Arabian Ranches</community>
+    <bedroom>4</bedroom>
+    <price>5200000</price>
+    <size>3900</size>
+    <description_en>Golf course nearby, garden.</description_en>
+    <agent_name>Omar</agent_name>
+    <geopoints>25.05870,55.27350</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/ranches.jpg</photo>
+      <photo>/web/img/demo/pool.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-122</reference_number>
+    <permit_number>SAMPLE-80122</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>townhouse</property_type>
+    <title_en>Townhouse 33, Mirador</title_en>
+    <community>Arabian Ranches</community>
+    <bedroom>3</bedroom>
+    <price>3400000</price>
+    <size>2600</size>
+    <description_en>Corner plot, community pool.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.05240,55.27440</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/ranches.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/pool.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-123</reference_number>
+    <permit_number>SAMPLE-80123</permit_number>
+    <offering_type>rent</offering_type>
+    <property_type>villa</property_type>
+    <title_en>Villa 19, Alma</title_en>
+    <community>Arabian Ranches</community>
+    <bedroom>5</bedroom>
+    <price>320000</price>
+    <size>4800</size>
+    <description_en>Yearly rent, private pool.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.05600,55.26360</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/ranches.jpg</photo>
+      <photo>/web/img/demo/pool.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-124</reference_number>
+    <permit_number>SAMPLE-80124</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>townhouse</property_type>
+    <title_en>Townhouse 12, District 12</title_en>
+    <community>Jumeirah Village Circle</community>
+    <bedroom>3</bedroom>
+    <price>2100000</price>
+    <size>2200</size>
+    <description_en>Close to the park.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.06300,55.20400</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/the-villa-2.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/pool.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-125</reference_number>
+    <permit_number>SAMPLE-80125</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 408, Belgravia</title_en>
+    <community>Jumeirah Village Circle</community>
+    <bedroom>1</bedroom>
+    <price>850000</price>
+    <size>720</size>
+    <description_en>Good first home, pool and gym.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.05670,55.20490</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/the-villa-2.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-126</reference_number>
+    <permit_number>SAMPLE-80126</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>villa</property_type>
+    <title_en>Villa 3, The Nest</title_en>
+    <community>Al Barari</community>
+    <bedroom>6</bedroom>
+    <price>24000000</price>
+    <size>9800</size>
+    <description_en>Botanical gardens, lake view.</description_en>
+    <agent_name>Omar</agent_name>
+    <geopoints>25.09940,55.31380</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/al-barari.jpg</photo>
+      <photo>/web/img/demo/pool.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-127</reference_number>
+    <permit_number>SAMPLE-80127</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>villa</property_type>
+    <title_en>Villa 41, Ponderosa</title_en>
+    <community>The Villa</community>
+    <bedroom>5</bedroom>
+    <price>4800000</price>
+    <size>5400</size>
+    <description_en>Spanish style, large plot.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.03450,55.30020</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/the-villa.jpg</photo>
+      <photo>/web/img/demo/the-villa-2.jpg</photo>
+      <photo>/web/img/demo/pool.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-128</reference_number>
+    <permit_number>SAMPLE-80128</permit_number>
+    <offering_type>rent</offering_type>
+    <property_type>villa</property_type>
+    <title_en>Villa 9, Aldea</title_en>
+    <community>The Villa</community>
+    <bedroom>4</bedroom>
+    <price>230000</price>
+    <size>4300</size>
+    <description_en>Yearly rent, garden.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.02820,55.30110</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/the-villa.jpg</photo>
+      <photo>/web/img/demo/the-villa-2.jpg</photo>
+      <photo>/web/img/demo/pool.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-129</reference_number>
+    <permit_number>SAMPLE-80129</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 2105, Marina Quays</title_en>
+    <community>Dubai Marina</community>
+    <bedroom>2</bedroom>
+    <price>2450000</price>
+    <size>1290</size>
+    <description_en>Marina view, near the metro.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.08230,55.14030</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/marina.jpg</photo>
+      <photo>/web/img/demo/marina-night.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-130</reference_number>
+    <permit_number>SAMPLE-80130</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 1610, Silverene</title_en>
+    <community>Dubai Marina</community>
+    <bedroom>2</bedroom>
+    <price>2750000</price>
+    <size>1410</size>
+    <description_en>Full marina view, big balcony.</description_en>
+    <agent_name>Omar</agent_name>
+    <geopoints>25.07600,55.14120</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/marina.jpg</photo>
+      <photo>/web/img/demo/marina-night.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-131</reference_number>
+    <permit_number>SAMPLE-80131</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 806, Marina Diamond</title_en>
+    <community>Dubai Marina</community>
+    <bedroom>2</bedroom>
+    <price>1950000</price>
+    <size>1150</size>
+    <description_en>Good value, close to the beach.</description_en>
+    <agent_name>Nadia</agent_name>
+    <geopoints>25.07960,55.14210</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/marina.jpg</photo>
+      <photo>/web/img/demo/marina-night.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-132</reference_number>
+    <permit_number>SAMPLE-80132</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 2702, Sparkle Tower</title_en>
+    <community>Dubai Marina</community>
+    <bedroom>2</bedroom>
+    <price>2950000</price>
+    <size>1380</size>
+    <description_en>Sea view, designer finish.</description_en>
+    <agent_name>Omar</agent_name>
+    <geopoints>25.08320,55.14300</geopoints>
+    <completion_status>completed</completion_status>
+    <photos>
+      <photo>/web/img/demo/marina.jpg</photo>
+      <photo>/web/img/demo/marina-night.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-133</reference_number>
+    <permit_number>SAMPLE-8133</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 1204, Creek Vista Heights</title_en>
+    <community>Dubai Creek Harbour</community>
+    <bedroom>1</bedroom>
+    <price>1350000</price>
+    <size>760</size>
+    <description_en>Off-plan, handover Q4 2027.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.20140,55.34410</geopoints>
+    <completion_status>off_plan</completion_status>
+    <project_name>Creek Vista Heights</project_name>
+    <photos>
+      <photo>/web/img/demo/creek.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-134</reference_number>
+    <permit_number>SAMPLE-8134</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 2208, Creek Vista Heights</title_en>
+    <community>Dubai Creek Harbour</community>
+    <bedroom>2</bedroom>
+    <price>1950000</price>
+    <size>1180</size>
+    <description_en>Off-plan, handover Q4 2027, creek view.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.20190,55.34480</geopoints>
+    <completion_status>off_plan</completion_status>
+    <project_name>Creek Vista Heights</project_name>
+    <photos>
+      <photo>/web/img/demo/creek.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+    </photos>
+  </property>
+  <property>
+    <reference_number>DR-135</reference_number>
+    <permit_number>SAMPLE-8135</permit_number>
+    <offering_type>sale</offering_type>
+    <property_type>apartment</property_type>
+    <title_en>Apartment 1507, Bayline Residences</title_en>
+    <community>Business Bay</community>
+    <bedroom>2</bedroom>
+    <price>2300000</price>
+    <size>1240</size>
+    <description_en>Off-plan, handover Q2 2028, canal view.</description_en>
+    <agent_name>Hamza</agent_name>
+    <geopoints>25.18610,55.26390</geopoints>
+    <completion_status>off_plan</completion_status>
+    <project_name>Bayline Residences</project_name>
+    <photos>
+      <photo>/web/img/demo/business-bay.jpg</photo>
+      <photo>/web/img/demo/living.jpg</photo>
+      <photo>/web/img/demo/kitchen.jpg</photo>
+      <photo>/web/img/demo/bedroom.jpg</photo>
+    </photos>
+  </property>
+</list>
