@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from diwan import agency_forms, desk_rules, roles
+from diwan import agency_forms, deal_property, desk_rules, roles
 from diwan.graph import Graph
 from diwan.people import PEOPLE, name
 
@@ -40,7 +40,8 @@ def view(g: Graph, deal: str) -> dict:
                         "waiting": [i["text"] for i in cl["items"] if not i["done"]]} if cl and not cl["sale"] else None,
             "closed": bool(cl and cl["sale"]), "movers": sorted(movers(g, deal)), "agreed": agreed(g, deal),
             "listing_aed": compare(g, deal, 1)["listing_aed"], "limit": desk_rules.rules(g)["discount_approval_pct"],
-            "pending": {"task": p.id, "text": p.props["action"], "pct": p.props.get("pct")} if (p := _pending(g, deal)) else None}
+            "pending": {"task": p.id, "text": p.props["action"], "pct": p.props.get("pct")} if (p := pending(g, deal)) else None,
+            "property": deal_property.view(g, deal), "lost_reasons": desk_rules.rules(g)["lost_reasons"]}
 
 
 def move(office: Office, deal: str, stage: str, by: str, reason: str = "") -> None:
@@ -67,9 +68,32 @@ def move(office: Office, deal: str, stage: str, by: str, reason: str = "") -> No
         raise ValueError("Enter the agreed price to convert the deal.")
     if (back or stage == "Lost") and not reason.strip():
         raise ValueError("Say why: marking a deal lost or moving it back needs a reason.")
+    returning = now == "Lost" and stage != "Lost" and bool(agreed(g, deal))
+    if returning:
+        deal_property.back_from_lost(g, deal)
     office.log.append("stage.changed", actor=by, deal=deal, content={"stage": stage, **({"why": reason.strip()} if reason.strip() else {}), "back": back})
+    if stage == "Lost":
+        office.log.append("case.lost", actor=by, agent="ops", deal=deal, content={"reason": reason.strip()})
+        deal_property.lost(office, deal, by)
+        _money_on_lost(office, deal)
+    elif returning:
+        deal_property.reserve(office, deal, by)
     if stage != "Lost" and order.index(stage) >= order.index(conv):
         agency_forms.on_convert(office, deal, by)
+
+
+def _money_on_lost(office: Office, deal: str) -> None:
+    """A lost deal with money marked in: what happens to it is the owner's call with the lawyer, never an agent's. Open expectations end."""
+    from diwan.agents import finance
+    from diwan.graph import OPEN
+    g = office.graph()
+    for t in g.of("task", deal):
+        if t.props["agent"] == "pay" and t.status in OPEN and not finance.paid(t):
+            office.log.append("task.withdrawn", actor="pay", agent="pay", deal=deal, content={"id": t.id, "reason": "The deal was lost"})
+    if (held := finance.paid_in(g, deal)):
+        owner = next((p for p, v in PEOPLE.items() if v.get("role") == "Owner"), None)
+        office.log.append("question.asked", actor="pay", agent="pay", deal=deal, content={"to": owner, "refs": [], "kind": "deposit",
+                          "text": f"This deal was lost with AED {held:,} marked received. Decide with the lawyer what the signed terms say: keep it, return it, or pass it on. Nothing moves until you do."})
 
 
 # ---------- converting: the agreed price, against the listing's ----------
@@ -78,9 +102,10 @@ def agreed(g: Graph, deal: str) -> dict | None:
     return g.settings.get(f"deal:{deal}", {}).get("agreed")
 
 
-def compare(g: Graph, deal: str, amount: int) -> dict:
-    """The agreed price against our listing's: a discount (below) or a premium (above), and whether the owner approves it."""
-    li = agency_forms.our_listing(g, deal)
+def compare(g: Graph, deal: str, amount: int, li=None) -> dict:
+    """The agreed price against our listing's (`li`, or the deal's own): a discount (below) or a premium (above), and
+    whether the owner approves it."""
+    li = li or agency_forms.our_listing(g, deal)
     if not li or not li.props.get("price_aed"):
         return {"listing_aed": None, "amount": amount, "pct": None, "diff": None, "needs_owner": False}
     base = li.props["price_aed"]
@@ -89,13 +114,14 @@ def compare(g: Graph, deal: str, amount: int) -> dict:
             "needs_owner": -pct > desk_rules.rules(g)["discount_approval_pct"]}
 
 
-def _pending(g: Graph, deal: str):
+def pending(g: Graph, deal: str):
     return next((t for t in g.of("task", deal) if t.props.get("step") == "discount" and t.status in ("queued", "open", "working", "waiting")), None)
 
 
-def convert(office: Office, deal: str, by: str, amount) -> dict:
-    """The client said yes: the broker (or the transactions officer, or the owner) enters the agreed price. Within the
-    owner's discount limit the deal converts at once; further below the listing it waits for the owner's approval."""
+def convert(office: Office, deal: str, by: str, amount, prop: dict | None = None) -> dict:
+    """The client said yes: the broker (or the transactions officer, or the owner) enters the agreed price and says which
+    property it is. Within the owner's discount limit the deal converts at once; further below the listing it waits for
+    the owner's approval."""
     g = office.graph()
     d = g.nodes.get(f"deal:{deal}")
     if not d:
@@ -110,8 +136,13 @@ def convert(office: Office, deal: str, by: str, amount) -> dict:
         raise ValueError("Enter the agreed price in dirhams.")
     if agreed(g, deal):
         raise ValueError("The deal is already converted; a new price is recorded as a correction.")
-    if _pending(g, deal):
+    if pending(g, deal):
         raise ValueError("A discount on this deal is waiting for the owner.")
+    if prop:
+        deal_property.save(office, deal, prop, by)
+    elif deal_property.needed(g, deal):
+        raise ValueError("Say which property it is to convert the deal.")
+    g = office.graph()
     c = compare(g, deal, amount)
     if c["needs_owner"]:
         owner = next((p for p, v in PEOPLE.items() if v.get("role") == "Owner"), None)
@@ -157,6 +188,9 @@ def _record(office: Office, deal: str, by: str, amount: int, c: dict, *, approve
     conv = desk_rules.path(office.graph(), deal)["converted_at"]
     if (office.graph().nodes[f"deal:{deal}"].props.get("stage") or "New") != conv:
         move(office, deal, conv, by, "converted" if _is_back(office.graph(), deal, conv) else "")
+    deal_property.reserve(office, deal, by)
+    g = office.graph()
+    office.log.append("case.converted", actor=by, agent="ops", deal=deal, content={"amount": amount, "path": desk_rules.path_of(g, deal), "facts": [f.id for f in g.facts(deal)]})
 
 
 def _is_back(g: Graph, deal: str, stage: str) -> bool:

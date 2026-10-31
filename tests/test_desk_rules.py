@@ -8,6 +8,7 @@ from diwan import app as appmod
 from diwan import demo, desk_rules
 from diwan.events import EventLog
 from diwan.office import Office
+from tests.helpers import clear_deal, sign_form_f
 
 
 @pytest.fixture
@@ -72,6 +73,8 @@ def test_a_new_step_reaches_new_paperwork_and_deals_past_it_keep_theirs(office, 
     r = c.post("/api/desk/rules", json={"by": "layla", "rules": edited(office, paths__ready__steps=steps + [["Keys and access cards handed over", "the seller"]])})
     assert r.status_code == 200 and r.json()["changed_by"] == "Layla"
     assert c.post("/api/desk/rules", json={"by": "omar", "rules": r.json()["rules"]}).status_code == 403
+    clear_deal(office, "marina-1204")
+    sign_form_f(office, sub.props["draft"])
     c.post(f"/api/desk/tasks/{sub.id}/submitted", json={"by": "joseph", "reference": "DLD-1"})
     got = [t.props["action"] for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "transfer"]
     assert got[-1] == "Keys and access cards handed over" and len(got) == len(steps) + 1
@@ -156,11 +159,9 @@ def _to_closing(office):
     desk_rules.set_path(office, "jvc-88", "rent", by="omar")
     desk_rules.set_terms(office, "jvc-88", {"start": "2026-11-01", "end": "2027-10-31"}, by="omar")
     tids = operations.start_paperwork(office, "jvc-88", "joseph")
+    clear_deal(office, "jvc-88")
     for t in tids:
         operations.tick(office, t, "joseph")
-    for t in office.graph().of("task", "jvc-88"):
-        if t.props["agent"] == "screen" and t.status in ("queued", "open"):
-            compliance.record_screening(office, t.id, "priya", "clear", "UN list")
     return {t.props["step"]: t.id for t in office.graph().of("task", "jvc-88") if t.props.get("closing")}
 
 
@@ -179,7 +180,6 @@ def test_the_last_step_starts_closing_and_the_deal_closes_only_when_all_four_are
     assert c.post(f"/api/desk/tasks/{steps['figures']}/confirm", json={"by": "priya"}).status_code == 403
     assert c.post(f"/api/desk/tasks/{steps['figures']}/confirm", json={"by": "omar"}).json()["ok"]
     assert c.post(f"/api/desk/tasks/{steps['docs']}/docs", json={"by": "joseph"}).json()["ok"]
-    finance.draft_invoice(office, "jvc-88", "ahmed")
     send = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
     collect = finance.invoice_sent(office, send.id, "ahmed", "INV-7")
     finance.commission_received(office, collect, "ahmed", "ENBD 1", today=date.today())
@@ -202,10 +202,12 @@ def test_a_price_changed_after_confirmation_must_be_confirmed_again(office):
     steps = _to_closing(office)
     operations.confirm_figures(office, steps["figures"], "omar")
     operations.docs_filed(office, steps["docs"], "joseph")
-    finance.draft_invoice(office, "jvc-88", "ahmed")
     send = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
     finance.commission_received(office, finance.invoice_sent(office, send.id, "ahmed", "INV-8"), "ahmed", "ENBD 2", today=date.today())
     office.record_fact("jvc-88", "deal_term", "We settled at one point eight.", "Sara Malik", amount_aed=1_800_000, replaces="F6")
+    with pytest.raises(ValueError, match="Not yet"):  # the changed price reaches Compliance first: the clearance is stale
+        operations.close(office, "jvc-88", "joseph", today=date.today())
+    clear_deal(office, "jvc-88")
     with pytest.raises(ValueError, match="confirm the final figures again"):
         operations.close(office, "jvc-88", "joseph", today=date.today())
 
@@ -237,7 +239,6 @@ def test_the_split_is_paid_out_before_the_commission_item_is_done(office):
     from diwan.agents import finance, operations
     desk_rules.set_terms(office, "jvc-88", {"other_agency": "Bayut Homes", "other_share_pct": 40}, by="omar")
     steps = _to_closing(office)
-    finance.draft_invoice(office, "jvc-88", "ahmed")
     send = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
     finance.commission_received(office, finance.invoice_sent(office, send.id, "ahmed", "INV-9"), "ahmed", "ENBD 3", today=date.today())
     item = lambda: next(i for i in operations.closing(office.graph(), "jvc-88")["items"] if i["key"] == "invoice")  # noqa: E731
@@ -259,6 +260,8 @@ def test_a_step_that_does_not_apply_is_marked_not_needed_with_the_reason(office)
     demo.correction(office)
     operations.formf_plan(office, "marina-1204", office.add_task("marina-1204", "formf", "Prepare Form F"), "r1")
     sub = next(t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "formf" and t.props.get("draft"))
+    clear_deal(office, "marina-1204")
+    sign_form_f(office, sub.props["draft"])
     operations.submitted(office, sub.id, "joseph", "DLD-2")
     mort = next(t for t in office.graph().of("task", "marina-1204") if t.props["action"].startswith("Buyer's mortgage"))
     with pytest.raises(ValueError, match="why"):
@@ -328,7 +331,11 @@ def test_an_offplan_deal_closes_before_handover_and_the_instalments_keep_running
     tids = _offplan(office)
     g = office.graph()
     assert [g.nodes[t].props.get("after", False) for t in tids] == [False, False, False, True, True]
-    for t in tids[:3]:
+    operations.tick(office, tids[0], "joseph")  # the reservation and the developer's KYC come before Compliance clears
+    with pytest.raises(ValueError, match="waits for Compliance"):
+        operations.tick(office, tids[1], "joseph")
+    clear_deal(office, "marina-1204")
+    for t in tids[1:3]:
         operations.tick(office, t, "joseph")
     assert operations.closing(office.graph(), "marina-1204")  # closing started with the handover still ahead
     assert all(office.graph().nodes[t].status == "queued" for t in tids[3:])
@@ -358,7 +365,6 @@ def test_closing_a_rental_dates_the_renewal_question_and_the_move_out(office, mo
     steps = _to_closing(office)
     operations.confirm_figures(office, steps["figures"], "omar")
     operations.docs_filed(office, steps["docs"], "joseph")
-    finance.draft_invoice(office, "jvc-88", "ahmed")
     send = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
     finance.commission_received(office, finance.invoice_sent(office, send.id, "ahmed", "INV-10"), "ahmed", "ENBD 5", today=date.today())
     operations.close(office, "jvc-88", "joseph", today=date.today())
@@ -379,7 +385,6 @@ def test_a_rental_cannot_close_without_its_tenancy_dates(office):
     desk_rules.set_terms(office, "jvc-88", {"start": "", "end": ""}, by="omar")
     operations.confirm_figures(office, steps["figures"], "omar")
     operations.docs_filed(office, steps["docs"], "joseph")
-    finance.draft_invoice(office, "jvc-88", "ahmed")
     send = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
     finance.commission_received(office, finance.invoice_sent(office, send.id, "ahmed", "INV-11"), "ahmed", "ENBD 6", today=date.today())
     with pytest.raises(ValueError, match="start and end dates"):
@@ -398,7 +403,6 @@ def test_kpis_are_counted_from_the_log_with_the_deals_behind_them(office, monkey
     steps = _to_closing(office)
     operations.confirm_figures(office, steps["figures"], "omar")
     operations.docs_filed(office, steps["docs"], "joseph")
-    finance.draft_invoice(office, "jvc-88", "ahmed")
     send = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "inv")
     finance.commission_received(office, finance.invoice_sent(office, send.id, "ahmed", "INV-12"), "ahmed", "ENBD 7", today=date.today())
     dep = next(t for t in office.graph().of("task", "jvc-88") if t.props["agent"] == "pay")
@@ -490,15 +494,21 @@ def test_form_f_waits_for_the_signatures_and_the_upload_files_them(office, monke
     with pytest.raises(ValueError, match="Form A and Form B wait for a signature"):
         operations.submitted(office, sub.id, "joseph", "DLD-9")
     signs = [t for t in office.graph().of("task", "marina-1204") if t.props.get("step") == "sign"]
-    assert c.post(f"/api/desk/tasks/{signs[0].id}/signed", data={"by": "omar"}, files={"file": ("a.txt", b"hello")}).status_code == 400
-    assert c.post(f"/api/desk/tasks/{signs[0].id}/signed", data={"by": "priya"}, files={"file": ("a.pdf", b"%PDF-1.4 x")}).status_code == 403
+    assert c.post(f"/api/desk/tasks/{signs[0].id}/signed", data={"by": "omar", "checked": "1"}, files={"file": ("a.txt", b"hello")}).status_code == 400
+    assert c.post(f"/api/desk/tasks/{signs[0].id}/signed", data={"by": "priya", "checked": "1"}, files={"file": ("a.pdf", b"%PDF-1.4 x")}).status_code == 403
     for t in signs:
-        assert c.post(f"/api/desk/tasks/{t.id}/signed", data={"by": "omar"}, files={"file": ("signed.pdf", b"%PDF-1.4 signed")}).status_code == 200
+        assert c.post(f"/api/desk/tasks/{t.id}/signed", data={"by": "omar", "checked": "1"}, files={"file": ("signed.pdf", b"%PDF-1.4 signed")}).status_code == 200
     g = office.graph()
     assert [d.props["kind"] for d in g.of("document") if d.deal == "marina-1204" and d.props["kind"].startswith("Form ")] == ["Form A", "Form B"]
     assert (tmp_path / agency_forms.signed_file("marina-1204", "A", signs[0].props["draft"])).read_bytes() == b"%PDF-1.4 signed"
     with pytest.raises(ValueError, match="signed with these terms"):
         desk_rules.set_terms(office, "marina-1204", {"rate_pct": 1}, by="omar")
+    with pytest.raises(ValueError, match="waits for Compliance"):
+        operations.submitted(office, sub.id, "joseph", "DLD-9")
+    clear_deal(office, "marina-1204")
+    with pytest.raises(ValueError, match="Form F isn't signed"):
+        operations.submitted(office, sub.id, "joseph", "DLD-9")
+    sign_form_f(office, sub.props["draft"])
     operations.submitted(office, sub.id, "joseph", "DLD-9")
 
 
@@ -726,31 +736,35 @@ def test_a_sent_back_document_shows_the_client_why_and_can_be_sent_again(office,
                   files={"file": ("p.jpg", _card(seed=3))}).status_code == 200
 
 
-def test_rania_reminds_every_two_days_in_the_daytime_then_the_broker_calls(office, monkeypatch):
+def test_the_ladder_is_a_nudge_a_broker_call_and_the_owner_each_once(office, monkeypatch):
     from datetime import datetime, timedelta, timezone
     from diwan import documents
     sent = []
-    monkeypatch.setattr("diwan.agents.reception._send", lambda office, phone, deal, text, refs, **kw: sent.append((phone, text)))
+    monkeypatch.setattr("diwan.agents.reception._send", lambda office, phone, deal, text, refs, **kw: sent.append((phone, text)) or {"content": {"status": "sent"}})
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://diwan.example")
     monkeypatch.setattr(appmod.S, "office", office)
     c = TestClient(appmod.app)
     _docs(office, c)
+    office.log.append("chat.received", actor="client", deal="jvc-88", content={"chat": "971500000088", "text": "ok", "name": "Sara Malik"})
     office.log.append("docs.requested", actor="ops", deal="jvc-88", content={"token": "tok-sara", "party": "tenant", "name": "Sara Malik",
                                                                            "kinds": ["eid_front"], "phone": "971500000088", "expires": "2099-01-01"})
     dubai = timezone(timedelta(hours=4))
-    start = (datetime.now(dubai) + timedelta(days=1)).replace(hour=10)  # the morning after the links were made
-    assert documents.sweep(office, start) == 0  # just asked
-    assert documents.sweep(office, start.replace(hour=23) + timedelta(days=3)) == 0  # never at night
-    for day in (2, 4, 6):
-        documents.sweep(office, start + timedelta(days=day, minutes=1))
+    assert documents.sweep(office, datetime.now(dubai)) == 0  # just asked
+    desk_rules.save(office, edited(office, docs_ladder_hours=[1, 2, 3]), by="layla")
+    monkeypatch.setattr("diwan.agents.nudge.allowed", lambda s, t: True)
+    documents.sweep(office, datetime.now(dubai) + timedelta(hours=1, minutes=5))
     sara = [t for _, t in sent if "Hi Sara" in t]
-    assert len(sara) == 3 and "https://diwan.example/web/docs.html?t=tok-sara" in sara[0] and "screen" not in sara[0].lower()
-    documents.sweep(office, start + timedelta(days=8, minutes=1))
-    call = [t for t in office.graph().of("task", "jvc-88") if t.props.get("step") == "docs_call"]
-    assert len(call) == 1 and call[0].props["needs_person"] == "omar" and "3 reminders" in call[0].props["action"]
-    karim = [t for t in office.graph().of("task", "marina-1204") if t.props.get("step") == "docs_call"]
-    assert len(karim) == 2 and all("no WhatsApp on file" in t.props["action"] for t in karim)  # the demo deal has no chat: the broker sends it
-
+    assert len(sara) == 1 and "https://diwan.example/web/docs.html?t=tok-sara" in sara[0] and "screen" not in sara[0].lower()
+    documents.sweep(office, datetime.now(dubai) + timedelta(hours=1, minutes=30))
+    assert len([t for _, t in sent if "Hi Sara" in t]) == 1  # each rung once
+    documents.sweep(office, datetime.now(dubai) + timedelta(hours=2, minutes=5))
+    call = [t for t in office.graph().of("task", "jvc-88") if t.props.get("step") == "docs_call" and t.props.get("ladder") == "broker"]
+    assert len(call) == 1 and call[0].props["needs_person"] == "omar"
+    documents.sweep(office, datetime.now(dubai) + timedelta(hours=3, minutes=5))
+    top = [t for t in office.graph().of("task", "jvc-88") if t.props.get("ladder") == "owner"]
+    assert len(top) == 1 and top[0].props["needs_person"] == "layla"
+    karim = [t for t in office.graph().of("task", "marina-1204") if t.props.get("ladder") == "broker"]
+    assert karim and all("no WhatsApp on file" in t.props["action"] or "Call" in t.props["action"] for t in karim)  # the demo deal has no chat: the broker sends it
 
 
 # ---------- tax invoices and receipts as PDFs (spec item 15) ----------
@@ -805,11 +819,12 @@ def test_form_f_is_signed_online_by_everyone_then_filed_and_its_step_ticks(offic
     _convert(office, c)
     c.post("/api/desk/deals/marina-1204/sides", json={"by": "omar", "sides": "both"})
     for f in agency_forms.forms(office.graph(), "marina-1204"):  # A and B signed on paper
-        c.post(f"/api/desk/tasks/{f['task']}/signed", data={"by": "omar"}, files={"file": ("s.pdf", b"%PDF-1.4 signed")})
+        c.post(f"/api/desk/tasks/{f['task']}/signed", data={"by": "omar", "checked": "1"}, files={"file": ("s.pdf", b"%PDF-1.4 signed")})
     operations.formf_plan(office, "marina-1204", office.add_task("marina-1204", "formf", "Prepare Form F"), "r1")
     sub = next(t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "formf" and t.props.get("draft"))
-    operations.submitted(office, sub.id, "joseph", "DLD-1")
     did = sub.props["draft"]
+    assert c.post(f"/api/desk/forms/{did}/links", json={"by": "omar"}).status_code == 400  # Form F binds: Compliance first
+    clear_deal(office, "marina-1204")
     links = c.post(f"/api/desk/forms/{did}/links", json={"by": "omar"}).json()["links"]
     assert [x["signer"] for x in links] == ["buyer", "seller", "broker"]  # no other agency on this deal
     assert c.get(f"/api/desk/forms/{did}.pdf").content.startswith(b"%PDF")
@@ -817,9 +832,10 @@ def test_form_f_is_signed_online_by_everyone_then_filed_and_its_step_ticks(offic
     for x, (who, idn) in zip(links, [("Karim Haddad", "784-1990-1234567-6"), ("Huda Al Mansoori", "P9988776"), ("Omar Saeed", "BRN-1")]):
         r = c.post(f"/api/sign/{x['url'].split('t=')[1]}", data=form | {"full_name": who, "id_no": idn}, files={"image": ("s.png", _png())})
     assert r.json()["complete"]
+    operations.submitted(office, sub.id, "joseph", "DLD-1")
     g = office.graph()
     step = next(t for t in g.of("task", "marina-1204") if t.props.get("agent") == "transfer" and t.props["action"].startswith("Form F signed"))
-    assert step.status == "done" and step.props["reason"] == "Signed online by everyone"
+    assert step.status == "done" and step.props["reason"] == "Signed before it was submitted"
     signed = (tmp_path / f"deal-marina-1204-form-F-{did}-signed.pdf").read_bytes()
     assert b"Huda Al Mansoori" in signed and b"784-1990-1234567-6" in signed
     assert any(d.props["kind"] == "Form F" for d in g.of("document") if d.deal == "marina-1204")

@@ -10,16 +10,16 @@ from datetime import date, timedelta
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from diwan import agency_forms, desk_kpis, desk_rules, desk_stages, documents, invoices, roles, signing
+from diwan import agency_forms, deal_gates, deal_property, desk_kpis, desk_rules, desk_stages, documents, invoices, roles, signing
 from diwan.agents import compliance, finance, operations, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
-from diwan.people import name, pid
+from diwan.people import PEOPLE, name, pid
 
 router = APIRouter()
 PAGE = 50
 DEPTS = {"comp": "Compliance", "fin": "Finance", "ops": "Paperwork", "review": "Review"}
-DRAFT_DEPT = {"cash report": "comp", "Form F": "ops", "commission invoice": "fin"} | {k: "ops" for k in agency_forms.FORM_OF}  # any other (the deck) is Review's
+DRAFT_DEPT = {"cash report": "comp", "suspicious transaction report": "comp", "Form F": "ops", "commission invoice": "fin"} | {k: "ops" for k in agency_forms.FORM_OF}  # any other (the deck) is Review's
 
 
 def _office():
@@ -72,7 +72,9 @@ def deal_view(g: Graph, deal: str, today: date | None = None) -> dict:
               "needs_person": roles.current(g, t), "rests_on": _facts_on(g, t.props.get("rests_on", [])),
               "person": t.props.get("person"), "result": t.props.get("result"), "draft": t.props.get("draft"),
               "waiting_on": t.props.get("waiting_on"), "step": t.props.get("step"), "amount_aed": t.props.get("amount_aed"),
-              "after": operations.is_after(t), "due": t.props.get("due"),
+              "after": operations.is_after(t), "due": t.props.get("due"), "flag": t.props.get("flag"), "portal": t.props.get("portal"), "invoice": t.props.get("invoice"),
+              "portal_kind": (operations.portal_of(t.props["action"]) or [None, None])[1] if t.props["agent"] == "transfer" else None,
+              "days": (today or date.today()).toordinal() - date.fromisoformat(t.at[:10]).toordinal(), "hit": t.props.get("hit"),
               **(finance.expected(g, t, today or date.today()) if t.props["agent"] == "pay" else {})}
              for t in g.of("task", deal)]
     approvals = [{"id": a.id, "approver": a.props["approver"], "approver_name": name(a.props["approver"]), "action": a.props["action"],
@@ -89,6 +91,11 @@ def deal_view(g: Graph, deal: str, today: date | None = None) -> dict:
             "said": [_fact(g, f) for f in g.of("fact", deal)], "cards": cards, "funds": compliance.source_of_funds(g, deal), "tasks": tasks, "approvals": approvals, "drafts": drafts}
 
 
+def _compliance_view(g: Graph, deal: str) -> dict:
+    d = g.nodes[f"deal:{deal}"].props
+    return compliance.state(g, deal) | {"risk": d.get("risk"), "blockers": compliance.blockers(_office(), deal), "sof_needed": compliance.sof_needed(g, deal), "needs_senior": compliance.needs_senior(d.get("risk") or {})}
+
+
 def waiting(g: Graph, deal: str) -> list[str]:
     """The people something on this deal is waiting for."""
     who = [n.props.get("who") for t in ("check", "decision", "question") for n in g.of(t, deal, "open")]
@@ -99,7 +106,12 @@ def waiting(g: Graph, deal: str) -> list[str]:
 # ---------- the whole office: summaries, the work queue, the overview ----------
 
 SEV = {"bad": 0, "warn": 1, "info": 2}
-STAGES = ["New", "Qualifying", "Qualified", "Viewing booked", "Viewed", "Offer", "Form F", "Transfer", "Won", "Lost"]  # the Inbox's
+
+
+
+def stage_order(g: Graph) -> list[str]:
+    """Every stage any deal can be at, in the order deals travel, so none drops out of the overview."""
+    return list(dict.fromkeys(desk_rules.SALES_STAGES + [x for p in desk_rules.rules(g)["paths"].values() for x in p["stages"]] + ["Won", "Lost"]))
 
 
 class Ledger:
@@ -129,19 +141,26 @@ class Ledger:
         screens = [t for t in by["task"] if t.props["agent"] == "screen"]
         flags = {"match": any(t.props.get("result") == "possible match" for t in screens), "cash": bool(self.open_tasks(deal, "report")),
                  "unscreened": any(t.status in OPEN for t in screens),
-                 "checks": any(c.status == "open" and dept(c.props.get("agent")) == "comp" for c in by["check"]), "proof": bool(funds["missing"])}
+                 "checks": any(c.status == "open" and dept(c.props.get("agent")) == "comp" for c in by["check"]), "proof": bool(funds["missing"]),
+                 "uncleared": bool(g.settings.get(f"deal:{deal}", {}).get("agreed")) and not compliance.state(g, deal)["ok"]}
         if any(t.props.get("result") == "possible match" for t in screens):
             comp = ("bad", "Possible match")
         elif self.open_tasks(deal, "report"):
             comp = ("bad", "Cash report to file")
+        elif (st := compliance.state(g, deal))["state"] == "blocked":
+            comp = ("bad", "Blocked")
         elif [t for t in screens if t.status in OPEN]:
             comp = ("bad", "Not screened")
         elif [c for c in by["check"] if c.status == "open" and dept(c.props.get("agent")) == "comp"]:
             comp = ("warn", "Check open")
+        elif st["ok"]:
+            comp = ("ok", "Cleared")
         elif funds["missing"]:
             comp = ("warn", f"{funds['missing']} proof missing")
+        elif st["state"] in ("stale", "needs_info"):
+            comp = ("warn", "Clear again" if st["state"] == "stale" else "Needs information")
         elif screens:
-            comp = ("ok", "Clear")
+            comp = ("warn", "To clear")
         else:
             comp = ("none", "Nothing yet")
         pays = [finance.expected(g, t, self.today) | {"t": t} for t in by["task"] if t.props["agent"] == "pay"]
@@ -226,14 +245,26 @@ class Ledger:
                 elif who and operations.is_closing(t):
                     items.append(base | {"id": t.id, "who": who, "kind": "Closing", "sev": "warn", "title": t.props["action"], "at": t.at,
                                          "act": "confirm" if t.props.get("step") == "figures" else "docs"})
+                elif who and ag == "screen" and t.props.get("result") == "possible match":
+                    items.append(base | {"id": t.id, "who": who, "kind": "Possible match", "sev": "bad", "title": f"{t.props.get('person')}: {t.props.get('hit')}", "at": t.at, "act": "hit"})
                 elif who and ag in ("screen", "report", "formf", "transfer", "inv"):
-                    kind, sev, act = {"screen": ("Screening", "warn", "screen"), "report": ("Cash report", "bad", "filed"),
-                                      "formf": ("Form F", "warn", "submitted"), "transfer": ("Transfer", "info", "tick"),
-                                      "inv": ("Commission", "warn", {"send": "invoiced", "split": "split"}.get(t.props.get("step"), "commission"))}[ag]
+                    kind, sev, act = {"screen": ("Screening", "warn", "screen"), "report": ("Report to file", "bad", "filed"),
+                                      "formf": ("Form F", "warn", "submitted"), "transfer": ("Transfer", "info", "open" if t.props.get("flag") == "gate" else "tick"),
+                                      "inv": ("Commission", "warn", {"send": "invoiced", "split": "split", "payout": "split"}.get(t.props.get("step"), "commission"))}[ag]
                     if ag == "formf" and not t.props.get("draft"):
                         continue
                     items.append(base | {"id": t.id, "who": who, "kind": kind, "sev": sev, "title": t.props["action"], "at": t.at, "act": act,
                                          "waiting_on": t.props.get("waiting_on")})
+            if s["flags"]["uncleared"]:
+                st = compliance.state(self.g, deal)
+                items.append(base | {"id": f"{deal}:clear", "who": roles.holder(self.g, "compliance"), "kind": "Clearance", "sev": "bad" if st["state"] == "blocked" else "warn", "at": s["changed"], "act": "open",
+                                     "title": st["reason"] if st["state"] != "not cleared" else "Converted: clear this deal so its paperwork can go on"})
+            risk = self.g.nodes[f"deal:{deal}"].props.get("risk") or {}
+            owner = next((p for p, v in PEOPLE.items() if v.get("role") == "Owner"), None)
+            if compliance.needs_senior(risk) and not risk.get("senior"):
+                items.append(base | {"id": f"{deal}:senior", "who": owner, "kind": "Sign-off", "sev": "warn", "at": s["changed"], "act": "open", "title": "A high-risk deal needs your sign-off"})
+            if deal_gates.applies(self.g, deal) and (gv := deal_gates.view(self.g, deal))["can_approve"]:
+                items.append(base | {"id": f"{deal}:gate", "who": owner, "kind": "Transfer", "sev": "warn", "at": s["changed"], "act": "open", "title": "Every gate has passed: approve the transfer"})
             missing = [p["kind"] for p in compliance.source_of_funds(self.g, deal, by)["proof"] if not p["have"] and p["kind"] != "source of funds"]
             if missing:  # one row per deal, however many proofs: she marks each one in the deal
                 items.append(base | {"id": f"{deal}:proof", "who": roles.holder(self.g, "compliance"), "kind": "Proof", "sev": "info", "at": s["changed"], "act": "open",
@@ -265,11 +296,11 @@ class Ledger:
                 "money": {"next7": sum(e["amount"] or 0 for e in nxt), "next7_n": len(nxt), "overdue": sum(e["amount"] or 0 for e in late),
                           "overdue_n": len({s["deal"] for s in sums if s["money"][0] == "bad"}),
                           "days": [{"day": d, "aed": by_day.get(d, 0) + (early if i == 0 else 0)} for i, d in enumerate(days)]},
-                "comp": {k: sum(s["flags"][k] for s in sums) for k in ("unscreened", "proof", "cash", "checks", "match")},
+                "comp": {k: sum(s["flags"][k] for s in sums) for k in ("unscreened", "proof", "cash", "checks", "match", "uncleared")},
                 "paper": {"submit": sum(s["paper"][1] == "Form F to submit" for s in sums), "sentback": sum(s["paper"][1] == "Form F sent back" for s in sums),
                           "transfer": sum(s["paper"][1].startswith("Transfer ") and s["paper"][1] != "Transfer done" for s in sums)},
                 "stages": [{"stage": st, "deals": sum(s["stage"] == st for s in sums), "waiting": sum(s["stage"] == st and bool(s["waiting"]) for s in sums),
-                            "value": sum(s["value"] or 0 for s in sums if s["stage"] == st)} for st in STAGES if any(s["stage"] == st for s in sums)],
+                            "value": sum(s["value"] or 0 for s in sums if s["stage"] == st)} for st in stage_order(self.g) if any(s["stage"] == st for s in sums)],
                 "after": {"closing": sum(s["phase"] == "closing" for s in sums), "closed30": sum(1 for s in sums if s["phase"] == "closed"),
                           "commission30": sum(n.props.get("commission_aed") or 0 for n in self.g.of("sale") if n.props.get("deal")),
                           "left": {k: sum(1 for s in sums if s["phase"] == "closing" and any(i["key"] == k and not i["done"] for i in operations.closing(self.g, s["deal"])["items"]))
@@ -294,13 +325,13 @@ def _k(n: float) -> str:
     return f"{n / 1e6:.2f}".rstrip("0").rstrip(".") + "M" if n >= 1e6 else f"{round(n / 1000)}k" if n else "0"
 
 
-FILTERS = {"closing": lambda s: s["phase"] == "closing", "closed": lambda s: s["phase"] == "closed", "waiting": lambda s: s["waiting"], "overdue": lambda s: s["money"][0] == "bad", "expected": lambda s: s["money"][0] == "warn",
+FILTERS = {"uncleared": lambda s: s["flags"]["uncleared"], "closing": lambda s: s["phase"] == "closing", "closed": lambda s: s["phase"] == "closed", "waiting": lambda s: s["waiting"], "overdue": lambda s: s["money"][0] == "bad", "expected": lambda s: s["money"][0] == "warn",
            "unscreened": lambda s: s["flags"]["unscreened"], "proof": lambda s: s["flags"]["proof"], "cash": lambda s: s["flags"]["cash"],
            "checks": lambda s: s["flags"]["checks"], "match": lambda s: s["flags"]["match"],
            "submit": lambda s: s["paper"][1] == "Form F to submit", "sentback": lambda s: s["paper"][1] == "Form F sent back",
            "transfer": lambda s: s["paper"][1].startswith("Transfer ") and s["paper"][1] != "Transfer done", "corrected": lambda s: s["corrected"]}
 SORTS = {"changed": lambda s: s["changed"], "value": lambda s: s["value"] or 0, "customer": lambda s: (s["customer"] or "").lower(),
-         "stage": lambda s: STAGES.index(s["stage"]) if s["stage"] in STAGES else -1, "waiting": lambda s: len(s["waiting"])}
+         "stage": lambda s: s["stage"], "waiting": lambda s: len(s["waiting"])}
 
 
 # ---------- HTTP ----------
@@ -321,7 +352,8 @@ def deals(q: str = "", needs: bool = False, filter: str = "", person: str = "", 
                 or (stage and s["stage"] != stage):
             continue
         rows.append(s | {"waiting_names": [name(w) for w in s["waiting"]]})
-    rows.sort(key=SORTS.get(sort, SORTS["changed"]), reverse=desc)
+    order = stage_order(led.g)
+    rows.sort(key=(lambda s: order.index(s["stage"]) if s["stage"] in order else -1) if sort == "stage" else SORTS.get(sort, SORTS["changed"]), reverse=desc)
     page = max(1, page)
     return {"total": len(rows), "all": len(led.g.deals()), "page": page, "pages": max(1, -(-len(rows) // PAGE)),
             "rows": rows[(page - 1) * PAGE: page * PAGE]}
@@ -354,7 +386,8 @@ def deal(deal: str, request: Request):
                                      "terms": desk_rules.terms(g, deal), "developers": [x["name"] for x in desk_rules.rules(g)["developers"]],
                                      "schedule": dict(zip(("kind", "payee", "document"), finance.SCHEDULE[p["id"]])) if p["id"] in finance.SCHEDULE else None,
                                      "stages": desk_stages.view(g, deal), "agency": _agency_view(g, deal, _base(request)),
-                                     "documents": _docs_view(g, deal, _base(request))}
+                                     "documents": _docs_view(g, deal, _base(request)), "compliance": _compliance_view(g, deal), "gates": deal_gates.view(g, deal),
+                                     "party_types": desk_rules.PARTY_TYPES, "doc_kinds": documents.KINDS}
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
 
@@ -392,6 +425,8 @@ def answer(card: str, body: Answer):
             return {"ok": True}
         if c["can"] == "reviewed" and body.choice == "Reviewed":
             o.log.append("decision.made", actor=pid(body.by), deal=n.deal, content={"card": card, "answer": "Reviewed", "note": body.note})
+            if n.props.get("payment"):  # a held payment: looked at, so its receipt goes
+                finance.release_held(o, n, pid(body.by), date.today())
             return {"ok": True}
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
@@ -453,8 +488,11 @@ class Proof(BaseModel):
 
 
 @router.post("/api/desk/deals/{deal}/proof")
-def proof(deal: str, body: Proof):
-    """The compliance officer has the proof in hand: it is filed with Records against the deal, so it counts as received."""
+async def proof(deal: str, by: str = Form(...), kind: str = Form(...), title: str = Form(""), file: UploadFile = File(...)):
+    """The compliance officer has the proof in hand: the file is kept and filed with Records against the deal."""
+    from diwan.providers import meta
+    data = await file.read()
+    body = Proof(by=by, kind=kind, title=title)
     o = _office()
     g = o.graph()
     if f"deal:{deal}" not in g.nodes:
@@ -468,26 +506,52 @@ def proof(deal: str, body: Proof):
         raise HTTPException(400, f"{body.kind!r} is not asked for on this deal.")
     if need["have"]:
         raise HTTPException(409, f"Already received: {need['have']} {need['have_title']}.")
+    if not data or not (data.startswith(b"%PDF") or data.startswith(b"\xff\xd8\xff") or data.startswith(b"\x89PNG")):
+        raise HTTPException(400, "Attach the proof as a PDF or a photo.")
+    meta.MEDIA.mkdir(parents=True, exist_ok=True)
+    path = meta.MEDIA / f"doc-proof-{deal}-{body.kind.replace(' ', '-')}{'.pdf' if data.startswith(b'%PDF') else '.jpg'}"
+    path.write_bytes(data)
     customer = g.nodes[f"deal:{deal}"].props["customer"]
     return {"document": o.file_document(kind=body.kind, title=body.title.strip() or need["text"], date=date.today().isoformat(),
-                                        by=pid(body.by), deal=deal, party=customer)}
+                                        by=pid(body.by), deal=deal, party=customer, text=f"/media/{path.name}")}
 
 
 class Received(BaseModel):
     by: str
     reference: str = ""
+    amount: float | str | None = None
+    method: str = "transfer"
+    on: str = ""
+    payer: str = ""
+    proof_amount: float | str | None = None
+    confirm: bool = False
 
 
 @router.post("/api/desk/tasks/{tid}/received")
 def received(tid: str, body: Received):
     try:
-        return {"document": finance.mark_received(_office(), tid, pid(body.by), body.reference, today=date.today())}
+        return finance.mark_received(_office(), tid, pid(body.by), body.reference, today=date.today(), amount=body.amount, method=body.method, on=body.on,
+                                     payer=body.payer, proof_amount=body.proof_amount, confirm=body.confirm)
     except PermissionError as e:
         raise HTTPException(403, str(e)) from None
     except KeyError:
         raise HTTPException(404, f"There is no payment {tid}.") from None
+    except finance.ProofMismatch as e:
+        raise HTTPException(409, str(e)) from None
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
+
+
+class Undo(BaseModel):
+    by: str
+    payment: str
+    why: str = ""
+
+
+@router.post("/api/desk/tasks/{tid}/undo")
+def undo_received(tid: str, body: Undo):
+    _call(finance.undo_received, _office(), tid, pid(body.by), body.payment, body.why)
+    return {"ok": True}
 
 
 @router.post("/api/desk/tasks/{tid}/release")
@@ -613,7 +677,18 @@ def invoiced(tid: str, body: InvoiceIn):
 
 @router.post("/api/desk/tasks/{tid}/commission")
 def commission_in(tid: str, body: Received):
-    return {"document": _call(finance.commission_received, _office(), tid, pid(body.by), body.reference, today=date.today())}
+    return {"document": _call(finance.commission_received, _office(), tid, pid(body.by), body.reference, today=date.today(), amount=body.amount)}
+
+
+class Why(BaseModel):
+    by: str
+    why: str = ""
+
+
+@router.post("/api/desk/tasks/{tid}/writeoff")
+def write_off(tid: str, body: Why):
+    _call(finance.write_off, _office(), tid, pid(body.by) or body.by, body.why)
+    return {"ok": True}
 
 
 # ---------- a rental or off-plan deal's path and paperwork ----------
@@ -720,7 +795,7 @@ def _base(request: Request | None = None) -> str:
 
 def _links(g: Graph, deal: str, did: str, base: str) -> list[dict]:
     return [{"signer": x["signer"], "name": x["name"], "status": signing.status(g, x, date.today()), "expires": x["expires"],
-             "signed_at": x["signed"]["at"] if x["signed"] else None, "url": f"{base}/web/sign.html?t={x['token']}"}
+             "signed_at": x["signed"]["at"] if x["signed"] else None, "opened": x.get("opened"), "url": f"{base}/web/sign.html?t={x['token']}"}
             for x in signing.links(_office().log.list(deal=deal), did)]
 
 
@@ -767,20 +842,55 @@ def form_pdf(did: str):
 
 
 @router.post("/api/desk/tasks/{tid}/signed")
-async def form_signed(tid: str, by: str = Form(...), file: UploadFile = File(...)):
+async def form_signed(tid: str, by: str = Form(...), checked: str = Form(""), file: UploadFile = File(...)):
     from diwan.providers import meta
+    if checked not in ("1", "true", "on", "yes"):
+        raise HTTPException(400, "Tick that you checked every signature line on it.")
     data = await file.read()
     return {"document": _call(agency_forms.signed, _office(), tid, pid(by) or by, data, file.filename or "", media=meta.MEDIA, today=date.today())}
+
+
+@router.post("/api/desk/forms/{did}/signed")
+async def formf_paper(did: str, by: str = Form(...), checked: str = Form(""), file: UploadFile = File(...)):
+    from diwan.providers import meta
+    if checked not in ("1", "true", "on", "yes"):
+        raise HTTPException(400, "Tick that you checked every signature line on it.")
+    data = await file.read()
+    return {"document": _call(agency_forms.formf_signed_copy, _office(), did, pid(by) or by, data, media=meta.MEDIA, today=date.today(), missing="form")}
 
 
 class ConvertIn(BaseModel):
     by: str
     amount: float | str = ""
+    property: dict | None = None
 
 
 @router.post("/api/desk/deals/{deal}/convert")
 def convert(deal: str, body: ConvertIn):
-    return _call(desk_stages.convert, _office(), deal, pid(body.by) or body.by, body.amount, missing="deal")
+    return _call(desk_stages.convert, _office(), deal, pid(body.by) or body.by, body.amount, body.property, missing="deal")
+
+
+class PropertyIn(BaseModel):
+    by: str
+    property: dict
+
+
+@router.post("/api/desk/deals/{deal}/property")
+def set_property(deal: str, body: PropertyIn):
+    return _call(deal_property.save, _office(), deal, body.property, pid(body.by) or body.by, missing="deal")
+
+
+@router.get("/api/desk/deals/{deal}/listings")
+def deal_listings(deal: str, q: str = ""):
+    g = _office().graph()
+    if f"deal:{deal}" not in g.nodes:
+        raise HTTPException(404, f"There is no deal {deal!r}.")
+    return deal_property.search(g, deal, q)
+
+
+@router.get("/api/desk/agencies")
+def known_agencies():
+    return deal_property.agencies(_office().graph())
 
 
 class DiscountIn(BaseModel):
@@ -812,12 +922,24 @@ def sign_page(token: str):
 
 @router.post("/api/sign/{token}")
 async def sign(token: str, request: Request, full_name: str = Form(""), id_no: str = Form(""), consent: str = Form(""),
-               image: UploadFile = File(...)):
+               drawn: str = Form(""), strokes: int = Form(0), image: UploadFile = File(...)):
     from diwan.providers import meta
     data = await image.read()
     return _call(signing.sign, _office(), token, full_name=full_name, id_no=id_no, consent=consent in ("1", "true", "on", "yes"), image=data,
                  ip=request.client.host if request.client else "", device=request.headers.get("user-agent", ""), media=meta.MEDIA,
-                 today=date.today(), missing="link")
+                 today=date.today(), drawn=drawn == "1", strokes=strokes, missing="link")
+
+
+@router.post("/api/desk/links/{token}/renew")
+def renew_link(token: str, body: Run):
+    _call(signing.renew, _office(), token, pid(body.by) or body.by, missing="link", today=date.today())
+    return {"ok": True}
+
+
+@router.post("/api/desk/docs/{token}/renew")
+def renew_docs(token: str, body: Run):
+    _call(documents.renew, _office(), token, pid(body.by) or body.by, missing="link", today=date.today())
+    return {"ok": True}
 
 
 
@@ -826,8 +948,8 @@ async def sign(token: str, request: Request, full_name: str = Form(""), id_no: s
 def _docs_view(g: Graph, deal: str, base: str) -> dict:
     evs = _office().log.list(deal=deal)
     checks = {(t.props.get("token"), t.props.get("kind")): t.id for t in g.of("task", deal) if t.props.get("step") == "doc" and t.status in OPEN}
-    reqs = [{"party": r["party"], "name": r["name"], "url": f"{base}/web/docs.html?t={r['token']}", "expires": r["expires"],
-             "reminders": len(r["reminders"]), "phone": bool(r.get("phone")),
+    reqs = [{"party": r["party"], "name": r["name"], "url": f"{base}/web/docs.html?t={r['token']}", "expires": r["expires"], "token": r["token"], "opened": r.get("opened"),
+             "reminders": len(r["reminders"]), "phone": bool(r.get("phone")), "expired": r["expires"] < date.today().isoformat(),
              "docs": [{"kind": k, "label": documents.KINDS[k], "status": "confirmed" if k in r["confirmed"] else "to check" if k in r["got"] else "needed",
                        "fields": r["got"][k]["fields"] if k in r["got"] else None, "flags": r["got"][k]["flags"] if k in r["got"] else [],
                        "file": f"/media/{r['got'][k]['file']}" if k in r["got"] else None, "check": checks.get((r["token"], k)),
@@ -888,3 +1010,120 @@ def invoice_pdf(tid: str):
 @router.get("/api/desk/receipts/{tid}.pdf")
 def receipt_pdf(tid: str):
     return _pdf(_call(invoices.receipt_pdf, _office().graph(), tid, missing="receipt"), f"RCT-{tid}.pdf")
+
+
+# ---------- the four rooms: what each department works from ----------
+
+class Note(BaseModel):
+    by: str
+    note: str = ""
+
+
+@router.post("/api/desk/tasks/{tid}/hit")
+def resolve_hit(tid: str, body: DocCheck):
+    _call(compliance.resolve_hit, _office(), tid, pid(body.by) or body.by, not body.ok, body.note)
+    return {"ok": True}
+
+
+class Rate(BaseModel):
+    by: str
+    risk: str
+    pep: bool = False
+    note: str = ""
+
+
+@router.post("/api/desk/deals/{deal}/compliance/rate")
+def rate(deal: str, body: Rate):
+    _call(compliance.rate, _office(), deal, pid(body.by) or body.by, body.risk, pep=body.pep, note=body.note, missing="deal")
+    return {"ok": True}
+
+
+@router.post("/api/desk/deals/{deal}/compliance/signoff")
+def sign_off(deal: str, body: Run):
+    _call(compliance.sign_off, _office(), deal, pid(body.by) or body.by, missing="deal")
+    return {"ok": True}
+
+
+@router.post("/api/desk/deals/{deal}/compliance/clear")
+def clear(deal: str, body: Note):
+    _call(compliance.clear, _office(), deal, pid(body.by) or body.by, body.note, missing="deal")
+    return {"ok": True}
+
+
+class NeedsInfo(BaseModel):
+    by: str
+    kinds: list[str] = []
+    note: str = ""
+
+
+@router.post("/api/desk/deals/{deal}/compliance/needs-info")
+def needs_info(deal: str, body: NeedsInfo):
+    return {"token": _call(compliance.needs_info, _office(), deal, pid(body.by) or body.by, body.kinds, body.note, missing="deal")}
+
+
+@router.post("/api/desk/deals/{deal}/compliance/block")
+def block(deal: str, body: Note):
+    _call(compliance.block, _office(), deal, pid(body.by) or body.by, body.note, missing="deal")
+    return {"ok": True}
+
+
+@router.post("/api/desk/deals/{deal}/compliance/str")
+def draft_str(deal: str, body: Note):
+    return {"draft": _call(compliance.draft_str, _office(), deal, pid(body.by) or body.by, body.note, missing="deal")}
+
+
+@router.post("/api/desk/deals/{deal}/transfer/approve")
+def approve_transfer(deal: str, body: Run):
+    return {"approval": _call(deal_gates.approve, _office(), deal, pid(body.by) or body.by, missing="deal")}
+
+
+class Book(BaseModel):
+    by: str
+    when: str = ""
+    place: str = ""
+
+
+@router.post("/api/desk/tasks/{tid}/book")
+def book(tid: str, body: Book):
+    _call(operations.book_transfer, _office(), tid, pid(body.by) or body.by, body.when, body.place, today=date.today())
+    return {"ok": True}
+
+
+@router.post("/api/desk/tasks/{tid}/portal")
+def portal_draft(tid: str, body: Run):
+    return {"fields": _call(operations.portal_draft, _office(), tid, pid(body.by) or body.by)}
+
+
+@router.post("/api/desk/tasks/{tid}/portal/submitted")
+def portal_submitted(tid: str, body: Submitted):
+    _call(operations.portal_submitted, _office(), tid, pid(body.by) or body.by, body.reference)
+    return {"ok": True}
+
+
+@router.get("/api/desk/rooms/compliance")
+def room_compliance():
+    return compliance.room(_office().graph(), date.today())
+
+
+@router.get("/api/desk/rooms/finance")
+def room_finance():
+    return finance.room(_office().graph(), date.today())
+
+
+@router.get("/api/desk/rooms/operations")
+def room_operations():
+    return operations.room(_office().graph(), date.today())
+
+
+@router.get("/api/desk/board")
+def board():
+    """Every open deal by stage, in the order deals travel."""
+    led = Ledger(_office().graph(), date.today())
+    g, cols = led.g, {}
+    for d in g.deals():
+        s = led.summary(d.deal)
+        if s["phase"] != "closed":
+            cols.setdefault(s["stage"], []).append({k: s[k] for k in ("deal", "customer", "property", "value", "comp", "money")} | {"waiting": [name(w) for w in s["waiting"]]})
+    order = desk_rules.SALES_STAGES + [x for p in desk_rules.rules(g)["paths"].values() for x in p["stages"]] + ["Lost"]
+    seen = list(dict.fromkeys(x for x in order if x in cols)) + [x for x in cols if x not in order]
+    return [{"stage": k, "deals": cols[k]} for k in seen]

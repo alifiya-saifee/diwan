@@ -80,6 +80,9 @@ def receipt_pdf(g: Graph, tid: str) -> bytes:
     else:
         what, amount = t.props["action"].replace("Expect ", ""), t.props.get("amount_aed") or finance.expected(g, t, date.today()).get("amount_aed")
         who = d["customer"]
+        if pays := [p for p in t.props.get("payments", []) if not p.get("held")]:  # what was really seen: the real payer, not the deal's customer
+            amount, who = sum(p["amount"] for p in pays), pays[-1].get("payer") or who
+            ref = ", ".join(p["reference"] for p in pays)
     blocks = [("title", "Receipt"), ("field", f"Receipt number|RCT-{t.id}"), ("field", f"Date|{date.today().isoformat()}"), ("h", "Received by"), *_agency(g),
               ("h", "Received from"), ("field", f"Name|{who}"), ("h", "For"), ("field", f"Description|{what}"), ("field", f"Property|{d['property']}"),
               ("field", f"Amount|AED {amount:,.2f}" if amount else "Amount|as on the reference"), ("field", f"Reference|{ref or '—'}"),

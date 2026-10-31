@@ -6,6 +6,7 @@ from diwan import app as appmod
 from diwan import demo
 from diwan.events import EventLog
 from diwan.office import Office
+from tests.helpers import clear_deal, sign_form_f
 
 
 @pytest.fixture
@@ -108,11 +109,13 @@ def test_source_of_funds_lays_out_the_numbers_and_the_missing_proof(client):
     assert [n["what"] for n in f["numbers"]] == ["Price", "Deposit", "Paid by", "Stated income", "Price in years of stated income"]
     assert f["numbers"][2]["value"] == "Karim Haddad" and f["numbers"][4]["value"] == "4.8"
     assert [p["kind"] for p in f["proof"]] == ["bank statement", "salary certificate", "balance funding"] and f["missing"] == 3
-    assert client.post("/api/desk/deals/marina-1204/proof", json={"by": "omar", "kind": "bank statement"}).status_code == 403
-    doc = client.post("/api/desk/deals/marina-1204/proof", json={"by": "priya", "kind": "bank statement"}).json()["document"]
+    pdf = {"file": ("s.pdf", b"%PDF-1.4 statement")}
+    assert client.post("/api/desk/deals/marina-1204/proof", data={"by": "omar", "kind": "bank statement"}, files=pdf).status_code == 403
+    assert client.post("/api/desk/deals/marina-1204/proof", data={"by": "priya", "kind": "bank statement"}, files={"file": ("s.txt", b"")}).status_code == 400  # a file is required
+    doc = client.post("/api/desk/deals/marina-1204/proof", data={"by": "priya", "kind": "bank statement"}, files=pdf).json()["document"]
     f = client.get("/api/desk/deals/marina-1204").json()["funds"]
     assert f["proof"][0]["have"] == doc and f["missing"] == 2
-    assert client.post("/api/desk/deals/marina-1204/proof", json={"by": "priya", "kind": "bank statement"}).status_code == 409
+    assert client.post("/api/desk/deals/marina-1204/proof", data={"by": "priya", "kind": "bank statement"}, files=pdf).status_code == 409
 
 
 def test_cash_at_the_threshold_drafts_a_report_for_priya_and_a_correction_sends_it_back(office):
@@ -167,6 +170,7 @@ def test_a_release_approved_before_a_correction_is_refused_after_it(office):
     from datetime import date
     from diwan.agents import finance
     finance.mark_received(office, "T3", "ahmed", "ENBD 4471", today=date.today())
+    clear_deal(office, "marina-1204")
     aid = finance.approve_release(office, "T3", "ahmed")
     import pytest as _p
     with _p.raises(ValueError):
@@ -199,13 +203,15 @@ def test_form_f_plan_is_sent_back_by_a_correction_and_remade_from_the_live_words
     sub2 = next(t for t in g.of("task", "marina-1204") if t.props.get("draft") == new.id)
     assert c.post(f"/api/desk/tasks/{sub2.id}/submitted", json={"by": "omar", "reference": "X"}).status_code == 403
     assert c.post(f"/api/desk/tasks/{sub2.id}/submitted", json={"by": "joseph"}).status_code == 400
+    clear_deal(office, "marina-1204")
+    sign_form_f(office, new.id)
     assert c.post(f"/api/desk/tasks/{sub2.id}/submitted", json={"by": "joseph", "reference": "DLD-88123"}).json()["ok"]
     assert not [r for r in office.graph().of("request", "marina-1204", "open") if r.props.get("kind") == "submit"]
     steps = [t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "transfer"]
-    assert [t.props["action"] for t in steps] == [s for s, _ in desk_rules.DEFAULTS["paths"]["ready"]["steps"]] and all(t.props["needs_person"] == "joseph" for t in steps)
-    assert c.post(f"/api/desk/tasks/{steps[0].id}/tick", json={"by": "omar"}).status_code == 403
-    assert c.post(f"/api/desk/tasks/{steps[0].id}/tick", json={"by": "joseph"}).json()["ok"]
-    assert office.graph().nodes[steps[0].id].status == "done"
+    assert [t.props["action"] for t in steps] == [s[0] for s in desk_rules.DEFAULTS["paths"]["ready"]["steps"]] and all(t.props["needs_person"] == "joseph" for t in steps)
+    assert office.graph().nodes[steps[0].id].status == "done"  # Form F was signed before it was submitted
+    assert c.post(f"/api/desk/tasks/{steps[1].id}/tick", json={"by": "omar"}).status_code == 403
+    assert c.post(f"/api/desk/tasks/{steps[1].id}/tick", json={"by": "joseph"}).json()["ok"]
 
 
 def test_a_draft_using_replaced_words_is_sent_back_the_moment_it_is_made(office):

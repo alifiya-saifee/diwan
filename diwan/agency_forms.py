@@ -35,7 +35,9 @@ def _deal(g: Graph, deal: str):
 
 
 def our_listing(g: Graph, deal: str):
-    """The office's listing this deal is about, if it is one of ours."""
+    """The office's listing this deal is about, if it is one of ours: the one the broker picked, else the deal's name."""
+    if chosen := g.settings.get(f"deal:{deal}", {}).get("property"):
+        return g.nodes.get(f"listing:{chosen['ref']}") if chosen.get("ref") else None
     prop = (_deal(g, deal).props.get("property") or "").lower()
     return next((n for n in g.of("listing") if n.label and n.label.lower() in prop), None)
 
@@ -128,6 +130,25 @@ def terms_changed(office: Office, deal: str, by: str, keys: list[str]) -> None:
                 office.log.append("task.withdrawn", actor=by, agent="ops", deal=deal, content={"id": f["task"], "reason": "The terms on the form changed"})
     if converted(office.graph(), deal):
         make_forms(office, deal)
+    from diwan.agents import operations
+    operations.recall_sent(office, deal)
+
+
+def property_changed(office: Office, deal: str, by: str, *, forms: bool) -> None:
+    """The deal moved to another property: an unsigned Form F plan goes back and is made again, and so do the agency forms
+    unless changed terms have already redrafted them."""
+    from diwan.agents import operations
+    if forms:
+        terms_changed(office, deal, by, ["property"])
+    g = office.graph()
+    for d in g.of("draft", deal):
+        if d.props["kind"] == "Form F" and d.status != "sent_back":
+            office.log.append("review.returned", actor="factcheck", agent="factcheck", deal=deal, content={"draft": d.id, "reason": "The deal's property changed; a new plan is made."})
+            for t in g.of("task", deal):
+                if t.props.get("agent") == "formf" and t.props.get("draft") == d.id and t.status in OPEN:
+                    office.log.append("task.withdrawn", actor=by, agent="ops", deal=deal, content={"id": t.id, "reason": "The property on the plan changed"})
+            operations.make_plan(office, deal)
+    operations.recall_sent(office, deal)
 
 
 def make_forms(office: Office, deal: str) -> list[str]:
@@ -259,8 +280,33 @@ def render(g: Graph, did: str, signatures: list[dict] | None = None) -> bytes:
     return pdf.render(blocks)
 
 
+def formf_signed_copy(office: Office, did: str, by: str, data: bytes, *, media, today: date) -> str:
+    """Form F signed on paper instead of online: the same gate, and a person says they checked every signature."""
+    from diwan.agents import compliance, operations
+    g = office.graph()
+    d = g.nodes.get(did)
+    if not d or d.type != "draft" or d.props.get("kind") != "Form F":
+        raise KeyError(did)
+    deal = _deal(g, d.deal).props
+    if by != deal.get("broker") and by != roles.holder(g, "transactions") and PEOPLE.get(by, {}).get("role") != "Owner":
+        raise PermissionError(f"Only {name(deal.get('broker'))}, the transactions officer or the owner uploads a signed form.")
+    if d.status == "sent_back":
+        raise ValueError(f"{did} was sent back; use the new version.")
+    compliance.require(g, d.deal, "Form F's signatures")
+    if not data.startswith(b"%PDF"):
+        raise ValueError("Upload the signed copy as a PDF.")
+    media.mkdir(parents=True, exist_ok=True)
+    path = media / f"deal-{d.deal}-form-F-{did}-signed.pdf"
+    path.write_bytes(data)
+    doc = office.file_document(kind="Form F", title=f"Form F ({did}) signed on paper, checked by {name(by)}", date=today.isoformat(), by=by, deal=d.deal,
+                               party=deal.get("customer"), text=f"/media/{path.name}")
+    operations.form_f_done(office, d.deal)
+    return doc
+
+
 def signed(office: Office, tid: str, by: str, data: bytes, filename: str, *, media, today: date) -> str:
-    """The broker uploads the signed copy; Records files it against the deal and the form's terms are fixed."""
+    """The broker uploads the signed copy and says they checked every signature line (a PDF can't show that by itself);
+    Records files it against the deal and the form's terms are fixed."""
     g = office.graph()
     t = g.nodes.get(tid)
     if not t or t.type != "task" or t.props.get("step") != "sign":

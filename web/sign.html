@@ -8,6 +8,7 @@
   :root { --bg: #f6f5f1; --panel: #fff; --ink: #1d2228; --muted: #5d6670; --line: #dcd9d0; --accent: #9a6b12; --ok: #1f7a5a; --bad: #b3261e; color-scheme: light; }
   @media (prefers-color-scheme: dark) { :root { --bg: #15181c; --panel: #1d2127; --ink: #e9e6df; --muted: #9aa3ad; --line: #30363e; --accent: #e0b45c; --ok: #5fcf9f; --bad: #f28b82; color-scheme: dark; } }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
   main { max-width: 640px; margin: 0 auto; padding: 24px 16px 60px; display: grid; gap: 18px; }
   .who { font-size: 13px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
@@ -22,6 +23,8 @@
   .check { display: flex; gap: 10px; align-items: flex-start; }
   button { font: 600 16px system-ui, sans-serif; width: 100%; padding: 13px; border-radius: 12px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
   button:disabled { opacity: .6; cursor: default; }
+  #pad { width: 100%; height: 170px; display: block; background: #fff; border: 1px solid var(--line); border-radius: 10px; touch-action: none; cursor: crosshair; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 8px; } .tabs button { width: auto; padding: 7px 12px; font-size: 14px; background: transparent; color: var(--accent); border: 1px solid var(--line); } .tabs button.on { background: var(--accent); color: #fff; }
   #preview { max-width: 100%; max-height: 120px; display: none; margin-top: 6px; background: #fff; border-radius: 8px; }
   .msg { padding: 12px 14px; border-radius: 12px; font-size: 15px; }
   .msg.bad { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
@@ -53,18 +56,35 @@ async function load() {
     <section aria-label="Sign">
       <label>Your full name<input type="text" id="name" autocomplete="name" value="${esc(f.signer.startsWith("the ") ? "" : f.signer)}"></label>
       <label>Your Emirates ID or passport number<input type="text" id="id" autocomplete="off"></label>
-      <label>A photo of your signature (PNG or JPEG)<input type="file" id="img" accept="image/png,image/jpeg"><img id="preview" alt="Your signature"></label>
+      <div class="tabs" role="tablist"><button type="button" id="tabdraw" class="on">Sign here</button><button type="button" id="tabphoto">Use a photo</button></div>
+      <div id="drawbox"><canvas id="pad" aria-label="Sign here with your finger or mouse"></canvas><button type="button" id="again" style="width:auto;padding:6px 12px;margin:6px 0 12px;font-size:13px;background:transparent;color:var(--accent);border:1px solid var(--line)">Clear</button></div>
+      <label id="photobox" hidden>A photo of your signature on white paper<input type="file" id="img" accept="image/png,image/jpeg"><img id="preview" alt="Your signature"></label>
       <label class="check"><input type="checkbox" id="consent"><span>I have read this form and I agree to sign it electronically.</span></label>
       <div id="err" class="msg bad" hidden></div>
       <button id="sign">Sign</button>
       <p class="small">Your link works until ${esc(f.expires)}, only for you and only for this version of the form.</p>
     </section>`}`;
   if (f.status !== "open") return;
+  const pad = $("#pad"), ctx = pad.getContext("2d");
+  let strokes = 0, inked = false, drawing = false, mode = "draw";
+  const fit = () => { const r = pad.getBoundingClientRect(), k = window.devicePixelRatio || 1; pad.width = r.width * k; pad.height = r.height * k; ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, pad.width, pad.height); ctx.lineWidth = 2.5 * k; ctx.lineCap = "round"; ctx.strokeStyle = "#14213d"; };
+  fit();
+  const at = (e) => { const r = pad.getBoundingClientRect(), k = pad.width / r.width; return [(e.clientX - r.left) * k, (e.clientY - r.top) * k]; };
+  pad.onpointerdown = (e) => { pad.setPointerCapture(e.pointerId); drawing = true; strokes++; ctx.beginPath(); ctx.moveTo(...at(e)); };
+  pad.onpointermove = (e) => { if (drawing) { ctx.lineTo(...at(e)); ctx.stroke(); inked = true; } };
+  pad.onpointerup = () => { drawing = false; };
+  $("#again").onclick = () => { strokes = 0; inked = false; fit(); };
+  const tab = (m) => { mode = m; $("#drawbox").hidden = m !== "draw"; $("#photobox").hidden = m === "draw"; $("#tabdraw").className = m === "draw" ? "on" : ""; $("#tabphoto").className = m === "draw" ? "" : "on"; if (m === "draw") fit(); };
+  $("#tabdraw").onclick = () => tab("draw"); $("#tabphoto").onclick = () => tab("photo");
   $("#img").onchange = () => { const file = $("#img").files[0]; if (file) { $("#preview").src = URL.createObjectURL(file); $("#preview").style.display = "block"; } };
   $("#sign").onclick = async () => {
     const fd = new FormData();
     fd.append("full_name", $("#name").value); fd.append("id_no", $("#id").value); fd.append("consent", $("#consent").checked ? "1" : "");
-    if ($("#img").files[0]) fd.append("image", $("#img").files[0]);
+    if (mode === "draw") {
+      if (!inked) { $("#err").hidden = false; $("#err").textContent = "Please sign in the box first."; return; }
+      fd.append("drawn", "1"); fd.append("strokes", strokes);
+      fd.append("image", await new Promise((ok) => pad.toBlob(ok, "image/png")), "signature.png");
+    } else if ($("#img").files[0]) fd.append("image", $("#img").files[0]);
     $("#sign").disabled = true;
     const r = await fetch(`/api/sign/${encodeURIComponent(token)}`, { method: "POST", body: fd });
     const j = await r.json().catch(() => ({}));

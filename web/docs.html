@@ -43,10 +43,11 @@ async function load() {
   const got = p.docs.filter((d) => d.status === "received").length;
   $("#main").innerHTML = head + (p.done ? `<div class="msg ok">Everything is in. Thank you: your broker will be in touch.</div>` :
     `<p class="small">${got} of ${p.docs.length} received. Take each photo flat, in good light, showing the whole document. Your link works until ${esc(p.expires)}.</p>`) +
+    (p.sign || []).map((x) => `<section aria-label="To sign"><div class="top"><b>${esc(x.title)}</b><span class="st need">To sign</span></div><a href="${esc(x.url)}">Read and sign</a></section>`).join("") +
     p.docs.map((d) => `<section data-kind="${d.kind}" aria-label="${esc(d.label)}"><div class="top"><b>${esc(d.label)}</b>
       <span class="st ${d.status === "received" ? "ok" : d.status === "again" ? "bad" : "need"}">${d.status === "received" ? "✓ Received" : d.status === "again" ? "Send again" : "Needed"}</span></div>
       ${d.status === "received" ? "" : `${d.reason ? `<div class="msg bad">${esc(d.reason)}</div>` : ""}
-      ${d.fields.map((f) => `<label>${esc(f.label)}<input type="${f.key === "expiry" ? "date" : "text"}" data-f="${f.key}" autocomplete="off"></label>`).join("")}
+      ${d.fields.map((f) => `<label>${esc(f.label)}<input type="${["expiry", "dated"].includes(f.key) ? "date" : "text"}" data-f="${f.key}" autocomplete="off"></label>`).join("")}
       <label>Photo or PDF<input type="file" accept="image/jpeg,image/png,application/pdf"></label>
       <div class="msg bad err" hidden></div><button>Send</button>`}</section>`).join("");
   document.querySelectorAll("section[data-kind] button").forEach((b) => b.onclick = async () => {

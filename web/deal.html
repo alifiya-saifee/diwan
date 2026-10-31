@@ -133,6 +133,25 @@
   .stagebar .end { font-size: 12px; padding: 3px 10px; border-radius: 99px; border: 1px dashed var(--line-2); color: var(--muted); }
   .stagebar .end.on { border-style: solid; border-color: rgba(130, 217, 159, .5); color: var(--teal); }
   .stagebar .lost { margin-left: auto; color: var(--bad); }
+  .views { flex-wrap: wrap; }
+  .gates { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin: 10px 0; }
+  .gates div { border: 1px solid var(--line); border-radius: 10px; padding: 7px 9px; font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
+  .gates div b { display: block; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+  .gates .ok { border-color: rgba(130, 217, 159, .4); } .gates .no { border-color: rgba(240, 179, 94, .4); background: var(--warn-soft); }
+  @media (max-width: 560px) { .gates { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 10px; align-items: flex-start; }
+  .bcol { flex: 0 0 230px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px; }
+  .bcol h3 { margin: 0 0 8px; font-size: 13px; display: flex; justify-content: space-between; }
+  .bcard { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; font-size: 13px; }
+  .bcard:hover { background: rgba(255, 255, 255, .04); } .bcard small { display: block; color: var(--muted); }
+  .rgridp { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; align-items: start; }
+  .rrow { display: flex; justify-content: space-between; gap: 10px; padding: 8px 2px; border-bottom: 1px solid var(--line); font-size: 13px; align-items: baseline; flex-wrap: wrap; }
+  .rrow.link { cursor: pointer; } .rrow.link:hover { background: rgba(255, 255, 255, .03); }
+  .sidebyside { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .sidebyside .o { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--bad); }
+  .bigs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-bottom: 18px; }
+  .bigs .big { font: 400 32px/1.1 var(--display); display: block; }
+  @media (max-width: 640px) { .bigs { grid-template-columns: 1fr; } }
   details.quiet > summary { cursor: pointer; color: var(--muted); font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 600; margin-top: 18px; }
 </style>
 </head>
@@ -141,7 +160,7 @@
   <div class="deskbar">
     <h1 style="margin:0">The <em>Deal desk</em></h1>
     <nav class="views" id="views" aria-label="Deal desk views">
-      <a href="#overview" data-v="overview">Overview</a><a href="#my-work" data-v="my-work">My work <span class="n" id="mycount"></span></a><a href="#deals" data-v="deals">Deals</a>
+      <a href="#overview" data-v="overview">Overview</a><a href="#my-work" data-v="my-work">My work <span class="n" id="mycount"></span></a><a href="#deals" data-v="deals">Deals</a><a href="#board" data-v="board">Board</a><a href="#compliance" data-v="compliance">Compliance</a><a href="#finance" data-v="finance">Finance</a><a href="#operations" data-v="operations">Operations</a>
     </nav>
     <label class="actas" for="as">Acting as <select id="as"></select></label>
   </div>
@@ -172,7 +191,7 @@ const ago = (iso) => { const m = (Date.now() - new Date(iso)) / 6e4; return m < 
 const st = ([s, t]) => h("span", { class: `chip ${{ ok: "ok", warn: "warn", bad: "bad" }[s] || ""}` }, t);
 
 // ---------- the three views ----------
-const VIEW = () => (["my-work", "deals"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview");
+const VIEW = () => (["my-work", "deals", "board", "compliance", "finance", "operations"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview");
 async function show() {  // a view that can't load says so, never a blank page
   try { await showView(); }
   catch (e) {
@@ -186,6 +205,10 @@ async function showView() {
   $("mycount").textContent = w.counts[me()] || "";
   if (VIEW() === "my-work") return myWork(w);
   if (VIEW() === "deals") return deals();
+  if (VIEW() === "board") return board();
+  if (VIEW() === "compliance") return roomCompliance();
+  if (VIEW() === "finance") return roomFinance();
+  if (VIEW() === "operations") return roomOperations();
   return overview();
 }
 addEventListener("hashchange", () => { scrollTo(0, 0); show(); });
@@ -218,7 +241,7 @@ async function overview() {  // the rules panel loads its own data
       tile("Money · next 7 days", `AED ${aed(o.money.next7)}`, row(`Expected (${o.money.next7_n})`, `AED ${aed(o.money.next7)}`, () => goDeals("expected")),
         row(`Overdue (${o.money.overdue_n} deals)`, o.money.overdue ? `AED ${aed(o.money.overdue)}` : 0, () => goDeals("overdue"))),
       tile("Compliance", o.comp.unscreened + o.comp.proof + o.comp.cash + o.comp.checks + o.comp.match,
-        row("Not screened", o.comp.unscreened, () => goDeals("unscreened")), row("Possible match", o.comp.match, () => goDeals("match")),
+        row("Converted, not cleared", o.comp.uncleared, () => goDeals("uncleared")), row("Not screened", o.comp.unscreened, () => goDeals("unscreened")), row("Possible match", o.comp.match, () => goDeals("match")),
         row("Payer changed, to review", o.comp.checks, () => goDeals("checks")), row("Proof missing", o.comp.proof, () => goDeals("proof")),
         row("Cash report to file", o.comp.cash, () => goDeals("cash"))),
       tile("Paperwork", o.paper.submit + o.paper.sentback + o.paper.transfer, row("Form F to submit", o.paper.submit, () => goDeals("submit")),
@@ -246,6 +269,61 @@ async function overview() {  // the rules panel loads its own data
     rolesPanel(), await rulesPanel());
 }
 
+// ---------- the rooms: what each department works from, every row opening its deal ----------
+const rrow = (left, right, d) => h("div", { class: `rrow ${d ? "link" : ""}`, ...(d ? { role: "button", tabindex: 0, onclick: () => open(d) } : {}) }, h("span", { style: "min-width:0" }, ...[left].flat()), h("span", { class: "muted" }, ...[right].flat()));
+const list = (title, rows, empty, id) => h("section", { class: "panel", ...(id ? { id } : {}) }, h("h2", {}, title, " ", h("span", { class: "chip" }, rows.length)), ...(rows.length ? rows : [h("div", { class: "empty" }, empty)]));
+const full = (n) => `AED ${Number(n || 0).toLocaleString("en")}`;
+async function board() {
+  const cols = await api("/api/desk/board");
+  $("view").replaceChildren(h("p", { class: "lede" }, "Every open deal by stage. Click one for the whole story."),
+    cols.length ? h("div", { class: "board", id: "board" }, ...cols.map((c) => h("div", { class: "bcol" }, h("h3", {}, c.stage, h("span", { class: "chip" }, c.deals.length)),
+      ...c.deals.slice(0, 40).map((d) => h("div", { class: "bcard", role: "button", tabindex: 0, onclick: () => open(d.deal) }, h("strong", {}, d.customer || d.deal), h("small", {}, d.property),
+        h("small", {}, d.value ? full(d.value) : "price not said"), h("div", { style: "margin-top:4px" }, st(d.comp))))))) : h("div", { class: "allclear" }, h("b", {}, "No open deals")));
+}
+async function roomCompliance() {
+  const r = await api("/api/desk/rooms/compliance");
+  const STATE = { cleared: "ok", stale: "warn", needs_info: "warn", blocked: "bad" };
+  $("view").replaceChildren(h("p", { class: "lede" }, `Who the client is and where the money comes from. Nothing binding happens until ${rname("compliance")} clears a deal, on the facts that stand now. Clients are never told about a check.`),
+    h("div", { class: "rgridp" },
+      list("Holds", r.holds.map((x) => rrow([h("strong", {}, x.customer), ` · ${x.reason || x.state}`], h("span", { class: `chip ${STATE[x.state] || ""}` }, x.state.replace("_", " ")), x.deal)), "No deal is on hold.", "holds"),
+      list("Possible matches", r.hits.map((x) => rrow([h("strong", {}, x.person), ` · ${x.note}`], x.customer, x.deal)), "No possible matches waiting.", "hits"),
+      list("Screening queue", r.screens.map((x) => rrow([h("strong", {}, x.person), ` · ${x.role}`], x.customer, x.deal)), "Nobody is waiting to be screened.", "screens"),
+      list("Report drafts for the officer", r.reports.map((x) => rrow(x.action, x.status === "done" ? x.reason : x.status, x.deal)), "No reports.", "reports")),
+    h("section", { class: "panel", style: "margin-top:18px", id: "corrections" }, h("h2", {}, "Corrections, newest first"), ...(r.corrections.length ? r.corrections.map((c) => h("div", { class: "sidebyside", role: "button", onclick: () => open(c.deal) },
+      h("div", {}, ...c.old.map((o) => h("div", { class: "o" }, `"${o.quote}"`)), h("span", { class: "small muted" }, `${c.customer} · ${c.kind}`)), h("div", {}, `"${c.new}"`, h("div", { class: "small muted" }, ago(c.at))))) : [h("div", { class: "empty" }, "No corrections yet.")])),
+    h("section", { class: "panel", style: "margin-top:18px", id: "risk" }, h("h2", {}, "Risk and clearance, deal by deal"), ...(r.deals.length ? r.deals.slice(0, 60).map((x) => rrow(
+      [h("strong", {}, x.customer), ` · ${x.property}`, x.proof_missing && x.sof_needed ? h("span", { class: "small muted" }, ` · ${x.proof_missing} proof missing`) : null],
+      [x.risk ? h("span", { class: `chip ${x.risk === "high" ? "bad" : x.risk === "medium" ? "warn" : ""}` }, `${x.risk}${x.pep ? " · PEP" : ""}`) : h("span", { class: "chip" }, "not rated"), h("span", { class: `chip ${STATE[x.state] || ""}` }, x.state.replace("_", " "))], x.deal)) : [h("div", { class: "empty" }, "Nothing to check yet.")])),
+    h("section", { class: "panel", style: "margin-top:18px", id: "rulebook" }, h("h2", {}, "The rules in force"), rrow("Report cash at or above", full(r.rules.cash_report_aed)),
+      rrow("Source of funds asked from a price of", r.rules.sof_threshold_aed ? full(r.rules.sof_threshold_aed) : "every deal"),
+      h("div", { class: "small muted", style: "margin-top:8px" }, "No sanctions list or PEP database is connected: the officer checks the lists and records what she found. Diwan drafts reports; she files them on goAML.")));
+}
+async function roomFinance() {
+  const r = await api("/api/desk/rooms/finance");
+  const ST = { draft: "", sent: "", due: "warn", overdue: "bad", "part paid": "warn", received: "ok", "written off": "", "sent back": "bad" };
+  $("view").replaceChildren(h("p", { class: "lede" }, "No bank is connected: a person marks what they saw arrive, and everything here is counted from those marks."),
+    h("div", { class: "bigs" }, h("section", { class: "panel" }, h("span", { class: "small muted" }, "Cash in this month"), h("span", { class: "big num", id: "cashin" }, full(r.cash_month))),
+      h("section", { class: "panel" }, h("span", { class: "small muted" }, "Outstanding"), h("span", { class: "big num" }, full(r.outstanding))),
+      h("section", { class: "panel" }, h("span", { class: "small muted" }, "Expected in the next 30 days"), h("span", { class: "big num" }, full(r.next30)))),
+    h("div", { class: "rgridp" },
+      list("Invoices", r.invoices.map((x) => rrow([h("strong", {}, x.number || "draft"), ` · ${x.customer} · ${full(x.amount)}`, x.status === "part paid" ? ` · ${full(x.left)} left` : ""], [x.due ? `due ${x.due} ` : "", h("span", { class: `chip ${ST[x.status]}` }, x.status)], x.deal)), "No invoices yet.", "invoices"),
+      list("Expected payments", r.expected.slice(0, 40).map((x) => rrow([h("strong", {}, full(x.left)), ` · ${x.customer}`, x.quote ? h("div", { class: "small muted" }, `"${x.quote}"`) : null], [x.due ? `due ${x.due}` : "no date said", x.overdue ? h("span", { class: "chip bad" }, "overdue") : null], x.deal)), "Nothing expected.", "expected"),
+      list("To pay out", r.payouts.map((x) => rrow(x.action, x.kind === "split" ? "other agency" : "broker", x.deal)), "No commissions to pay out.", "payouts"),
+      list("With Compliance", r.flags.map((x) => rrow(x.text, ago(x.at), x.deal)), "No payment is waiting on Compliance.", "flags"),
+      list("By broker", r.brokers.map((b) => rrow(h("strong", {}, b.name), `collected ${full(b.collected)} · outstanding ${full(b.outstanding)}`)), "No commission yet.", "brokers")));
+}
+async function roomOperations() {
+  const r = await api("/api/desk/rooms/operations");
+  $("view").replaceChildren(h("p", { class: "lede" }, "The official steps. No portal is driven from here: Diwan lists exactly what to enter, a person types it in and presses Submit."),
+    h("div", { class: "rgridp" },
+      list("Portal drafts to submit", r.drafts.map((x) => rrow([h("strong", {}, x.portal), ` · ${x.customer}`], "ready", x.deal)), "No drafts waiting.", "drafts"),
+      list("Appointments", r.appointments.map((x) => rrow([h("strong", {}, x.when), ` · ${x.place}`], x.done ? "transferred" : x.customer, x.deal)), "None booked.", "appointments"),
+      list("Waiting on outsiders", r.waiting.slice(0, 40).map((x) => rrow([x.step, h("div", { class: "small muted" }, `${x.customer} · ${x.waiting_on}`)], `${x.days} d`, x.deal)), "Nothing waiting.", "waiting"),
+      list("Forms and their versions", r.forms.slice(0, 40).map((x) => rrow([x.kind.split(":")[0], ` v${x.version} · ${x.customer}`], x.sent ? `sent ${ago(x.sent)}` : "not sent", x.deal)), "No forms yet.", "forms"),
+      list("Recalled forms", r.recalled.map((x) => rrow([x.kind.split(":")[0], ` v${x.version} · ${x.customer}`], ago(x.at), x.deal)), "None recalled.", "recalled"),
+      list("Handovers", r.handover.map((x) => rrow(x.step, x.customer, x.deal)), "None due.", "handovers")));
+}
+
 // the rules the desk follows: the owner edits them; everyone else reads them
 const PATHNAMES = { ready: "Ready home", offplan: "Off-plan", rent: "Rental" };
 let rulesDraft = null, rulesPath = "ready";
@@ -262,7 +340,7 @@ async function rulesPanel() {
     owner ? h("input", { value: st[1], "aria-label": `Step ${i + 1} waits on`, oninput: (e) => { st[1] = e.target.value; } }) : h("span", { class: "small muted" }, `waits on ${st[1]}`),
     owner ? h("label", { class: "small muted", style: "display:flex;gap:4px;align-items:center;margin:0;white-space:nowrap" },
       h("input", { type: "checkbox", checked: st[2] === "after", "aria-label": `Step ${i + 1} runs after closing`, onchange: (e) => { st.length = 2; if (e.target.checked) st.push("after"); } }), "after closing")
-      : st[2] === "after" ? h("span", { class: "chip" }, "after closing") : h("span", {}),
+      : st[2] === "after" ? h("span", { class: "chip" }, "after closing") : FLAG[st[2]] ? h("span", { class: "chip" }, FLAG[st[2]]) : h("span", {}),
     owner ? h("button", { "aria-label": `Remove step ${i + 1}`, onclick: () => { P.steps.splice(i, 1); show(); } }, "✕") : null)),
     owner ? h("button", { onclick: () => { P.steps.push(["", ""]); show(); } }, "+ Add a step") : null);
   const closing = h("div", { class: "rsteps" }, ...P.closing.map((c) => h("div", { class: "rstep" }, h("span", { class: "small muted" }, "✓"),
@@ -273,7 +351,8 @@ async function rulesPanel() {
       h("span", { class: "small muted", style: "margin-left:8px" }, r.changed_by ? `last changed by ${r.changed_by} ${ago(r.changed_at)}` : "Dubai's usual practice, unchanged")),
     h("div", { class: "rgrid" }, num(d, "cash_report_aed", "Report cash at or above (AED)", " AED"), num(d, "vat_pct", "VAT on our fees (%)", "%"),
       num(d, "stuck_days", "A deal is stuck after (days)", " days"), num(d, "close_days_target", "Target from yes to closed (days)", " days"),
-      num(d, "discount_approval_pct", "A discount above this needs the owner (%)", "%")),
+      num(d, "discount_approval_pct", "A discount above this needs the owner (%)", "%"), num(d, "sof_threshold_aed", "Source of funds from this price (AED; 0 = every deal)", " AED"),
+      num(d, "broker_share_pct", "The broker keeps of our commission (%)", "%"), num(d, "invoice_due_days", "An invoice is due after (days)", " days"), num(d, "doc_expiry_warn_days", "Warn before a document expires (days)", " days")),
     h("h2", { style: "margin-top:14px" }, "Our agency, as it appears on the forms"),
     h("div", { class: "rgrid" },
       h("label", { class: "rule" }, "Agency name", owner ? h("input", { value: d.agency.name, "aria-label": "Agency name", oninput: (e) => { d.agency.name = e.target.value; } }) : h("strong", {}, d.agency.name || "not set")),
@@ -295,6 +374,8 @@ async function rulesPanel() {
       h("label", { class: "rule" }, "Stages after Viewed, in order", owner ? h("input", { value: P.stages.join(", "), "aria-label": "Stages after Viewed", oninput: (e) => { P.stages = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); } }) : h("strong", {}, P.stages.join(" → "))),
       h("label", { class: "rule" }, "Converted at (the agency forms start)", owner ? h("select", { "aria-label": "Converted at", onchange: (e) => { P.converted_at = e.target.value; } },
         ...P.stages.map((x) => h("option", { value: x, selected: x === P.converted_at }, x))) : h("strong", {}, P.converted_at)),
+      h("label", { class: "rule" }, "The invoice is drafted", owner ? h("select", { "aria-label": "Invoice trigger", onchange: (e) => { P.invoice_trigger = e.target.value; } },
+        ...Object.entries({ form_f_signed: "when Form F is signed", transfer_completed: "when the transfer completes", tenancy_signed: "when the tenancy is signed", by_hand: "by hand" }).map(([k, x]) => h("option", { value: k, selected: k === P.invoice_trigger }, x))) : h("strong", {}, (P.invoice_trigger || "by_hand").replace(/_/g, " "))),
       h("label", { class: "rule" }, "Forms A and B", owner ? h("span", { class: "small", style: "display:flex;gap:6px;align-items:center" }, h("input", { type: "checkbox", checked: P.agency_forms, "aria-label": "This path uses Forms A and B", onchange: (e) => { P.agency_forms = e.target.checked; } }), "this path uses them")
         : h("strong", {}, P.agency_forms ? "used" : "not used"))),
     rulesPath === "offplan" ? developersEl(d, owner, num) : null,
@@ -412,7 +493,8 @@ function qrow(x) {
   else if (x.act === "screen") { const i = inp("Lists checked"); acts = [i, h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/screen`, { result: "clear", note: i.value }, "Recorded as clear") }, "Clear"),
     h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/screen`, { result: "possible match", note: i.value }, "Possible match recorded") }, "Possible match")]; }
   else if (x.act === "filed") { const i = inp("goAML reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/filed`, { reference: i.value }, "Filing recorded") }, "I filed it")]; }
-  else if (x.act === "received") { const i = inp("Bank reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/received`, { reference: i.value }, "Marked received; receipt filed") }, "Received")]; }
+  else if (x.act === "hit") { const i = inp("What you checked"); acts = [i, h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/hit`, { ok: true, note: i.value }, "Resolved: false positive") }, "False positive"), h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/hit`, { ok: false, note: i.value }, "Match confirmed; the deal is blocked") }, "It's a match")]; }
+  else if (x.act === "received") { const i = inp("Bank reference"); acts = [openBtn("Details"), i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/received`, { reference: i.value }, "Marked received") }, "Received")]; }
   else if (x.act === "submitted") { const i = inp("Portal reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/submitted`, { reference: i.value }, "Form F submitted") }, "I submitted it")]; }
   else if (x.act === "confirm") acts = [h("button", { onclick: () => open(x.deal) }, "Check the figures"), h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/confirm`, {}, "Final figures confirmed") }, "Confirm")];
   else if (x.act === "docs") acts = [h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/docs`, {}, "Closing documents filed") }, "Documents filed")];
@@ -438,14 +520,14 @@ function qrow(x) {
   return row;
 }
 
-const LABEL = { closing: "Closing", closed: "Closed (archive)", waiting: "Waiting for someone", overdue: "Money overdue", expected: "Money expected", unscreened: "Not screened", proof: "Proof missing",
+const LABEL = { uncleared: "Waiting for clearance", closing: "Closing", closed: "Closed (archive)", waiting: "Waiting for someone", overdue: "Money overdue", expected: "Money expected", unscreened: "Not screened", proof: "Proof missing",
   cash: "Cash report to file", checks: "Payer changed", match: "Possible match", submit: "Form F to submit", sentback: "Form F sent back", transfer: "In transfer", corrected: "Corrected this week" };
 async function deals() {
   const r = await api(`/api/desk/deals?q=${encodeURIComponent(query)}&filter=${filter}&stage=${encodeURIComponent(stage)}&sort=${sort}&desc=${desc}&page=${page}`);
   const th = (k, label) => h("th", k ? { class: sort === k ? "on" : "", onclick: () => { desc = sort === k ? !desc : k !== "customer"; sort = k; page = 1; deals(); } } : {}, label, sort === k ? (desc ? " ↓" : " ↑") : "");
   const q = h("input", { id: "q", type: "search", placeholder: "Search customer, property, broker or deal id", value: query, "aria-label": "Search deals" });
   let qt; q.oninput = () => { clearTimeout(qt); qt = setTimeout(() => { query = q.value; page = 1; deals().then(() => { const n = $("q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }); }, 180); };
-  const quick = ["waiting", "overdue", "unscreened", "closing", "closed"];
+  const quick = ["waiting", "uncleared", "overdue", "unscreened", "closing", "closed"];
   $("view").replaceChildren(
     h("p", { class: "lede" }, "The pipeline: where every deal stands in each department, and who it is waiting for. Click a row for the whole story."),
     h("div", { class: "toolbar" }, q, h("div", { class: "filters" },
@@ -534,6 +616,7 @@ function approvalEl(a) {
 
 const OPEN = ["open", "queued", "working", "waiting"];
 const sendIt = (...a) => send(...a);
+const FLAG = { mortgage: "only with a mortgage", seller_mortgage: "only if the seller has a mortgage", gate: "waits for ready-for-transfer" };
 async function send(path, body, ok) {
   try { await post(path, { by: me(), ...body }); toast(ok); await open(deal); show(); } catch (e) { toast(e.message); }
 }
@@ -546,7 +629,13 @@ function taskEl(t) {
       chip(t.result === "possible match" ? "possible match" : t.status))),
     h("div", { class: "small muted" }, t.agent_name || t.agent, t.needs_person && live ? ` · waits for ${NAMES[t.needs_person] || t.needs_person}` : ""),
     rests(t.rests_on), t.reason && !live ? h("div", { class: "small", style: "margin-top:6px" }, t.reason) : null);
-  if (live && t.agent === "screen") {
+  if (live && t.agent === "screen" && t.result === "possible match") {
+    const note = h("input", { placeholder: "What you checked to decide it", "aria-label": "How it was decided" });
+    el.append(h("div", { class: "small", style: "margin-top:6px;color:var(--bad)" }, `Possible match: ${t.hit}. This holds the deal.`),
+      officer ? h("div", { class: "acts" }, note, h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/hit`, { ok: true, note: note.value }, "Resolved: false positive") }, "False positive"),
+        h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/hit`, { ok: false, note: note.value }, "Match confirmed; the deal is blocked") }, "It's a match"))
+        : h("div", { class: "acts small muted" }, `Only ${rname("compliance")} decides a match.`));
+  } else if (live && t.agent === "screen") {
     el.append(h("div", { class: "small", style: "margin-top:6px" },
       "No sanctions list is connected and the date of birth and nationality are not on file: check the UN, UAE, US, UK and EU lists and record what you found."));
     const note = h("input", { placeholder: "Lists checked, or the entry it may match", "aria-label": "Screening note" });
@@ -561,13 +650,28 @@ function taskEl(t) {
     const escrow = t.payee === "the project's escrow account";
     el.append(h("div", { class: "small", style: "margin-top:6px" }, day ? (t.due_words ? `Due ${day} ("${t.due_words}")` : `Due ${day} · from the ${t.from}`) : "No date said: ask when"));
     const isFinance = holds("finance");
+    const paid = t.payments || [], left = (t.amount_aed || 0) - (t.paid || 0);
+    if (paid.length) el.append(h("div", { class: "small", style: "margin-top:6px" }, ...paid.map((p) => h("div", { class: "acts", style: "margin-top:2px" },
+      h("span", { style: "flex:1 1 220px" }, `${full(p.amount)} · ${p.method} · ${p.on} · ${p.reference}${p.payer ? ` · from ${p.payer}` : ""}`, p.held ? h("span", { class: "chip warn", style: "margin-left:6px" }, "with Compliance") : null),
+      isFinance ? h("button", { class: "undo", onclick: () => { const why = prompt("Why is this mark being undone?"); if (why) send(`/api/desk/tasks/${t.id}/undo`, { payment: p.id, why }, "Undone; the payment is open again"); } }, "Undo") : null))));
     if (live) {
       const ref = h("input", { placeholder: escrow ? "Developer's receipt number" : "Bank or receipt reference", "aria-label": "Payment reference" });
-      el.append(isFinance ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/received`, { reference: ref.value }, escrow ? "Marked paid into escrow; receipt filed" : "Marked received; receipt filed") }, escrow ? "Paid into escrow" : "Received"))
+      const amt = h("input", { type: "number", min: 0, value: left > 0 ? left : "", "aria-label": "Amount received (AED)", placeholder: "Amount (AED)", style: "flex:1 1 120px" });
+      const how = h("select", { "aria-label": "Method", style: "flex:1 1 120px" }, ...["transfer", "cheque", "manager's cheque", "cash", "card", "crypto"].map((m) => h("option", {}, m)));
+      const on = h("input", { type: "date", value: new Date().toISOString().slice(0, 10), "aria-label": "Day it arrived", style: "flex:1 1 130px" });
+      const from = h("input", { placeholder: "Paid by, if not the client", "aria-label": "Paid by", style: "flex:1 1 160px" });
+      const seen = h("input", { type: "number", min: 0, placeholder: "Amount on the proof, if any", "aria-label": "Amount on the proof", style: "flex:1 1 160px" });
+      const mark = async (confirm = false) => {
+        try {
+          const r = await post(`/api/desk/tasks/${t.id}/received`, { by: me(), reference: ref.value, amount: amt.value, method: how.value, on: on.value, payer: from.value, proof_amount: seen.value, confirm });
+          toast(r.held ? `With Compliance before the receipt: ${r.flags.join("; ")}` : r.balance ? `Part received; ${full(r.balance)} still to come` : escrow ? "Marked paid into escrow; receipt filed" : "Marked received; receipt filed"); await open(deal); show();
+        } catch (e) { if (/^Proof shows/.test(e.message) && window.confirm(`${e.message}\n\nSave it anyway?`)) mark(true); else toast(e.message); }
+      };
+      el.append(isFinance ? h("div", { class: "acts" }, amt, how, on, from, seen, ref, h("button", { class: "primary", onclick: () => mark() }, escrow ? "Paid into escrow" : "Received"))
         : h("div", { class: "acts small muted" }, `Only ${rname("finance")} marks money received.`));
     }
-    if (t.result === "received") el.append(h("div", { class: "acts" }, h("a", { class: "btn", href: `/api/desk/receipts/${t.id}.pdf`, target: "_blank" }, "Receipt (PDF)")));
-    if (t.result === "received" && !escrow && !view.approvals.some((a) => a.action.endsWith(`(${t.id})`))) {
+    if (paid.some((p) => !p.held)) el.append(h("div", { class: "acts" }, h("a", { class: "btn", href: `/api/desk/receipts/${t.id}.pdf`, target: "_blank" }, "Receipt (PDF)")));
+    if (t.result === "received" && !paid.some((p) => p.held) && !escrow && !view.approvals.some((a) => a.action.endsWith(`(${t.id})`))) {
       el.append(isFinance ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/release`, {}, "Release approved; carry it out when ready") }, "Approve release"))
         : h("div", { class: "acts small muted" }, `Only ${rname("finance")} releases money.`));
     }
@@ -582,8 +686,22 @@ function taskEl(t) {
   if (t.agent === "transfer") {
     el.querySelector(".small.muted").textContent = `Transfer tracker · waiting on ${t.waiting_on}${t.after ? " · runs on after closing" : ""}`;
     if (t.result === "not needed") el.querySelector(".top > span").prepend(h("span", { class: "chip" }, "not needed"));
+    if (FLAG[t.flag]) el.querySelector(".small.muted").append(` · ${FLAG[t.flag]}`);
+    if (live && t.days) el.querySelector(".small.muted").append(` · ${t.days} d`);
     const why = h("input", { placeholder: "Why it isn't needed (e.g. a cash buyer)", "aria-label": "Why it isn't needed" });
-    if (live) el.append(isTransactions ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/tick`, {}, "Ticked") }, "Done"), why,
+    const P = t.portal;
+    if (live && t.portal_kind && P?.state === "drafted") {
+      const ref = h("input", { placeholder: "The portal's reference", "aria-label": "Portal reference" });
+      el.append(h("table", { class: "small", style: "margin-top:6px" }, ...P.fields.map(([k, x]) => h("tr", {}, h("td", { style: "width:34%" }, k), h("td", {}, x ?? "not on file: fill it in")))),
+        h("div", { class: "small muted", style: "margin-top:4px" }, `${P.portal}: type these in on the portal, then press Submit there yourself.`),
+        isTransactions ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/portal/submitted`, { reference: ref.value }, "Recorded as submitted") }, "I submitted it")) : null);
+    }
+    if (live && t.flag === "gate") {
+      const when = h("input", { type: "datetime-local", "aria-label": "Appointment date and time", style: "flex:1 1 180px" }), place = h("input", { placeholder: "Which trustee office", "aria-label": "Trustee office", style: "flex:1 1 180px" });
+      el.append(isTransactions ? h("div", { class: "acts" }, when, place, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/book`, { when: when.value.replace("T", " "), place: place.value }, "Booked; the client knows what to bring") }, "Book the transfer"))
+        : h("div", { class: "acts small muted" }, `${rname("transactions")} books it.`));
+    } else if (live) el.append(isTransactions ? h("div", { class: "acts" }, t.portal_kind && !P ? h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/portal`, {}, "Draft ready: what to enter is listed") }, `Draft for the ${t.portal_kind}`) : null,
+      h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/tick`, {}, "Ticked") }, "Done"), why,
       h("button", { onclick: () => send(`/api/desk/tasks/${t.id}/notneeded`, { note: why.value }, "Marked not needed") }, "Not needed"))
       : h("div", { class: "acts small muted" }, `Only ${rname("transactions")} ticks the checklist.`));
   }
@@ -593,9 +711,9 @@ function taskEl(t) {
     if (live) el.append(me() === t.needs_person || me() === OWNER ? h("div", { class: "acts" }, note, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/after`, { note: note.value }, "Done") }, "Done"))
       : h("div", { class: "acts small muted" }, `For ${NAMES[t.needs_person] || t.needs_person}.`));
   }
-  if (t.agent === "inv" && live && t.step === "split") {
+  if (t.agent === "inv" && live && ["split", "payout"].includes(t.step)) {
     const ref = h("input", { placeholder: "Bank reference", "aria-label": "Bank reference" });
-    el.append(holds("finance") ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/split`, { reference: ref.value }, "Share paid to the other agency") }, "Paid"))
+    el.append(holds("finance") ? h("div", { class: "acts" }, ref, h("button", { class: "primary", onclick: () => send(`/api/desk/tasks/${t.id}/split`, { reference: ref.value }, t.step === "split" ? "Share paid to the other agency" : "Commission paid") }, "Paid"))
       : h("div", { class: "acts small muted" }, `Only ${rname("finance")} pays out a share.`));
   } else if (t.agent === "inv" && live) {
     const send = t.step === "send" || /^Send /.test(t.action), fin = holds("finance");
@@ -605,6 +723,11 @@ function taskEl(t) {
       ? sendIt(`/api/desk/tasks/${t.id}/invoiced`, { number: ref.value }, "Invoice sent; collecting it next")
       : sendIt(`/api/desk/tasks/${t.id}/commission`, { reference: ref.value }, "Commission received; receipt filed") }, send ? "I sent it" : "Received"))
       : h("div", { class: "acts small muted" }, `Only ${rname("finance")} sends invoices and marks commission received.`));
+    if (t.step === "collect") {
+      if (t.due) el.append(h("div", { class: "small muted", style: "margin-top:4px" }, `Due ${t.due}`));
+      if (me() === OWNER) { const why = h("input", { placeholder: "Why it is written off", "aria-label": "Why it is written off" });
+        el.append(h("div", { class: "acts" }, why, h("button", { onclick: () => sendIt(`/api/desk/tasks/${t.id}/writeoff`, { why: why.value }, "Written off") }, "Write it off"))); }
+    }
   }
   if (t.agent === "inv" && t.step === "collect" && t.result === "received")
     el.append(h("div", { class: "acts" }, h("a", { class: "btn", href: `/api/desk/invoices/${t.id}.pdf`, target: "_blank" }, "The invoice (PDF)"),
@@ -643,6 +766,39 @@ function formfEl(v) {
     h("div", { class: "small", style: "margin-top:4px" }, due ? `The stage is ${v.stage}: the Form F clerk can fill the plan from the live facts.`
       : "No Form F plan yet. The Form F clerk fills it from the live facts and stops before Submit."),
     h("div", { class: "acts" }, h("button", { class: due ? "primary" : "", onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/formf`, {}, "Form F plan ready") }, "Prepare Form F")));
+}
+
+// the gates: read from the record, never ticked; only the owner's is an act
+function gatesEl(v) {
+  const G = v.gates;
+  if (!G.applies || !v.stages.agreed) return null;
+  return h("div", { id: "gates" }, h("div", { class: "gates" }, ...G.gates.map((x) => h("div", { class: x.ok ? "ok" : "no" }, h("b", {}, `${x.ok ? "✓ " : ""}${x.label}`), x.note))),
+    G.ready ? h("div", { class: "small", style: "color:var(--teal)" }, `Ready for transfer ${ago(G.ready_at)}: ${rname("transactions")} books the trustee.`)
+      : me() === OWNER && G.can_approve ? h("div", { class: "acts", style: "margin-bottom:8px" }, h("button", { class: "primary", id: "approvegate", onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/transfer/approve`, {}, "Ready for transfer") }, "Approve the transfer on these facts")) : null);
+}
+
+// the officer's desk on one deal: what is left, the risk, and her three answers
+function clearanceEl(v) {
+  const C = v.compliance, officer = holds("compliance"), R2 = C.risk || {};
+  const tone = C.ok ? "ok" : C.state === "blocked" ? "bad" : "warn";
+  const el = h("div", { class: `card ${C.ok ? "" : "open"}`, id: "clearance" }, h("div", { class: "top" }, h("strong", {}, "Clearance"), h("span", { class: `chip ${tone}` }, C.state.replace("_", " "))),
+    C.reason ? h("div", { class: "small", style: "margin-top:4px" }, C.reason) : null,
+    R2.risk ? h("div", { class: "small muted", style: "margin-top:4px" }, `Risk ${R2.risk}${R2.pep ? " · PEP" : ""}${R2.note ? ` · ${R2.note}` : ""}${R2.senior ? ` · signed off by ${NAMES[R2.senior]}` : ""}`) : null);
+  if (C.blockers.length && !C.ok) el.append(h("div", { class: "small", style: "margin-top:6px" }, h("div", { class: "muted" }, "Before it can be cleared"), ...C.blockers.map((b) => h("div", {}, `○ ${b}`))));
+  if (C.needs_senior && !R2.senior) el.append(me() === OWNER ? h("div", { class: "acts" }, h("button", { class: "primary", onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/compliance/signoff`, {}, "Signed off") }, "Sign off this high-risk deal")) : h("div", { class: "acts small muted" }, `Waits for ${TEAM[OWNER]?.name || "the owner"}'s sign-off.`));
+  if (!officer) { el.append(h("div", { class: "acts small muted" }, `Only ${rname("compliance")} clears, asks for more or blocks a deal.`)); return el; }
+  const risk = h("select", { "aria-label": "Risk", style: "flex:1 1 110px" }, ...["low", "medium", "high"].map((r) => h("option", { value: r, selected: r === R2.risk }, r)));
+  const pep = h("input", { type: "checkbox", checked: !!R2.pep, style: "width:auto;flex:none", "aria-label": "A PEP" });
+  const why = h("input", { placeholder: "Why, for high risk or a PEP", "aria-label": "Why this risk", style: "flex:1 1 200px" });
+  const note = h("input", { placeholder: "Your note (needed to accept missing proof, or to block)", "aria-label": "Clearance note" });
+  const kinds = h("select", { "aria-label": "Ask the client for", style: "flex:1 1 200px" }, ...["bank_statement", "salary_certificate", "relationship_proof", "proof_of_address", "other"].map((k) => h("option", { value: k }, v.doc_kinds[k])));
+  el.append(h("div", { class: "acts" }, risk, h("label", { class: "small", style: "display:flex;gap:6px;align-items:center;margin:0" }, pep, "PEP"), why,
+      h("button", { onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/compliance/rate`, { risk: risk.value, pep: pep.checked, note: why.value }, "Risk recorded") }, "Rate")),
+    h("div", { class: "acts" }, note, h("button", { class: "primary", id: "clear", onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/compliance/clear`, { note: note.value }, "Cleared on the current facts") }, "Clear this deal"),
+      h("button", { onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/compliance/block`, { note: note.value }, "Blocked; the owner is told") }, "Block it"),
+      h("button", { onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/compliance/str`, { note: note.value }, "Report drafted for you to file") }, "Draft a suspicious transaction report")),
+    h("div", { class: "acts" }, kinds, h("button", { onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/compliance/needs-info`, { kinds: [kinds.value], note: note.value }, "Asked on the client's link; they aren't told why") }, "Ask the client for this")));
+  return el;
 }
 
 function closingEl(v) {
@@ -695,8 +851,8 @@ function stageBar(v) {
   const amount = h("input", { type: "number", min: 0, step: 1000, value: s.listing_aed || v.summary.value || "", "aria-label": "Agreed price (AED)", style: "flex:1 1 200px",
     oninput: () => paint() });
   const paint = () => {
-    const a = Number(amount.value), L = s.listing_aed;
-    if (!L) { delta.textContent = "Not our listing: nothing to compare."; delta.style.color = "var(--muted)"; return; }
+    const a = Number(amount.value), L = propDraft?.deal === deal && propDraft.source === "listing" ? propDraft.listing?.price_aed : s.listing_aed;
+    if (!L) { delta.textContent = propDraft?.source === "listing" ? "Pick the listing to compare the price." : "Not our listing: nothing to compare."; delta.style.color = "var(--muted)"; return; }
     if (!a) { delta.textContent = ""; return; }
     const pct = Math.round(((a - L) * 1000) / L) / 10;
     if (pct < 0) { delta.textContent = `Discount ${-pct}% · ${fmt(L - a)} below the listing price of ${fmt(L)}${-pct > s.limit ? ` · above the ${s.limit}% limit: ${TEAM[OWNER]?.name || "the owner"} approves it first` : ""}`; delta.style.color = "var(--warn)"; }
@@ -706,13 +862,14 @@ function stageBar(v) {
   paint();
   const convertNow = async () => {
     try {
-      const r = await post(`/api/desk/deals/${encodeURIComponent(deal)}/convert`, { by: me(), amount: amount.value });
-      stageAsk = null; toast(r.waiting ? `Sent to ${r.waiting} to approve the ${-r.pct}% discount` : "Converted at the agreed price; the agency forms are next"); await open(deal); show();
+      const r = await post(`/api/desk/deals/${encodeURIComponent(deal)}/convert`, { by: me(), amount: amount.value, property: propBody() });
+      stageAsk = null; propDraft = null; toast(r.waiting ? `Sent to ${r.waiting} to approve the ${-r.pct}% discount` : "Converted at the agreed price; the agency forms are next"); await open(deal); show();
     } catch (e) { toast(e.message); }
   };
   const note = h("input", { placeholder: "Why (needed to refuse)", "aria-label": "Why", style: "flex:1 1 200px" });
   const decide = async (approve) => { try { await post(`/api/desk/tasks/${s.pending.task}/discount`, { by: me(), approve, note: note.value }); toast(approve ? "Discount approved; the deal converts" : "Refused; the broker is told"); await open(deal); show(); } catch (e) { toast(e.message); } };
-  const reason = h("input", { placeholder: stageAsk === "Lost" ? "Why was it lost?" : "Why move it back?", "aria-label": "Why", style: "flex:1 1 220px" });
+  const reason = h("input", { placeholder: stageAsk === "Lost" ? "Add a note (optional unless Other)" : "Why move it back?", "aria-label": "Why", style: "flex:1 1 220px" });
+  const lostWhy = h("select", { "aria-label": "Why it was lost", style: "flex:1 1 160px" }, ...s.lost_reasons.map((r) => h("option", {}, r)));
   return h("div", { id: "stagebar" },
     h("div", { class: "stagebar", role: "group", "aria-label": "Stage" },
       ...s.list.map((st, i) => h("button", { class: i < at && s.current !== "Lost" ? "past" : st === s.current ? "on" : "", disabled: !may || s.closed || st === s.current,
@@ -722,16 +879,84 @@ function stageBar(v) {
       s.current === "Lost" ? h("span", { class: "chip bad" }, "Lost") : may && !s.closed ? h("button", { class: "lost", onclick: () => pick("Lost") }, "Mark lost") : null),
     s.pending ? h("div", { class: "card open", style: "margin:6px 0" }, h("strong", {}, `Waiting for ${TEAM[OWNER]?.name || "the owner"}: ${s.pending.text}`),
       me() === OWNER ? h("div", { class: "acts" }, note, h("button", { class: "primary", onclick: () => decide(true) }, "Approve the discount"), h("button", { onclick: () => decide(false) }, "Refuse")) : null)
-    : stageAsk === "convert" ? h("div", { class: "card open", id: "convert", style: "margin:6px 0" }, h("strong", {}, "The client said yes: the agreed price"),
+    : stageAsk === "convert" ? h("div", { class: "card open", id: "convert", style: "margin:6px 0" }, h("strong", {}, "The client said yes: which property, and the agreed price"),
+      propertyPanel(v, (x) => { if (x.price_aed && (!amount.value || Number(amount.value) === propPrice)) amount.value = x.price_aed; propPrice = x.price_aed || 0; paint(); }, paint),
       h("div", { class: "acts" }, amount, h("button", { class: "primary", onclick: convertNow }, "Save and convert"), h("button", { onclick: () => { stageAsk = null; render(); feed(); } }, "Cancel"), delta))
-    : stageAsk ? h("div", { class: "acts", style: "margin:4px 0 8px" }, reason,
-      h("button", { class: "primary", onclick: () => go(stageAsk, reason.value) }, stageAsk === "Lost" ? "Mark lost" : `Move back to ${stageAsk}`),
+    : stageAsk ? h("div", { class: "acts", style: "margin:4px 0 8px" }, stageAsk === "Lost" ? lostWhy : null, reason,
+      h("button", { class: "primary", onclick: () => go(stageAsk, stageAsk === "Lost" ? `${lostWhy.value}${reason.value ? `: ${reason.value}` : ""}` : reason.value) }, stageAsk === "Lost" ? "Mark lost" : `Move back to ${stageAsk}`),
       h("button", { onclick: () => { stageAsk = null; render(); feed(); } }, "Cancel")) : null,
-    s.agreed ? h("div", { class: "small", style: `color:${s.agreed.pct < 0 ? "var(--warn)" : s.agreed.pct > 0 ? "var(--ok, #82d99f)" : "var(--muted)"}` },
+    propertyCard(v, may),
+    s.agreed ? h("div", { class: "converted", id: "converted" }, h("div", { class: "chead" }, h("span", { class: "ctick" }, "✓"), "Converted"), h("div", { class: "small", style: `color:${s.agreed.pct < 0 ? "var(--warn)" : s.agreed.pct > 0 ? "var(--ok, #82d99f)" : "var(--muted)"}` },
       `Agreed AED ${s.agreed.amount.toLocaleString()}` + (s.agreed.pct == null ? " · not our listing" : s.agreed.pct < 0 ? ` · ${-s.agreed.pct}% discount on the listing` : s.agreed.pct > 0 ? ` · +${s.agreed.pct}% over the listing` : " · at the listing price")
-      + (s.agreed.approved_by ? ` · approved by ${NAMES[s.agreed.approved_by] || s.agreed.approved_by}` : "")) : null,
+      + (s.agreed.approved_by ? ` · approved by ${NAMES[s.agreed.approved_by] || s.agreed.approved_by}` : ""))) : null,
     !may && !s.closed ? h("div", { class: "small muted" }, `${v.broker_name} (the broker), ${rname("transactions")} or the owner moves the stage.`)
       : s.closing ? h("div", { class: "small muted" }, `Won comes from closing: waiting on ${s.closing.waiting.join("; ").toLowerCase()}.`) : null);
+}
+
+// which property the deal is on: our listing, another agency's or a developer's unit (docs/deal-desk.md item 17)
+let propDraft = null, propPrice = 0, propOpen = false, knownAgencies = [];
+const propBody = () => { const { deal: _d, listing, ...p } = propDraft; return { ...p, ref: listing?.ref }; };
+
+function propertyPanel(v, onPick, onSource) {
+  const P = v.stages.property, t = v.agency.terms || {}, cur = P.value || {};
+  if (propDraft?.deal !== deal) {
+    const source = cur.source || (P.listing ? "listing" : Object.keys(P.sources)[0]);
+    propDraft = { deal, source, listing: P.listing, label: cur.source === "agency" ? cur.label : "", developer: cur.developer || t.developer || "", project: cur.project || "", unit: cur.unit || "",
+      brought: t.sides === "seller", other_agency: t.other_agency || "", other_orn: t.other_orn || "", other_agent: t.other_agent || "", other_brn: t.other_brn || "", other_share_pct: t.other_share_pct ?? "" };
+  }
+  const d = propDraft, host = h("div", {});
+  const inp = (k, label, attrs = {}) => { const i = h("input", { value: d[k] ?? "", "aria-label": label, oninput: (e) => { d[k] = e.target.value; }, ...attrs }); return [h("label", { class: "rule" }, label, i), i]; };
+  const agencyGrid = () => {
+    const [name, nameI] = inp("other_agency", "Agency", { list: "agencies" }), orn = inp("other_orn", "Their ORN"), agent = inp("other_agent", "Their agent"), brn = inp("other_brn", "Agent's BRN");
+    nameI.addEventListener("change", () => { const a = knownAgencies.find((x) => x.other_agency.toLowerCase() === nameI.value.trim().toLowerCase()); if (!a) return;
+      Object.assign(d, a); orn[1].value = a.other_orn; agent[1].value = a.other_agent; brn[1].value = a.other_brn; });
+    return h("div", { class: "rgrid" }, name, orn[0], agent[0], brn[0], inp("other_share_pct", "Their share of the commission (%)", { type: "number", step: "any", min: 0, max: 100 })[0],
+      h("datalist", { id: "agencies" }, ...knownAgencies.map((a) => h("option", { value: a.other_agency }))));
+  };
+  const listingPane = () => {
+    const found = h("div", { class: "rsteps", id: "propresults", style: "margin-top:6px" }), search = h("input", { type: "search", placeholder: "Search ref, name or area", "aria-label": "Search our listings", style: "width:100%" });
+    const chosen = h("div", { class: "small", id: "propchosen" }, d.listing ? `Chosen: ${d.listing.label} · ${d.listing.ref}` : "");
+    let timer;
+    const look = async () => {
+      const r = await api(`/api/desk/deals/${encodeURIComponent(deal)}/listings?q=${encodeURIComponent(search.value)}`);
+      found.replaceChildren(...(r.rows.length ? r.rows.map((x) => h("button", { class: d.listing?.ref === x.ref ? "primary" : "", style: "text-align:left;width:100%", onclick: () => {
+        d.listing = x; chosen.textContent = `Chosen: ${x.label} · ${x.ref}`; onPick(x); look(); } },
+        `${x.label} · ${x.ref}${x.community ? ` · ${x.community}` : ""}${x.price_aed ? ` · AED ${x.price_aed.toLocaleString()}` : ""}`)) : [h("div", { class: "empty" }, search.value ? "No free listing matches that." : "No free listings.")]),
+        ...(r.total > r.rows.length ? [h("div", { class: "small muted" }, `${r.rows.length} of ${r.total}: search to narrow it down.`)] : []));
+    };
+    search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(look, 200); });
+    look();
+    const other = h("div", { hidden: !d.brought }, agencyGrid());
+    return h("div", {}, search, found, chosen, h("label", { class: "small", style: "display:flex;gap:8px;align-items:center;margin:8px 0 0" },
+      h("input", { type: "checkbox", id: "propbrought", checked: d.brought, onchange: (e) => { d.brought = e.target.checked; other.hidden = !d.brought; } }), "Another agency brought the buyer"), other);
+  };
+  const panes = {
+    listing: listingPane,
+    agency: () => h("div", {}, h("div", { class: "rgrid" }, inp("label", "Property: unit, building, area", { id: "proplabel" })[0]), agencyGrid()),
+    developer: () => P.developers.length ? h("div", { class: "rgrid" },
+      h("label", { class: "rule" }, "Developer", h("select", { "aria-label": "Developer", onchange: (e) => { d.developer = e.target.value; } }, h("option", { value: "" }, "Choose"), ...P.developers.map((x) => h("option", { value: x, selected: x === d.developer }, x)))),
+      inp("project", "Project")[0], inp("unit", "Unit")[0])
+      : h("div", { class: "empty" }, `No developer agreements yet. ${TEAM[OWNER]?.name || "The owner"} adds them in the rules first.`),
+  };
+  const show = () => host.replaceChildren(panes[d.source]());
+  show();
+  api("/api/desk/agencies").then((a) => { knownAgencies = a; document.getElementById("agencies")?.replaceChildren(...a.map((x) => h("option", { value: x.other_agency }))); });
+  return h("div", { style: "margin-top:6px", id: "propform" }, h("div", { class: "acts", role: "radiogroup", "aria-label": "Whose property is it?", style: "margin-top:0" }, h("span", { class: "small muted" }, "Whose property is it?"),
+    ...Object.entries(P.sources).map(([k, label]) => h("label", { class: "small", style: "display:flex;gap:6px;align-items:center;margin:0;white-space:nowrap" },
+      h("input", { type: "radio", name: "propsource", style: "width:auto;flex:none", value: k, checked: k === d.source, onchange: () => { d.source = k; show(); onSource?.(); } }), label))), host);
+}
+
+// a deal that converted without a property, or one being changed
+function propertyCard(v, may) {
+  const P = v.stages.property, s = v.stages;
+  if (s.closed || !s.agreed) return P.value ? h("div", { class: "small muted", id: "propline" }, `Property: ${P.value.label} · ${P.sources[P.value.source] || P.value.source}`) : null;
+  if (!P.needed && !propOpen) return h("div", { class: "small muted", id: "propline" }, `Property: ${v.property}`, P.value ? ` · ${P.sources[P.value.source] || P.value.source}` : "",
+    P.locked ? ` · ${P.locked}` : may ? h("button", { class: "lost", id: "propchange", style: "margin-left:8px", onclick: () => { propOpen = true; render(); feed(); } }, "Change the property") : null);
+  if (!may) return h("div", { class: "small muted", id: "propline" }, `${v.broker_name} still has to say which property this is.`);
+  const save = async () => { try { await post(`/api/desk/deals/${encodeURIComponent(deal)}/property`, { by: me(), property: propBody() }); propDraft = null; propOpen = false; toast("Property saved"); await open(deal); show(); } catch (e) { toast(e.message); } };
+  return h("div", { class: "card open", id: "propcard", style: "margin:6px 0" }, h("strong", {}, P.needed ? "Which property is this deal on?" : "Change the property"),
+    propertyPanel(v, () => {}), h("div", { class: "acts" }, h("button", { class: "primary", id: "propsave", onclick: save }, "Save the property"),
+      P.needed ? null : h("button", { onclick: () => { propOpen = false; propDraft = null; render(); feed(); } }, "Cancel")));
 }
 
 // each person who signs gets their own link; the broker copies it and shares it personally
@@ -741,14 +966,17 @@ function signLinks(x, may) {
   return h("div", { class: "rsteps", style: "margin-top:8px" }, ...x.links.map((l) => h("div", { class: "acts", style: "margin-top:0" },
     h("span", { style: "flex:1 1 200px" }, `${l.name}`, h("span", { class: "small muted" }, l.signed_at ? ` · signed ${ago(l.signed_at)}` : ` · until ${l.expires}`)),
     h("span", { class: `chip ${ST[l.status][0]}` }, ST[l.status][1]),
+    l.opened && l.status === "open" ? h("span", { class: "small muted" }, "opened") : null,
+    l.status === "expired" && may ? h("button", { onclick: () => send(`/api/desk/links/${l.url.split("t=")[1]}/renew`, {}, "Link renewed") }, "Renew") : null,
     l.status === "open" ? h("button", { "data-url": l.url, onclick: async () => {
       try { await navigator.clipboard.writeText(l.url); toast(`Link for ${l.name} copied`); } catch { prompt("Copy this link", l.url); } } }, "Copy link") : null)));
 }
 
-async function upload(tid, file) {
+async function upload(tid, file, form = false) {
   if (!file) throw new Error("Choose the signed PDF first.");
-  const fd = new FormData(); fd.append("by", me()); fd.append("file", file);
-  const r = await fetch(`/api/desk/tasks/${tid}/signed`, { method: "POST", body: fd });
+  if (!window.confirm("Did you check every signature line on it? A PDF can't show that by itself.")) throw new Error("Not uploaded.");
+  const fd = new FormData(); fd.append("by", me()); fd.append("file", file); fd.append("checked", "1");
+  const r = await fetch(form ? `/api/desk/forms/${tid}/signed` : `/api/desk/tasks/${tid}/signed`, { method: "POST", body: fd });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.detail || `${r.status}`);
   return j;
@@ -764,7 +992,8 @@ function documentsEl(v) {
       h("span", { class: "small muted" }, "checked at upload; confirmed by " + rname("compliance"))),
     ...D.requests.map((r) => h("div", { style: "margin-top:10px" },
       h("div", { class: "acts", style: "margin-top:0" }, h("span", { style: "flex:1 1 220px" }, h("strong", {}, r.name), ` · ${r.party}`,
-        h("span", { class: "small muted" }, ` · ${r.reminders} reminder${r.reminders === 1 ? "" : "s"}${r.phone ? "" : " · no WhatsApp on file"}`)),
+        h("span", { class: "small muted" }, ` · ${r.opened ? "opened · " : ""}${r.reminders} reminder${r.reminders === 1 ? "" : "s"}${r.phone ? "" : " · no WhatsApp on file"}`)),
+        r.expired ? h("button", { onclick: () => send(`/api/desk/docs/${r.token}/renew`, {}, "Link renewed") }, "Renew the link") : null,
         h("button", { "data-url": r.url, onclick: async () => { try { await navigator.clipboard.writeText(r.url); toast(`Link for ${r.name} copied`); } catch { prompt("Copy this link", r.url); } } }, "Copy link")),
       ...r.docs.map((d) => {
         const note = h("input", { placeholder: "What the client should fix (they see it)", "aria-label": `Fix ${d.label}`, style: "flex:1 1 220px" });
@@ -789,7 +1018,8 @@ function agencyEl(v) {
   const live = a.forms.filter((f) => f.status !== "sent_back"), back = a.forms.filter((f) => f.status === "sent_back");
   if (!a.asking && !a.forms.length) return null;
   const kids = [];
-  if (a.asking) {
+  if (a.asking && v.stages.property.needed) kids.push(h("div", { style: "margin-top:4px" }, "Say which property this is above: that answers who is on the other side."));
+  else if (a.asking) {
     const task = v.tasks.find((t) => t.id === a.asking);
     let side = a.terms.sides || (a.our_listing ? "both" : "buyer");
     const t = a.terms, f = {};
@@ -841,7 +1071,11 @@ function termsEl(v) {
       field("other_agency", "Other agency (Form I)", { placeholder: "none" }), field("other_share_pct", "Their share of the commission (%)", { type: "number", step: "any" }),
       p === "offplan" ? h("label", { class: "rule" }, "Developer", may ? dev : h("strong", {}, t.developer || "—")) : null,
       p === "rent" ? field("start", "Tenancy starts", { type: "date" }) : null, p === "rent" ? field("end", "Tenancy ends", { type: "date" }) : null,
-      p === "rent" ? h("label", { class: "rule" }, "Furnished", may ? furn : h("strong", {}, t.furnished ? "yes" : "no")) : null),
+      p === "rent" ? h("label", { class: "rule" }, "Furnished", may ? furn : h("strong", {}, t.furnished ? "yes" : "no")) : null,
+      h("label", { class: "rule" }, "How the buyer pays", may ? (f.finance = h("select", { "aria-label": "How the buyer pays" }, ...[["", "not said"], ["cash", "cash"], ["mortgage", "mortgage"]].map(([k, x]) => h("option", { value: k, selected: k === (t.finance || "") }, x)))) : h("strong", {}, t.finance || "not said")),
+      p !== "offplan" ? h("label", { class: "rule" }, "The seller has a mortgage", may ? (f.seller_mortgage = h("select", { "aria-label": "The seller has a mortgage" }, ...[["", "not said"], ["true", "yes"], ["false", "no"]].map(([k, x]) => h("option", { value: k, selected: k === (t.seller_mortgage === undefined ? "" : String(t.seller_mortgage)) }, x)))) : h("strong", {}, t.seller_mortgage === undefined ? "not said" : t.seller_mortgage ? "yes" : "no")) : null,
+      h("label", { class: "rule" }, "Who the client is", may ? (f.party_type = h("select", { "aria-label": "Who the client is" }, h("option", { value: "" }, "UAE resident (usual)"), ...Object.entries(v.party_types).map(([k, x]) => h("option", { value: k, selected: k === t.party_type }, x)))) : h("strong", {}, v.party_types[t.party_type] || "UAE resident")),
+      field("other_party", p === "rent" ? "The landlord's name" : "The seller's name", { placeholder: "not recorded" }), field("other_phone", "Their phone", { placeholder: "not recorded" }), field("unit", "Unit number, as on the title deed", { placeholder: "not recorded" })),
     may ? h("div", { class: "acts" }, h("button", { id: "saveterms", onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/terms`,
       { terms: Object.fromEntries(Object.entries(f).map(([k, i]) => [k, i.type === "checkbox" ? i.checked : i.value])) }, "Terms recorded") }, "Save the terms"),
       p === "offplan" && !v.developers.length ? h("span", { class: "small muted" }, `${TEAM[OWNER]?.name || "The owner"} adds developer agreements in the rules.`) : null)
@@ -881,7 +1115,11 @@ function fundsEl(f) {
     f.proof.length ? h("div", { style: "margin-top:10px" }, h("div", { class: "small muted" }, "Proof"), ...f.proof.map((p) => h("div", { class: "acts", style: "margin-top:4px" },
       h("span", { style: "flex:1 1 300px" }, p.have ? "✓ " : "", p.text, p.facts.length ? h("span", { class: "small muted" }, ` (${p.facts.join(", ")})`) : null,
         p.have ? h("div", { class: "small muted" }, `Received: ${p.have} ${p.have_title}`) : null),
-      !p.have && holds("compliance") ? h("button", { onclick: () => send(`/api/desk/deals/${encodeURIComponent(deal)}/proof`, { kind: p.kind }, `${p.kind} filed with Records`) }, "Received") : null))) : null,
+      !p.have && holds("compliance") ? (() => { const file = h("input", { type: "file", accept: "application/pdf,image/*", "aria-label": `Proof: ${p.kind}`, style: "flex:1 1 180px" });
+        return h("span", { class: "acts", style: "margin:0" }, file, h("button", { onclick: async () => {
+          try { if (!file.files[0]) throw new Error("Attach the proof first."); const fd = new FormData(); fd.append("by", me()); fd.append("kind", p.kind); fd.append("file", file.files[0]);
+            const r = await fetch(`/api/desk/deals/${encodeURIComponent(deal)}/proof`, { method: "POST", body: fd }); const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.detail || `${r.status}`); toast(`${p.kind} filed with Records`); await open(deal); show(); } catch (e) { toast(e.message); } } }, "Received")); })() : null))) : null,
     h("div", { class: "small muted", style: "margin-top:8px" }, `Numbers and words only. Whether anything is suspicious is ${rname("compliance")}'s call.`));
 }
 
@@ -890,7 +1128,9 @@ function draftEl(d) {
   const may = me() === view.broker || holds("transactions") || me() === OWNER;
   return h("div", { class: `card ${d.status === "sent_back" ? "open" : ""}`, ...(ff ? { id: "formf" } : {}) },
     ff ? h("div", { class: "acts", style: "margin-top:0" }, h("a", { class: "btn", href: `/api/desk/forms/${d.id}.pdf`, target: "_blank" }, "Form F (PDF)")) : null,
-    ff ? signLinks({ draft: d.id, links: ff.links }, may) : null,
+    ff ? (view.compliance.ok ? signLinks({ draft: d.id, links: ff.links }, may) : h("div", { class: "small muted", style: "margin-top:6px" }, "Form F's signatures wait for Compliance to clear this deal.")) : null,
+    ff && view.compliance.ok && may && !view.gates.gates.find((x) => x.key === "paperwork").ok ? (() => { const file = h("input", { type: "file", accept: "application/pdf", "aria-label": "Form F signed on paper (PDF)" });
+      return h("div", { class: "acts" }, file, h("button", { onclick: async () => { try { await upload(d.id, file.files[0], true); toast("Signed Form F filed with Records"); await open(deal); show(); } catch (e) { toast(e.message); } } }, "Upload the signed copy")); })() : null,
     h("div", { class: "top" }, h("strong", {}, `${d.kind} v${d.version}`), h("span", {}, h("span", { class: "chip" }, d.id),
       d.status === "live" ? h("span", { class: "chip ok" }, "passed review") : chip(d.status))),
     d.reason ? h("div", { style: "margin-top:4px" }, d.reason) : null,
@@ -912,7 +1152,7 @@ function render() {
     const cards = v.cards.filter(by(k)), tasks = v.tasks.filter(by(k));
     const appr = k === "fin" ? v.approvals : [], drafts = v.drafts.filter(by(k));
     const open = cards.filter((c) => c.status === "open").length;
-    const kids = [...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "comp" ? documentsEl(v) : null, k === "ops" ? closingEl(v) : null, k === "ops" ? pathEl(v) : null, k === "ops" ? formfEl(v) : null, k === "ops" ? agencyEl(v) : null, k === "ops" ? termsEl(v) : null, k === "fin" ? scheduleEl(v) : null, k === "fin" ? commissionEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
+    const kids = [k === "comp" ? clearanceEl(v) : null, ...cards.map(cardEl), k === "comp" ? fundsEl(v.funds) : null, k === "comp" ? documentsEl(v) : null, k === "ops" ? closingEl(v) : null, k === "ops" ? pathEl(v) : null, k === "ops" ? formfEl(v) : null, k === "ops" ? agencyEl(v) : null, k === "ops" ? termsEl(v) : null, k === "fin" ? scheduleEl(v) : null, k === "fin" ? commissionEl(v) : null, ...appr.map(approvalEl), ...tasks.map(taskEl), ...drafts.map(draftEl)].filter(Boolean);
     return h("section", { class: "dept", id: `dept-${k}` }, h("h2", {}, label, open ? h("span", { class: "chip warn" }, `${open} open`) : null),
       ...(kids.length ? kids : [h("div", { class: "empty" }, `Nothing for ${label} on this deal.`)]));
   });
@@ -923,13 +1163,14 @@ function render() {
       h("div", { class: "muted" }, `${v.property}${s.value ? ` · AED ${s.value.toLocaleString()}` : ""}`)),
     stageBar(v),
     h("div", { class: "strip" }, box("Compliance", s.comp), box("Money", s.money), box("Paperwork", s.paper), box("Review", s.review)),
+    gatesEl(v),
     s.waiting.length ? h("div", {}, "Waiting for ", ...s.waiting.map((p) => h("span", { class: `chip ${p === me() ? "warn" : ""}` }, NAMES[p] || p))) : null,
     h("section", { class: "dept" }, h("h2", {}, "What the customer said"), said),
     ...sections,
     other.length ? h("section", { class: "dept" }, h("h2", {}, "Other questions on this deal"), ...other.map(cardEl)) : null);
 }
 
-const SHOW = ["fact.created", "fact.superseded", "check.raised", "task.created", "task.withdrawn", "task.done", "decision.needed", "decision.made", "question.asked",
+const SHOW = ["compliance.cleared", "compliance.needs_info", "compliance.blocked", "screening.hit", "payment.marked_received", "payment.undone", "payment.flagged", "deal.ready_for_transfer", "transfer.booked", "transfer.completed", "form.recalled", "case.converted", "case.closed", "fact.created", "fact.superseded", "check.raised", "task.created", "task.withdrawn", "task.done", "decision.needed", "decision.made", "question.asked",
   "question.answered", "review.returned", "review.passed", "approval.given", "approval.refused", "execution.done", "document.filed", "draft.made", "stage.changed"];
 async function feed() {
   if (!deal) return;
@@ -941,7 +1182,9 @@ async function feed() {
 }
 
 show();
-if (deal) open(deal);
+const arrived = new URLSearchParams(location.search);  // the Inbox's Convert lands on this box
+if (arrived.get("as") && [...$("as").options].some((o) => o.value === arrived.get("as"))) $("as").value = arrived.get("as");
+if (deal) open(deal).then(() => { if (arrived.get("convert") && view && !view.stages.agreed && view.stages.movers.includes(me())) { stageAsk = "convert"; render(); feed(); } });
 // live: other people's work shows up here, but never while someone is typing (a refresh would wipe their words)
 let rt, pending = false;
 const typing = () => document.activeElement?.matches("input:not([type=search]), textarea") && document.activeElement.value;

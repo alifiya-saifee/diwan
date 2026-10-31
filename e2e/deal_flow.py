@@ -24,6 +24,7 @@ with sync_playwright() as p:
     b = p.chromium.launch()
     pg = b.new_page(viewport={"width": 1440, "height": 1000})
     pg.on("pageerror", lambda e: errors.append(str(e)))
+    pg.on("dialog", lambda d: d.accept())
     api = pg.request
     api.post(f"{BASE}/api/demo/reset")
 
@@ -114,7 +115,7 @@ with sync_playwright() as p:
 
     # Priya marks the compliance check reviewed
     acting("priya")
-    cc = pg.locator("#dept-comp .card.open", has_text="Payment arrangement changed")
+    cc = pg.locator("#dept-comp .card.open:not(#clearance)", has_text="Payment arrangement changed")
     cc.locator("input").fill("Karim's own account; ask for the statement")
     cc.get_by_role("button", name="Reviewed").click()
     pg.wait_for_timeout(800)
@@ -143,6 +144,53 @@ with sync_playwright() as p:
             pg.click("#say")
             pg.wait_for_function(f"document.querySelectorAll('#heard .ev').length > {n}", timeout=6000)
 
+    def _card_img(seed):
+        import io
+        import random
+        from PIL import Image, ImageDraw
+        r = random.Random(seed)
+        im = Image.new("RGB", (1000, 630), (214, 219, 226))
+        d = ImageDraw.Draw(im)
+        for y in range(40, 600, 26):
+            d.rectangle([60, y, 60 + r.randrange(200, 800), y + 12], fill=(r.randrange(20, 90), 40, 70))
+        b_ = io.BytesIO()
+        im.save(b_, "JPEG", quality=92)
+        return b_.getvalue()
+
+    def cleared(deal="marina-1204", who="priya"):
+        """The officer's part of a deal, for checks about what comes after it: rooms_flow.py walks it by hand."""
+        import json
+        base = f"{BASE}/api/desk/deals/{deal}"
+        v = api.get(base).json()
+        for r in v["documents"]["requests"]:
+            tok = r["url"].split("t=")[1]
+            for i, d in enumerate(r["docs"]):
+                if d["status"] == "needed":
+                    f = {"eid_front": {"number": "784-1990-1234567-6", "name": r["name"], "expiry": "2031-01-01"}, "passport": {"number": "P1", "expiry": "2031-01-01"},
+                         "visa": {"expiry": "2031-01-01"}, "title_deed": {"number": "T1", "unit": "1204"}}.get(d["kind"], {})
+                    api.post(f"{BASE}/api/docs/{tok}", multipart={"kind": d["kind"], "fields": json.dumps(f), "file": {"name": "c.jpg", "mimeType": "image/jpeg", "buffer": _card_img(hash((tok, i)) % 9999)}})
+        v = api.get(base).json()
+        for r in v["documents"]["requests"]:
+            for d in r["docs"]:
+                if d.get("check"):
+                    api.post(f"{BASE}/api/desk/tasks/{d['check']}/doc", data={"by": who, "ok": True})
+        for t in v["tasks"]:
+            if t["agent"] == "screen" and t["status"] == "queued":
+                api.post(f"{BASE}/api/desk/tasks/{t['id']}/screen", data={"by": who, "result": "clear", "note": "UN, UAE lists"})
+        for c in v["cards"]:
+            if c["status"] == "open" and c["can"] == "reviewed":
+                api.post(f"{BASE}/api/desk/cards/{c['id']}/answer", data={"by": who, "choice": "Reviewed"})
+            if c["status"] == "open" and c["can"] == "answer" and "funding" in c["text"]:
+                api.post(f"{BASE}/api/desk/cards/{c['id']}/answer", data={"by": c["who"], "choice": "Answered", "note": "Own savings"})
+        api.post(f"{base}/compliance/rate", data={"by": who, "risk": "low"})
+        r = api.post(f"{base}/compliance/clear", data={"by": who, "note": "Seen in person"})
+        assert r.ok, r.text()
+
+    def signed_f(deal="marina-1204"):
+        did = [d for d in api.get(f"{BASE}/api/desk/deals/{deal}").json()["drafts"] if d["kind"] == "Form F" and d["status"] != "sent_back"][-1]["id"]
+        r = api.post(f"{BASE}/api/desk/forms/{did}/signed", multipart={"by": "joseph", "checked": "1", "file": {"name": "f.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 signed"}})
+        assert r.ok, r.text()
+
     def desk(who="priya"):
         pg.goto(f"{BASE}/web/deal.html?deal=marina-1204")
         pg.wait_for_selector("#dept-comp .card")
@@ -157,7 +205,7 @@ with sync_playwright() as p:
     acting("ahmed")
     check("3c", "Ahmed cannot record a screening", "Only Priya records a screening result" in comp.inner_text())
     acting("priya")
-    k = comp.locator(".card", has_text="Screen Karim Haddad")
+    k = comp.locator(".card:not(#clearance)", has_text="Screen Karim Haddad")
     clear()
     k.get_by_role("button", name="Possible match").click()
     check("3d", "a possible match needs the entry", "Say which list" in toast())
@@ -165,7 +213,10 @@ with sync_playwright() as p:
     k.get_by_role("button", name="Clear").click()
     pg.wait_for_timeout(700)
     check("3e", "Karim recorded clear by Priya, with her note", "Clear: UN consolidated and UAE local lists: no entry" in comp.inner_text())
-    comp.locator(".card", has_text="Source of funds").get_by_role("button", name="Received").first.click()
+    src = comp.locator(".card:not(#clearance)", has_text="Source of funds")
+    src.locator("input[type=file]").first.set_input_files({"name": "statement.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 statement"})
+    src.get_by_role("button", name="Received").first.click()
+    pg.wait_for_function("document.querySelector('#dept-comp').innerText.includes('Received: DOC')", timeout=5000)
     pg.wait_for_timeout(700)
     t = comp.inner_text()
     check("3f", "bank statement received: filed with Records, 3 missing", "3 proof missing" in t and "Received: DOC" in t)
@@ -183,7 +234,7 @@ with sync_playwright() as p:
     shot("10-cash-sent-back")
     t = comp.inner_text()
     check("3i", "a correction sends the report back and withdraws the filing task",
-          "SENT BACK" in t.upper() and "still says what" in t and comp.locator(".card", has_text="File the cash report").get_by_text("withdrawn").count() == 1)
+          "SENT BACK" in t.upper() and "still says what" in t and comp.locator(".card:not(#clearance)", has_text="File the cash report").get_by_text("withdrawn").count() == 1)
 
     # ---------- 4. Finance, on a fresh demo office, as Ahmed ----------
     api.post(f"{BASE}/api/demo/reset")
@@ -194,9 +245,11 @@ with sync_playwright() as p:
     clear()
     p.get_by_role("button", name="Received").click()
     check("4b", "received needs a reference", "reference" in toast())
-    p.locator("input").fill("ENBD 4471")
+    p.get_by_label("Payment reference").fill("ENBD 4471")
     p.get_by_role("button", name="Received").click()
     pg.wait_for_timeout(700)
+    cleared()  # Tariq isn't the client: Compliance looks at it, then the receipt goes
+    desk("ahmed")
     p = fin.locator(".card", has_text="Expect AED 260,000 by bank transfer from Tariq Haddad")
     check("4c", "marked received with the reference; receipt filed with Records",
           "Received, reference ENBD 4471" in p.inner_text() and any(e["type"] == "document.filed" and e["content"]["kind"] == "receipt"
@@ -239,15 +292,19 @@ with sync_playwright() as p:
     clear()
     card.get_by_role("button", name="I submitted it").click()
     check("5e", "submitting needs the portal reference", "portal reference" in toast())
+    cleared()
+    signed_f()
+    desk("joseph")
+    card = ops.locator(".card", has_text="Submit Form F D3")
     card.locator("input").fill("DLD-88123")
     card.get_by_role("button", name="I submitted it").click()
     pg.wait_for_timeout(800)
     t = ops.inner_text()
     check("5f", "transfer checklist with who each step waits on", "Developer NOC for the transfer" in t and "waiting on the seller and the developer" in t)
-    ops.locator(".card", has_text="Form F signed by buyer").get_by_role("button", name="Done").click()
+    ops.locator(".card", has_text="Developer NOC").get_by_role("button", name="Done").click()
     pg.wait_for_timeout(700)
     shot("15-transfer")
-    check("5g", "Joseph ticks a step", ops.locator(".card", has_text="Form F signed by buyer").get_by_text("done").count() >= 1)
+    check("5g", "Joseph ticks a step", ops.locator(".card", has_text="Developer NOC").get_by_text("done").count() >= 1)
     rev = pg.locator("#dept-review").inner_text()
     check("6a", "Review: the deck sent back names the slide and the replacement", "Slide 3 still says what F3 said; the customer replaced it (F7)" in rev)
 
@@ -481,7 +538,7 @@ with sync_playwright() as p:
     acting("ahmed")
     pg.wait_for_timeout(500)
     dep = pg.locator("#dept-fin .card", has_text="Expect the security deposit")
-    dep.locator("input").fill("CHQ 001122")
+    dep.get_by_label("Payment reference").fill("CHQ 001122")
     dep.get_by_role("button", name="Received").click()
     pg.wait_for_timeout(900)
     check("12e", "Ahmed marks the deposit received", "Received, reference CHQ 001122" in pg.locator("#dept-fin").inner_text())
@@ -525,17 +582,14 @@ with sync_playwright() as p:
     shot("26a-cheques")
     check("13h", "four cheques for the landlord, each due on its day from the contract", fin.count("Expect Rent cheque") == 4
           and "Expect Rent cheque 2 of 4: AED 475,000 for the landlord" in fin and "Due Mon 1 Feb · from the tenancy contract TC-2026-77" in fin and "from the tenancy contract TC-2026-77" in fin)
+    cleared("jvc-88")
+    as_and_wait("joseph")
     for step in ("Tenancy contract signed", "Security deposit and agency fee received", "Rent cheques collected", "Ejari registered", "Move-in inspection and keys"):
         press("dept-ops", step, "Done")
     cl = pg.locator("#closing").inner_text()
     shot("26-closing")
     check("13a", "the last step starts closing: 4 items, each with who it waits on", "Closing · " in cl and "waiting on Omar" in cl and "Ejari certificate, contract and inventory filed" in cl)
     check("13b", "Close stays off until all four are done", pg.locator("#closing").get_by_role("button", name="Close the deal and record it with Records").is_disabled())
-    as_and_wait("priya")
-    s = pg.locator("#dept-comp .card", has_text="Screen Sara Malik")
-    s.locator("input").fill("UN, UAE lists: no entry")
-    s.get_by_role("button", name="Clear").click()
-    pg.wait_for_timeout(800)
     as_and_wait("omar")
     pg.locator("#closing").get_by_role("button", name="Confirm the final figures").click()
     pg.wait_for_timeout(800)
@@ -543,8 +597,7 @@ with sync_playwright() as p:
     pg.locator("#closing").get_by_role("button", name="Documents filed").click()
     pg.wait_for_timeout(800)
     as_and_wait("ahmed")
-    press("dept-fin", "Commission", "Draft the invoice", 900)
-    inv = pg.locator("#dept-fin .card", has_text="Send commission invoice")
+    inv = pg.locator("#dept-fin .card", has_text="Send commission invoice")  # the owner's trigger drafted it when the tenancy was signed
     inv.locator("input").fill("INV-0101")
     inv.get_by_role("button", name="I sent it").click()
     pg.wait_for_timeout(900)
@@ -654,7 +707,7 @@ with sync_playwright() as p:
           and "Expect On handover: AED 1,040,000" in fin and "from the SPA EM-SPA-0001" in fin)
     as_and_wait("ahmed")
     card = pg.locator("#dept-fin .card", has_text="Expect On SPA signing")
-    card.locator("input").fill("EMR-RCPT-55")
+    card.get_by_label("Payment reference").fill("EMR-RCPT-55")
     card.get_by_role("button", name="Paid into escrow").click()
     pg.wait_for_timeout(1000)
     fin = pg.locator("#dept-fin").inner_text()
@@ -662,6 +715,8 @@ with sync_playwright() as p:
           "Paid into the project's escrow account, receipt EMR-RCPT-55" in fin and "owed now" in fin
           and pg.locator("#dept-fin .card", has_text="Expect On SPA signing").get_by_role("button", name="Approve release").count() == 0
           and pg.locator("#dept-fin").get_by_role("button", name="Draft the invoice").is_enabled())
+    cleared()
+    pg.wait_for_timeout(900)
     as_and_wait("joseph")
     for step in ("Reservation form", "SPA signed with the developer", "Oqood registered"):
         press("dept-ops", step, "Done")
@@ -676,6 +731,9 @@ with sync_playwright() as p:
     as_and_wait("joseph")
     pg.locator("#dept-ops").get_by_role("button", name="Prepare Form F").click()
     pg.wait_for_timeout(1200)
+    cleared()
+    signed_f()
+    pg.wait_for_timeout(1000)
     sub = pg.locator("#dept-ops .card", has_text="Submit Form F")
     sub.locator("input").fill("DLD-77001")
     sub.get_by_role("button", name="I submitted it").click()
@@ -723,14 +781,21 @@ with sync_playwright() as p:
     bar.get_by_role("button", name="Offer accepted").click()
     pg.wait_for_timeout(300)
     conv = pg.locator("#convert")
-    pre = conv.locator("input").input_value()
-    conv.locator("input").fill("2400000")
+    agreed = conv.get_by_label("Agreed price (AED)")
+    pre = agreed.input_value()
+    agreed.fill("2400000")
     low = pg.locator("#delta").inner_text()
-    conv.locator("input").fill("2650000")
+    agreed.fill("2650000")
     high = pg.locator("#delta").inner_text()
     pg.locator("#convert").screenshot(path=str(OUT / "33a-premium.png"))
-    conv.locator("input").fill("2400000")
+    agreed.fill("2400000")
     pg.locator("#convert").screenshot(path=str(OUT / "33b-discount.png"))
+    conv.locator("#propbrought").check()
+    conv.get_by_label("Agency", exact=True).fill("Bayut Homes")
+    conv.get_by_label("Their ORN").fill("ORN-777")
+    conv.get_by_label("Their agent").fill("Rami Aziz")
+    conv.get_by_label("Agent's BRN").fill("BRN-9")
+    conv.get_by_label("Their share of the commission (%)").fill("50")
     check("16b2", "converting asks the agreed price, the listing's filled in; a discount shows in amber, a premium in green",
           pre == "2600000" and "Discount 7.7% · AED 200,000 below the listing price of AED 2,600,000" in low and "Layla approves it first" in low
           and "+1.9% over the listing" in high, f"{low} | {high}")
@@ -754,17 +819,8 @@ with sync_playwright() as p:
           and bar.locator("button.on").inner_text().startswith("Offer accepted"), bar.inner_text().replace("\n", " | ")[:200])
     ag = pg.locator("#agency")
     shot("34-converted")
-    check("16c", "reaching Offer accepted on our listing asks who brought the buyer", "is our listing (MC-1204)" in ag.inner_text() and "did another agent bring the buyer" in ag.inner_text())
-    ag.get_by_label("we act for the seller; another agency brought the buyer").check()
-    pg.fill("#agency input[aria-label='Other agency']", "Bayut Homes")
-    pg.fill("#agency input[aria-label='Their ORN']", "ORN-777")
-    pg.fill("#agency input[aria-label='Their agent']", "Rami Aziz")
-    pg.fill("#agency input[aria-label=\"Agent's BRN\"]", "BRN-9")
-    pg.fill("#agency input[aria-label='Their share of the commission (%)']", "50")
-    clear()
-    pg.click("#savesides")
-    msg = toast()
-    pg.wait_for_timeout(1000)
+    check("16c", "the convert box said who brought the buyer, so nothing asks again", pg.locator("#savesides").count() == 0 and "Bayut Homes" not in bar.inner_text())
+    msg = ""
     ag = pg.locator("#agency")
     t = ag.inner_text()
     shot("35-agency-forms")
@@ -807,6 +863,9 @@ with sync_playwright() as p:
     shot("37-forms-signed")
     filed = [e for e in api.get(f"{BASE}/api/events?deal=marina-1204").json() if e["type"] == "document.filed" and e["content"]["kind"] in ("Form A", "Form I")]
     check("16h", "both signed copies filed with Records", "all signed" in t and t.count("The signed copy") == 2 and len(filed) == 2)
+    cleared()
+    signed_f()
+    pg.wait_for_timeout(900)
     as_and_wait("joseph")
     sub = pg.locator("#dept-ops .card", has_text="Submit Form F")
     sub.locator("input").fill("DLD-55001")
@@ -843,6 +902,7 @@ with sync_playwright() as p:
     phone.screenshot(path=str(OUT / "38-sign-page.png"), full_page=True)
     first = phone.locator("main").inner_text()
     phone.fill("#id", "784-1990-1234567-1")
+    phone.click("#tabphoto")
     phone.set_input_files("#img", {"name": "signature.png", "mimeType": "image/png", "buffer": sig.getvalue()})
     phone.click("#sign")
     phone.wait_for_timeout(700)
@@ -861,6 +921,7 @@ with sync_playwright() as p:
     phone.wait_for_selector("#sign")
     phone.fill("#name", "Omar Saeed")
     phone.fill("#id", "BRN-55501")
+    phone.click("#tabphoto")
     phone.set_input_files("#img", {"name": "signature.png", "mimeType": "image/png", "buffer": sig.getvalue()})
     phone.check("#consent")
     phone.click("#sign")
@@ -981,10 +1042,10 @@ with sync_playwright() as p:
     api.post(f"{BASE}/api/desk/deals/marina-1204/sides", data={"by": "omar", "sides": "both"})
     view = api.get(f"{BASE}/api/desk/deals/marina-1204").json()
     for f in view["agency"]["forms"]:
-        api.post(f"{BASE}/api/desk/tasks/{f['task']}/signed", multipart={"by": "omar", "file": {"name": "s.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 signed"}})
+        api.post(f"{BASE}/api/desk/tasks/{f['task']}/signed", multipart={"by": "omar", "checked": "1", "file": {"name": "s.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 signed"}})
     api.post(f"{BASE}/api/desk/deals/marina-1204/formf", data={"by": "joseph"})
     sub = next(t for t in api.get(f"{BASE}/api/desk/deals/marina-1204").json()["tasks"] if t["agent"] == "formf" and t["draft"] and t["status"] == "queued")
-    api.post(f"{BASE}/api/desk/tasks/{sub['id']}/submitted", data={"by": "joseph", "reference": "DLD-20"})
+    cleared()
     pg.goto(f"{BASE}/web/deal.html?deal=marina-1204")
     pg.wait_for_selector("#formf")
     as_and_wait("omar")
@@ -1000,18 +1061,20 @@ with sync_playwright() as p:
         ph.wait_for_selector("#sign")
         ph.fill("#name", who)
         ph.fill("#id", idn)
+        ph.click("#tabphoto")
         ph.set_input_files("#img", {"name": "signature.png", "mimeType": "image/png", "buffer": sig.getvalue()})
         ph.check("#consent")
         ph.click("#sign")
         ph.wait_for_timeout(1000)
         ph.close()
+    api.post(f"{BASE}/api/desk/tasks/{sub['id']}/submitted", data={"by": "joseph", "reference": "DLD-20"})
     pg.goto(f"{BASE}/web/deal.html?deal=marina-1204")
     pg.wait_for_selector("#dept-ops .card")
     as_and_wait("joseph")
     step = pg.locator("#dept-ops .card", has_text="Form F signed by buyer").inner_text()
     shot("47-formf-signed")
     filed = [e for e in api.get(f"{BASE}/api/events?deal=marina-1204").json() if e["type"] == "document.filed" and e["content"]["kind"] == "Form F"]
-    check("20c", "everyone signed: the signed Form F is filed and its paperwork step ticked itself", "Signed online by everyone" in step and len(filed) == 1)
+    check("20c", "everyone signed: the signed Form F is filed and its paperwork step ticked itself", "Signed before it was submitted" in step and len(filed) == 1)
 
     # a view that can't load says so instead of going blank
     pg.route("**/api/desk/overview", lambda r: r.fulfill(status=502, body="{}"))
