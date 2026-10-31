@@ -12,12 +12,25 @@
   .people { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
   .people button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
   .line { padding: 8px 0; border-bottom: 1px dashed var(--line); }
+  .daybar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0 14px; }
+  .daybar button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .dayg { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-bottom: 14px; align-items: start; }
+  .dayg h2 { display: flex; justify-content: space-between; }
+  .dayg .wide { grid-column: 1 / -1; }
+  .it { padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 13.5px; }
+  .it:last-child { border-bottom: 0; }
+  .it .late { color: var(--bad); font-weight: 600; }
+  .top3 { font-size: 15px; }
+  .said { font-size: 12.5px; color: var(--muted); }
+  .pocket { width: 100%; min-height: 80px; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Talk to <em>Nova</em></h1>
+  <h1 id="hello">Talk to <em>Nova</em></h1>
   <p class="sub">Ask Nova anything about the office, or give an instruction. Every answer names the records it came from.</p>
+  <div class="daybar" id="modes"></div>
+  <div class="dayg" id="day"></div>
   <div class="grid cols-2">
     <section class="panel">
       <h2>Nova</h2>
@@ -50,10 +63,11 @@ $("tries").replaceChildren("Try: ", ...TRIES.map((t) => h("a", { href: "#", oncl
 async function send() {
   const text = $("say").value.trim();
   if (!text) return;
-  const r = await post("/api/nova/say", { text, person: $("as").value });
+  const r = await post("/api/pa/say", { text, person: $("as").value, session: `nova-${$("as").value}` });
+  if (r.kind === "silent") { $("say").value = ""; return; }
   const box = h("div", { class: `answer ${r.kind || ""}` }, r.text);
   if (r.options) box.append(h("div", { style: "margin-top:8px" }, ...r.options.map((o) => h("button", { style: "margin:4px 6px 0 0",
-    onclick: () => { $("say").value = `${text.replace(/\?$/, "")} (${o})${text.endsWith("?") ? "?" : ""}`; send(); } }, o))));
+    onclick: () => { $("say").value = r.kind === "confirm" ? o : `${text.replace(/\?$/, "")} (${o})${text.endsWith("?") ? "?" : ""}`; send(); } }, o))));
   if (r.cites?.length) box.append(h("div", { class: "small", style: "margin-top:8px" }, "Records: ", ...r.cites.map((c) => h("span", { class: "chip" }, c))));
   if (r.by) box.append(h("div", { class: "small muted" }, r.by === "rules" ? "Composed from records (no model plugged in)" : `Written by ${r.by}, quotes checked`));
   $("answer").replaceChildren(box);
@@ -62,7 +76,7 @@ $("go").onclick = send;
 $("say").onkeydown = (e) => { if (e.key === "Enter") send(); };
 
 async function brief() {
-  $("people").replaceChildren(...Object.entries(NAMES).map(([k, v]) => h("button", { class: k === person ? "on" : "", onclick: () => { person = k; brief(); } }, v)));
+  $("people").replaceChildren(...Object.entries(NAMES).map(([k, v]) => h("button", { class: k === person ? "on" : "", onclick: () => { person = k; brief(); day(); } }, v)));
   const b = await api(`/api/nova/brief/${person}`);
   const speak = h("button", { onclick: () => { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(b.text)); } }, "Read it aloud");
   $("brief").replaceChildren(h("div", { class: "line" }, h("strong", {}, b.text.split(". ")[0] + ".")),
@@ -70,6 +84,54 @@ async function brief() {
       h("div", {}, ...l.refs.map((r) => h("span", { class: "chip" }, r))))),
     h("div", { class: "small muted", style: "margin-top:6px" }, `The agents are handling ${b.working.length} task(s).`), speak);
 }
+
+// The day, from the records: urgent first, then today, the pipeline, the money and what waits for this person.
+const hhmm = (iso) => new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Dubai" });
+const list = (title, n, kids, cls = "") => h("section", { class: `panel ${cls}` }, h("h2", {}, title, n != null ? h("span", { class: "small muted" }, String(n)) : null),
+  ...(kids.length ? kids : [h("div", { class: "small muted" }, "Nothing here.")]));
+const decisionLink = (d) => d.deal ? `deal.html?deal=${encodeURIComponent(d.deal)}` : "#";
+let dayN = 0;
+async function day() {
+  const n = ++dayN;
+  const d = await api(`/api/pa/day?person=${person}`);
+  if (n !== dayN) return;  // a newer one is on its way: an older answer never overwrites it
+  $("hello").textContent = d.greeting;
+  if (d.wrap) $("hello").nextElementSibling.textContent = d.wrap;
+  $("modes").replaceChildren(h("span", { class: "chip" }, d.modes[d.mode]), ...Object.entries({ normal: "At my desk", meeting: "Hey Pocket", dnd: "Do not disturb" }).map(([k, l]) =>
+    h("button", { class: d.mode === k ? "on" : "", onclick: async () => { const r = await post("/api/pa/mode", { person, mode: k }); if (r.text) toast(r.text.slice(0, 120)); if (r.summary) showAfter(r); day(); } }, l)));
+  const blocks = [];
+  if (d.mode === "meeting") {
+    const box = h("textarea", { class: "pocket", placeholder: "What's being said. Say \"Hey Pocket\" at the start of a line to ask something; everything else is only kept." });
+    const keep = async () => { const t = box.value.trim(); if (!t) return; box.value = ""; const r = await post("/api/pa/say", { person, text: t, session: person }); if (r.text) toast(r.text.slice(0, 200)); await day(); document.querySelector("textarea.pocket")?.focus(); };
+    box.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); keep(); } };
+    const mic = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const listen = mic ? h("button", { onclick: () => { const r = new mic(); r.continuous = true; r.onresult = (e) => { box.value = e.results[e.results.length - 1][0].transcript; keep(); }; r.start(); toast("Listening in this browser"); } }, "🎙 Listen") : null;
+    blocks.push(h("section", { class: "panel wide" }, h("h2", {}, "In a meeting", h("span", { class: "small muted" }, `${d.pocket?.lines.length || 0} lines kept`)), box,
+      h("div", { class: "row", style: "margin-top:6px" }, h("button", { onclick: keep }, "Keep this"), listen),
+      h("div", {}, ...(d.pocket?.lines || []).slice(-4).map((l) => h("div", { class: "said" }, l.text)))));
+  }
+  blocks.push(list("🔥 Urgent", d.urgent.length, d.urgent.map((u) => h("div", { class: "it" }, u.late ? h("span", { class: "late" }, "Late · ") : null,
+      u.chat ? h("a", { href: `inbox.html?chat=${encodeURIComponent(u.chat)}` }, u.text) : u.deal ? h("a", { href: `deal.html?deal=${encodeURIComponent(u.deal)}` }, u.text) : u.text))),
+    list("🗓 Today", d.today.length, d.today.map((v) => h("div", { class: "it" }, h("b", {}, hhmm(v.at)), ` ${v.what}${v.listing ? ` of ${v.listing}` : ""} with ${v.customer} (${v.broker})`,
+      v.cares.length ? h("div", { class: "said" }, `Cares about: ${v.cares.join(", ")}`) : null, v.last ? h("div", { class: "said" }, `Last said: "${v.last}"`) : null))),
+    list("✅ Decisions waiting for you", d.decisions.length, d.decisions.map((x) => h("div", { class: "it" }, x.text, " ", x.deal ? h("a", { class: "btn", href: decisionLink(x) }, "Open") : null))));
+  if (d.pipeline) blocks.push(list("📈 Pipeline", null, [
+    h("div", { class: "it" }, `${d.pipeline.new} new since yesterday · ${d.pipeline.hot} hot`),
+    h("div", { class: "it" }, ...Object.entries(d.pipeline.by_stage).map(([s, n]) => h("span", { class: "chip", style: "margin:0 4px 4px 0" }, `${s} ${n}`))),
+    ...d.pipeline.moved.map((m) => h("div", { class: "it" }, `${m.deal} moved to ${m.stage}`)),
+    ...d.pipeline.escalated.map((e) => h("div", { class: "it" }, `Call moved from ${e.from} to ${e.to}`))]),
+    list("🧱 Stuck", d.pipeline.stuck.length, d.pipeline.stuck.map((s) => h("div", { class: "it" }, h("a", { href: `deal.html?deal=${encodeURIComponent(s.deal)}` }, s.property), ` · ${s.days} days quiet`))));
+  if (d.money) blocks.push(list("💰 Money", null, [h("div", { class: "it" }, `${d.money.received} payment${d.money.received === 1 ? "" : "s"} marked received · ${d.money.invoices} invoice step${d.money.invoices === 1 ? "" : "s"} done since yesterday`),
+    ...d.money.commission_due.map((c) => h("div", { class: "it" }, c.text))]));
+  blocks.push(list("🧭 Errands", d.errands.length, d.errands.map((e) => h("div", { class: "it" }, h("b", {}, e.title), h("div", { class: "said", style: "white-space:pre-wrap" }, e.draft),
+      ...(e.sources || []).map((s) => h("div", { class: "said" }, h("a", { href: s, target: "_blank", rel: "noopener" }, s))),
+      h("div", { class: "row", style: "margin-top:6px" }, h("button", { class: "primary", onclick: async () => { const r = await post(`/api/pa/errands/${e.id}/confirm`, { person }); toast(r.text); day(); } }, "Confirm"),
+        h("button", { onclick: async () => { await post(`/api/pa/errands/${e.id}/cancel`, { person }); day(); } }, "Cancel"))))),
+    list("⏰ Reminders", d.reminders.length, d.reminders.map((r) => h("div", { class: "it" }, r.due ? h("b", {}, `${new Date(r.due).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Dubai" })} ${hhmm(r.due)} `) : null, r.text, " ",
+      h("button", { onclick: async () => { await post(`/api/pa/reminders/${r.id}/done`, { person }); day(); } }, "Done")))));
+  $("day").replaceChildren(...blocks);
+}
+function showAfter(r) { $("answer").replaceChildren(h("div", { class: "answer" }, r.text)); }
 
 const feed = $("feed");
 function add(evs) {
@@ -86,8 +148,10 @@ $("correct").onclick = async () => {
   brief();
 };
 $("reset").onclick = async () => { await post("/api/demo/reset"); feed.replaceChildren(); toast("Demo office reset"); setTimeout(() => location.reload(), 400); };
-brief();
-follow((evs) => { add(evs); brief(); });
+const met = await post("/api/pa/arrive", { person });  // the first open of the day: the greeting and the top three
+if (met.first && met.top.length) $("answer").replaceChildren(h("div", { class: "answer top3" }, h("strong", {}, met.greeting), ...met.top.map((t, i) => h("div", {}, `${i + 1}. ${t.text}`))));
+brief(); day();
+follow((evs) => { add(evs); brief(); if (!document.activeElement?.closest("#day")) day(); });  // never redraw under someone typing
 </script>
 </body>
 </html>

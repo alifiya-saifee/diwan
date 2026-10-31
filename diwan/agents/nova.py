@@ -60,6 +60,12 @@ REFUSE = [
      "Only Ahmed releases money. The Payment tracker shows what is expected."),
     (r"\bfile\b.*\b(str|sar|report|goaml)\b|\b(str|sar)\b", "file_report", "Only Priya files reports. The Report drafter can prepare a draft for her."),
     (r"\bsuspicious\b", "decide_suspicion", "Only Priya decides whether anything is suspicious. The Source-of-funds analyst can lay out what fits and what is missing."),
+    (r"\bmark\b.*\b(received|paid)\b", "mark_received", "Only a person marks money received. Open the payment on the Deal desk: the form is there for you to confirm."),
+    (r"\bclear\b.*\b(hit|match|screening|name)\b", "clear_hit", "Only the compliance officer clears a screening result."),
+    (r"\bsign\b(?! off| up| in)", "sign", "Only a person signs. I can prepare it and show you what it rests on."),
+    (r"\b(send|share|give)\b.*\b(bank details|iban|account (number|details))\b", "send_bank_details",
+     "No agent sends bank details. Payment instructions come from the signed documents, and Finance confirms them by phone."),
+    (r"\b(change|update|edit)\b.*\bsettings?\b", "change_settings", "I don't change Settings: the owner does that on the Settings page."),
 ]
 
 
@@ -86,7 +92,8 @@ def resolve_deal(g: Graph, text: str, person: str) -> tuple[str | None, list[str
     hits = [d.deal for d in g.deals() if said & deal_words(g, d.deal)]
     if len(hits) == 1:
         return hits[0], hits
-    pool = hits or [d.deal for d in g.deals() if person not in ("omar",) or d.props.get("broker") == person]
+    brokers_own = PEOPLE.get(person, {}).get("role") == "Broker"  # a broker's "which deal?" is among their own
+    pool = hits or [d.deal for d in g.deals() if not brokers_own or d.props.get("broker") == person]
     return (pool[0], pool) if len(pool) == 1 else (None, pool)
 
 
@@ -182,13 +189,15 @@ def converse(office: Office, text: str, person: str = "layla", *, session: str =
         return out
     if out := lobby.follow_up(office, t, person, session, now):
         return out
+    from diwan.agents import frontdesk
+    if out := frontdesk.handle(office, t, person, session, now):
+        return out
     if m := re.match(r"(?i)^\s*(?:set\s+)?(\w[\w' -]*?)\s+(?:to|on)\s+(autopilot|review everything|review all|review key actions|review key|review)\s*$", t):
         from diwan.agents.charters import ROSTER
         agent = next((c.id for c in ROSTER if c.name.lower() == m.group(1).lower()), None)
-        if agent:
-            lvl = {"autopilot": "autopilot", "review everything": "review_all", "review all": "review_all"}.get(m.group(2).lower(), "review_key")
-            lessons.set_level(office.log, agent, lvl, by=person)
-            return {"kind": "done", "text": f"{get(agent).name} is now on {lessons.LEVELS[lvl].lower()}."}
+        if agent:  # a setting: never changed by a PA, whoever asks
+            res = runner.submit(office.log, get(NOVA), Pack(_req(office, "route"), NOVA, f"Not something an agent may do: {t}", actions=[Action("change_settings", t)]), sources={})
+            return {"kind": "refused", "event": res.refused[0]["id"], "text": f"I don't change how agents run. Set {get(agent).name} on the Team page."}
     if out := lessons.draft(t, session):
         return out
     if m := re.match(r"(?i)^(?:brief me|set (?:my )?briefing)(?: at| for| to)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", t):
@@ -205,17 +214,18 @@ def converse(office: Office, text: str, person: str = "layla", *, session: str =
     return ask(office, t, person, session=session, tape_root=tape_root, today=now.date()) if q else route(office, t, person, tape_root=tape_root)
 
 
-def ask(office: Office, question: str, person: str = "layla", *, session: str | None = None, tape_root=None, today=None) -> dict:
+def ask(office: Office, question: str, person: str = "layla", *, session: str | None = None, tape_root=None, today=None, scoped: bool = False) -> dict:
+    """`scoped`: a staff member's PA asking about one deal they may see: the deal's records only, not the office's numbers."""
     g, req, person = office.graph(), _req(office, "ask"), pid(person) or "layla"
     c = get(NOVA)
     intents = {k for k, rx in INTENTS.items() if re.search(rx, question.lower())}
-    if out := everyday(office, g, question, person, req):
+    if not scoped and (out := everyday(office, g, question, person, req)):
         return out
-    if intents <= {"needs"} and "needs" in intents:
+    if not scoped and intents <= {"needs"} and "needs" in intents:
         b = brief(office, person, log=False)
         return {"kind": "answer", "text": b["text"], "cites": sorted({r for ln in b["lines"] for r in ln["refs"]}), "by": "rules", "request": req}
     from diwan.agents import records
-    if out := records.delegate(office, question, person, req, today=today):
+    if not scoped and (out := records.delegate(office, question, person, req, today=today)):
         return out
     deal, pool = resolve_deal(g, question, person)
     if deal is None and session and SESSIONS.get(session) in {d.deal for d in g.deals()}:
@@ -232,7 +242,7 @@ def ask(office: Office, question: str, person: str = "layla", *, session: str | 
     if not ids:
         pack = Pack(req, NOVA, "I don't have that in the office's records.", missing=[question], next=[_who_knows(g, deal)])
         runner.submit(office.log, c, pack, sources=sources, deal=deal)
-        return {"kind": "unknown", "text": f"I don't have that in the office's records. {_who_knows(g, deal)}.", "cites": [], "request": req}
+        return {"kind": "unknown", "text": f"Not recorded. {_who_knows(g, deal)}.", "cites": [], "request": req}
     system = runner.instructions(c, office.log)
     task = f"{name(person)} asks: {question}\nAnswer in at most three sentences from these records only, citing record ids in brackets."
     res = None
@@ -485,7 +495,7 @@ def lobby_due(c) -> str:
     return datetime.fromisoformat(c.props["due"]).strftime("%I:%M %p %a").lstrip("0") if c.props.get("due") else "no deadline"
 
 
-LEADS = ["sales", "ops", "fin", "comp", "review", "records"]
+LEADS = ["sales", "mkt", "ops", "fin", "comp", "review", "records"]
 
 
 def rounds(office: Office, now: datetime | None = None) -> dict:
@@ -555,7 +565,7 @@ def brief(office: Office, person: str, *, since: int = 0, log: bool = True, now:
 
 PEOPLE_TEAM = {"priya": "comp", "ahmed": "fin", "joseph": "ops", "omar": "sales"}
 DUBAI = timezone(timedelta(hours=4))
-DEFAULT_TIME = "09:00"
+DEFAULT_TIME = "08:00"  # with the rounds 30 minutes before: 07:30 Dubai time
 
 
 def briefing_time(g: Graph, person: str) -> str:

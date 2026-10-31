@@ -57,7 +57,8 @@ def test_lessons_reach_the_models_instructions(office, monkeypatch, tmp_path):
 
 
 def test_review_turns_rania_into_suggestions_and_books_nothing(office):
-    assert talk(office, "Rania to review key actions")["text"] == "Rania is now on review key actions."
+    assert talk(office, "Rania to review key actions")["kind"] == "refused"  # a PA never changes how agents run
+    lessons.set_level(office.log, "rania", "review_key", by="layla")
     reception.message(office, PH, "Hi", name_="Ali", now=NOW)
     r = reception.message(office, PH, "Can I see MC-1204 Saturday at 4pm?", now=NOW)
     assert r["mode"] == "review" and r["suggestion"].endswith("Shall I confirm it?")
