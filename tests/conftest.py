@@ -13,6 +13,7 @@ KEYS = ["META_API_KEY", "MODEL_API_KEY", "BASETEN_API_KEY", "FIREWORKS_API_KEY",
 def clean_env(monkeypatch, tmp_path):
     """Tests never see the developer's .env or real keys."""
     monkeypatch.setattr("diwan.config.ROOT", tmp_path)
+    monkeypatch.setenv("DIWAN_AUTH", "off")  # the gate has its own tests, tests/test_access.py
     for k in KEYS:
         monkeypatch.delenv(k, raising=False)
     for p in PROVIDERS.values():

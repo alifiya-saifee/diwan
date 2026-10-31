@@ -1,0 +1,184 @@
+"""The gate: nobody in without signing in, each person only their department, and everyone acts as themselves."""
+import pytest
+from fastapi.testclient import TestClient
+
+from diwan import access
+from diwan.app import app
+
+
+@pytest.fixture
+def web(monkeypatch):
+    monkeypatch.setenv("DIWAN_AUTH", "on")
+    monkeypatch.setenv("DIWAN_DB", ":memory:")
+    access._fails.clear()
+    for who in ("layla", "omar", "maya", "priya", "ahmed"):
+        access.set_password(who, "a good password")
+    with TestClient(app, follow_redirects=False) as c:
+        yield c
+
+
+def signed_in(web, who):
+    r = web.post("/api/auth/login", json={"person": who, "password": "a good password"})
+    assert r.status_code == 200
+    return r.json()
+
+
+def test_nothing_without_signing_in(web):
+    assert web.get("/api/chats").status_code == 401
+    assert web.post("/api/chats/incoming", json={"phone": "1", "text": "x"}).status_code == 401
+    r = web.get("/web/inbox.html")
+    assert r.status_code == 303 and r.headers["location"].startswith("/web/login.html")
+    assert web.get("/").status_code == 303
+
+
+def test_a_socket_stays_shut_without_signing_in(web):
+    with pytest.raises(Exception):
+        with web.websocket_connect("/ws/events"):
+            pass
+
+
+def test_what_clients_and_other_companies_reach_stays_open(web):
+    assert web.get("/web/login.html").status_code == 200
+    assert web.get("/web/sign.html").status_code == 200
+    assert web.get("/web/docs.html").status_code == 200
+    assert web.get("/web/app.css").status_code == 200
+    assert web.get("/api/whatsapp/webhook").status_code != 401
+    assert web.get("/api/auth/me").json()["person"] is None
+
+
+def test_a_wrong_password_gets_nothing_and_many_lock_it(web):
+    for _ in range(access.TRIES):
+        assert web.post("/api/auth/login", json={"person": "omar", "password": "wrong password"}).status_code == 401
+    assert web.post("/api/auth/login", json={"person": "omar", "password": "a good password"}).status_code == 429
+    assert web.get("/api/chats").status_code == 401
+
+
+def test_someone_without_a_login_cannot_sign_in(web):
+    assert web.post("/api/auth/login", json={"person": "nadia", "password": "a good password"}).status_code == 401
+
+
+def test_sales_sees_sales_not_marketing_or_the_owners_pages(web):
+    d = signed_in(web, "omar")
+    assert d["home"] == "sales.html" and "studio.html" not in d["pages"]
+    assert web.get("/api/chats").status_code == 200
+    assert web.get("/api/studio").status_code == 403
+    assert web.get("/api/marketing/chat").status_code in (403, 405)
+    assert web.get("/web/studio.html").headers["location"] == "/web/sales.html"
+    for page in ("office3d.html", "index.html", "settings.html", "graph.html", "team.html"):
+        assert web.get(f"/web/{page}").status_code == 303
+
+
+def test_marketing_sees_the_studio_not_the_inbox_or_deals(web):
+    d = signed_in(web, "maya")
+    assert d["home"] == "studio.html"
+    assert web.get("/api/studio").status_code == 200
+    assert web.get("/api/chats").status_code == 403
+    assert web.get("/api/desk/overview").status_code == 403
+    assert web.get("/web/inbox.html").status_code == 303
+
+
+def test_compliance_and_finance_work_on_the_deal_desk_only(web):
+    signed_in(web, "priya")
+    assert web.get("/web/deal.html").status_code == 200
+    assert web.get("/api/chats").status_code == 403
+    assert web.get("/api/studio").status_code == 403
+
+
+def test_a_new_route_nobody_listed_is_the_owners(web):
+    assert not access.may_call("omar", "GET", "/api/something-new")
+    assert access.may_call("layla", "GET", "/api/something-new")
+
+
+def test_the_inbox_learns_the_line_without_seeing_any_address_or_token(web):
+    signed_in(web, "omar")
+    assert web.get("/api/integrations").status_code == 403
+    line = web.get("/api/line").json()
+    assert set(line) == {"provider", "aisensy", "cloud"} and set(line["cloud"]) == {"connected"}
+
+
+def test_the_sales_manager_sees_every_brokers_calendar(web):
+    access.set_password("rashid", "a good password")
+    signed_in(web, "rashid")
+    assert web.get("/api/calendar").status_code == 200
+
+
+def test_the_owner_sees_everything(web):
+    d = signed_in(web, "layla")
+    assert d["owner"] and d["pages"] is None
+    for path in ("/api/chats", "/api/studio", "/api/desk/overview", "/api/costs", "/api/graph"):
+        assert web.get(path).status_code == 200, path
+
+
+def test_only_the_owner_reads_the_logs_nova_and_settings(web):
+    signed_in(web, "omar")
+    for method, path in (("get", "/api/graph"), ("get", "/api/costs"), ("get", "/api/integrations"), ("post", "/api/nova/say"), ("post", "/api/demo/reset")):
+        assert getattr(web, method)(path).status_code == 403, path
+
+
+def test_a_screen_cannot_act_as_someone_else(web):
+    signed_in(web, "omar")
+    assert web.post("/api/rania/recommend", json={"by": "layla", "how_many": 2}).status_code == 403  # owner's; said to be layla, it is omar
+    assert web.get("/api/notices/hamza").status_code == 403
+    assert web.get("/api/notices/omar").status_code == 200
+
+
+def test_the_event_stream_shows_only_the_department(web):
+    signed_in(web, "maya")
+    types = {e["type"] for e in web.get("/api/events").json()}
+    assert not any(t.startswith(("chat.", "lead.", "fact.", "check.", "sale.")) for t in types)
+
+
+def test_a_notice_for_someone_else_is_not_seen(web):
+    token = access.USER.set("omar")
+    try:
+        shown = access.visible([{"type": "notify.sent", "actor": "rania", "content": {"to": "omar"}}, {"type": "notify.sent", "actor": "rania", "content": {"to": "hamza"}}])
+    finally:
+        access.USER.reset(token)
+    assert [e["content"]["to"] for e in shown] == ["omar"]
+
+
+def test_client_documents_are_for_the_deal_team(web):
+    assert web.get("/media/doc-abc-passport.jpg").status_code == 401
+    signed_in(web, "maya")
+    assert web.get("/media/sig-abc.jpg").status_code == 403
+
+
+def test_marketings_files_stay_public_for_instagram(web):
+    assert web.get("/media/cut-MC-1204-F1.mp4").status_code != 401
+
+
+def test_signing_out_ends_it_and_a_new_password_ends_every_session(web):
+    signed_in(web, "omar")
+    assert web.get("/api/chats").status_code == 200
+    web.post("/api/auth/logout")
+    assert web.get("/api/chats").status_code == 401
+    signed_in(web, "omar")
+    access.set_password("omar", "another password")
+    assert web.get("/api/chats").status_code == 401
+
+
+def test_only_the_owner_manages_logins(web):
+    signed_in(web, "omar")
+    assert web.get("/api/auth/people").status_code == 403
+    assert web.post("/api/auth/password", json={"person": "hamza", "password": "a good password"}).status_code == 403
+    web.post("/api/auth/logout")
+    signed_in(web, "layla")
+    assert web.post("/api/auth/password", json={"person": "hamza", "password": "short"}).status_code == 400
+    assert web.post("/api/auth/password", json={"person": "hamza", "password": "a good password"}).json()["has_login"]
+    assert web.post("/api/auth/password", json={"person": "omar", "password": ""}).json()["has_login"] is False
+    assert not access.has_password("omar")
+    assert web.post("/api/auth/password", json={"person": "layla", "password": ""}).status_code == 400
+
+
+def test_the_first_password_is_from_this_machine_only(monkeypatch, tmp_path):
+    monkeypatch.setenv("DIWAN_AUTH", "on")
+    monkeypatch.setenv("DIWAN_DB", ":memory:")
+    with TestClient(app, follow_redirects=False) as c:  # the test client is not 127.0.0.1, as a stranger on the internet is not
+        assert c.get("/api/auth/me").json()["setup"] is True
+        assert c.post("/api/auth/setup", json={"password": "a good password"}).status_code == 403
+    assert not access.has_password("layla")
+
+
+def test_passwords_are_never_kept_as_they_were_typed(web, tmp_path):
+    data = (tmp_path / "auth.db").read_bytes()
+    assert b"a good password" not in data

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan · Sign in</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .box { width: min(380px, calc(100vw - 32px)); }
+  .box h1 { margin-bottom: 4px; }
+  .box label { display: block; margin-top: 12px; }
+  .box button { width: 100%; margin-top: 16px; }
+  .err { color: var(--bad); font-size: 13px; margin-top: 10px; min-height: 18px; }
+</style>
+</head>
+<body>
+<form class="panel box" id="form">
+  <h1>Diwan</h1>
+  <p class="sub" id="say">Sign in to your office.</p>
+  <div id="who"><label for="person">Your name</label><input id="person" autocomplete="username" autofocus></div>
+  <label for="password">Password</label><input id="password" type="password" autocomplete="current-password">
+  <div id="again" hidden><label for="password2">The same password again</label><input id="password2" type="password" autocomplete="new-password"></div>
+  <button class="primary" id="go" type="submit">Sign in</button>
+  <div class="err" id="err" role="alert"></div>
+</form>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const wanted = new URLSearchParams(location.search).get("next") || "";
+const next = (fallback) => location.replace(/^\/web\/[a-z0-9]+\.html$/.test(wanted) ? wanted : `/web/${fallback}`);
+const send = async (path, body) => {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.detail || "That didn't work. Try again.");
+  return d;
+};
+const me = await fetch("/api/auth/me").then((r) => r.json());
+if (!me.auth || me.person) next(me.home || "office3d.html");
+if (me.setup) {
+  $("say").textContent = "First, the owner chooses a password. Everyone else's are set in Settings.";
+  $("who").hidden = true; $("again").hidden = false; $("go").textContent = "Create the owner's password";
+  $("password").autocomplete = "new-password"; $("password").focus();
+}
+$("form").onsubmit = async (e) => {
+  e.preventDefault();
+  $("err").textContent = "";
+  try {
+    if (me.setup && $("password").value !== $("password2").value) throw new Error("The two passwords are different");
+    const d = me.setup ? await send("/api/auth/setup", { password: $("password").value })
+      : await send("/api/auth/login", { person: $("person").value, password: $("password").value });
+    next(d.home);
+  } catch (x) { $("err").textContent = x.message; $("password").value = ""; $("password").focus(); }
+};
+</script>
+</body>
+</html>
