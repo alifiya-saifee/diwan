@@ -133,7 +133,7 @@ def test_api_form_is_owner_only(monkeypatch):
     assert c.post("/api/qualify/form", json={"form": f, "by": "omar"}).status_code == 403
     r = c.post("/api/qualify/form", json={"form": f, "by": "layla"})
     assert r.status_code == 200 and c.get("/api/qualify/form").json()["version"] == 1
-    assert "Qualifying" in inbox.STAGES
+    assert "Qualifying" in inbox.stage_names(appmod.S.office.graph())
 
 
 # ---------- how strict each question is (the owner's choice) ----------

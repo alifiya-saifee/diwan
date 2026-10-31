@@ -284,6 +284,15 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                                              "comment_id": c.get("comment_id"), "channel": c.get("channel"), "nudge": c.get("nudge"),
                                              "reminder": c.get("reminder")})
                 ch.props["last_at"] = e["at"]
+                if (into := g.nodes.get(f"chat:{ch.props.get('merged_into')}")) is not None:  # merged: it shows in that lead's thread too
+                    into.props["messages"].append(ch.props["messages"][-1] | {"chat": ch.props["phone"]})
+                    into.props["last_at"] = e["at"]
+        elif t == "chat.merged" and f"chat:{c['into']}" in g.nodes and f"chat:{c['from']}" in g.nodes:
+            into, frm = g.nodes[f"chat:{c['into']}"], g.nodes[f"chat:{c['from']}"]  # the same person on two numbers or accounts
+            frm.props["merged_into"], frm.deal = c["into"], into.deal
+            into.props.setdefault("merged", []).append(c["from"])
+            into.props["messages"] = sorted(into.props["messages"] + [m | {"chat": c["from"]} for m in frm.props["messages"]], key=lambda m: m["event"])
+            into.props["last_at"] = max(into.props.get("last_at") or "", frm.props.get("last_at") or "")
         elif t == "stage.changed" and f"deal:{deal}" in g.nodes:
             g.nodes[f"deal:{deal}"].props["stage"] = c["stage"]
             g.nodes[f"deal:{deal}"].props.setdefault("stages", []).append({"stage": c["stage"], "at": e["at"], "by": e["actor"]})
@@ -414,7 +423,7 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                 d["followup"] = dict(c) | {"status": "draft", "at": e["at"], "id": e["id"]}
             elif d.get("followup"):
                 d["followup"]["status"] = "sent" if t == "followup.sent" else "dismissed"
-        elif t in ("lead.recommended", "lead.hot", "lead.kind", "lead.nurture", "lead.reopened", "followup.nudged", "lead.optout",
+        elif t in ("lead.recommended", "lead.hot", "lead.unhot", "lead.no_calls", "lead.followups", "lead.kind", "lead.nurture", "lead.reopened", "followup.nudged", "lead.optout",
                    "lead.went_quiet") and f"deal:{deal}" in g.nodes:
             d = g.nodes[f"deal:{deal}"].props
             if t == "followup.nudged":  # a follow-up while the client was quiet, sent or skipped (and why)
@@ -423,6 +432,16 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                 d["optout"] = {"quote": c.get("quote"), "at": e["at"]}
             elif t == "lead.went_quiet":
                 d["went_quiet"] = e["id"]
+            elif t == "lead.unhot":  # a person says it isn't hot after all
+                d.pop("hot", None)
+            elif t == "lead.followups":  # this lead's own follow-up schedule, or stopped for this lead (None: the office's)
+                d["followups"] = {"after_hours": c.get("after_hours"), "stopped": bool(c.get("stopped")), "by": e["actor"], "at": e["at"]} \
+                    if c.get("after_hours") or c.get("stopped") else None
+            elif t == "lead.no_calls":  # the client asked not to be called (or asked for a call again)
+                if c.get("on"):
+                    d["no_calls"] = {"by": e["actor"], "at": e["at"], "quote": c.get("quote")}
+                else:
+                    d.pop("no_calls", None)
             elif t == "lead.kind":
                 d["kind"], d["kind_name"] = c["kind"], c["name"]
             elif t == "lead.recommended":

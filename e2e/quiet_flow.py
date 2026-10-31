@@ -90,7 +90,7 @@ with sync_playwright() as p:
     customer(A, "Hi, I want to buy")
     customer(A, "Dubai Marina")
     prof = pg.locator("#prof").inner_text()
-    check(4, "The lead shows its follow-ups: 0 of 3 sent and when the next is due", "follow-ups when quiet" in prof.lower() and "0 of 3 sent · next" in prof,
+    check(4, "The lead shows its follow-ups: 0 of 3 sent and when the next is due", "follow-ups" in prof.lower() and "when quiet" in prof.lower() and "0 of 3 sent · next" in prof,
           shot("04-scheduled"))
     pg.goto(f"{BASE}/web/qualify.html")
     pg.wait_for_timeout(700)

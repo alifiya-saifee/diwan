@@ -40,7 +40,7 @@ TYPES = {
     # qualification: the owner's form, the customer type, answers with quotes, and the verdict
     "qualify.form", "qualify.type", "qualify.answer", "qualify.asked", "qualify.passed", "qualify.not_fit", "qualify.open",
     "agent.added", "agent.paused", "agent.resumed", "agent.removed", "lead.recommended", "lead.hot", "lead.kind",
-    "followup.drafted", "followup.sent", "followup.dismissed", "lead.nurture", "lead.reopened", "followup.nudged", "lead.optout", "lead.went_quiet", "appointment.moved", "appointment.reminded", "appointment.done", "appointment.noshow", "calendar.morning", "visit.summarized", "calendar.blocked", "calendar.unblocked", "appointment.link", "appointment.link_removed",
+    "followup.drafted", "followup.sent", "followup.dismissed", "lead.nurture", "lead.reopened", "followup.nudged", "lead.optout", "lead.went_quiet", "appointment.moved", "appointment.reminded", "appointment.done", "appointment.noshow", "calendar.morning", "visit.summarized", "calendar.blocked", "calendar.unblocked", "appointment.link", "appointment.link_removed", "lead.unhot", "lead.no_calls", "lead.followups", "chat.merged",
 }
 
 

@@ -97,6 +97,32 @@ def _chat(g: Graph, deal: str):
     return next((c for c in g.of("chat") if c.deal == deal), None)
 
 
+def lead_settings(g: Graph, deal: str | None) -> dict:
+    """The office's schedule, or this lead's own when the broker set one (docs/lead-profile-spec.md)."""
+    s = settings(g)
+    own = (g.nodes[f"deal:{deal}"].props.get("followups") or {}) if deal and f"deal:{deal}" in g.nodes else {}
+    return s | {"after_hours": own["after_hours"]} if own.get("after_hours") else s
+
+
+def set_for_lead(office: Office, chat: str, *, by: str, after_hours: list | None = None, stopped: bool = False) -> dict | None:
+    """The broker (or the owner) gives one lead its own schedule, stops its follow-ups (a person can still write to them),
+    or puts it back on the office's schedule (neither given)."""
+    from diwan import leads
+    g = office.graph()
+    deal = g.nodes[f"chat:{chat}"].deal
+    leads._may_act(g, deal, by)
+    if after_hours:
+        try:
+            hours = [float(h) for h in after_hours]
+        except (TypeError, ValueError):
+            raise ValueError("Follow-ups: times like 1d, 3d, 7d") from None
+        if not 1 <= len(hours) <= 5 or any(h <= 0 for h in hours) or hours != sorted(set(hours)):
+            raise ValueError("Follow-ups: one to five times, each later than the one before")
+        after_hours = [int(h) if h == int(h) else h for h in hours]
+    office.log.append("lead.followups", actor=by, deal=deal, content={"chat": chat, "after_hours": after_hours or None, "stopped": stopped})
+    return office.graph().nodes[f"deal:{deal}"].props.get("followups")
+
+
 def why_not(g: Graph, chat, now: datetime) -> str | None:
     """Why this conversation gets no follow-up, in words a broker understands, or None when it is in the schedule."""
     d = g.nodes.get(f"deal:{chat.deal}")
@@ -104,6 +130,9 @@ def why_not(g: Graph, chat, now: datetime) -> str | None:
     msgs = [m for m in chat.props["messages"] if m["type"] in ("received", "sent")]
     if p.get("optout"):
         return f"stopped: they said “{p['optout']['quote']}”"
+    if (p.get("followups") or {}).get("stopped"):
+        from diwan.people import name
+        return f"stopped for this lead by {name(p['followups']['by'])}"
     if chat.props["mode"] != "ai":
         return "a person has the chat"
     if p.get("nurture"):
@@ -124,17 +153,21 @@ def why_not(g: Graph, chat, now: datetime) -> str | None:
 def state(g: Graph, chat, now: datetime) -> dict:
     """Where this conversation is in the owner's schedule: how many follow-ups since the client last wrote, when the
     next one is due, or why there is none."""
-    s = settings(g)
+    s = lead_settings(g, chat.deal)
     p = (g.nodes.get(f"deal:{chat.deal}") or chat).props
     last_in = next((m for m in reversed(chat.props["messages"]) if m["type"] == "received"), None)
     since = last_in["event"] if last_in else 0
     done = [n for n in p.get("nudges", []) if n["event"] > since]
     out = {"sent": len(done), "delivered": sum(1 for n in done if n.get("sent") is not False),
            "of": len(s["after_hours"]), "last": done[-1] if done else None, "next": None, "then": None,
-           "why_not": why_not(g, chat, now)}
+           "why_not": why_not(g, chat, now), "own": p.get("followups"), "after_hours": s["after_hours"],
+           "steps": [{"n": n["n"], "at": n["at"], "status": "sent" if n.get("sent") is not False else "skipped", "why": n.get("why"),
+                      "text": next((m["text"] for m in chat.props["messages"] if m.get("nudge") == n["n"] and m["event"] > since), None)} for n in done]}
     if out["why_not"] or not last_in:
         return out
     base = _at(last_in["at"])
+    out["steps"] += [{"n": i + 1, "at": next_allowed(s, base + timedelta(hours=h)).isoformat(), "status": "planned"}
+                     for i, h in enumerate(s["after_hours"]) if i >= len(done)]
     if len(done) < len(s["after_hours"]):
         out["next"] = next_allowed(s, base + timedelta(hours=s["after_hours"][len(done)])).isoformat()
     elif s["then"] != "nothing" and not p.get("went_quiet", 0) > since:

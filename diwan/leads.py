@@ -133,6 +133,8 @@ def raise_card(office: Office, chat: str, *, reason: str, text: str = "", to: st
     g = office.graph()
     ch = g.nodes[f"chat:{chat}"]
     kind = kind or ("call" if re.search(CALL, text.lower()) else "reply")
+    if kind == "call" and no_calls(g, ch.deal):  # they asked not to be called: the broker replies in the chat instead
+        kind, reason = "reply", f"No calls (they asked): {reason}"
     to = to or g.nodes[f"deal:{ch.deal}"].props["broker"]
     if (cur := open_card(g, chat)) and not replace and not (kind == "call" and cur.props["kind"] != "call"):
         return None
@@ -205,11 +207,112 @@ def claim(office: Office, chat: str, *, by: str) -> dict:
 
 
 def reassign(office: Office, chat: str, to: str, *, by: str) -> dict:
-    """A manager moves a lead, or a broker covers for a colleague."""
+    """A manager moves a lead, or a broker covers for a colleague. Its open card goes with it (the graph moves it)."""
     if to not in brokers():
         raise ValueError(f"{name(to)} is not a broker")
     ch = office.graph().nodes[f"chat:{chat}"]
     return assign(office, ch.deal, to, by=by, why=f"moved by {name(by)}", chat=chat)
+
+
+def _may_act(g: Graph, deal: str, by: str) -> None:
+    from diwan import qualify
+    if by != g.nodes[f"deal:{deal}"].props.get("broker") and by not in qualify.owner_ids():
+        raise PermissionError(f"Only {name(g.nodes[f'deal:{deal}'].props.get('broker'))} (the broker) or the owner does this")
+
+
+def no_calls(g: Graph, deal: str | None) -> bool:
+    return bool(deal and f"deal:{deal}" in g.nodes and g.nodes[f"deal:{deal}"].props.get("no_calls"))
+
+
+def set_no_calls(office: Office, chat: str, *, on: bool, by: str, quote: str | None = None) -> None:
+    """The client asked not to be called: Rania never offers or promises a call, and call cards become reply cards. Set by
+    the broker (or the owner); turned off by Rania when the client asks for a call themselves."""
+    g = office.graph()
+    deal = g.nodes[f"chat:{chat}"].deal
+    if by != "rania":
+        _may_act(g, deal, by)
+    if no_calls(g, deal) == on:
+        return
+    ev = office.log.append("lead.no_calls", actor=by, deal=deal, content={"on": on, "chat": chat, "quote": (quote or "")[:300] or None})
+    broker = g.nodes[f"deal:{deal}"].props.get("broker")
+    if by != broker:
+        label = g.nodes[f"chat:{chat}"].label
+        notify(office, broker, f"{label} asked for a call, so \u201cno calls\u201d is off: \u201c{(quote or '')[:120]}\u201d" if by == "rania" and not on
+               else f"{name(by)} set \u201c{'no calls' if on else 'calls are fine'}\u201d for {label}.", chat=chat, kind="info", cause=ev["id"])
+
+
+def merge(office: Office, into: str, other: str, *, by: str) -> dict:
+    """The same person wrote on two numbers or accounts (Instagram and WhatsApp, say): one lead from now on. Both
+    histories show in this lead's thread; answers this lead lacks are taken from the other; the other lead closes as
+    merged, and anything they send there arrives here."""
+    g = office.graph()
+    if into == other:
+        raise ValueError("Pick a different conversation")
+    a, b = g.nodes.get(f"chat:{into}"), g.nodes.get(f"chat:{other}")
+    if not a or not b:
+        raise ValueError("No such conversation")
+    if a.props.get("merged_into") or b.props.get("merged_into"):
+        raise ValueError(f"{(b if b.props.get('merged_into') else a).label} is already merged into another lead")
+    _may_act(g, a.deal, by)
+    ev = office.log.append("chat.merged", actor=by, deal=a.deal, content={"into": into, "from": other, "from_deal": b.deal})
+    da = g.nodes[f"deal:{a.deal}"].props
+    db = g.nodes[f"deal:{b.deal}"].props if b.deal and f"deal:{b.deal}" in g.nodes else {}
+    src = f"from {b.label}'s other conversation"
+    if db.get("qtype") and not da.get("qtype"):
+        office.log.append("qualify.type", actor=by, agent="rania", deal=a.deal, caused_by=ev["id"],
+                          content={"type": db["qtype"], "quote": db.get("qtype_quote"), "source": src})
+    for k, v in (db.get("answers") or {}).items():
+        if k not in (da.get("answers") or {}):
+            office.log.append("qualify.answer", actor=by, agent="rania", deal=a.deal, caused_by=ev["id"],
+                              content={"field": k, "value": v["value"], "quote": v.get("quote"), "unsure": v.get("unsure"), "source": src})
+    if b.deal and b.deal != a.deal:
+        office.log.append("stage.changed", actor=by, deal=b.deal, caused_by=ev["id"],
+                          content={"stage": "Lost", "auto": True, "reason": f"merged into {a.label} ({into})"})
+        if (card := open_card(office.graph(), other)) is not None:
+            clear(office, card.id, "not_needed", by=by, note=f"merged into {a.label}")
+        if db.get("broker") and db["broker"] not in (by, da.get("broker")):
+            notify(office, db["broker"], f"{name(by)} merged {b.label}'s conversation into {a.label}'s lead ({name(da.get('broker'))}).",
+                   chat=into, kind="info", cause=ev["id"])
+    from diwan import inbox
+    inbox.auto_stage(office, a.deal, cause=ev["id"])  # their answers may move this lead on (Qualifying, Qualified)
+    return {"into": into, "from": other}
+
+
+def mark_hot(office: Office, chat: str, *, on: bool, by: str, note: str = "") -> None:
+    """The broker marks a lead hot, or not; the broker hears when someone else does."""
+    g = office.graph()
+    deal = g.nodes[f"chat:{chat}"].deal
+    _may_act(g, deal, by)
+    d = g.nodes[f"deal:{deal}"].props
+    if on:
+        ev = office.log.append("lead.hot", actor=by, deal=deal, content={"listing": (d.get("hot") or {}).get("listing"), "why": f"marked by {name(by)}",
+                                                                          "quote": note.strip()[:300] or None, "chat": chat})
+    else:
+        ev = office.log.append("lead.unhot", actor=by, deal=deal, content={"note": note.strip()[:300] or None, "chat": chat})
+    if by != d.get("broker"):
+        notify(office, d["broker"], f"{name(by)} marked {g.nodes[f'chat:{chat}'].label} {'hot' if on else 'not hot'}.", chat=chat, kind="info", cause=ev["id"])
+
+
+def follow_up_on(office: Office, chat: str, *, by: str, at: datetime, kind: str, note: str, now: datetime) -> str:
+    """Follow up on a date: a card for the broker due then (overdue and the Pool like any card). Nothing reaches the client."""
+    from diwan import slots
+    g = office.graph()
+    deal = g.nodes[f"chat:{chat}"].deal
+    _may_act(g, deal, by)
+    if kind not in ("call", "reply"):
+        raise ValueError("A call or a message")
+    if at <= now:
+        raise ValueError("Pick a day and time ahead")
+    if cur := open_card(g, chat):
+        raise ValueError(f"This lead already has an open card: {cur.props['reason'][:80]} (due "
+                         f"{datetime.fromisoformat(cur.props['due']).astimezone(DUBAI):%a %d %b %H:%M}). Clear it first.")
+    to = g.nodes[f"deal:{deal}"].props["broker"]
+    ev = office.log.append("attention.raised", actor=by, deal=deal,
+                           content={"chat": chat, "kind": kind, "reason": f"Follow up {slots.say(at)}" + (f": {note.strip()[:200]}" if note.strip() else ""),
+                                    "who": to, "raised": now.isoformat(), "due": at.isoformat(), "replaces": None, "set_by": by})
+    if by != to:
+        notify(office, to, f"{name(by)} set a follow-up for {g.nodes[f'chat:{chat}'].label}, {slots.say(at)}.", chat=chat, kind="info", cause=ev["id"])
+    return f"AT{ev['id']}"
 
 
 # ---------- the catalog and portal enquiries ----------

@@ -932,7 +932,7 @@ class SendIn(BaseModel):
 def chats(view: str = "all", person: str = "omar", stage: str | None = None, q: str = ""):
     from diwan import inbox
     return {"rows": inbox.listing(S.office, view=view, person=person, stage=stage, q=q), "counts": inbox.counts(S.office, person),
-            "stages": inbox.STAGES}
+            "stages": inbox.stage_names(g())}
 
 
 @app.get("/api/chats/{phone}")
@@ -1013,16 +1013,118 @@ def send_template(phone: str, body: TemplateIn):
 class StageIn(BaseModel):
     stage: str
     by: str = "omar"
+    reason: str = ""
 
 
 @app.post("/api/chats/{phone}/stage")
 def chat_stage(phone: str, body: StageIn):
+    """A person moves the lead, under the Deal desk's rules (a reason for Lost or moving back)."""
     from diwan import inbox
+    if f"chat:{phone}" not in g().nodes:
+        raise HTTPException(404, "no such conversation")
     try:
-        inbox.set_stage(S.office, phone, body.stage, by=body.by)
+        inbox.set_stage(S.office, phone, body.stage, by=body.by, reason=body.reason)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
     except ValueError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(400, str(e)) from None
     return {"ok": True}
+
+
+class HotIn(BaseModel):
+    by: str
+    on: bool = True
+    note: str = ""
+
+
+@app.post("/api/chats/{phone}/hot")
+def chat_hot(phone: str, body: HotIn):
+    """The broker (or the owner) marks the lead hot, or not."""
+    from diwan import leads
+    if f"chat:{phone}" not in g().nodes:
+        raise HTTPException(404, "no such conversation")
+    try:
+        leads.mark_hot(S.office, phone, on=body.on, by=body.by, note=body.note)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    return {"ok": True}
+
+
+class NoCallsIn(BaseModel):
+    by: str
+    on: bool = True
+
+
+@app.post("/api/chats/{phone}/no-calls")
+def chat_no_calls(phone: str, body: NoCallsIn):
+    """The client asked not to be called: Rania never offers a call, and call cards become reply cards."""
+    from diwan import leads
+    if f"chat:{phone}" not in g().nodes:
+        raise HTTPException(404, "no such conversation")
+    try:
+        leads.set_no_calls(S.office, phone, on=body.on, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    return {"ok": True}
+
+
+class LeadFollowIn(BaseModel):
+    by: str
+    after_hours: list[float] | None = None
+    stopped: bool = False
+
+
+@app.post("/api/chats/{phone}/followups")
+def chat_followups(phone: str, body: LeadFollowIn):
+    """This lead's own follow-up schedule, stopped for this lead, or back on the office's (neither given)."""
+    from diwan.agents import nudge
+    if f"chat:{phone}" not in g().nodes:
+        raise HTTPException(404, "no such conversation")
+    try:
+        return {"followups": nudge.set_for_lead(S.office, phone, by=body.by, after_hours=body.after_hours, stopped=body.stopped)}
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class MergeIn(BaseModel):
+    by: str
+    other: str
+
+
+@app.post("/api/chats/{phone}/merge")
+def chat_merge(phone: str, body: MergeIn):
+    """The same person on two numbers or accounts: one lead from now on."""
+    from diwan import leads
+    try:
+        return leads.merge(S.office, phone, body.other, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class FollowAtIn(BaseModel):
+    by: str
+    at: str
+    kind: str = "call"
+    note: str = ""
+
+
+@app.post("/api/chats/{phone}/follow-up-on")
+def chat_follow_up_on(phone: str, body: FollowAtIn):
+    """Follow up on a date: a card for the broker, due then. Nothing is sent to the client."""
+    from diwan import leads
+    if f"chat:{phone}" not in g().nodes:
+        raise HTTPException(404, "no such conversation")
+    try:
+        return {"card": leads.follow_up_on(S.office, phone, by=body.by, at=_when(body.at, "day and time"), kind=body.kind,
+                                           note=body.note, now=datetime.now(slots.DUBAI))}
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
 
 
 # ---------- the lead desk: Attention, the Pool, the sales team, notices ----------
@@ -1572,7 +1674,7 @@ def appointment_after(vid: str, what: str, body: ApptIn):
     if what == "done" and (body.notes or "").strip():  # the broker's notes: the visit summary the follow-up is built on
         visit.summarize(S.office, v.deal, said=body.notes, source="notes", appointment=vid, by=body.by, cause=ev["id"])
     if what == "done" and v.props.get("chat") and v.props.get("where", "property") == "property":
-        inbox.set_stage(S.office, v.props["chat"], "Viewed", by=body.by)  # drafts the follow-up
+        inbox.set_stage(S.office, v.props["chat"], "Viewed", by=body.by, only_forward=True)  # drafts the follow-up
     elif what == "done" and (body.notes or "").strip():
         followup.draft(S.office, v.deal, why="after the meeting", cause=ev["id"])
     return {"ok": True, "visit": visit.latest(g(), v.deal)}

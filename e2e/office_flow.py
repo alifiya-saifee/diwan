@@ -44,17 +44,21 @@ with sync_playwright() as p:
     expect(pg.locator(".thread")).to_contain_text("Rania · AI", timeout=60_000)
     reply = pg.locator(".b.sent").last.inner_text()
     step(f"Rania replied: {[x for x in reply.splitlines() if x and x != 'Rania · AI'][0][:120]}")
-    assert ("Booked" in reply and "Saturday 31 Oct, 4:00 PM" in reply) or ("isn't available" in reply and "Saturday" in reply), f"wrong time: {reply}"
+    from datetime import datetime as _dt
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
+    from diwan import slots as _slots
+    want = _slots.say(_slots.parse("Saturday at 4pm", _dt.now(_slots.DUBAI)))  # the next Saturday, whatever today is
+    assert ("Booked" in reply and want in reply) or ("isn't available" in reply and "Saturday" in reply), f"wrong time: {reply}"
     pg.screenshot(path=str(SHOTS / "o1-rania.png"))
-    pg.locator(".switch").click()
-    expect(pg.locator(".switch")).to_contain_text("has it")
+    pg.locator(".chead .switch").click()
+    expect(pg.locator(".chead .switch")).to_contain_text("has it")
     pg.click("#phoneclose")
     pg.fill("#box", "Hi Sara, Omar here. Saturday 4pm works, I'll meet you in the lobby.")
     pg.locator(".compose .tools button.primary").click()
     expect(pg.locator(".b.sent.person").last).to_contain_text("Omar here", timeout=20_000)
     step("a person took over and replied")
-    pg.locator(".switch").click()
-    expect(pg.locator(".switch")).to_contain_text("Rania replying")
+    pg.locator(".chead .switch").click()
+    expect(pg.locator(".chead .switch")).to_contain_text("Rania replying")
     step("handed back to Rania")
 
     # 2. a lesson on the Team page, kept in the next reply

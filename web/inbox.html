@@ -144,6 +144,31 @@
   .ic.dk { color: var(--gold-2, #e8c77a); border-color: rgba(232, 199, 122, .45); background: rgba(232, 199, 122, .1); font-weight: 600; }
   .ic.budget { color: var(--gold-2); border-color: rgba(232, 199, 122, .3); background: var(--gold-soft); }
   .ic.size { color: var(--violet); border-color: rgba(181, 145, 243, .3); background: rgba(181, 145, 243, .07); }
+  /* acting on the lead, at the top of the profile */
+  .act { margin: 14px 18px 0; display: grid; gap: 10px; }
+  .act label { margin: 0 0 4px; }
+  .act select { padding: 8px 10px; }
+  .qa { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .qa button { padding: 9px 8px; font-size: 12.5px; border-radius: 10px; text-align: center; }
+  .qa button.on { background: var(--bad-soft); color: var(--bad); border-color: rgba(242,125,125,.35); }
+  .qa .done { grid-column: 1 / -1; font-size: 12.5px; padding: 8px 10px; border-radius: 10px; background: rgba(130,217,159,.1); color: var(--green); }
+  .qa .wait { grid-column: 1 / -1; font-size: 12.5px; padding: 8px 10px; border-radius: 10px; background: var(--warn-soft); color: var(--warn); }
+  .actform[hidden] { display: none; }
+  .actform { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line-2); border-radius: 12px; background: rgba(255,255,255,.03); }
+  .actform .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .actform .btns { display: flex; gap: 8px; justify-content: flex-end; }
+  .stagebtn { padding: 6px 10px; font-size: 12px; }
+  .futabs { display: flex; gap: 6px; margin-bottom: 8px; }
+  .futabs button { flex: 1; padding: 7px 8px; font-size: 12.5px; border-radius: 9px; background: rgba(255,255,255,.04); border-color: transparent; color: var(--muted); }
+  .futabs button.on { background: var(--gold-soft); color: var(--gold-2); border-color: rgba(232,199,122,.4); }
+  .step { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .step .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .step .w { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+  .step.planned .t { color: var(--muted); } .step.skipped .t { color: var(--warn); }
+  .fubtns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .fubtns button { padding: 6px 10px; font-size: 12px; }
+  .nocall { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border: 1px solid var(--line-2); border-radius: 10px; font-size: 13px; cursor: pointer; }
+  .nocall.on { border-color: rgba(240,179,94,.45); background: var(--warn-soft); }
   .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: grid; place-items: center; z-index: 60; }
   .modal .panel { width: 520px; max-width: calc(100vw - 32px); max-height: 80vh; overflow: auto; }
   .tpl { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
@@ -201,7 +226,8 @@ let ME = params.get("as") || (() => { try { return localStorage.getItem("diwan.i
 let view = "all", stage = null, current = params.get("chat"), data = { rows: [], counts: {}, stages: [] }, detail = null, integ = null, team = [];
 const PORTAL = { propertyfinder: "Property Finder", bayut: "Bayut", dubizzle: "Dubizzle", instagram: "Instagram" };
 const ACTS = [["called", "📞 Called"], ["messaged", "💬 Messaged"], ["no_answer", "No answer"], ["not_needed", "Not needed…"]];
-const left = (a) => a.pooled ? "in the Pool" : a.overdue ? `overdue ${-a.minutes_left}m` : `${a.minutes_left}m left`;
+const span = (m) => m >= 1440 ? `${Math.round(m / 1440)}d` : m >= 120 ? `${Math.round(m / 60)}h` : `${m}m`;
+const left = (a) => a.pooled ? "in the Pool" : a.overdue ? `overdue ${span(-a.minutes_left)}` : `${span(a.minutes_left)} left`;
 
 const COLORS = ["#e8c77a", "#5ccfb5", "#7ea6f8", "#b591f3", "#f0b35e", "#82d99f", "#f27d7d"];
 const avatar = (name) => { const n = name || "?"; const c = COLORS[[...n].reduce((a, ch) => a + ch.charCodeAt(0), 0) % COLORS.length];
@@ -256,6 +282,7 @@ function renderList() {
           r.stage && r.stage !== "New" && !r.viewing ? h("span", { class: "tg" }, r.stage) : null,
           PORTAL[r.source] ? h("span", { class: "tg" }, PORTAL[r.source]) : null,
           r.mode !== "ai" ? h("span", { class: "tg person" }, `${NAMES[r.handled_by] || "A person"} has it`) : null,
+          r.no_calls ? h("span", { class: "tg", title: "They asked not to be called" }, "📵 no calls") : null,
           r.failed ? h("span", { class: "tg bad" }, `${r.failed} not sent`) : null)));
   }) : [h("div", { class: "empty" }, $("q").value.trim() || stage || view !== "all" ? "Nothing matches. Try All, or clear the search." : "No conversations yet. Messages from WhatsApp, portals and Instagram arrive here.")]));
   if (!data.rows.length && !current) $("chat").replaceChildren(h("div", { class: "welcome" }, h("div", { class: "wic" }, "💬"), h("h2", {}, "No conversations yet"),
@@ -280,8 +307,8 @@ function renderChat() {
     h("button", { class: "back", "aria-label": "Back to the list", onclick: () => $("cols").classList.remove("open") }, "←"),
     avatar(d.name),
     h("div", { class: "who" }, h("div", { class: "nm" }, d.name), h("div", { class: "ph" }, `${shown(d.phone)} · ${via}${PORTAL[d.source] && !ig ? ` · lead from ${PORTAL[d.source]}` : ""}`)),
-    h("select", { title: "Stage", "aria-label": "Stage", onchange: async (e) => { await post(`/api/chats/${d.phone}/stage`, { stage: e.target.value, by: ME }); load(); } },
-      d.stages.map((st) => h("option", { value: st, selected: st === d.stage }, st))),
+    h("button", { class: "stagebtn", title: "Change the stage in the lead profile", onclick: () => { $("cols").classList.add("prof-open"); setTimeout(() => { $("pstage")?.scrollIntoView({ block: "center" }); $("pstage")?.focus(); }, 50); } },
+      `${d.stage} ▾`),
     h("select", { class: "own", title: "Who owns this lead", "aria-label": "Broker", onchange: async (e) => {
         try { await post(`/api/chats/${d.phone}/assign`, { to: e.target.value, by: ME }); toast(`Moved to ${NAMES[e.target.value]}`); } catch (er) { toast(er.message); }
         load(); } },
@@ -308,7 +335,8 @@ function renderChat() {
     const by = m.type === "received" ? null : m.type === "suggested" ? "Rania · suggested reply" : m.by === "rania" ? "Rania · AI" : NAMES[m.by] || m.by;
     thread.append(h("div", { class: `b ${m.type} ${person ? "person" : ""} ${m.status === "failed" ? "failed" : ""}`, dir: "auto" },
       by ? h("span", { class: "by" }, by) : null, m.text,
-      h("div", { class: "m" }, m.nudge ? h("span", { class: "chip" }, `follow-up ${m.nudge}`) : null, m.template ? h("span", { class: "chip" }, `template · ${m.template}`) : null,
+      h("div", { class: "m" }, m.chat && m.chat !== d.phone ? h("span", { class: "chip", title: "From their other conversation (merged)" }, `via ${shown(m.chat)}`) : null,
+        m.nudge ? h("span", { class: "chip" }, `follow-up ${m.nudge}`) : null, m.template ? h("span", { class: "chip" }, `template · ${m.template}`) : null,
         m.reminder ? h("span", { class: "chip" }, `reminder ${m.reminder}`) : null,
         ...(m.refs || []).filter((r) => r.startsWith("listing:")).map((r) => h("span", { class: "chip" }, r.replace("listing:", ""))),
         clock(m.at), m.type === "sent" ? h("span", { title: m.via === "sandbox" ? "Sandbox: not sent to WhatsApp" : `Sent via ${m.via}` }, m.status === "failed" ? "⚠" : m.via === "sandbox" ? "✓ sandbox" : "✓") : null),
@@ -330,7 +358,8 @@ function renderChat() {
 function attentionBanner(d) {
   const a = d.attention;
   const due = new Date(a.due).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-  const why = h("span", { class: "why" }, a.kind === "call" ? "📞 Wants a call: " : "Needs a reply: ", a.reason, ` · ${NAMES[a.who] || a.who} · due ${due} (${left(a)})`);
+  const set = /^Follow up /.test(a.reason);  // one the broker set for a day, not something the client asked for
+  const why = h("span", { class: "why" }, set ? "⏰ " : a.kind === "call" ? "📞 Wants a call: " : "Needs a reply: ", a.reason, ` · ${NAMES[a.who] || a.who} · due ${due} (${left(a)})`);
   if (a.pooled) return h("div", { class: "banner att late" }, why,
     h("button", { class: "primary", onclick: async () => { try { await post(`/api/chats/${d.phone}/claim?by=${ME}`); toast("Claimed: it's yours"); } catch (e) { toast(e.message); } load(); } }, "Claim this lead"));
   return h("div", { class: `banner att ${a.overdue ? "late" : ""}` }, why, ...ACTS.map(([k, l]) => h("button", { onclick: async () => {
@@ -456,6 +485,53 @@ function visitPanel(v) {
 }
 
 // Follow-ups while the client is quiet: the owner's schedule, never daily, stopped by "stop"
+// This lead's follow-ups (docs/lead-profile-spec.md): the messages while they're quiet, each sent or planned, with its own
+// schedule or stopped; and the calls. The old quietPanel below is kept for the summary line.
+let fuTab = "msg";
+function followupsPanel(d) {
+  const s = d.quiet;
+  if (!s) return null;
+  const can = (d.desk?.movers || []).includes(ME);
+  const when = (iso) => `${day(iso)}, ${clock(iso)}`;
+  const hrs = (h) => h % 24 === 0 ? `${h / 24}d` : `${h}h`;
+  const go = async (body, done) => { try { await post(`/api/chats/${encodeURIComponent(d.phone)}/followups`, { by: ME, ...body }); toast(done); load(); } catch (e) { toast(e.message); } };
+  const line = s.why_not ? (s.why_not.startsWith("stopped") ? `🛑 No follow-ups: ${s.why_not}.` : `None due: ${s.why_not}.`)
+    : s.next ? `${s.sent} of ${s.of} sent · next ${when(s.next)}`
+    : s.then ? `${s.sent} of ${s.of} sent · after ${when(s.then)}, the owner's last step` : `${s.sent} of ${s.of} sent`;
+  const box = h("div", {});
+  const tabs = h("div", { class: "futabs", role: "tablist" },
+    h("button", { role: "tab", class: fuTab === "msg" ? "on" : "", onclick: () => { fuTab = "msg"; renderProfile(); } }, `When quiet · ${s.sent}/${s.of}`),
+    h("button", { role: "tab", class: fuTab === "call" ? "on" : "", onclick: () => { fuTab = "call"; renderProfile(); } }, `Calls · ${d.calls.length}`));
+  if (fuTab === "msg") {
+    const own = s.own || {};
+    box.append(h("div", { class: "fact small" }, line),
+      ...(s.steps || []).map((st) => h("div", { class: `step ${st.status}` }, h("span", { class: "muted" }, `${st.n}.`),
+        h("span", { class: "t", title: st.text || st.why || "" }, st.status === "planned" ? "Planned" : st.status === "skipped" ? `Skipped: ${st.why}` : (st.text || "Sent")),
+        h("span", { class: "w" }, st.status === "planned" ? when(st.at) : `${st.status} ${when(st.at)}`))),
+      h("div", { class: "small muted", style: "margin-top:6px" }, own.after_hours ? `This lead's own schedule: ${own.after_hours.map(hrs).join(", ")}`
+        : `The office's schedule: ${(s.after_hours || []).map(hrs).join(", ")}`),
+      can ? h("div", { class: "fubtns" },
+        h("button", { onclick: () => {
+          const inp = h("input", { id: "fuafter", value: (own.after_hours || s.after_hours || []).map(hrs).join(", "), placeholder: "e.g. 1d, 3d, 7d" });
+          box.append(h("div", { class: "actform", style: "margin-top:8px" }, h("label", { for: "fuafter" }, "This lead's schedule, after their last message"), inp,
+            h("div", { class: "btns" }, h("button", { onclick: () => renderProfile() }, "Cancel"),
+              h("button", { class: "primary", onclick: () => {
+                const hours = [...inp.value.matchAll(/(\d+(?:\.\d+)?)\s*([hdw]?)/gi)].map(([, n, u]) => +n * ({ d: 24, w: 168 }[u.toLowerCase()] || 1));
+                go({ after_hours: hours }, "This lead's schedule saved");
+              } }, "Save"))));
+          inp.focus(); } }, "Change"),
+        own.stopped ? h("button", { onclick: () => go({}, "Follow-ups back on") }, "Resume")
+          : h("button", { onclick: () => go({ stopped: true }, "No more follow-ups for this lead") }, "Stop for this lead"),
+        own.after_hours ? h("button", { onclick: () => go({}, "Back on the office's schedule") }, "Use the office's") : null) : null,
+      h("a", { class: "small", href: "qualify.html#quietbox", style: "display:block;margin-top:8px" }, "The office's schedule and quiet hours →"));
+  } else {
+    box.append(...(d.calls.length ? d.calls.map((c) => h("div", { class: "step" }, h("span", {}, "📞"),
+      h("span", { class: "t", title: c.what }, c.what), h("span", { class: "w" }, `${{ open: "open", cleared: c.done || "done", replaced: "replaced", booked: "booked", done: "done", cancelled: "cancelled", no_show: "no-show" }[c.status] || c.status} · ${when(c.when)}`)))
+      : [h("div", { class: "small muted" }, "No calls for this lead yet.")]));
+  }
+  return h("div", { class: "sec quietsec" }, h("h2", {}, "Follow-ups"), tabs, box);
+}
+
 function quietPanel(s) {
   if (!s) return null;
   const when = (iso) => `${day(iso)}, ${clock(iso)}`;
@@ -487,6 +563,68 @@ function qualifyPanel(q) {
     h("a", { class: "small", href: "qualify.html" }, "Questions and conditions →"));
 }
 
+// Acting on the lead (docs/lead-profile-spec.md): its stage under the Deal desk's rules, and the quick actions.
+function actPanel(d) {
+  const desk = d.desk || {}, cur = d.stage, order = d.stages;
+  const can = (desk.movers || []).includes(ME), closed = desk.closed;
+  const form = h("div", { class: "actform", hidden: true });
+  const show = (...kids) => { form.replaceChildren(...kids); form.hidden = false; };
+  const hide = () => { form.hidden = true; form.replaceChildren(); };
+  const go = async (path, body, done) => { try { const r = await post(path, { by: ME, ...body }); toast(done(r)); load(); } catch (e) { toast(e.message); } };
+  const sel = h("select", { id: "pstage", "aria-label": "Stage", disabled: !can || closed },
+    ...order.map((s) => h("option", { value: s, selected: s === cur }, s)), h("option", { value: "Won", disabled: true }, "Won (comes from closing)"));
+  sel.onchange = () => {
+    const to = sel.value, back = to === "Lost" || cur === "Lost" || order.indexOf(to) < order.indexOf(cur);
+    if (!back) { go(`/api/chats/${d.phone}/stage`, { stage: to }, () => `Moved to ${to}`); return; }
+    show(h("label", { for: "preason" }, to === "Lost" ? "Why is this lead lost?" : `Why move it back to ${to}?`),
+      h("input", { id: "preason", placeholder: to === "Lost" ? "e.g. bought elsewhere, not reachable" : "e.g. the seller withdrew the offer" }),
+      h("div", { class: "btns" }, h("button", { onclick: () => { sel.value = cur; hide(); } }, "Cancel"),
+        h("button", { class: "primary", onclick: () => go(`/api/chats/${d.phone}/stage`, { stage: to, reason: $("preason").value }, () => `Moved to ${to}`) }, "Save")));
+    $("preason").focus();
+  };
+  const qa = h("div", { class: "qa" });
+  qa.append(h("button", { class: d.hot ? "on" : "", disabled: !can, title: d.hot ? "Mark it not hot" : "Mark it hot",
+    onclick: () => go(`/api/chats/${d.phone}/hot`, { on: !d.hot }, () => d.hot ? "No longer hot" : "Marked hot") }, d.hot ? "🔥 Hot ✓" : "🔥 Mark hot"));
+  qa.append(h("button", { disabled: !can, onclick: () => show(h("label", { for: "pto" }, "Transfer to"),
+    h("select", { id: "pto" }, ...team.filter((t) => t.id !== d.broker).map((t) => h("option", { value: t.id }, `${t.name}${t.on_shift ? "" : " (off)"}`))),
+    h("div", { class: "btns" }, h("button", { onclick: hide }, "Cancel"),
+      h("button", { class: "primary", onclick: () => go(`/api/chats/${d.phone}/assign`, { to: $("pto").value }, () => `Transferred to ${NAMES[$("pto").value] || $("pto").value}`) }, "Transfer"))) }, "⇄ Transfer"));
+  if (!desk.agreed && !desk.pending) qa.append(h("button", { disabled: !can || closed, onclick: () => show(
+    h("label", { for: "pamount" }, `Agreed price (AED)${desk.listing_aed ? ` · listed at ${desk.listing_aed.toLocaleString("en")}` : ""}`),
+    h("input", { id: "pamount", type: "number", min: 1, step: 1000, value: desk.listing_aed || "" }),
+    h("div", { class: "small muted" }, `Converting moves the deal to ${desk.converted_at || "its converted stage"} and starts the paperwork. Further below the listing than the owner's limit, it waits for the owner.`),
+    h("div", { class: "btns" }, h("button", { onclick: hide }, "Cancel"),
+      h("button", { class: "primary", onclick: () => go(`/api/desk/deals/${encodeURIComponent(d.deal)}/convert`, { amount: $("pamount").value },
+        (r) => r.waiting ? `Waiting for ${r.waiting} to approve the price` : "Converted") }, "Convert"))) }, "✓ Convert"));
+  const tomorrow = new Date(Date.now() + 864e5 + 4 * 36e5).toISOString().slice(0, 10);
+  qa.append(h("button", { disabled: !can, onclick: () => show(h("label", {}, "Follow up on"),
+    h("div", { class: "two" }, h("input", { id: "pfday", type: "date", value: tomorrow, "aria-label": "Day" }), h("input", { id: "pftime", type: "time", value: "10:00", step: 900, "aria-label": "Time" })),
+    h("select", { id: "pfkind", "aria-label": "Call or message" }, h("option", { value: "call" }, "Call them"), h("option", { value: "reply" }, "Message them")),
+    h("input", { id: "pfnote", placeholder: "A note for yourself (optional)" }),
+    h("div", { class: "small muted" }, "A card for the broker, due then. Nothing is sent to the client."),
+    h("div", { class: "btns" }, h("button", { onclick: hide }, "Cancel"),
+      h("button", { class: "primary", onclick: () => go(`/api/chats/${d.phone}/follow-up-on`, { at: `${$("pfday").value}T${$("pftime").value}:00+04:00`, kind: $("pfkind").value, note: $("pfnote").value },
+        () => "Follow-up set") }, "Save"))) }, "⏰ Follow up on…"));
+  qa.append(h("button", { disabled: !can, title: "The same person on another number or account", onclick: () => show(
+    h("label", { for: "pmerge" }, "The same person's other conversation"),
+    h("input", { id: "pmerge", list: "mergelist", placeholder: "Name or number", autocomplete: "off" }),
+    h("datalist", { id: "mergelist" }, ...data.rows.filter((r) => r.phone !== d.phone).map((r) => h("option", { value: r.phone }, r.name))),
+    h("div", { class: "small muted" }, "Both histories show here; their answers fill what this lead is missing; the other lead closes as merged, and what they send there arrives here."),
+    h("div", { class: "btns" }, h("button", { onclick: hide }, "Cancel"),
+      h("button", { class: "primary", onclick: () => go(`/api/chats/${encodeURIComponent(d.phone)}/merge`, { other: $("pmerge").value.trim() }, () => "Merged into this lead") }, "Merge"))) }, "🔗 Merge…"));
+  if (desk.agreed) qa.append(h("div", { class: "done" }, `✓ Converted at AED ${Number(desk.agreed.amount_aed ?? desk.agreed.amount ?? 0).toLocaleString("en")}`));
+  if (desk.pending) qa.append(h("div", { class: "wait" }, `Waiting for the owner: ${desk.pending.text}`));
+  return h("div", { class: "act" },
+    h("div", {}, h("label", { for: "pstage" }, "Stage"), sel),
+    !can ? h("div", { class: "small muted" }, `Only ${NAMES[d.broker] || d.broker} (the broker), the transactions officer or the owner changes this lead.`) : null,
+    closed ? h("div", { class: "small muted" }, "This deal is closed.") : null,
+    h("div", { class: `nocall switchrow ${d.no_calls ? "on" : ""}`, role: "switch", "aria-checked": String(!!d.no_calls), tabindex: can ? 0 : -1,
+        title: "The client asked not to be called: Rania never offers a call, and call cards become messages",
+        onclick: () => can && go(`/api/chats/${d.phone}/no-calls`, { on: !d.no_calls }, () => d.no_calls ? "Calls are fine again" : "No calls: the broker replies in the chat") },
+      h("span", {}, "📵 Asked: no calls"), h("span", { class: `switch ${d.no_calls ? "on" : ""}`, style: "pointer-events:none" }, h("span", { class: "knob" }), d.no_calls ? "On" : "Off")),
+    h("label", {}, "Quick actions"), qa, form);
+}
+
 function renderProfile() {
   const d = detail;
   const idx = d.stages.indexOf(d.stage);
@@ -495,14 +633,15 @@ function renderProfile() {
     h("div", { class: "big" }, avatar(d.name), h("h3", {}, d.name), h("div", { class: "small muted" }, shown(d.phone)),
       h("div", { class: "tags" }, h("span", { class: "tg" }, d.stage), d.hot ? h("span", { class: "tg hot" }, "🔥 hot") : null,
         d.qualify?.nurture ? h("span", { class: "tg nur" }, "🌱 nurture") : null, PORTAL[d.source] ? h("span", { class: "tg" }, PORTAL[d.source]) : null)),
-    h("div", { class: "kv" }, h("span", {}, "Stage"), h("span", {}, d.stage), h("span", {}, "Deal"), h("span", {}, d.property || "—"),
+    actPanel(d),
+    h("div", { class: "kv" }, h("span", {}, "Deal"), h("span", {}, d.property || "—"),
       h("span", {}, "Broker"), h("span", {}, NAMES[d.broker] || d.broker || "—"), h("span", {}, "Replying"), h("span", {}, d.mode === "ai" ? "Rania (AI)" : NAMES[d.handled_by] || "A person")),
     h("div", { class: "pipe", title: d.stage }, d.stages.slice(0, 8).map((s, i) => h("i", { class: i <= idx ? "done" : "", title: s }))),
     h("div", { class: "small muted" }, `${d.stage}${idx >= 0 && idx < 8 ? ` · step ${idx + 1} of 8` : ""}`),
     d.chips.length ? h("div", { class: "ichips", style: "margin-top:12px" }, d.chips.map((c) => h("span", { class: `ic ${c.kind}` }, c.label))) : null,
     d.qualify ? qualifyPanel(d.qualify) : null,
     visitPanel(d.visit),
-    quietPanel(d.quiet),
+    followupsPanel(d),
     deckPanel(d),
     followPanel(d),
     h("div", { class: "sec" }, h("h2", {}, "What the office learned"),

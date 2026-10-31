@@ -98,6 +98,7 @@ How to run the conversation:
   mention the time, say exactly that time; if an earlier message of the conversation says another time, the calendar
   is right (it was moved). Never promise a time that is not there.
 - Refer to a broker or colleague by name, never "he" or "she": you do not know their pronouns.
+- If the sources say the customer asked not to be called, never offer or promise a call: the broker replies here.
 - Every listing in the sources says whether it is for sale or for rent. Never offer a sale listing to someone renting.
 - Use the customer's first name only if one is given below. Never invent a name.
 - Facts about listings, prices, fees and the company come only from the sources; name the listing ref you mean. If the
@@ -137,6 +138,8 @@ def prompt_sources(g: Graph, deal: str, chat: Node, text: str, *, listings: bool
     who = lambda m: "Customer" if m["type"] == "received" else "Rania" if m["by"] == RANIA else name(m["by"])  # noqa: E731
     history = [m for m in chat.props["messages"] if m["type"] in ("received", "sent")][:-1][-8:]
     out |= {f"msg:{m['event']}": f"{who(m)}: {m['text']}" for m in history}
+    if (deal and f"deal:{deal}" in g.nodes) and g.nodes[f"deal:{deal}"].props.get("no_calls"):
+        out["pref:no_calls"] = "This customer asked not to be called: never offer or promise a call; the broker replies here in the chat."
     # what is booked for this customer, from the calendar (the conversation may describe a time that was later moved)
     for v in g.of("viewing", status="booked"):
         if v.props.get("chat") == chat.props["phone"] and datetime.fromisoformat(v.props["at"]) > datetime.now(slots.DUBAI) - timedelta(hours=1):
@@ -645,7 +648,9 @@ def appointment_kind(g: Graph, text: str) -> dict | None:
 
 def upcoming(g: Graph, phone: str, now: datetime, text: str = "") -> Node | None:
     """The client's next booked appointment, or the one they name ("the viewing", "the video call", "the meeting")."""
-    vs = sorted((v for v in g.of("viewing", status="booked") if v.props.get("chat") == phone and datetime.fromisoformat(v.props["at"]) > now),
+    ch = g.nodes.get(f"chat:{phone}")
+    same = {phone} | set((ch.props.get("merged") or []) if ch else []) | ({ch.props["merged_into"]} if ch and ch.props.get("merged_into") else set())
+    vs = sorted((v for v in g.of("viewing", status="booked") if v.props.get("chat") in same and datetime.fromisoformat(v.props["at"]) > now),
                 key=lambda v: v.props["at"])
     low = text.lower()
     want = ("video" if re.search(VIDEO, low) else "office" if re.search(r"\b(office|meeting)\b", low)
@@ -1176,7 +1181,7 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
     if front == "quiet":
         rec_rule += ("\nThis customer said they are only looking for now: answer what they ask, warmly and briefly. Do not ask any "
                      "qualification question and do not list properties.")
-    system = runner.instructions(c, office.log, pack=False) + GUIDE + "\n\n" + qualify.prompt_block(form, q_before, arabic, broker_name) + "\n" + rec_rule
+    system = runner.instructions(c, office.log, pack=False) + GUIDE + "\n\n" + qualify.prompt_block(form, q_before, arabic, broker_name, leads.no_calls(g, deal)) + "\n" + rec_rule
     user = runner.user_message(task, sources)
     from diwan.config import sandbox_only
     prompt = {"system": system, "user": user} if sandbox_only() else None  # shown in the test console only
@@ -1228,7 +1233,8 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
         else:
             broker_id = g.nodes[f"deal:{deal}"].props["broker"]
             free = ", ".join(slots.say(t) for t in slots.free(office.graph(), broker_id, now, 2))
-            reply = (f"Great choice! {pick.props['title']} ({pick.props['ref']}). I've told {broker_name}, who will call you shortly. "
+            reach = "reply to you here" if leads.no_calls(g, deal) else "call you"  # they asked not to be called
+            reply = (f"Great choice! {pick.props['title']} ({pick.props['ref']}). I've told {broker_name}, who will {reach} shortly. "
                      f"Would you like to see it? {broker_name} is free {free}." if not arabic else
                      f"اختيار رائع! {pick.props['title']} ({pick.props['ref']}). أبلغت {broker_name} وسيتصل بك قريباً. هل تود معاينته؟ {broker_name} متاح {free}.")
             refs = [pick.id]
@@ -1324,7 +1330,7 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
         elif by == "rules" and q["verdict"] == "DISCOVERY" and "?" not in reply:  # type not known yet: ask it
             reply = f"{reply} {'هل تبحث عن شراء أو إيجار أو بيع أو تأجير عقار؟' if arabic else 'Are you looking to buy, rent, sell or let out a property?'}"
         elif newly_stuck:  # not sure twice about a "must answer" question: she stops asking, the broker calls to help
-            reply, actions = qualify.stuck_reply(arabic, broker_name), [Action("reply", "Not sure twice: the broker helps")]
+            reply, actions = qualify.stuck_reply(arabic, broker_name, leads.no_calls(g, deal)), [Action("reply", "Not sure twice: the broker helps")]
         elif by == "rules" and nxt and q.get("retry") == nxt["key"]:
             reply = qualify.again(nxt, arabic)
         elif by == "rules" and nxt and "?" not in reply:  # the rules answered something else: add the next question
@@ -1355,6 +1361,8 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
     if reason:
         hand_over(office, phone, reason=reason, cause=got["id"], text=text, now=now)
     elif front_done and front == "call" and not call_same:  # already set for that time: nothing new for the broker
+        if leads.no_calls(office.graph(), deal):  # they asked for a call themselves: "no calls" is off, and the broker hears why
+            leads.set_no_calls(office, phone, on=False, by=RANIA, quote=text)
         _call_requested(office, phone, deal, text, q, rs, got["id"], now, at=call_at)
     elif front_done and front == "nurture":
         _nurture(office, phone, deal, text, got["id"])

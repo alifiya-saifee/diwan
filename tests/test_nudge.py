@@ -174,3 +174,28 @@ def test_no_follow_up_before_a_booked_viewing(office):
     g = office.graph()
     assert g.of("viewing", status="booked")
     assert nudge.state(g, g.nodes[f"chat:{PH}"], datetime.now(DUBAI))["why_not"] == "a viewing is coming up"
+
+
+def test_a_lead_can_have_its_own_schedule_or_be_stopped_and_shows_each_step(office):
+    say(office, "I want to buy")
+    deal = office.graph().nodes[f"chat:{PH}"].deal
+    broker = office.graph().nodes[f"deal:{deal}"].props["broker"]
+    nudge.set_for_lead(office, PH, by=broker, after_hours=[2, 48])
+    g = office.graph()
+    st = nudge.state(g, g.nodes[f"chat:{PH}"], datetime.now(DUBAI))
+    assert st["of"] == 2 and [s["status"] for s in st["steps"]] == ["planned", "planned"] and st["own"]["after_hours"] == [2, 48]
+    assert nudge.sweep(office, at(office, 2.5)) == [f"nudged {PH} #1"]  # this lead's 2 hours, not the office's 20
+    g = office.graph()
+    st = nudge.state(g, g.nodes[f"chat:{PH}"], datetime.now(DUBAI))
+    assert st["steps"][0]["status"] == "sent" and st["steps"][0]["text"].startswith("Hi Sara") and st["steps"][1]["status"] == "planned"
+    nudge.set_for_lead(office, PH, by=broker, stopped=True)
+    g = office.graph()
+    assert nudge.state(g, g.nodes[f"chat:{PH}"], datetime.now(DUBAI))["why_not"].startswith("stopped for this lead by")
+    assert nudge.sweep(office, at(office, 49)) == []
+    nudge.set_for_lead(office, PH, by=broker)  # back on the office's schedule
+    g = office.graph()
+    assert nudge.state(g, g.nodes[f"chat:{PH}"], datetime.now(DUBAI))["of"] == 3
+    with pytest.raises(ValueError):
+        nudge.set_for_lead(office, PH, by=broker, after_hours=[48, 2])
+    with pytest.raises(PermissionError):
+        nudge.set_for_lead(office, PH, by="priya", stopped=True)

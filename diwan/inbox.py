@@ -10,7 +10,13 @@ from diwan.graph import OPEN, Graph
 from diwan.office import Office
 from diwan.people import name
 
-STAGES = ["New", "Qualifying", "Qualified", "Viewing booked", "Viewed", "Offer", "Form F", "Transfer", "Won", "Lost"]
+def stage_names(g: Graph) -> list[str]:
+    """Every stage a lead can be at: Sales' own, then each paperwork path's (the owner's settings on the Deal desk), Won and Lost."""
+    from diwan import desk_rules
+    out = list(desk_rules.SALES_STAGES)
+    for p in desk_rules.rules(g)["paths"].values():
+        out += [s for s in p["stages"] if s not in out]
+    return out + [s for s in ("Won", "Lost") if s not in out]
 WINDOW = timedelta(hours=24)
 
 # used when no WhatsApp partner is connected, so the template flow can be shown; marked as samples on screen
@@ -98,6 +104,7 @@ def conversation(g: Graph, c, now: datetime) -> dict:
         "viewing": g.record(viewings[0].id).split(" · ", 1)[1] if viewings else None,
         "failed": sum(1 for m in msgs if m.get("status") == "failed"),
         "hot": _hot(deal),
+        "no_calls": bool(deal and deal.props.get("no_calls")),
         "nurture": (deal.props.get("nurture") or ({"reason": "not a fit"} if deal.props.get("qualify_status") == "not_a_fit" else None))
                    if deal else None,
     }
@@ -113,7 +120,7 @@ def listing(office: Office, *, view: str = "all", person: str = "omar", stage: s
             now: datetime | None = None) -> list[dict]:
     g = office.graph()
     now = now or datetime.now(timezone.utc)
-    rows = [conversation(g, c, now) for c in g.of("chat")]
+    rows = [conversation(g, c, now) for c in g.of("chat") if not c.props.get("merged_into")]  # a merged chat shows in its lead
     if view == "mine":
         rows = [r for r in rows if r["handled_by"] == person or (r["mode"] == "human" and r["broker"] == person) or r["broker"] == person]
     elif view == "new":
@@ -144,7 +151,7 @@ def counts(office: Office, person: str = "omar") -> dict:
             "attention": len([r for r in rows if r["attention"] and (r["attention"]["who"] == person or person == "layla")]),
             "pool": len([r for r in rows if r["attention"] and r["attention"]["pooled"]]),
             "nurture": len([r for r in rows if r["nurture"]]),
-            "stages": {s: len([r for r in rows if r["stage"] == s]) for s in STAGES}}
+            "stages": {s: len([r for r in rows if r["stage"] == s]) for s in stage_names(g)}}
 
 
 def detail(office: Office, phone: str, now: datetime | None = None) -> dict:
@@ -161,13 +168,26 @@ def detail(office: Office, phone: str, now: datetime | None = None) -> dict:
                   for t in g.of("task", deal, OPEN)] if deal else [],
         "cards": [{"id": n.id, "text": n.props["text"], "who": name(n.props.get("who"))}
                   for typ in ("check", "decision", "question") for n in g.of(typ, deal, "open")] if deal else [],
-        "stages": STAGES, "history": (g.nodes[f"deal:{deal}"].props.get("stages", []) if deal else []),
+        "stages": _deal_stages(g, deal), "history": (g.nodes[f"deal:{deal}"].props.get("stages", []) if deal else []),
+        "desk": _desk(g, deal),
         "qualify": _qualify_state(g, deal),
         "deck": _deck(g, deal),
         "followup": _followup(g, deal),
         "quiet": _quiet(g, c, now) if deal and f"deal:{deal}" in g.nodes else None,
         "visit": g.nodes[f"deal:{deal}"].props.get("visit") if deal and f"deal:{deal}" in g.nodes else None,
+        "calls": _calls(g, c),
     }
+
+
+def _calls(g: Graph, chat) -> list[dict]:
+    """This lead's calls: call cards (open and done) and phone calls on the calendar, newest first."""
+    phone = chat.props["phone"]
+    out = [{"what": n.props["reason"], "when": n.props["due"], "status": n.status, "who": name(n.props.get("who")),
+            "done": n.props.get("action")}
+           for n in g.of("attention") if n.props.get("chat") == phone and n.props.get("kind") == "call"]
+    out += [{"what": v.props.get("kind_name") or "Phone call", "when": v.props["at"], "status": v.status, "who": name(v.props["broker"]), "done": None}
+            for v in g.of("viewing") if v.props.get("chat") == phone and v.props.get("where") == "phone"]
+    return sorted(out, key=lambda x: x["when"], reverse=True)
 
 
 def _quiet(g: Graph, chat, now: datetime) -> dict:
@@ -199,14 +219,34 @@ def _qualify_state(g: Graph, deal: str | None) -> dict | None:
         | {"next": (st.get("next") or {}).get("label")}
 
 
-def set_stage(office: Office, phone: str, stage: str, *, by: str) -> None:
-    if stage not in STAGES:
-        raise ValueError(f"unknown stage {stage!r}")
-    deal = office.graph().nodes[f"chat:{phone}"].deal
-    ev = office.log.append("stage.changed", actor=by, deal=deal, content={"stage": stage})
+def _deal_stages(g: Graph, deal: str | None) -> list[str]:
+    from diwan import desk_stages
+    return (desk_stages.stages(g, deal) + ["Lost"]) if deal and f"deal:{deal}" in g.nodes else stage_names(g)
+
+
+def _desk(g: Graph, deal: str | None) -> dict | None:
+    """The deal's stages as the Deal desk keeps them: who may move it, the agreed price, a discount waiting for the owner."""
+    from diwan import desk_stages
+    if not deal or f"deal:{deal}" not in g.nodes:
+        return None
+    return desk_stages.view(g, deal)
+
+
+def set_stage(office: Office, phone: str, stage: str, *, by: str, reason: str = "", only_forward: bool = False) -> None:
+    """A person moves the lead, under the Deal desk's rules (docs/lead-profile-spec.md): the deal's own stages, a reason for
+    Lost or for moving back, Won only from closing, only the broker, the transactions officer or the owner.
+    `only_forward`: from the calendar's Done, which never moves a deal back."""
+    from diwan import desk_stages
+    g = office.graph()
+    deal = g.nodes[f"chat:{phone}"].deal
+    if only_forward:
+        order, cur = desk_stages.stages(g, deal), g.nodes[f"deal:{deal}"].props.get("stage") or "New"
+        if cur == "Lost" or cur not in order or stage not in order or order.index(stage) <= order.index(cur):
+            return
+    desk_stages.move(office, deal, stage, by, reason)
     if stage == "Viewed":  # after the viewing: the follow-up waits for the broker
         from diwan.agents import followup
-        followup.draft(office, deal, why="after the viewing", cause=ev["id"])
+        followup.draft(office, deal, why="after the viewing")
 
 
 def auto_stage(office: Office, deal: str, cause: int | None = None) -> None:
@@ -225,7 +265,8 @@ def auto_stage(office: Office, deal: str, cause: int | None = None) -> None:
         office.log.append("stage.changed", actor="rania", agent="rania", deal=deal, caused_by=cause,
                           content={"stage": "Lost", "auto": True, "reason": d.props.get("qualify_reason")})
         return
-    ahead = lambda s: STAGES.index(want) < STAGES.index(s)  # noqa: E731
+    names = stage_names(g)
+    ahead = lambda s: want in names and names.index(want) < names.index(s)  # noqa: E731
     if d.props.get("qtype") and ahead("Qualifying"):
         want = "Qualifying"
     if d.props.get("qualify_status") == "qualified" and ahead("Qualified"):

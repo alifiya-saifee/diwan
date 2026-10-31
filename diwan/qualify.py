@@ -364,7 +364,7 @@ def schema_part(f: dict) -> dict:
                                                                    "quote": {"type": "string"}}}}}
 
 
-def prompt_block(f: dict, st: dict, arabic: bool, broker: str) -> str:
+def prompt_block(f: dict, st: dict, arabic: bool, broker: str, no_calls: bool = False) -> str:
     """The qualification part of Rania's instructions for this one reply."""
     types = ", ".join(f"{t} ({s['label']})" for t, s in f["types"].items())
     lines = [f"Qualification (set by the owner, version {f.get('version', 0)}). Customer types: {types}."]
@@ -383,7 +383,7 @@ def prompt_block(f: dict, st: dict, arabic: bool, broker: str) -> str:
             else:
                 lines.append(f"Next question, the only one to ask in this message (in your own words, after answering what they asked): {q}")
         elif st.get("stuck"):
-            lines.append(f"They are not sure about something the owner requires: say kindly that {broker} will call to help with it. Ask nothing more.")
+            lines.append(f"They are not sure about something the owner requires: say kindly that {broker} will {'reply here' if no_calls else 'call'} to help with it. Ask nothing more.")
         elif st["verdict"] == "PASS_TO_AGENT":
             lines.append(f"Everything needed is in: thank them and say {broker} will contact them shortly. Ask nothing more.")
     fields = "; ".join(f"{x['key']} ({x['kind']}{': ' + '/'.join(x['options']) if x['options'] else ''})"
@@ -403,7 +403,9 @@ def again(q: dict, arabic: bool) -> str:
     return f"No problem, a rough idea is fine. {q['question_en']}"
 
 
-def stuck_reply(arabic: bool, broker: str) -> str:
+def stuck_reply(arabic: bool, broker: str, no_calls: bool = False) -> str:
+    if no_calls:  # they asked not to be called
+        return f"لا مشكلة! سيساعدك {broker} في ذلك هنا." if arabic else f"No problem! {broker} will help you with that here."
     if arabic:
         return f"لا مشكلة! سيتصل بك {broker} ليساعدك في ذلك."
     return f"No problem! {broker} will give you a call to help with that."

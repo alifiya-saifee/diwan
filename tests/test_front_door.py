@@ -156,3 +156,115 @@ def test_a_building_named_in_full_is_found_among_many_listings(office):
     demo.catalog(office)  # 39 listings: "Gate" and "Marina" are shared words, "Marina Crest" is not
     r = reception.message(office, PH, "Hi, is the Marina Crest 2 bed still available? Can I see it Saturday at 4pm?", name_="Sara Khan", now=NOON)
     assert r["reply"].startswith("Booked: Unit 1204, Marina Crest (MC-1204)")
+
+
+# ---- the lead profile: acting on a lead (docs/lead-profile-spec.md) ----
+
+def test_the_profile_moves_a_lead_under_the_deal_desks_rules(office):
+    say(office, "Hello")
+    deal = office.graph().nodes[f"chat:{PH}"].deal
+    broker = office.graph().nodes[f"deal:{deal}"].props["broker"]
+    d = inbox.detail(office, PH)
+    assert d["stages"][:5] == ["New", "Qualifying", "Qualified", "Viewing booked", "Viewed"] and d["stages"][-1] == "Lost"
+    assert broker in d["desk"]["movers"] and "Won" not in d["stages"]
+    with pytest.raises(PermissionError):
+        inbox.set_stage(office, PH, "Qualified", by="nadia" if broker != "nadia" else "hamza")
+    with pytest.raises(ValueError, match="reason"):
+        inbox.set_stage(office, PH, "Lost", by=broker)
+    inbox.set_stage(office, PH, "Lost", by=broker, reason="bought elsewhere")
+    assert office.graph().nodes[f"deal:{deal}"].props["stage"] == "Lost"
+
+
+def test_hot_and_not_hot_by_hand_and_the_broker_hears_it(office):
+    say(office, "Hello")
+    deal = office.graph().nodes[f"chat:{PH}"].deal
+    leads.mark_hot(office, PH, on=True, by="layla", note="ready this week")
+    d = office.graph().nodes[f"deal:{deal}"].props
+    assert d["hot"]["why"] == "marked by Layla" and d["hot"]["quote"] == "ready this week"
+    assert any("Layla marked Sara Khan hot" in n.props["text"] for n in office.graph().of("notice"))
+    leads.mark_hot(office, PH, on=False, by="layla")
+    assert "hot" not in office.graph().nodes[f"deal:{deal}"].props
+    with pytest.raises(PermissionError):
+        leads.mark_hot(office, PH, on=True, by="priya")
+
+
+def test_follow_up_on_a_date_is_a_card_due_then_and_nothing_reaches_the_client(office):
+    from datetime import timedelta
+    say(office, "Hello")
+    deal = office.graph().nodes[f"chat:{PH}"].deal
+    broker = office.graph().nodes[f"deal:{deal}"].props["broker"]
+    sent = len([m for m in office.graph().nodes[f"chat:{PH}"].props["messages"] if m["type"] == "sent"])
+    at = NOON + timedelta(days=2)
+    leads.follow_up_on(office, PH, by=broker, at=at, kind="call", note="after their trip", now=NOON)
+    [card] = office.graph().of("attention", status="open")
+    assert card.props["due"] == at.isoformat() and card.props["reason"].endswith(": after their trip") and card.props["who"] == broker
+    assert len([m for m in office.graph().nodes[f"chat:{PH}"].props["messages"] if m["type"] == "sent"]) == sent
+    with pytest.raises(ValueError, match="already has an open card"):
+        leads.follow_up_on(office, PH, by=broker, at=at, kind="reply", note="", now=NOON)
+    with pytest.raises(ValueError, match="ahead"):
+        leads.follow_up_on(office, PH, by=broker, at=NOON, kind="call", note="", now=NOON)
+
+
+def test_a_transfer_takes_the_open_card_with_it(office):
+    say(office, "Hello")
+    say(office, "Can someone call me please?")
+    [card] = office.graph().of("attention", status="open")
+    to = "hamza" if card.props["who"] != "hamza" else "nadia"
+    leads.reassign(office, PH, to, by="layla")
+    [moved] = office.graph().of("attention", status="open")
+    assert moved.props["who"] == to and moved.props["due"] == card.props["due"]
+
+
+def test_asked_no_calls_means_no_call_cards_and_no_promised_calls(office):
+    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now"):
+        r = say(office, t)
+    deal = office.graph().nodes[f"chat:{PH}"].deal
+    broker = office.graph().nodes[f"deal:{deal}"].props["broker"]
+    for c in office.graph().of("attention", status="open"):
+        leads.clear(office, c.id, "messaged", by=broker)
+    leads.set_no_calls(office, PH, on=True, by=broker)
+    assert inbox.listing(office)[0]["no_calls"]
+    r = say(office, "The first one")  # a pick: no promised call
+    assert "who will reply to you here shortly" in r["reply"] and "call you" not in r["reply"]
+    cards = office.graph().of("attention", status="open")
+    assert all(c.props["kind"] == "reply" for c in cards)
+    g = office.graph()
+    assert "asked not to be called" in reception.prompt_sources(g, deal, g.nodes[f"chat:{PH}"], "ok", listings=False)["pref:no_calls"]
+
+
+def test_the_client_asking_for_a_call_turns_no_calls_off_and_the_broker_hears(office):
+    say(office, "Hello")
+    deal = office.graph().nodes[f"chat:{PH}"].deal
+    broker = office.graph().nodes[f"deal:{deal}"].props["broker"]
+    leads.set_no_calls(office, PH, on=True, by=broker)
+    say(office, "Actually can someone call me please?")
+    g = office.graph()
+    assert not g.nodes[f"deal:{deal}"].props.get("no_calls")
+    assert [c.props["kind"] for c in g.of("attention", status="open")] == ["call"]
+    assert any("asked for a call, so" in n.props["text"] for n in g.of("notice"))
+    with pytest.raises(PermissionError):
+        leads.set_no_calls(office, PH, on=True, by="priya")
+
+
+def test_merging_two_conversations_of_the_same_person(office):
+    IG = "ig:sara.k"
+    reception.message(office, IG, "Hi! I want to buy in Dubai Marina", name_="@sara.k", now=NOON)
+    say(office, "Hello, it's Sara again from WhatsApp")
+    a = office.graph().nodes[f"chat:{PH}"].deal
+    b = office.graph().nodes[f"chat:{IG}"].deal
+    broker = office.graph().nodes[f"deal:{a}"].props["broker"]
+    with pytest.raises(PermissionError):
+        leads.merge(office, PH, IG, by="priya")
+    leads.merge(office, PH, IG, by=broker)
+    g = office.graph()
+    msgs = g.nodes[f"chat:{PH}"].props["messages"]
+    assert any(m.get("chat") == IG and "Dubai Marina" in m["text"] for m in msgs)  # both histories, each marked
+    assert g.nodes[f"deal:{a}"].props["answers"]["areas"]["source"].startswith("from @sara.k's other conversation")
+    assert g.nodes[f"deal:{b}"].props["stage"] == "Lost" and IG not in [r["phone"] for r in inbox.listing(office)]
+    assert g.nodes[f"deal:{a}"].props["stage"] == "Qualifying"  # the answers that came over move it on
+    reception.message(office, IG, "What's the budget range there?", now=NOON)  # a new message on Instagram arrives in this lead
+    g = office.graph()
+    assert g.nodes[f"chat:{IG}"].deal == a and any(m.get("chat") == IG and m["text"] == "What's the budget range there?"
+                                                   for m in g.nodes[f"chat:{PH}"].props["messages"])
+    with pytest.raises(ValueError, match="already merged"):
+        leads.merge(office, PH, IG, by=broker)

@@ -61,7 +61,7 @@ with sync_playwright() as p:
     pg.wait_for_timeout(900)
     lead = pg.locator("#chat").inner_text() + pg.locator("#prof").inner_text()
     check(3, "The lead is not moved to 'Viewing booked' by a phone call, and the broker's card is due at 10:00",
-          pg.locator("#chat select").first.input_value() != "Viewing booked" and "10:00" in pg.locator("#chat .banner.att").inner_text(), shot("03-lead"))
+          pg.locator("#pstage").input_value() != "Viewing booked" and "10:00" in pg.locator("#chat .banner.att").inner_text(), shot("03-lead"))
 
     r = customer(A, "so he will call me at 10 tmrw?" if False else f"so he will call me at 10 on {DAY}?", "Ali Rahman")
     check(4, "'So he will call me at 10?' is confirmed with a Yes, with no second card",
