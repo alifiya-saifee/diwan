@@ -17,6 +17,12 @@ cp .env.example .env           # add whichever keys you have
 .venv/bin/python -m pytest -q
 ```
 
+To start with the demo office's data (fictional chats, catalog listings, competitor posts, settings), copy the
+snapshot in and point `.env` at it: `cp data/try.db data/usage.jsonl . && cp -R data/media .`, then
+`DIWAN_DB=try.db` (`data/diwan.db` is the older office; `usage.jsonl` keeps the model spend counted against the
+limits). Keys and limits in `.env` are never committed: set them again. The live files stay out of git; refresh
+the snapshot instead.
+
 ## How an agent turn works
 
 charter -> instructions -> model (live, or a marked recording) -> pack -> quote check -> authority check -> event log
