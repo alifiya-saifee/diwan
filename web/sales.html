@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sales · Diwan</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .sgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; align-items: start; }
+  .sgrid .panel h2 { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .sgrid .wide { grid-column: 1 / -1; }
+  .srow { display: flex; gap: 10px; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
+  .srow:last-child { border-bottom: 0; }
+  .srow .nm { font-weight: 600; color: var(--ink); }
+  .srow a.nm:hover { text-decoration: underline; }
+  .acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .late { color: var(--bad); font-weight: 600; }
+  .said { font-size: 12.5px; color: var(--muted); padding-left: 8px; border-left: 2px solid var(--line); margin-top: 4px; max-width: 520px; }
+  .count { font-size: 12px; color: var(--muted); font-weight: 400; }
+  .none { color: var(--muted); font-size: 13px; padding: 6px 0; }
+  .brokers { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .broker { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .bar { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 14px; }
+  form.add { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin-top: 10px; }
+  form.add .full { grid-column: 1 / -1; }
+  form.add label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="bar">
+    <div><h1>Sales <em>room</em></h1><p class="sub" id="sub">Who to call, who is hot, and what is waiting on a person.</p></div>
+    <button class="primary" id="addbtn">+ Add a lead</button>
+  </div>
+  <section class="panel" id="addbox" hidden style="margin-bottom:14px"></section>
+  <div class="sgrid" id="board"><div class="none">Loading…</div></div>
+</main>
+<script type="module">
+import { h, api, post, follow, header, NAMES, toast, SESSION } from "./app.js";
+header("sales.html");
+const $ = (id) => document.getElementById(id);
+const ME = SESSION.person || "layla";
+const CHANNEL = { whatsapp: "WhatsApp", instagram: "Instagram", propertyfinder: "Property Finder", bayut: "Bayut", dubizzle: "Dubizzle",
+                  walk_in: "Walk-in", phone: "Phone call", referral: "Referral", website: "Website" };
+const hhmm = (iso) => new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Dubai" });
+const open = (chat) => `inbox.html?chat=${encodeURIComponent(chat)}`;
+const who = (id) => NAMES[id] || id;
+let data = null;
+
+const block = (title, n, kids, cls = "") => h("section", { class: `panel ${cls}` }, h("h2", {}, title, n != null ? h("span", { class: "count" }, String(n)) : null),
+  ...(kids.length ? kids : [h("div", { class: "none" }, "Nothing here.")]));
+const lead = (r, ...right) => h("div", { class: "srow" }, h("div", {}, h("a", { class: "nm", href: open(r.chat) }, r.name),
+  h("div", { class: "small muted" }, [data.sees_all ? who(r.broker) : null, r.stage].filter(Boolean).join(" · "))), h("div", { class: "acts" }, ...right));
+
+function callRow(r) {
+  const a = r.attention;
+  const when = a.pooled ? "in the Pool" : a.overdue ? `${-a.minutes_left} min late` : `${a.minutes_left} min left`;
+  return h("div", { class: "srow" },
+    h("div", { style: "flex:1;min-width:220px" }, h("a", { class: "nm", href: open(r.chat) }, r.name),
+      h("div", { class: "small muted" }, `${who(a.who)}${a.escalated ? ` · moved from ${who(a.moved_from)}` : ""} · ${a.reason.slice(0, 110)}`),
+      ...a.last.map((m) => h("div", { class: "said" }, `${m.who === "client" ? "Client" : m.who === "rania" ? "Rania" : who(m.who)}: ${m.text}`))),
+    h("div", { class: "acts" }, h("span", { class: a.overdue ? "late" : "small muted" }, when),
+      r.tel && !r.no_calls ? h("a", { class: "btn primary", href: `tel:+${r.tel}` }, "📞 Call") : h("span", { class: "chip" }, r.no_calls ? "No calls" : "Instagram"),
+      h("button", { onclick: () => clearCard(a.id, r) }, "Called")));
+}
+async function clearCard(id, r) {
+  try { await post(`/api/attention/${id}/clear`, { action: "called", by: ME, note: "" }); toast("Noted. What came of it?"); } catch (e) { toast(e.message); }
+  load(true).then(() => document.getElementById(`out-${r.chat}`)?.scrollIntoView({ block: "center" }));
+}
+
+function outcomeRow(r) {
+  const box = h("div", { class: "full", style: "width:100%" });
+  const say = async (outcome, extra = {}) => {
+    try { await post(`/api/chats/${encodeURIComponent(r.chat)}/outcome`, { by: ME, outcome, ...extra }); toast("Outcome recorded"); load(true); } catch (e) { toast(e.message); }
+  };
+  const lost = () => { const sel = h("select", {}, ...Object.entries(data.lost_reasons).map(([k, v]) => h("option", { value: k }, v))), note = h("input", { placeholder: "A note (needed for Other)" });
+    box.replaceChildren(h("div", { class: "acts", style: "margin-top:6px" }, sel, note, h("button", { class: "primary", onclick: () => say("not_interested", { reason: sel.value, note: note.value }) }, "Save"))); };
+  const later = () => { const day = h("input", { type: "date", value: new Date(Date.now() + 864e5 + 144e5).toISOString().slice(0, 10) }), t = h("input", { type: "time", value: "10:00" });
+    box.replaceChildren(h("div", { class: "acts", style: "margin-top:6px" }, day, t, h("button", { class: "primary", onclick: () => say("follow_up", { at: `${day.value}T${t.value}:00+04:00` }) }, "Save"))); };
+  return h("div", { class: "srow", id: `out-${r.chat}` }, h("div", {}, h("a", { class: "nm", href: open(r.chat) }, r.name),
+    h("div", { class: "small muted" }, `${r.last.what === "no_answer" ? "No answer" : "Called"} by ${who(r.last.by)}`)),
+    h("div", { class: "acts" }, h("a", { class: "btn", href: open(r.chat) }, "Converted…"), h("button", { onclick: later }, "Follow up on…"), h("button", { onclick: lost }, "Not interested…"),
+      h("button", { onclick: () => say("no_response") }, "No response")), box);
+}
+
+function draw() {
+  const d = data;
+  const brokers = h("div", { class: "brokers" }, ...d.brokers.map((b) => h("div", { class: "broker" },
+    h("div", { class: "nm", style: "font-weight:600" }, b.name, " ", h("span", { class: `chip ${b.on_shift ? "" : "warn"}` }, b.on_shift ? "on shift" : "off")),
+    h("div", { class: "small muted" }, `${b.leads_today} new today · ${b.cards} open card${b.cards === 1 ? "" : "s"}${b.overdue ? ` · ${b.overdue} late` : ""}`),
+    ...(b.appointments.length ? b.appointments.map((a) => h("div", { class: "small", style: "margin-top:4px" }, `${hhmm(a.at)} ${a.what}${a.listing ? ` of ${a.listing}` : ""}, ${a.customer}`))
+      : [h("div", { class: "small muted", style: "margin-top:4px" }, "No appointments today")]))));
+  const channels = Object.entries(d.new.by_channel);
+  $("board").replaceChildren(
+    block("📞 Call now", d.call_now.length, d.call_now.map(callRow), "wide"),
+    block("❗ Outcome needed", d.outcome.length, d.outcome.map(outcomeRow), "wide"),
+    block("🔥 Hot leads", d.hot.length, d.hot.map((r) => lead(r, r.heat ? h("span", { class: "chip", title: r.heat.parts.map((p) => `${p.ok ? "✓" : "✗"} ${p.name}`).join("\n") }, `heat ${r.heat.score}/${r.heat.of}`) : null,
+      r.hot !== "yes" ? h("span", { class: "chip" }, r.hot) : null, h("a", { class: "btn", href: `calendar.html?book=${encodeURIComponent(r.chat)}&as=${encodeURIComponent(ME)}` }, "Book a viewing")))),
+    block("🆕 New leads", d.new.total, [
+      channels.length ? h("div", { style: "padding:4px 0 6px" }, ...channels.map(([c, n]) => h("span", { class: "chip", style: "margin-right:6px" }, `${CHANNEL[c] || c} ${n}`))) : null,
+      ...d.new.rows.map((r) => lead(r, h("span", { class: "chip" }, CHANNEL[r.source] || r.source)))].filter(Boolean)),
+    block("✍️ Qualifying", d.qualifying.length, d.qualifying.map((r) => lead(r, r.progress ? h("span", { class: "chip" }, `Qualifying ${r.progress.done}/${r.progress.of}`) : null))),
+    block("⏰ Follow-ups due today", d.followups.length, d.followups.map((r) => lead(r, h("span", { class: "small muted" }, hhmm(r.at)), h("span", { class: "chip" }, r.set ? "you set this" : `follow-up ${r.n} of ${r.of}`)))),
+    block("🌙 Quiet clients", d.quiet.length, d.quiet.map((r) => lead(r))),
+    block("🏠 New listings for waiting clients", d.matches.length, d.matches.map((m) => h("div", { class: "srow" }, h("div", {}, h("a", { class: "nm", href: open(m.chat) }, m.name),
+      h("div", { class: "small muted" }, `${m.ref}: ${m.title}, ${m.community}, AED ${m.price_aed.toLocaleString("en")}`)),
+      h("button", { class: "primary", onclick: async () => { try { await post(`/api/chats/${encodeURIComponent(m.chat)}/send-match`, { by: ME, ref: m.ref }); toast("Sent"); load(); } catch (e) { toast(e.message); } } }, "Send it")))),
+    block("🔗 Same person twice?", d.duplicates.length, d.duplicates.map((x) => h("div", { class: "srow" }, h("div", {}, h("a", { class: "nm", href: open(x.a) }, x.a_name), " and ", h("a", { class: "nm", href: open(x.b) }, x.b_name),
+      h("div", { class: "small muted" }, `Same ${x.why}${x.two_brokers ? ` · ${x.brokers.map(who).join(" and ")} own them` : ""}`)),
+      h("button", { onclick: async () => { try { await post(`/api/chats/${encodeURIComponent(x.a)}/merge`, { by: ME, other: x.b }); toast("Merged"); load(); } catch (e) { toast(e.message); } } }, "Merge")))),
+    block(d.sees_all ? "👥 Each broker's day" : "📅 Your day", null, [brokers], "wide"));
+}
+
+function addForm() {
+  const f = (label, el) => h("label", {}, label, el);
+  const name = h("input", { required: true }), phone = h("input", { required: true, placeholder: "971501234567" }), email = h("input", { type: "email" }), ref = h("input", { placeholder: "MC-1204" });
+  const src = h("select", {}, ...Object.entries(data.sources).filter(([k]) => k !== "website").map(([k, v]) => h("option", { value: k }, v))), by = h("input", { placeholder: "Who referred them" }), note = h("textarea", { rows: 2, placeholder: "What they want, in their words" });
+  $("addbox").replaceChildren(h("h2", {}, "Add a lead"), h("p", { class: "small muted" }, "Rania can't write first on WhatsApp, so this becomes a call for you, with where the lead came from."),
+    h("form", { class: "add", onsubmit: async (e) => { e.preventDefault();
+      try { await post("/api/leads/add", { by: ME, name: name.value, phone: phone.value, source: src.value, note: note.value, email: email.value, ref: ref.value, referred_by: by.value }); toast("Lead added"); $("addbox").hidden = true; load(); } catch (er) { toast(er.message); } } },
+      f("Name", name), f("Phone", phone), f("Came from", src), f("Referred by", by), f("Email", email), f("Listing ref", ref), h("label", { class: "full" }, "Note", note),
+      h("div", { class: "full acts" }, h("button", { class: "primary", type: "submit" }, "Add"), h("button", { type: "button", onclick: () => { $("addbox").hidden = true; } }, "Cancel"))));
+  $("addbox").hidden = false;
+}
+$("addbtn").onclick = addForm;
+
+// an open outcome form or a field being typed in is never redrawn away
+let loadN = 0;
+async function load(force) {
+  const n = ++loadN;
+  const fresh = await api(`/api/sales/board?person=${encodeURIComponent(ME)}`);
+  const busy = $("board").querySelector("input, select");  // asked after the answer comes: a form may have opened meanwhile
+  if (n !== loadN || (busy && !force)) return;  // an older answer never overwrites a newer one
+  data = fresh; draw();
+}
+await load();
+follow((evs) => { if (evs.some((e) => /^(chat\.|attention\.|lead\.|appointment\.|stage\.|qualify\.|listing)/.test(e.type))) load(); });
+setInterval(load, 60000);  // the minutes on the call queue move even when nothing happens
+</script>
+</body>
+</html>

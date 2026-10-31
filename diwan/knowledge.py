@@ -30,7 +30,7 @@ LISTING_OWNERS = {"layla", "rashid"}  # a broker proposes a price change; the li
 TAB_OF = {"faq": "answer", "fees": "company", "policy": "company", "policies": "company", "hours": "company", "document": "company",
           "about": "company", "services": "company", "contact": "company", "track record": "company", "areas": "area"}
 FAST_REVIEW = {"fees", "policy", "policies"}  # re-confirmed every 90 days; other company basics every 180
-FIELDS = ("title", "text", "audience", "review_by", "valid_until", "applies_to", "price_aed", "permit", "status", "photo")
+FIELDS = ("title", "text", "audience", "review_by", "valid_until", "applies_to", "price_aed", "permit", "permit_until", "status", "photo")
 FEED_QUIET = timedelta(days=7)
 
 

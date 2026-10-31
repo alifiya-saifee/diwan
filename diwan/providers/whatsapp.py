@@ -52,6 +52,16 @@ def parse(payload: dict) -> list[dict]:
     return out
 
 
+def send_image(to: str, url: str, caption: str, transport: httpx.BaseTransport | None = None) -> dict:
+    """A photo with a caption. `url` must be an https address WhatsApp can fetch."""
+    with httpx.Client(transport=transport, timeout=20) as c:
+        r = c.post(f"{GRAPH}/{env('WHATSAPP_PHONE_ID')}/messages", headers={"Authorization": f"Bearer {env('WHATSAPP_TOKEN')}"},
+                   json={"messaging_product": "whatsapp", "to": to, "type": "image", "image": {"link": url, "caption": caption[:1024]}})
+    if r.status_code >= 300:
+        raise RuntimeError(f"WhatsApp send failed ({r.status_code}): {r.text[:200]}")
+    return r.json()
+
+
 def send(to: str, text: str, transport: httpx.BaseTransport | None = None) -> dict:
     with httpx.Client(transport=transport, timeout=20) as c:
         r = c.post(f"{GRAPH}/{env('WHATSAPP_PHONE_ID')}/messages", headers={"Authorization": f"Bearer {env('WHATSAPP_TOKEN')}"},

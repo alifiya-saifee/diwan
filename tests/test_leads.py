@@ -57,15 +57,15 @@ def test_off_shift_brokers_get_nothing_while_someone_is_on(office):
 
 # ---------- attention ----------
 
-def test_a_call_request_is_a_15_minute_card_for_the_broker_with_a_notice(office):
+def test_a_call_request_is_a_card_on_the_owners_limit_for_the_broker_with_a_notice(office):
     reception.message(office, PH, "Hi", name_="Ali", now=NOON)
     reception.message(office, PH, "Can you call me please?", now=NOON)
     [c] = cards(office)
     assert c.props["kind"] == "call" and c.props["who"] == "omar"
-    assert datetime.fromisoformat(c.props["due"]) == NOON + timedelta(minutes=15)
+    assert datetime.fromisoformat(c.props["due"]) == NOON + timedelta(minutes=10)
     assert any("Ali wants a call" in t for t in notices_for(office, "omar"))
     row = inbox.listing(office, view="attention", person="omar", now=NOON)[0]
-    assert row["attention"]["kind"] == "call" and row["attention"]["minutes_left"] == 15
+    assert row["attention"]["kind"] == "call" and row["attention"]["minutes_left"] == 10
 
 
 def test_a_card_leaves_only_with_a_recorded_action(office):
@@ -103,19 +103,23 @@ def test_overdue_tells_the_owner_and_an_hour_puts_it_in_the_pool_to_claim(office
     reception.message(office, PH, "Call me", now=NOON)
     [c] = cards(office)
     raised = datetime.fromisoformat(c.props["raised"])
-    assert leads.sweep(office, raised + timedelta(minutes=10)) == []
-    assert leads.sweep(office, raised + timedelta(minutes=16)) == [f"overdue {c.id}"]
+    assert leads.sweep(office, raised + timedelta(minutes=9)) == []
+    assert leads.sweep(office, raised + timedelta(minutes=11)) == [f"overdue {c.id}", f"moved {c.id} to hamza"]  # the client was promised a call
     assert any("Omar is late on Ali" in t for t in notices_for(office, "layla"))
-    assert leads.sweep(office, raised + timedelta(minutes=17)) == []  # told once
-    with pytest.raises(ValueError):
-        leads.claim(office, PH, by="hamza")
-    later = raised + timedelta(minutes=61)
-    assert leads.sweep(office, later) == [f"pooled {c.id}"]
-    assert inbox.listing(office, view="pool", now=later)[0]["phone"] == PH
-    leads.claim(office, PH, by="hamza")
+    assert any("Omar is late on Ali" in t for t in notices_for(office, "rashid"))
     g = office.graph()
-    assert g.nodes[f"deal:{g.nodes[f'chat:{PH}'].deal}"].props["broker"] == "hamza" and g.nodes[c.id].props["who"] == "hamza"
-    assert any("Hamza claimed Ali" in t for t in notices_for(office, "omar"))
+    assert g.nodes[c.id].props["who"] == "hamza" and g.nodes[f"deal:{g.nodes[f'chat:{PH}'].deal}"].props["broker"] == "hamza"
+    assert any("wants a call" in t or "New lead" in t for t in notices_for(office, "hamza"))
+    assert leads.sweep(office, raised + timedelta(minutes=12)) == []  # told once, and Hamza has a fresh limit
+    with pytest.raises(ValueError):
+        leads.claim(office, PH, by="nadia")
+    later = raised + timedelta(minutes=61)
+    assert leads.sweep(office, later) == [f"pooled {c.id}"]  # nobody acted within the hour: the Pool, as before
+    assert inbox.listing(office, view="pool", now=later)[0]["phone"] == PH
+    leads.claim(office, PH, by="nadia")
+    g = office.graph()
+    assert g.nodes[f"deal:{g.nodes[f'chat:{PH}'].deal}"].props["broker"] == "nadia" and g.nodes[c.id].props["who"] == "nadia"
+    assert any("Nadia claimed Ali" in t for t in notices_for(office, "hamza"))
 
 
 def test_notices_read(office):

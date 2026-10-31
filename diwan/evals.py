@@ -88,8 +88,8 @@ RANIA = [
     (["Hi"], {"contains": "I'm Rania"}),
     # the owner's default: listings once the lead qualifies; a brief before that is noted and qualifying goes on
     (["Hi", "2 bed in the Marina around 2.7 million"], {"no_listings": True, "asks_one": True}),
-    (["I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now"], {"refs": "listing:MC-1204", "contains": "Which one interests you?"}),
-    (["I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "The first one"], {"contains": "Great choice", "hot": True}),
+    (["I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident"], {"refs": "listing:MC-1204", "contains": "Which one interests you?"}),
+    (["I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident", "The first one"], {"contains": "Great choice", "hot": True}),
     (["Hi", "Any villa in JVC?"], {"refs": "listing:JVC-88"}),
     (["Hi", "Any 1 bed in Downtown?"], {"not_contains": "DT-2210", "handover_or_asks": True}),  # no permitted listing: hand over, or first ask for the missing brief
     (["Hi", "What are your fees?"], {"refs": "K3"}),

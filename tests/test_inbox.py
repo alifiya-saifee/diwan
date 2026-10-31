@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -98,7 +99,7 @@ def test_settings_store_keys_but_never_show_them(monkeypatch, tmp_path):
     r = c.post("/api/integrations", json={"values": {"AISENSY_PROJECT_ID": "proj", "AISENSY_PROJECT_API_PWD": "s3cret"}})
     assert set(r.json()["changed"]) >= {"AISENSY_PROJECT_ID", "AISENSY_PROJECT_API_PWD", "AISENSY_WEBHOOK_TOKEN"}
     env = (tmp_path / ".env").read_text()
-    assert "AISENSY_PROJECT_API_PWD=s3cret" in env and oct((tmp_path / ".env").stat().st_mode)[-3:] == "600"
+    assert "AISENSY_PROJECT_API_PWD=s3cret" in env and (os.name == "nt" or oct((tmp_path / ".env").stat().st_mode)[-3:] == "600")
     info = c.get("/api/integrations").text
     assert "s3cret" not in info and json.loads(info)["aisensy"]["connected"] is True
     assert c.post("/api/integrations", json={"values": {"META_API_KEY": "x"}}).status_code == 422

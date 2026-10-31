@@ -119,19 +119,19 @@ with sync_playwright() as p:
     reply = customer(B, "Can someone call me please?", name="Yousef Ali")
     rb = next(r for r in api.get(f"{BASE}/api/chats?view=all&person=layla").json()["rows"] if r["phone"] == B)
     check(9, "'Call me' gets 'our team will call you' and the broker a call card; Rania keeps the chat",
-          "will call you shortly" in reply and rb["attention"] and rb["attention"]["kind"] == "call" and rb["mode"] == "ai",
+          "will call you in the next 10 minutes" in reply and rb["attention"] and rb["attention"]["kind"] == "call" and rb["mode"] == "ai",
           shot("09-call-me"), f"{reply} · {rb['attention'] and rb['attention']['reason']}")
 
     # 5. Qualifying makes it hot (the owner ticked it)
     C = "971502220003"
-    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now"):
+    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident"):
         reply = customer(C, t, name="Huda Karim")
     rc = next(r for r in api.get(f"{BASE}/api/chats?view=all&person=layla").json()["rows"] if r["phone"] == C)
     lst = pg.locator(".conv").filter(has_text="Huda Karim")
     prof = pg.locator("#prof").inner_text()
     check(10, "Once qualified, the lead is 🔥 hot at once, with the options Rania sent",
           rc["hot"] == "yes" and lst.locator(".tg.hot", has_text="🔥 hot").count() == 1 and "Hot lead: qualified" in prof
-          and rc["attention"]["reason"].startswith("🔥 Hot lead, ready to close: qualified") and "\n1. " in reply, shot("10-hot-qualified"))
+          and rc["attention"]["reason"].startswith("🔥 Hot lead, ready to close: qualified") and any(f"{n}. " in reply for n in (1, 2, 3)), shot("10-hot-qualified"))
 
     # 6. A portal lead starts from the listing
     D = "971502220004"

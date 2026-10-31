@@ -10,7 +10,7 @@ from diwan.providers.chat import Reply
 from diwan.slots import DUBAI
 
 NOON = datetime(2026, 10, 28, 12, tzinfo=DUBAI)
-READY = ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "The second one")
+READY = ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident", "The second one")
 
 
 @pytest.fixture

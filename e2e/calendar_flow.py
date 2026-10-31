@@ -112,7 +112,7 @@ with sync_playwright() as p:
     check(8, "The owner opens at 12:00: a 10am request gets only times from 12:00", "isn't available" in r and hrs and min(hrs) >= 12, shot("08-hours"), r)
 
     # a broker's day off (Settings → Team)
-    pg.goto(f"{BASE}/web/settings.html")
+    pg.goto(f"{BASE}/web/settings.html#team")
     pg.wait_for_timeout(800)
     row = pg.locator("#team > div", has_text="Omar")
     row.locator(".days button").nth(TUE.weekday()).click()

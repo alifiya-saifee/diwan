@@ -11,7 +11,7 @@ from diwan.office import Office
 from diwan.slots import DUBAI
 
 PH = "971501230000"
-QUAL = ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now")
+QUAL = ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident")
 
 
 @pytest.fixture

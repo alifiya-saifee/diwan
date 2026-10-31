@@ -61,7 +61,7 @@ def test_a_mortgage_question_is_not_a_property_search(office):
 
 
 def test_nothing_fits_exactly_she_says_so_and_shows_the_closest(office):
-    for t in ("I wanted to buy a property", "I am not sure about the area yet", "Villa", "2 bedroom, budget 2 million", "Cash", "Now"):
+    for t in ("I wanted to buy a property", "I am not sure about the area yet", "Villa", "2 bedroom, budget 2 million", "Cash", "Now", "To live in", "UAE resident"):
         r = say(office, t)
     assert r["reply"].startswith("Thank you Ali! Omar will contact you shortly with options for a 2-bed villa around AED 2,000,000. "
                                  "Meanwhile, a few close ones you might like:") and "don't have" not in r["reply"]
@@ -71,7 +71,7 @@ def test_nothing_fits_exactly_she_says_so_and_shows_the_closest(office):
 
 
 def test_a_named_area_we_have_nothing_in_matches_nothing(office):
-    for t in ("I want to buy", "Palm Jumeirah", "A villa", "4 bed", "Budget is 2 million", "Cash", "Now"):
+    for t in ("I want to buy", "Palm Jumeirah", "A villa", "4 bed", "Budget is 2 million", "Cash", "Now", "To live in", "UAE resident"):
         r = say(office, t)
     assert "in Palm Jumeirah" in r["reply"] and "JVC-88" not in r["reply"]
 
@@ -95,7 +95,7 @@ def test_a_call_at_a_time_they_choose_is_said_back_and_due_then(office):
 
 def test_any_options_once_qualified_never_says_we_dont_have_it(office):
     for t in ("I wanted to buy a property", "I am not sure about the area yet", "Villa", "2 bedroom, budget 2 million", "Mortgage", "Now",
-              "I am looking for off plan mostly"):
+              "I am looking for off plan mostly", "To live in", "UAE resident"):
         say(office, t)
     r = say(office, "do you have any options currently available")
     assert "will contact you shortly with options" in r["reply"] and "DR-134" in r["reply"] and "don't have" not in r["reply"]
@@ -189,7 +189,7 @@ def test_a_time_said_is_checked_against_the_calendar_not_the_conversation(office
     assert "10:15 AM" in r["reply"] and "10:00" not in r["reply"]
     # the model is told too: the calendar is in its sources, and its instructions say the calendar wins
     g = office.graph()
-    src = reception.prompt_sources(g, g.nodes[f"chat:{PH}"].deal, g.nodes[f"chat:{PH}"], "ok", listings=False)
+    src = reception.prompt_sources(g, g.nodes[f"chat:{PH}"].deal, g.nodes[f"chat:{PH}"], "ok", listings=False, now=now)
     assert src[f"appt:{v.id}"] == "Booked for this customer, on the calendar: Phone call with Omar, Saturday 31 Oct, 10:15 AM"
     assert "the calendar\n  is right" in reception.GUIDE
 

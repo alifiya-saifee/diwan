@@ -41,7 +41,7 @@ with sync_playwright() as p:
         return pg.locator(".toast").last.inner_text() if pg.locator(".toast").count() else ""
 
     A = "971508880001"
-    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now"):
+    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident"):
         say(A, t, "Sara Khan")
     broker = lead(A)["broker"]
     other = next(t["id"] for t in api.get(f"{BASE}/api/team").json() if t["id"] != broker)
@@ -62,6 +62,7 @@ with sync_playwright() as p:
     pg.select_option("#pstage", "Lost")
     pg.wait_for_timeout(300)
     asked = pg.locator("#preason").is_visible()
+    pg.select_option("#plost", "Other")  # the owner's list of reasons; "Other" needs words
     pg.locator(".actform button", has_text="Save").click()
     pg.wait_for_timeout(500)
     refused = toast()
@@ -107,7 +108,7 @@ with sync_playwright() as p:
     check(9, "Transfer moves the lead and its open card to the other broker", d["broker"] == to and d["attention"]["who"] == to, shot("09-transfer"), f"to {to}")
 
     C = "971508880003"
-    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now"):
+    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident"):
         say(C, t, "Mona Saleh")
     cb = lead(C)["broker"]
     open_as(C, cb)
@@ -122,7 +123,7 @@ with sync_playwright() as p:
 
     # 2. Asked: no calls
     D = "971508880004"
-    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now"):
+    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident"):
         say(D, t, "Huda Karim")
     db = lead(D)["broker"]
     for c in [lead(D)["attention"]] if lead(D)["attention"] else []:

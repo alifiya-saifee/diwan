@@ -13,7 +13,7 @@ from diwan.slots import DUBAI
 
 NOON = datetime(2026, 10, 28, 12, tzinfo=DUBAI)
 PH = "971501230000"
-QUAL = ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now")
+QUAL = ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident")
 
 
 @pytest.fixture
@@ -91,7 +91,7 @@ def test_coming_back_ready_reopens_and_tells_the_broker(office):
 def test_call_me_always_reaches_the_broker_and_rania_keeps_the_chat(office):
     say(office, "Hello")
     r = say(office, "Can someone call me please?")
-    assert "will call you shortly" in r["reply"] and r["mode"] == "ai"
+    assert "will call you in the next 10 minutes" in r["reply"] and r["mode"] == "ai"
     [card] = office.graph().of("attention", status="open")
     assert card.props["kind"] == "call" and card.props["reason"].startswith("Asked for a call")
     assert not deal_props(office).get("hot")  # not qualified yet: a call, not a hot lead
@@ -216,7 +216,7 @@ def test_a_transfer_takes_the_open_card_with_it(office):
 
 
 def test_asked_no_calls_means_no_call_cards_and_no_promised_calls(office):
-    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now"):
+    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident"):
         r = say(office, t)
     deal = office.graph().nodes[f"chat:{PH}"].deal
     broker = office.graph().nodes[f"deal:{deal}"].props["broker"]
@@ -255,7 +255,10 @@ def test_merging_two_conversations_of_the_same_person(office):
     broker = office.graph().nodes[f"deal:{a}"].props["broker"]
     with pytest.raises(PermissionError):
         leads.merge(office, PH, IG, by="priya")
-    leads.merge(office, PH, IG, by=broker)
+    if len({g.nodes[f"deal:{x}"].props["broker"] for x in (a, b) for g in [office.graph()]}) > 1:  # two brokers: not theirs to decide
+        with pytest.raises(PermissionError):
+            leads.merge(office, PH, IG, by=broker)
+    leads.merge(office, PH, IG, by="rashid")
     g = office.graph()
     msgs = g.nodes[f"chat:{PH}"].props["messages"]
     assert any(m.get("chat") == IG and "Dubai Marina" in m["text"] for m in msgs)  # both histories, each marked

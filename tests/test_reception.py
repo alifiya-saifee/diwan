@@ -39,7 +39,7 @@ def test_greets_then_answers_from_listings_with_permit(office):
 def test_listing_without_permit_is_never_offered(office):
     msg(office, "Hi")
     r = msg(office, "Any 1 bed in Downtown?")
-    assert "DT-2210" not in r["reply"] and r["mode"] == "human"
+    assert "DT-2210" not in r["reply"] and r["mode"] == "ai"  # she keeps the conversation; the broker gets the lead with its answers
 
 
 def test_answers_company_questions_from_confirmed_knowledge_only(office):
@@ -156,7 +156,7 @@ def test_a_number_that_counts_something_is_not_the_hour():
 def test_a_price_question_gets_the_price_or_which_listing_not_a_knowledge_card(office):
     """Found in a browser run: "price please?" matched a card that says "please bring a photo ID"."""
     r = reception.message(office, "ig:tester", "price please? 🙏", name_="@tester")
-    assert "Which property" in r["reply"] and "AED 2,600,000" in r["reply"] and "photo ID" not in r["reply"]
+    assert "just looking" in r["reply"] and "AED" not in r["reply"] and "photo ID" not in r["reply"]  # nothing to go on: hello and one question
     r = reception.message(office, "ig:tester", "How much is the Marina Crest one?", name_="@tester")
     assert r["reply"].startswith("Unit 1204, Marina Crest") and "AED 2,600,000" in r["reply"]
 

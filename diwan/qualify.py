@@ -86,24 +86,36 @@ DEFAULT_FORM = {
             _f("ready_or_offplan", "Ready or off-plan", "Ready to move in, or off-plan?", "جاهز للسكن أو على الخارطة؟", "choice",
                ["Ready", "Off-plan"], required=False),
             _f("timeline", "When", "When are you looking to buy?", "متى تخطط للشراء؟", "choice", ["Now", "1-3 months", "3-6 months", "Later"]),
+            _f("purpose", "Purpose", "Is it to live in, or to invest?", "هل هو للسكن أو للاستثمار؟", "choice", ["Live in", "Invest"]),
+            _f("residency", "Residency", "Are you a UAE resident?", "هل أنت مقيم في الإمارات؟", "choice", ["UAE resident", "Non-resident"]),
         ]},
         "tenant": {"label": "Tenant", "fields": [
             AREA, TYPE, BEDS,
             _f("budget_aed", "Yearly rent (AED)", "What yearly rent are you aiming for?", "كم الإيجار السنوي المناسب لك؟", "money", strict=True),
             _f("move_in", "Move-in", "When would you like to move in?", "متى تريد الانتقال؟", "date"),
             _f("family_size", "People living", "How many people will live there?", "كم شخص سيسكن؟", "number", required=False),
+            _f("cheques", "Cheques", "How many cheques would you pay the rent in?", "كم عدد الشيكات لدفع الإيجار؟", "choice", ["1", "2", "4", "6", "12"]),
+            _f("tenant_kind", "Company or personal", "Is the lease in your name or a company's?", "هل العقد باسمك أم باسم شركة؟", "choice", ["Personal", "Company"]),
+            _f("pets", "Pets", "Do you have any pets?", "هل لديك حيوانات أليفة؟", "yesno", required=False),
         ]},
         "seller": {"label": "Seller", "fields": [
             AREA, TYPE, _f("bedrooms", "Bedrooms", "How many bedrooms does it have?", "كم غرفة نوم فيه؟", "number", required=False),
             _f("asking_price", "Asking price (AED)", "What price are you hoping to sell for?", "كم السعر المطلوب؟", "money", strict=True),
             _f("occupancy_status", "Occupancy", "Is it vacant, tenanted or lived in by you?", "هل هو شاغر، مؤجر أو تسكنه؟", "choice",
                ["Vacant", "Tenanted", "Owner-occupied"]),
+            _f("unit", "Unit", "Which unit and building is it?", "ما هي الوحدة والمبنى؟"),
+            _f("title_deed", "Title deed holder", "Whose name is on the title deed?", "باسم من سند الملكية؟"),
+            _f("mortgage_outstanding", "Mortgage on it", "Is there a mortgage on it?", "هل عليه رهن عقاري؟", "yesno"),
+            _f("timeline", "When", "When would you like to sell?", "متى تريد البيع؟", "choice", ["Now", "1-3 months", "3-6 months", "Later"]),
             _f("standout_features", "Highlights", "What makes it stand out?", "ما الذي يميزه؟", required=False),
         ]},
         "landlord": {"label": "Landlord", "fields": [
             AREA, TYPE, BEDS,
             _f("expected_rent", "Expected yearly rent (AED)", "What yearly rent are you expecting?", "كم الإيجار السنوي المتوقع؟", "money", strict=True),
             _f("occupancy_status", "Occupancy", "Is it vacant now?", "هل هو شاغر الآن؟", "choice", ["Vacant", "Tenanted", "Owner-occupied"]),
+            _f("unit", "Unit", "Which unit and building is it?", "ما هي الوحدة والمبنى؟"),
+            _f("current_tenant", "Current tenant", "Who is the current tenant, and until when?", "من المستأجر الحالي وحتى متى؟", required=False,
+               ask_if={"field": "occupancy_status", "op": "=", "value": "Tenanted"}),
             _f("standout_features", "Highlights", "What makes it stand out?", "ما الذي يميزه؟", required=False),
         ]},
     },
@@ -112,7 +124,7 @@ DEFAULT_FORM = {
 }
 
 DETECT = [  # rules-mode guess of the type from the words (the model decides when connected)
-    ("landlord", r"\b(let out|rent out|rent my|lease my|landlord|tenant for my)\b"),
+    ("landlord", r"\b(let out|rent out|rent my|lease my|landlord|tenant for my|manage my|property management)\b"),
     ("seller", r"\b(sell|selling|sale of my|list my)\b|أبيع|بيع"),
     ("tenant", r"\b(rent|renting|lease|to let)\b|إيجار|استأجر|أستأجر"),
     ("buyer", r"\b(buy|buying|purchase|invest|own)\b|أشتري|شراء"),
@@ -287,7 +299,8 @@ def read_rules(g: Graph, f: dict, qtype: str | None, text: str, last_asked: str 
     low = text.lower()
     found_type = None
     if not qtype:
-        found_type = next((t for t, rx in DETECT if t in f["types"] and re.search(rx, low)), None)
+        words = re.sub(r"\bnot sure (if |whether |that )?i'?m \w+", " ", low)  # "not sure I'm buying yet" says they might not
+        found_type = next((t for t, rx in DETECT if t in f["types"] and re.search(rx, words)), None)
     t = qtype or found_type
     out = []
     for x in fields_for(f, t):
@@ -306,11 +319,12 @@ def read_rules(g: Graph, f: dict, qtype: str | None, text: str, last_asked: str 
         elif kind == "area":
             v = next((a for a in _areas(g) if a.lower() in low or a.lower().replace("dubai ", "") in low), None)
         elif kind == "choice":
-            v = next((o for o in x["options"] if option_said(o, low)), None)
+            words = re.sub(r"\bready\s+(by|in|for|before|around|next|this|within)\b", " ", low)  # "ready by summer" is when, not what
+            v = next((o for o in x["options"] if option_said(o, words)), None)
         elif kind == "yesno" and last_asked == k and not vague:
             v = "Yes" if re.search(r"\b(yes|yeah|yep|sure|already|نعم|ايوه)\b", low) else "No" if re.search(r"\b(no|not yet|nope|لا)\b", low) else None
         elif kind in ("text", "date", "number") and last_asked == k and not vague and len(text) < 160 and not text.strip().endswith("?"):
-            if kind == "date" and not re.search(r"\d|now|asap|soon|next|this|week|month|year|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|"
+            if kind == "date" and not re.search(r"\d|now|asap|soon|next|this|week|month|year|summer|winter|spring|autumn|ramadan|eid|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|"
                                                 r"شهر|أسبوع|الآن|قريب", low):
                 continue
             v = text.strip()

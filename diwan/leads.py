@@ -3,12 +3,12 @@
 The rules a busy sales floor runs on:
 - A new lead goes to the agent of the listing it is about; otherwise round-robin among brokers who are on shift and
   not away, fewest leads today first. Nobody on shift: the least busy broker who is not away.
-- Anything Rania hands to a person becomes an Attention card with a due time: 15 minutes when the customer asked for a
-  call or came from a portal, 30 minutes otherwise.
+- Anything Rania hands to a person becomes an Attention card with a due time: the owner's call limit (10 minutes) when
+  the customer asked for a call or came from a portal, their reply limit (30 minutes) otherwise.
 - A card leaves Attention only with a recorded action: called, messaged, no answer, or not needed with a reason.
   A person replying in the chat counts as "messaged".
-- Past due: the card is marked overdue and the owner hears. An hour after it was raised with nothing done, the lead
-  goes to the Pool, where any broker on shift can claim it.
+- Past due: the card is marked overdue and the owner and the Sales manager hear. A call goes to the next free broker with
+  a new limit. An hour after it was raised with nothing done, the lead goes to the Pool, where any broker on shift can claim it.
 - Every assignment, card, overdue and pool move is a notice to the person on their screen, and on their own WhatsApp
   when a notify template is set (WhatsApp only lets a business start a conversation with an approved template).
 """
@@ -28,12 +28,16 @@ ACTIONS = {"called": "Called", "messaged": "Messaged", "no_answer": "No answer",
 DEFAULT_SHIFT = "09:00-21:00"
 
 
-def due_minutes(kind: str) -> int:
-    return int(env("DIWAN_CALL_MINUTES", "15")) if kind == "call" else int(env("DIWAN_REPLY_MINUTES", "30"))
+def due_minutes(kind: str, g: Graph | None = None) -> int:
+    """The owner's limits (Settings), the same number Rania promises the client."""
+    from diwan import sales
+    s = sales.settings(g) if g is not None else sales.DEFAULTS
+    return s["call_minutes"] if kind == "call" else s["reply_minutes"]
 
 
-def pool_minutes() -> int:
-    return int(env("DIWAN_POOL_MINUTES", "60"))
+def pool_minutes(g: Graph | None = None) -> int:
+    from diwan import sales
+    return (sales.settings(g) if g is not None else sales.DEFAULTS)["pool_minutes"]
 
 
 def _at(iso: str) -> datetime:
@@ -66,9 +70,16 @@ def set_agent(office: Office, person: str, key: str, value, *, by: str) -> None:
         raise ValueError("Use a shift like 10:00-19:00")
     if key == "phone":
         value = re.sub(r"\D", "", value or "")
-    if key not in ("shift", "days", "away", "phone"):
+    if key == "licence_expiry" and value and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(value)):
+        raise ValueError("Licence expiry: a date like 2027-03-31")
+    if key not in ("shift", "days", "away", "phone", "licence", "licence_expiry"):
         raise ValueError(f"not a team setting: {key}")
     office.log.append("setting.changed", actor=by, content={"person": person, "key": key, "value": value})
+
+
+def licence_ok(g: Graph, person: str, now: datetime) -> bool:
+    exp = setting(g, person, "licence_expiry")
+    return not exp or exp >= now.astimezone(DUBAI).date().isoformat()
 
 
 def on_shift(g: Graph, person: str, now: datetime) -> bool:
@@ -89,7 +100,8 @@ def load_today(g: Graph, person: str, now: datetime) -> int:
 
 def team(g: Graph, now: datetime) -> list[dict]:
     return [{"id": p, "name": name(p), "shift": setting(g, p, "shift", DEFAULT_SHIFT), "away": bool(setting(g, p, "away")),
-             "days": setting(g, p, "days"), "phone": bool(setting(g, p, "phone")), "on_shift": on_shift(g, p, now), "leads_today": load_today(g, p, now)}
+             "days": setting(g, p, "days"), "phone": bool(setting(g, p, "phone")), "on_shift": on_shift(g, p, now), "leads_today": load_today(g, p, now),
+             "licence": setting(g, p, "licence"), "licence_expiry": setting(g, p, "licence_expiry"), "licence_ok": licence_ok(g, p, now)}
             for p in brokers()]
 
 
@@ -97,7 +109,8 @@ def pick(g: Graph, now: datetime, listing: str | None = None, exclude: str | Non
          among: list[str] | None = None) -> tuple[str, str]:
     """(broker, why). The listing's own agent first, then round-robin among brokers on shift. `among`: only these
     brokers (a deal kind's)."""
-    team_ = [p for p in brokers() if not among or p in among] or brokers()
+    licensed = [p for p in brokers() if licence_ok(g, p, now)] or brokers()  # an expired licence takes no new leads
+    team_ = [p for p in licensed if not among or p in among] or licensed
     if listing and (n := g.nodes.get(f"listing:{listing}")) and (agent := n.props.get("agent")) in team_:
         if on_shift(g, agent, now) and agent != exclude:
             return agent, f"agent of listing {listing}"
@@ -138,10 +151,12 @@ def raise_card(office: Office, chat: str, *, reason: str, text: str = "", to: st
     to = to or g.nodes[f"deal:{ch.deal}"].props["broker"]
     if (cur := open_card(g, chat)) and not replace and not (kind == "call" and cur.props["kind"] != "call"):
         return None
-    due = due or now + timedelta(minutes=due_minutes(kind))  # a call the client asked for at a time is due then
+    due = due or now + timedelta(minutes=due_minutes(kind, g))  # a call the client asked for at a time is due then
+    last = [{"who": m["by"] if m["type"] == "sent" else "client", "text": m["text"][:200]}
+            for m in ch.props["messages"] if m["type"] in ("received", "sent")][-3:]  # what they were saying
     ev = office.log.append("attention.raised", actor="rania", agent="rania", deal=ch.deal, caused_by=cause,
                            content={"chat": chat, "kind": kind, "reason": reason, "who": to, "raised": now.isoformat(),
-                                    "due": due.isoformat(), "replaces": cur.id if cur else None})
+                                    "due": due.isoformat(), "replaces": cur.id if cur else None, "last": last})
     what = "wants a call" if kind == "call" else "needs a reply"
     notify(office, to, f"{ch.label} {what}: {reason}. Due {due.astimezone(DUBAI):%H:%M}.", chat=chat, kind=kind, cause=ev["id"])
     return f"AT{ev['id']}"
@@ -170,27 +185,45 @@ def replied(office: Office, chat: str, *, by: str, cause: int | None = None) -> 
 
 
 def sweep(office: Office, now: datetime | None = None) -> list[str]:
-    """Run every minute. Past due: overdue, and the owner hears. An hour with nothing done: the lead goes to the Pool."""
+    """Run every minute. Past due: overdue, and the owner and Sales manager hear; a call goes to the next free broker. An hour
+    with nothing done: the lead goes to the Pool."""
     now = now or datetime.now(timezone.utc)
     out = []
+    manager = next((k for k, v in PEOPLE.items() if v["role"] == "Sales manager"), None)
     for c in office.graph().of("attention", status="open"):
         p, g = c.props, office.graph()
         label = g.nodes[f"chat:{p['chat']}"].label
-        if not p.get("pooled") and now >= _at(p.get("raised") or c.at) + timedelta(minutes=pool_minutes()):
+        if not p.get("pooled") and now >= _at(p.get("raised") or c.at) + timedelta(minutes=pool_minutes(g)):
             ev = office.log.append("lead.pooled", actor="rania", agent="rania", deal=c.deal, key=f"pool:{c.id}",
                                    content={"id": c.id, "chat": p["chat"], "from": p["who"]})
             for b in brokers():
                 if b != p["who"] and on_shift(g, b, now):
                     notify(office, b, f"Lead available to claim: {label} ({p['reason']}). {name(p['who'])} has not acted in "
-                                      f"{pool_minutes()} minutes.", chat=p["chat"], kind="pool", cause=ev["id"])
+                                      f"{pool_minutes(g)} minutes.", chat=p["chat"], kind="pool", cause=ev["id"])
             out.append(f"pooled {c.id}")
         elif not p.get("overdue") and now >= _at(p["due"]):
             ev = office.log.append("attention.overdue", actor="rania", agent="rania", deal=c.deal, key=f"overdue:{c.id}",
                                    content={"id": c.id, "chat": p["chat"]})
             notify(office, p["who"], f"Overdue: {label} ({p['reason']}).", chat=p["chat"], kind="overdue", cause=ev["id"])
-            notify(office, "layla", f"{name(p['who'])} is late on {label}: {p['reason']}.", chat=p["chat"], kind="overdue", cause=ev["id"])
+            for boss in {owner_id(), manager} - {None, p["who"]}:
+                notify(office, boss, f"{name(p['who'])} is late on {label}: {p['reason']}.", chat=p["chat"], kind="overdue", cause=ev["id"])
             out.append(f"overdue {c.id}")
+            if p["kind"] == "call" and not p.get("set_by") and (next_up := next_free(g, p["who"], now)):  # the client was promised a call
+                office.log.append("attention.moved", actor="sales", agent="sales", deal=c.deal, caused_by=ev["id"], key=f"moved:{c.id}:{p.get('escalated', 0)}",
+                                  content={"id": c.id, "chat": p["chat"], "from": p["who"], "to": next_up, "due": (now + timedelta(minutes=due_minutes("call", g))).isoformat()})
+                assign(office, c.deal, next_up, by="sales", why=f"{name(p['who'])} had not called in time", cause=ev["id"], chat=p["chat"], now=now)
+                out.append(f"moved {c.id} to {next_up}")
     return out
+
+
+def next_free(g: Graph, late: str, now: datetime) -> str | None:
+    """The broker on shift with the fewest leads today, not the one who is late. None when nobody else is on shift."""
+    free = [b for b in brokers() if b != late and on_shift(g, b, now) and licence_ok(g, b, now)]
+    return min(free, key=lambda b: (load_today(g, b, now), brokers().index(b))) if free else None
+
+
+def owner_id() -> str:
+    return next(k for k, v in PEOPLE.items() if v["role"] == "Owner")
 
 
 def claim(office: Office, chat: str, *, by: str) -> dict:
@@ -207,17 +240,23 @@ def claim(office: Office, chat: str, *, by: str) -> dict:
 
 
 def reassign(office: Office, chat: str, to: str, *, by: str) -> dict:
-    """A manager moves a lead, or a broker covers for a colleague. Its open card goes with it (the graph moves it)."""
+    """A manager moves a lead, or its broker hands it to a colleague. Its open card goes with it (the graph moves it)."""
     if to not in brokers():
         raise ValueError(f"{name(to)} is not a broker")
-    ch = office.graph().nodes[f"chat:{chat}"]
+    g = office.graph()
+    ch = g.nodes[f"chat:{chat}"]
+    _may_act(g, ch.deal, by)  # the first owner keeps a lead unless they or a manager move it
     return assign(office, ch.deal, to, by=by, why=f"moved by {name(by)}", chat=chat)
 
 
 def _may_act(g: Graph, deal: str, by: str) -> None:
-    from diwan import qualify
-    if by != g.nodes[f"deal:{deal}"].props.get("broker") and by not in qualify.owner_ids():
-        raise PermissionError(f"Only {name(g.nodes[f'deal:{deal}'].props.get('broker'))} (the broker) or the owner does this")
+    if by != g.nodes[f"deal:{deal}"].props.get("broker") and by not in deciders():
+        raise PermissionError(f"Only {name(g.nodes[f'deal:{deal}'].props.get('broker'))} (the broker), the Sales manager or the owner does this")
+
+
+def deciders() -> set[str]:
+    """Who may decide between two brokers."""
+    return {k for k, v in PEOPLE.items() if v["role"] in ("Owner", "Sales manager")}
 
 
 def no_calls(g: Graph, deal: str | None) -> bool:
@@ -254,6 +293,8 @@ def merge(office: Office, into: str, other: str, *, by: str) -> dict:
     if a.props.get("merged_into") or b.props.get("merged_into"):
         raise ValueError(f"{(b if b.props.get('merged_into') else a).label} is already merged into another lead")
     _may_act(g, a.deal, by)
+    if len({g.nodes[f"deal:{x.deal}"].props.get("broker") for x in (a, b) if x.deal and f"deal:{x.deal}" in g.nodes}) > 1 and by not in deciders():
+        raise PermissionError("Two brokers own these: the Sales manager or the owner merges them")
     ev = office.log.append("chat.merged", actor=by, deal=a.deal, content={"into": into, "from": other, "from_deal": b.deal})
     da = g.nodes[f"deal:{a.deal}"].props
     db = g.nodes[f"deal:{b.deal}"].props if b.deal and f"deal:{b.deal}" in g.nodes else {}
@@ -326,7 +367,7 @@ def _agent(item: dict) -> str | None:
 
 
 FEED_FIELDS = ("title", "community", "type", "beds", "price_aed", "permit", "agent", "offering")
-MEDIA = ("photos", "lat", "lng", "description", "size_sqft", "completion", "project")  # nobody edits these here: the feed always wins
+MEDIA = ("photos", "lat", "lng", "description", "size_sqft", "completion", "project", "permit_until")  # nobody edits these here: the feed always wins
 
 
 def sync_listings(office: Office, xml: bytes | str, *, by: str = "portal-feed") -> dict:
@@ -348,7 +389,7 @@ def sync_listings(office: Office, xml: bytes | str, *, by: str = "portal-feed") 
                 "permit": it["permit"], "agent": _agent(it), "offering": it["offering"]}
         geo = it.get("geo") or (None, None)
         media = {k: v for k, v in {"photos": it.get("photos") or [], "lat": geo[0], "lng": geo[1], "description": it.get("description"),
-                                   "size_sqft": it.get("size_sqft"), "completion": it.get("completion"), "project": it.get("project")}.items()
+                                   "size_sqft": it.get("size_sqft"), "completion": it.get("completion"), "project": it.get("project"), "permit_until": it.get("permit_until")}.items()
                  if v not in (None, [])}
         cur = g.nodes.get(f"listing:{it['ref']}")
         if cur is None:
@@ -471,14 +512,32 @@ def _portal_hello(office: Office, phone: str, deal: str, label: str, listing, ca
 
 # ---------- notices ----------
 
+NOW = {"call", "overdue", "pool", "now", "lead"}  # what reaches a person at once; the rest waits for the midday summary and the brief
+
+
+def level(kind: str) -> str:
+    return "now" if kind in NOW else "today"
+
+
+def resting(g: Graph, person: str) -> bool:
+    """In a meeting, or do not disturb: only Now gets through."""
+    return setting(g, person, "mode") in ("meeting", "dnd")
+
+
 def notify(office: Office, person: str, text: str, *, chat: str | None = None, kind: str = "info", cause: int | None = None) -> dict:
-    """On screen always. On the person's own WhatsApp when they have a number and NOTIFY_TEMPLATE names an approved
-    AiSensy template with one variable; the send result is kept on the notice, never retried silently."""
+    """One notice service, with the spec's levels. Now: on screen and on the person's own WhatsApp when they have a number and
+    NOTIFY_TEMPLATE names an approved AiSensy template with one variable; the send result is kept on the notice, never
+    retried silently. Today: on screen, collected into the midday summary, and held while they are in a meeting or on do
+    not disturb."""
     from diwan.providers import aisensy
+    g = office.graph()
     via, status, err = "screen", "shown", None
-    phone = setting(office.graph(), person, "phone")
+    lvl = level(kind)
+    if lvl == "today" and resting(g, person):
+        status = "held"
+    phone = setting(g, person, "phone")
     from diwan.config import sandbox_only
-    if phone and env("NOTIFY_TEMPLATE") and aisensy.available() and not sandbox_only():
+    if lvl == "now" and phone and env("NOTIFY_TEMPLATE") and aisensy.available() and not sandbox_only():
         via = "whatsapp"
         try:
             aisensy.send_template(phone, env("NOTIFY_TEMPLATE"), [text[:900]], "en")
@@ -486,7 +545,25 @@ def notify(office: Office, person: str, text: str, *, chat: str | None = None, k
         except Exception as e:
             status, err = "failed", str(e)[:200]
     return office.log.append("notify.sent", actor="rania", agent="rania", caused_by=cause,
-                             content={"to": person, "text": text, "chat": chat, "kind": kind, "via": via, "status": status, "error": err})
+                             content={"to": person, "text": text, "chat": chat, "kind": kind, "via": via, "status": status, "error": err, "level": lvl})
+
+
+def midday(office: Office, now: datetime) -> list[str]:
+    """Once a day: one line for each person with unread Today notices. The summary is what the Today level promises."""
+    g = office.graph()
+    day = now.astimezone(DUBAI).date().isoformat()
+    by_person: dict[str, list] = {}
+    for n in g.of("notice", status="new"):
+        if n.props.get("level", "today") == "today" and _at(n.at).astimezone(DUBAI).date().isoformat() == day:
+            by_person.setdefault(n.props["to"], []).append(n)
+    out = []
+    for who, ns in by_person.items():
+        if resting(g, who):
+            continue
+        ev = office.log.append("notify.digest", actor="sales", agent="sales", key=f"midday:{who}:{day}", content={"to": who, "ids": [n.id for n in ns]})
+        if not ev.get("duplicate"):
+            out.append(f"midday {who}")
+    return out
 
 
 def notices(g: Graph, person: str, limit: int = 30) -> list[dict]:
@@ -505,4 +582,5 @@ def card_json(n, now: datetime) -> dict:
     p = n.props
     left = int((_at(p["due"]) - now).total_seconds() // 60)
     return {"id": n.id, "kind": p["kind"], "reason": p["reason"], "who": p["who"], "due": p["due"], "minutes_left": left,
-            "overdue": left < 0, "pooled": bool(p.get("pooled")), "raised_at": p.get("raised") or n.at}
+            "overdue": left < 0, "pooled": bool(p.get("pooled")), "raised_at": p.get("raised") or n.at, "last": p.get("last") or [],
+            "escalated": p.get("escalated", 0), "moved_from": p.get("moved_from")}

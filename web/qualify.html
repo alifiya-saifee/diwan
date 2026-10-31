@@ -79,6 +79,11 @@
         <p class="hint">A client who says they're only looking gets a warm reply and is not chased: their lead moves to
           🌱 Nurture. Rania still answers them, and when they show they're ready (a budget, a viewing, a call) the lead
           comes back and the broker is told. "Can someone call me?" always reaches the broker.</p>
+        <label>First message to a new client</label>
+        <textarea id="fgreet" rows="3" placeholder="Hi {name}! I'm Rania from {company}. Are you looking to buy, rent or sell?"></textarea>
+        <label style="margin-top:8px">The same in Arabic (optional)</label>
+        <textarea id="fgreetar" rows="2" dir="auto" placeholder="مرحباً {name}!"></textarea>
+        <div class="small muted" style="margin:4px 0 8px">{name} is their WhatsApp name, {company} is yours. Leave empty and Rania writes her own.</div>
         <label>Leads that aren't ready yet</label><select id="fnur"></select>
         <label style="margin-top:8px">First message to a portal lead</label><select id="ftpl"></select>
         <div class="small muted" id="ftplbody" style="margin-top:4px"></div>
@@ -91,6 +96,7 @@
           door left open. Never in quiet hours, never after "stop", and at most as many as you set. A reply starts the
           count again.</p>
         <label>Follow up after (from their last message)</label><input id="qafter" placeholder="20h, 3d, 7d">
+        <label style="margin-top:8px">Follow up after an appointment (from the appointment)</label><input id="qvisit" placeholder="1d, 3d, 6d, 9d">
         <div class="row" style="margin-top:8px;gap:8px"><div style="flex:1"><label>Quiet from</label><input id="qfrom" type="time"></div>
           <div style="flex:1"><label>until</label><input id="qto" type="time"></div></div>
         <label class="chk" style="margin-top:8px"><input type="checkbox" id="qfri"> Not during Friday prayer (11:30 to 13:30)</label>
@@ -245,6 +251,7 @@ async function loadRec() {
 let FR = null;
 async function loadFront() {
   FR = await api("/api/rania/front");
+  $("fgreet").value = FR.greeting || ""; $("fgreetar").value = FR.greeting_ar || "";
   $("fnur").replaceChildren(...Object.entries(FR.nurture_tos).map(([k, v]) => h("option", { value: k, selected: k === FR.nurture_to }, v)));
   $("ftpl").replaceChildren(h("option", { value: "" }, "None: the broker calls them"),
     ...FR.templates.map((t) => h("option", { value: t.name, selected: t.name === FR.portal_template }, t.name)));
@@ -257,7 +264,7 @@ function showTpl() {
 $("ftpl").onchange = showTpl;
 $("fsave").onclick = async () => {
   try {
-    const r = await post("/api/rania/front", { by: me, nurture_to: $("fnur").value, portal_template: $("ftpl").value || null });
+    const r = await post("/api/rania/front", { by: me, nurture_to: $("fnur").value, portal_template: $("ftpl").value || null, greeting: $("fgreet").value, greeting_ar: $("fgreetar").value });
     toast(`Saved: ${FR.nurture_tos[r.nurture_to]}${r.portal_template ? `; portal leads get "${r.portal_template}"` : ""}.`); loadFront();
   } catch (e) { toast(e.message); }
 };
@@ -269,6 +276,7 @@ const hours = (s) => { const m = String(s).trim().match(/^(\d+(?:\.\d+)?)\s*(h|d
 async function loadQuiet() {
   QS = await api("/api/rania/quiet");
   $("qafter").value = QS.after_hours.map(dur).join(", ");
+  $("qvisit").value = QS.after_visit_hours.map(dur).join(", ");
   $("qfrom").value = QS.quiet_from; $("qto").value = QS.quiet_to; $("qfri").checked = QS.friday_prayer;
   $("qtpl").replaceChildren(h("option", { value: "" }, "None: skip follow-ups after 24 hours"),
     ...QS.templates.map((t) => h("option", { value: t.name, selected: t.name === QS.template }, t.name)));
@@ -288,15 +296,15 @@ $("qtpl").onchange = qTpl;
 $("qsave").onclick = async () => {
   try {
     const after = $("qafter").value.split(",").filter((x) => x.trim()).map(hours);
-    const r = await post("/api/rania/quiet", { by: me, after_hours: after, quiet_from: $("qfrom").value, quiet_to: $("qto").value,
+    const r = await post("/api/rania/quiet", { by: me, after_hours: after, after_visit_hours: $("qvisit").value.split(",").filter((x) => x.trim()).map(hours), quiet_from: $("qfrom").value, quiet_to: $("qto").value,
       friday_prayer: $("qfri").checked, template: $("qtpl").value || null, then: $("qthen").value, then_after_hours: hours($("qthenafter").value) });
     toast(`Saved: up to ${r.after_hours.length} follow-ups, after ${r.after_hours.map(dur).join(", ")}.`); loadQuiet();
   } catch (e) { toast(e.message); }
 };
 function renderRec() {
   const can = owners.includes(me);
-  if (QS) { for (const el of ["qafter", "qfrom", "qto", "qfri", "qtpl", "qthen", "qthenafter", "qsave"]) $(el).disabled = !can; $("qnote").textContent = can ? "" : "Only the owner changes this."; }
-  if (FR) { for (const el of [$("fnur"), $("ftpl"), $("fsave")]) el.disabled = !can; $("fnote").textContent = can ? "" : "Only the owner changes this."; }
+  if (QS) { for (const el of ["qafter", "qvisit", "qfrom", "qto", "qfri", "qtpl", "qthen", "qthenafter", "qsave"]) $(el).disabled = !can; $("qnote").textContent = can ? "" : "Only the owner changes this."; }
+  if (FR) { for (const el of [$("fgreet"), $("fgreetar"), $("fnur"), $("ftpl"), $("fsave")]) el.disabled = !can; $("fnote").textContent = can ? "" : "Only the owner changes this."; }
   for (const el of [$("rwhen"), $("rmany"), $("rsave"), ...$("rhot").querySelectorAll("input")]) el.disabled = !can;
   $("rnote").textContent = can ? "" : "Only the owner changes this.";
 }

@@ -60,6 +60,11 @@ def send_text(to: str, text: str, transport=None) -> dict:
     return _post({"to": digits(to), "type": "text", "text": {"body": text}}, transport)
 
 
+def send_image(to: str, url: str, caption: str, transport=None) -> dict:
+    """A photo with a caption. `url` must be an https address WhatsApp can fetch."""
+    return _post({"to": digits(to), "type": "image", "image": {"link": url, "caption": caption[:1024]}}, transport)
+
+
 def send_template(to: str, name: str, params: list[str] | None = None, lang: str = "en", transport=None) -> dict:
     """An approved template, the only way to start or reopen a conversation after 24 hours."""
     comps = [{"type": "body", "parameters": [{"type": "text", "text": p} for p in params]}] if params else []

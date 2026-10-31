@@ -788,6 +788,11 @@ const setRange = () => {
 };
 $("lfrom").onchange = setRange; $("lto").onchange = setRange;
 $("addAppt").onclick = () => openForm("appt", { broker: who || (C.owner ? null : me) });
+if (qs.get("book")) setTimeout(async () => {  // from a hot lead: the form opens with this client filled in
+  await Promise.resolve(openForm("appt", { broker: who || (C?.owner ? null : me) }));
+  const phone = document.querySelector("#fphone, input[name=phone]");
+  if (phone) { phone.value = qs.get("book"); phone.dispatchEvent(new Event("input", { bubbles: true })); }
+}, 600);
 $("addBusy").onclick = () => openForm("busy", { broker: who || (C.owner ? null : me) });
 $("addOff").onclick = () => openForm("off", { broker: who || (C.owner ? null : me) });
 load();

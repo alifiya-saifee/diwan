@@ -245,19 +245,45 @@ def nearest(g: Graph, broker: str, want: datetime, now: datetime, n: int = 3, mi
 TOMORROW = r"tomorrow|tommorow|tomorow|tomorrw|tmrw|tmrrw|tmrow|tmr|tmw|tomo|2moro|2morrow|2mrw|2mro"  # how people type it
 
 
+def _day(low: str, local: datetime):
+    if "today" in low or "tonight" in low or "this evening" in low:
+        return local.date()
+    if re.search(rf"\b(?:{TOMORROW})\b", low):
+        return local.date() + timedelta(days=1)
+    for i, d in enumerate(DAYS):
+        if re.search(rf"\b{d}|\b{d[:3]}\b", low):
+            return local.date() + timedelta(days=(i - local.weekday()) % 7 or 7)
+    return None
+
+
+ZONES = {r"\b(london|uk|british|gmt|bst)\s+time\b": "Europe/London", r"\b(india|indian|ist)\s+time\b": "Asia/Kolkata", r"\b(moscow|russia)\s+time\b": "Europe/Moscow",
+         r"\b(riyadh|saudi|ksa)\s+time\b": "Asia/Riyadh", r"\b(paris|berlin|cet)\s+time\b": "Europe/Paris", r"\b(new york|eastern|est|edt)\s+time\b": "America/New_York"}
+
+
+def in_their_time(text: str, at: datetime) -> tuple[datetime, str | None]:
+    """"Call me at 4, London time": the clock they mean, as Dubai time for the calendar. Only when they name it."""
+    from zoneinfo import ZoneInfo
+    low = text.lower()
+    for rx, zone in ZONES.items():
+        if m := re.search(rx, low):
+            return at.replace(tzinfo=ZoneInfo(zone)).astimezone(DUBAI), m.group(0)
+    return at, None
+
+
+def parse_day(text: str, now: datetime) -> datetime | None:
+    """'Saturday morning', 'Thursday': the start of that day or part of it, in Dubai, for offering its free times."""
+    low, local = text.lower(), now.astimezone(DUBAI)
+    day = _day(low, local)
+    if day is None:
+        return None
+    hour = 12 if "afternoon" in low else 16 if "evening" in low else 0
+    return datetime(day.year, day.month, day.day, hour, tzinfo=DUBAI)
+
+
 def parse(text: str, now: datetime) -> datetime | None:
     """'tomorrow 4pm', 'Thursday at 11', 'today 17:00' -> a Dubai time, or None if no day and hour are said."""
     low, local = text.lower(), now.astimezone(DUBAI)
-    day = None
-    if "today" in low or "tonight" in low or "this evening" in low:
-        day = local.date()
-    elif re.search(rf"\b(?:{TOMORROW})\b", low):
-        day = local.date() + timedelta(days=1)
-    else:
-        for i, d in enumerate(DAYS):
-            if re.search(rf"\b{d}|\b{d[:3]}\b", low):
-                day = local.date() + timedelta(days=(i - local.weekday()) % 7 or 7)
-                break
+    day = _day(low, local)
     # the hour: said with am/pm or a colon first, then after "at", never a number that counts something ("2 bed", "3 million")
     unit = r"(?!\s*(?:bed|br|bhk|room|million|m\b|k\b|sq|%|aed|year|min))"
     m = (re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", low) or re.search(r"\b(\d{1,2}):(\d{2})()", low)
@@ -286,8 +312,8 @@ def week(g: Graph, start, *, person: str, broker: str | None = None, now: dateti
     """The calendar page: seven days from `start`, each broker's bookable hours per day, and their appointments. The
     owner sees every broker (and can filter to one); a broker sees only their own."""
     from diwan import leads, qualify
-    from diwan.people import name
-    owner = person in qualify.owner_ids()
+    from diwan.people import PEOPLE, name
+    owner = person in qualify.owner_ids() or PEOPLE.get(person, {}).get("role") == "Sales manager"  # both see every broker
     team = leads.brokers()
     if not owner:
         if person not in team:

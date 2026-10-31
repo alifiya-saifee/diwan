@@ -73,7 +73,8 @@ def interests(g: Graph, deal: str | None, messages: list[dict]) -> list[dict]:
         chips.append({"label": f"{m.group(1)} bed".replace("studio bed", "Studio"), "kind": "size"})
     if deal and (terms := [f for f in g.facts(deal, "deal_term") if f.props.get("amount_aed")]):
         amt = terms[-1].props["amount_aed"]
-        chips.append({"label": f"AED {amt / 1e6:.1f}M" if amt >= 1e6 else f"AED {amt / 1e3:.0f}K", "kind": "budget", "ref": terms[-1].id})
+        chips.append({"label": f"AED {amt / 1e6:.1f}M" if amt >= 1e6 else f"AED {amt / 1e3:.0f}K", "kind": "budget", "ref": terms[-1].id,
+                      "quote": terms[-1].props.get("quote")})
     return chips
 
 
@@ -88,7 +89,7 @@ def conversation(g: Graph, c, now: datetime) -> dict:
     if last_in and (not last_reply or last_reply["event"] < last_in["event"]):
         waiting = int((now - _at(last_in["at"])).total_seconds() // 60)
     # only a message the customer sent us on WhatsApp or Instagram opens the 24-hour window; a portal enquiry does not
-    last_wa = next((m for m in reversed(msgs) if m["type"] == "received" and m.get("channel") not in PORTALS), None)
+    last_wa = next((m for m in reversed(msgs) if m["type"] == "received" and m.get("channel") in (None, "whatsapp", "instagram")), None)
     window_open = bool(last_wa) and now - _at(last_wa["at"]) < WINDOW
     card = leads.open_card(g, c.props["phone"])
     source = next((m.get("channel") for m in msgs if m["type"] == "received" and m.get("channel")), None)
@@ -104,10 +105,22 @@ def conversation(g: Graph, c, now: datetime) -> dict:
         "viewing": g.record(viewings[0].id).split(" · ", 1)[1] if viewings else None,
         "failed": sum(1 for m in msgs if m.get("status") == "failed"),
         "hot": _hot(deal),
+        "heat": _heat(g, c.deal),
+        "progress": _progress(g, c.deal),
         "no_calls": bool(deal and deal.props.get("no_calls")),
         "nurture": (deal.props.get("nurture") or ({"reason": "not a fit"} if deal.props.get("qualify_status") == "not_a_fit" else None))
                    if deal else None,
     }
+
+
+def _heat(g: Graph, deal: str | None) -> dict | None:
+    from diwan import sales
+    return sales.heat(g, deal)
+
+
+def _progress(g: Graph, deal: str | None) -> dict | None:
+    from diwan import sales
+    return sales.progress(g, deal)
 
 
 def _hot(deal) -> str | None:
@@ -116,11 +129,17 @@ def _hot(deal) -> str | None:
     return (h.get("listing") or "").replace("listing:", "") or ("yes" if h else None)
 
 
+def _scoped(rows: list[dict]) -> list[dict]:
+    """What the signed-in person may see: a broker their own leads and the Pool."""
+    from diwan import access, sales
+    return sales.scope(rows, access.USER.get())
+
+
 def listing(office: Office, *, view: str = "all", person: str = "omar", stage: str | None = None, q: str = "",
             now: datetime | None = None) -> list[dict]:
     g = office.graph()
     now = now or datetime.now(timezone.utc)
-    rows = [conversation(g, c, now) for c in g.of("chat") if not c.props.get("merged_into")]  # a merged chat shows in its lead
+    rows = _scoped([conversation(g, c, now) for c in g.of("chat") if not c.props.get("merged_into")])  # a merged chat shows in its lead
     if view == "mine":
         rows = [r for r in rows if r["handled_by"] == person or (r["mode"] == "human" and r["broker"] == person) or r["broker"] == person]
     elif view == "new":
@@ -145,7 +164,7 @@ def listing(office: Office, *, view: str = "all", person: str = "omar", stage: s
 
 def counts(office: Office, person: str = "omar") -> dict:
     g, now = office.graph(), datetime.now(timezone.utc)
-    rows = [conversation(g, c, now) for c in g.of("chat")]
+    rows = _scoped([conversation(g, c, now) for c in g.of("chat")])
     return {"all": len(rows), "mine": len([r for r in rows if r["broker"] == person or r["handled_by"] == person]),
             "new": len([r for r in rows if r["stage"] == "New"]), "waiting": len([r for r in rows if r["waiting_min"] is not None]),
             "attention": len([r for r in rows if r["attention"] and (r["attention"]["who"] == person or person == "layla")]),
@@ -176,7 +195,14 @@ def detail(office: Office, phone: str, now: datetime | None = None) -> dict:
         "quiet": _quiet(g, c, now) if deal and f"deal:{deal}" in g.nodes else None,
         "visit": g.nodes[f"deal:{deal}"].props.get("visit") if deal and f"deal:{deal}" in g.nodes else None,
         "calls": _calls(g, c),
+        "needs_outcome": _needs_outcome(g, c),
+        "outcome": g.nodes[f"deal:{deal}"].props.get("outcome") if deal and f"deal:{deal}" in g.nodes else None,
     }
+
+
+def _needs_outcome(g: Graph, chat) -> dict | None:
+    from diwan import sales
+    return sales.needs_outcome(g, chat)
 
 
 def _calls(g: Graph, chat) -> list[dict]:
@@ -236,9 +262,13 @@ def set_stage(office: Office, phone: str, stage: str, *, by: str, reason: str = 
     """A person moves the lead, under the Deal desk's rules (docs/lead-profile-spec.md): the deal's own stages, a reason for
     Lost or for moving back, Won only from closing, only the broker, the transactions officer or the owner.
     `only_forward`: from the calendar's Done, which never moves a deal back."""
-    from diwan import desk_stages
+    from diwan import desk_stages, sales
     g = office.graph()
     deal = g.nodes[f"chat:{phone}"].deal
+    if (stage == "Qualified" and by in desk_stages.movers(g, deal) and g.nodes[f"deal:{deal}"].props.get("stage") in (None, "New", "Qualifying")
+            and not sales.form_complete(g, deal)):
+        p = sales.progress(g, deal)
+        raise ValueError(f"Qualified means the owner's form is complete: {p['done']} of {p['of']} answered" if p else "Qualified means the owner's form is complete")
     if only_forward:
         order, cur = desk_stages.stages(g, deal), g.nodes[f"deal:{deal}"].props.get("stage") or "New"
         if cur == "Lost" or cur not in order or stage not in order or order.index(stage) <= order.index(cur):

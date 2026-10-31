@@ -18,7 +18,7 @@ SPEC = {"name": "Welcome caller", "job": "When a lead qualifies, remind the brok
 
 
 def qualify(o, phone="971500000077"):
-    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now"):
+    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident"):
         reception.message(o, phone, t, name_="Test Lead")
 
 

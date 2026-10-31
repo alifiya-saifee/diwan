@@ -33,7 +33,7 @@ def test_verdicts_follow_the_form():
     assert qualify.evaluate(f, None, {})["verdict"] == "DISCOVERY"
     v = qualify.evaluate(f, "buyer", ans(areas="Dubai Marina"))
     assert v["verdict"] == "ASK_QUESTION" and v["next"]["key"] == "property_type"
-    done = ans(areas="Dubai Marina", property_type="Apartment", bedrooms=2, budget_aed=2_700_000, finance="Cash", timeline="Now")
+    done = ans(areas="Dubai Marina", property_type="Apartment", bedrooms=2, budget_aed=2_700_000, finance="Cash", timeline="Now", purpose="Live in", residency="UAE resident")
     assert qualify.evaluate(f, "buyer", done)["verdict"] == "PASS_TO_AGENT"
 
 
@@ -41,7 +41,7 @@ def test_ask_only_if_and_conditions():
     f = qualify.form(Office(EventLog()).graph())
     f["types"]["buyer"]["fields"][4]["required"] = True  # the owner makes "pre-approved?" required, but only for mortgages
     f["types"]["buyer"]["fields"] = [x | ({"required": True} if x["key"] == "mortgage_preapproved" else {}) for x in f["types"]["buyer"]["fields"]]
-    base = dict(areas="Dubai Marina", property_type="Apartment", bedrooms=2, budget_aed=2_700_000, timeline="Now")
+    base = dict(areas="Dubai Marina", property_type="Apartment", bedrooms=2, budget_aed=2_700_000, timeline="Now", purpose="Live in", residency="UAE resident")
     assert qualify.evaluate(f, "buyer", ans(**base, finance="Cash"))["verdict"] == "PASS_TO_AGENT"
     v = qualify.evaluate(f, "buyer", ans(**base, finance="Mortgage"))
     assert v["verdict"] == "ASK_QUESTION" and v["next"]["key"] == "mortgage_preapproved"
@@ -86,13 +86,17 @@ def test_a_buyer_is_asked_one_question_at_a_time_and_qualifies(office):
     assert r["qualify"]["next"]["key"] == "finance"
     r = say("Cash")  # an answer to her own question, not a compliance topic
     assert r["by"] != "policy" and r["mode"] == "ai" and r["qualify"]["next"]["key"] == "timeline"
-    r = say("Now")  # qualified: Rania recommends what fits (the owner's default: up to 3), and asks which one
+    r = say("Now")
+    assert r["qualify"]["next"]["key"] == "purpose"
+    r = say("To live in")
+    assert r["qualify"]["next"]["key"] == "residency"
+    r = say("UAE resident")  # qualified: Rania recommends what fits (the owner's default: up to 3), and asks which one
     assert r["qualify"]["verdict"] == "PASS_TO_AGENT" and r["refs"] == ["listing:MC-1204"] and r["reply"].endswith("Which one interests you?")
     g = office.graph()
     deal = g.nodes[f"chat:{PH}"].deal
     assert g.nodes[f"deal:{deal}"].props["stage"] == "Qualified"
     assert not g.of("attention", status="open")  # the broker is told, not called in yet
-    assert any("qualified" in n.label and "Rania sent 1 options" in n.label for n in g.of("notice"))
+    assert any("qualified" in n.label and "Rania sent 1 option" in n.label for n in g.of("notice"))
     r = say("The first one looks great")  # they pick one: a hot lead for the broker
     assert r["reply"].startswith("Great choice! Unit 1204, Marina Crest (MC-1204)") and "Would you like to see it?" in r["reply"]
     g = office.graph()
@@ -140,7 +144,7 @@ def test_api_form_is_owner_only(monkeypatch):
 
 def test_not_sure_counts_only_where_the_owner_allows_it():
     f = qualify.form(None) if False else qualify.DEFAULT_FORM | {"version": 0}
-    base = dict(areas="Dubai Marina", property_type="Apartment", bedrooms=2, finance="Cash")
+    base = dict(areas="Dubai Marina", property_type="Apartment", bedrooms=2, finance="Cash", purpose="Live in", residency="UAE resident")
     vague = lambda times=1: {"value": qualify.NOT_SURE, "quote": "not sure", "unsure": True, "times": times}  # noqa: E731
     # the budget is "must answer": not sure is asked again once, then a person follows up
     v = qualify.evaluate(f, "buyer", ans(**base, timeline="Now") | {"budget_aed": vague()})
@@ -171,6 +175,8 @@ def test_rania_asks_a_must_answer_question_again_then_the_broker_helps(office):
     assert r["qualify"]["next"]["key"] == "timeline"
     r = say("Not sure yet")  # the timeline allows it, but the budget still holds the lead
     assert r["qualify"]["verdict"] == "ASK_QUESTION" and r["qualify"]["stuck"] == ["budget_aed"]
+    say("To live in")
+    say("UAE resident")
     r = say("About 2 million actually")  # a real answer later replaces "not sure", and the lead qualifies
     assert r["qualify"]["verdict"] == "PASS_TO_AGENT" and r["qualify"]["stuck"] == []
     open_ = office.graph().of("attention", status="open")  # the qualified card replaces the "help with the budget" one
@@ -180,7 +186,7 @@ def test_rania_asks_a_must_answer_question_again_then_the_broker_helps(office):
 def test_not_sure_is_fine_where_allowed_and_never_replaces_a_real_answer(office):
     reception.set_recommend(office, {"when": "never"}, by="layla")  # the qualified-lead card itself, without recommendations
     say = lambda t: reception.message(office, PH, t, name_="Sara Khan", now=NOON)  # noqa: E731
-    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash"):
+    for t in ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "To live in", "UAE resident"):
         say(t)
     r = say("Not sure yet")  # the timeline allows it
     assert r["qualify"]["verdict"] == "PASS_TO_AGENT"
@@ -196,7 +202,7 @@ def test_a_question_she_cannot_answer_reaches_the_broker_with_the_qualified_lead
     say("I want to buy")
     r = say("Do you also sell yachts?")
     assert r["mode"] == "ai" and r["qualify"]["open_questions"] == ["Do you also sell yachts?"]
-    for t in ("Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now"):
+    for t in ("Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident"):
         r = say(t)
     assert r["qualify"]["verdict"] == "PASS_TO_AGENT"
     card = office.graph().of("attention", status="open")[0]
@@ -205,7 +211,7 @@ def test_a_question_she_cannot_answer_reaches_the_broker_with_the_qualified_lead
 
 # ---------- recommendations and the hot lead (the owner's setting) ----------
 
-QUAL = ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now")
+QUAL = ("I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident")
 
 
 def test_only_the_owner_sets_recommendations_and_values_are_checked(office):
@@ -235,7 +241,7 @@ def test_no_listings_while_qualifying_unless_asked_and_never_more_than_the_limit
 
 def test_nothing_fits_goes_to_the_broker_and_a_viewing_request_is_hot_too(office):
     say = lambda t, ph=PH: reception.message(office, ph, t, name_="Sara Khan", now=NOON)  # noqa: E731
-    for t in ("I want to buy", "Palm Jumeirah", "A villa", "6 bed", "Budget is 2 million", "Cash", "Now"):
+    for t in ("I want to buy", "Palm Jumeirah", "A villa", "6 bed", "Budget is 2 million", "Cash", "Now", "To live in", "UAE resident"):
         r = say(t)
     # nothing fits, even loosened (the area they named is kept): she says so plainly, and the broker finds options
     assert r["reply"] == "Thank you Sara! Omar will contact you shortly with options for a 6-bed villa in Palm Jumeirah around AED 2,000,000."

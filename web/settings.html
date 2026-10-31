@@ -27,20 +27,41 @@
   .days { display: inline-flex; gap: 2px; flex: 0 0 auto; }
   .days button { padding: 4px 0; width: 24px; font-size: 11px; border-radius: 6px; color: var(--muted); }
   .days button.on { background: var(--gold-soft); color: var(--gold-2); border-color: rgba(232, 199, 122, .45); }
+  .setgrid { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 22px; align-items: start; margin-top: 18px; }
+  .setnav { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 2px; }
+  .setnav .grp { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin: 14px 0 4px 10px; }
+  .setnav .grp:first-child { margin-top: 0; }
+  .setnav button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 10px; padding: 8px 10px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .setnav button:hover { color: inherit; background: rgba(255, 255, 255, .03); }
+  .setnav button.on { background: var(--gold-soft); color: var(--gold-2); border-color: rgba(232, 199, 122, .45); }
+  .setbody { display: grid; gap: 18px; min-width: 0; }
+  .setbody section[hidden], .setbody div[hidden] { display: none; }
+  details.help { margin-top: 12px; }
+  details.help summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  @media (max-width: 900px) {
+    .setgrid { grid-template-columns: minmax(0, 1fr); }
+    .setnav { position: static; flex-direction: row; overflow-x: auto; }
+    .setnav .grp { display: none; }
+    .setnav button { width: auto; white-space: nowrap; }
+  }
 </style>
 </head>
 <body>
-<main style="max-width:1100px">
-  <h1>Settings · <em>connections</em></h1>
+<main style="max-width:1180px">
+  <h1>Settings</h1>
   <p class="sub">Keys are stored only on this machine, in the local .env file. Nothing here ever shows a saved key again, only whether it is set.</p>
 
-  <section class="panel">
+  <div class="setgrid">
+  <nav class="setnav" id="setnav" aria-label="Settings sections"></nav>
+  <div class="setbody">
+  <section class="panel" data-tab="whatsapp">
     <h2>WhatsApp line</h2>
     <div class="lines" id="lines"></div>
+    <p class="small muted" id="line-note" style="margin:0" hidden></p>
   </section>
 
-  <div class="grid cols-2" style="margin-top:18px">
-    <section class="panel card">
+  <div class="setbody" data-tab="whatsapp">
+    <section class="panel card" id="aisensy-card">
       <h3>AiSensy <span class="chip" id="aisensy-state"></span></h3>
       <p class="small muted">Connect the AiSensy project your WhatsApp number lives on. Rania and your team then send and receive through it, and your approved templates appear in the Inbox.</p>
       <div class="fields">
@@ -50,13 +71,14 @@
       </div>
       <div class="row" style="margin-top:12px"><span></span><button id="aisensy-test">Test connection</button><button class="primary" id="aisensy-save">Save</button></div>
       <div class="result" id="aisensy-result"></div>
-      <h2 style="margin-top:20px">Webhook for incoming messages</h2>
-      <div id="aisensy-hook" class="small muted">Save the project first; a private webhook address is created for you.</div>
-      <ol><li>In AiSensy, open <b>Manage → Webhooks</b> and add a webhook.</li><li>Paste the address above and choose the <b>message.created</b> topic.</li>
-        <li>Send a WhatsApp message to your number: it appears in the Inbox and Rania answers.</li></ol>
+      <details class="help"><summary>Webhook for incoming messages</summary>
+        <div id="aisensy-hook" class="small muted" style="margin-top:8px">Save the project first; a private webhook address is created for you.</div>
+        <ol><li>In AiSensy, open <b>Manage → Webhooks</b> and add a webhook.</li><li>Paste the address above and choose the <b>message.created</b> topic.</li>
+          <li>Send a WhatsApp message to your number: it appears in the Inbox and Rania answers.</li></ol>
+      </details>
     </section>
 
-    <section class="panel card">
+    <section class="panel card" id="cloud-card">
       <h3>Meta WhatsApp Cloud API <span class="chip" id="cloud-state"></span></h3>
       <p class="small muted">Or connect a number directly on Meta, for example the free test number in your Meta developer app.</p>
       <div class="fields">
@@ -66,19 +88,20 @@
         <div class="full"><label>App secret (signs webhooks) <span class="set" id="s-WHATSAPP_APP_SECRET"></span></label><input id="WHATSAPP_APP_SECRET" type="password" autocomplete="off"></div>
       </div>
       <div class="row" style="margin-top:12px"><span></span><button class="primary" id="cloud-save">Save</button></div>
-      <h2 style="margin-top:20px">Webhook</h2>
-      <div class="url" id="cloud-hook"></div>
-      <ol><li>In your Meta app, open <b>WhatsApp → Configuration</b>.</li><li>Paste this callback URL and the verify token above, then subscribe to <b>messages</b>.</li></ol>
+      <details class="help"><summary>Webhook for incoming messages</summary>
+        <div class="url" id="cloud-hook" style="margin-top:8px"></div>
+        <ol><li>In your Meta app, open <b>WhatsApp → Configuration</b>.</li><li>Paste this callback URL and the verify token above, then subscribe to <b>messages</b>.</li></ol>
+      </details>
     </section>
   </div>
 
-  <section class="panel card" style="margin-top:18px">
+  <section class="panel card" data-tab="qualify">
     <h3>Qualification</h3>
     <p class="small muted">What a lead must tell us before a broker takes over, and the conditions that decide it, per customer type. Only the owner edits it; every save is a new version.</p>
     <div class="row" style="margin-top:8px"><span></span><a class="btn primary" href="qualify.html">Open the questions and conditions →</a></div>
   </section>
 
-  <section class="panel card" style="margin-top:18px">
+  <section class="panel card" data-tab="instagram">
     <h3>Instagram <span class="chip" id="ig-state"></span></h3>
     <p class="small muted">An Instagram professional account connected to your Meta app. The studio reads your posts and their insights, studies competitors' public posts (business discovery), publishes approved reels, and passes comments to Rania.</p>
     <div class="fields">
@@ -90,27 +113,33 @@
     <div class="row" style="margin-top:12px"><span class="small muted" id="ig-hook"></span><button class="primary" id="ig-save">Save</button></div>
   </section>
 
-  <section class="panel card" style="margin-top:18px">
+  <section class="panel card" data-tab="portals">
     <h3>Property portals <span class="chip" id="pf-state"></span></h3>
     <p class="small muted">Your own listings and enquiries, through the access your brokerage already has. Diwan reads the same listing feed you give Property Finder, Bayut and Dubizzle, so it only ever offers what you advertise; nothing is scraped. A listing without a permit number is kept and never offered.</p>
     <div class="fields">
       <div class="full"><label>Listing feed address (the XML URL you give the portals) <span class="set" id="s-LISTING_FEED_URL"></span></label><input id="LISTING_FEED_URL" placeholder="https://your-crm.example/feeds/propertyfinder.xml"></div>
     </div>
     <div class="row" style="margin-top:12px"><span class="small muted" id="pf-sync-state"></span><button id="pf-sync">Sync listings now</button><button class="primary" id="pf-save">Save</button></div>
-    <h2 style="margin-top:20px">Enquiry webhooks</h2>
-    <p class="small muted" style="margin-top:-4px">Give each portal (or your lead connector) its address and a shared secret. Each enquiry must be signed with it (HMAC-SHA256 in X-Signature), or carry it as ?token=. Without a secret, the address refuses everything.</p>
-    <div id="pf-hooks"></div>
+    <details class="help"><summary>Enquiry webhooks</summary>
+      <p class="small muted">Give each portal (or your lead connector) its address and a shared secret. Each enquiry must be signed with it (HMAC-SHA256 in X-Signature), or carry it as ?token=. Without a secret, the address refuses everything.</p>
+      <div id="pf-hooks"></div>
+    </details>
   </section>
 
-  <section class="panel card" style="margin-top:18px">
+  <section class="panel card" data-tab="team">
     <h3>Sales team</h3>
-    <p class="small muted">New leads go to the listing's agent, otherwise round-robin among brokers on shift. Calls are due in 15 minutes, replies in 30; untouched after an hour, a lead goes to the Pool. Notices show in the Inbox, and on each broker's own WhatsApp when you name an approved AiSensy template with one variable.</p>
+    <p class="small muted">New leads go to the listing's agent, otherwise round-robin among brokers on shift. Limits are under Sales rules: a call not made in time moves to the next free broker, and after an hour a lead goes to the Pool. Notices show in the Inbox, and on each broker's own WhatsApp when you name an approved AiSensy template with one variable.</p>
     <div class="fields"><div class="full"><label>Notice template (AiSensy, one variable) <span class="set" id="s-NOTIFY_TEMPLATE"></span></label>
       <div class="row"><input id="NOTIFY_TEMPLATE" placeholder="e.g. staff_alert"><button class="primary" id="nt-save" style="flex:0">Save</button></div></div></div>
     <div id="team" style="margin-top:12px"></div>
   </section>
 
-  <section class="panel card" style="margin-top:18px" id="kindsbox">
+  <section class="panel card" data-tab="sales">
+    <h2>Sales rules</h2>
+    <p class="small muted">The numbers Rania, the brokers and the brief all work from. Every change is kept in the log.</p>
+    <div id="salesbox"></div>
+  </section>
+  <section class="panel card" data-tab="kinds" id="kindsbox">
     <h3>Deal kinds · sales desks</h3>
     <p class="small muted">The kinds of deal your sales team works (like Ready sales, Off-plan, Leasing), each with the customers it serves,
       the listings it covers and its brokers. When a lead qualifies, the first kind whose rule matches is its kind: Rania recommends only
@@ -121,7 +150,7 @@
     <fieldset id="dk-edit" style="border:0;padding:0;margin:0;min-width:0"><div id="kinds"></div></fieldset>
   </section>
 
-  <section class="panel card" style="margin-top:18px">
+  <section class="panel card" data-tab="video">
     <h3>HeyGen · AI presenter <span class="chip" id="hg-state"></span></h3>
     <p class="small muted">Lets the studio turn an approved script into a presenter video. Use only an avatar and voice of a person who agreed to it; every video is started by a person who confirms that.</p>
     <div class="fields">
@@ -132,7 +161,7 @@
     <div class="row" style="margin-top:12px"><span></span><button class="primary" id="hg-save">Save</button></div>
   </section>
 
-  <section class="panel card" style="margin-top:18px">
+  <section class="panel card" data-tab="video">
     <h3>Zoom · links for video calls <span class="chip" id="zm-state"></span></h3>
     <p class="small muted">From your Zoom account: Zoom App Marketplace → Develop → Build app → Server-to-Server OAuth, with the scopes to create, update and delete meetings. Whether links are made, and when, is set on the Calendar (⚙).</p>
     <div class="fields">
@@ -143,17 +172,40 @@
     <div class="row" style="margin-top:12px"><span></span><button class="primary" id="zm-save">Save</button></div>
   </section>
 
-  <section class="panel" style="margin-top:18px">
+  <section class="panel card" data-tab="logins">
+    <h3>Logins</h3>
+    <p class="small muted">Everyone signs in with their own password and sees only their department: Sales the Inbox and Calendar, Marketing the Studio, and Operations, Finance and Compliance the Deal desk. Only you see everything. Passwords can't be read back, only replaced; removing a login stops that person at once.</p>
+    <div id="logins" style="margin-top:12px"></div>
+  </section>
+
+  <section class="panel" data-tab="models">
     <h2>Meta models</h2>
     <p class="small muted" style="margin-top:-4px">These keys go in the .env file directly (see .env.example), never into a web form.</p>
     <div id="models" class="row" style="flex-wrap:wrap;justify-content:flex-start"></div>
   </section>
+  </div>
+  </div>
 </main>
 <script type="module">
 import { h, api, post, header, toast, NAMES } from "./app.js";
 header("settings.html");
 const $ = (id) => document.getElementById(id);
 let info;
+
+// one section at a time; the address keeps it (settings.html#team), so a link or a refresh lands in the same place
+const TABS = [["Connections", [["whatsapp", "WhatsApp"], ["instagram", "Instagram"], ["portals", "Property portals"], ["video", "Video"], ["models", "AI models"]]],
+  ["Your office", [["team", "Sales team"], ["sales", "Sales rules"], ["kinds", "Deal kinds"], ["qualify", "Qualification"], ["logins", "Logins"]]]];
+const tabIds = TABS.flatMap(([, t]) => t.map(([id]) => id));
+let tab = tabIds.includes(location.hash.slice(1)) ? location.hash.slice(1) : tabIds[0];
+let live = {};
+function nav() {
+  document.querySelectorAll("[data-tab]").forEach((el) => { el.hidden = el.dataset.tab !== tab; });
+  $("setnav").replaceChildren(...TABS.flatMap(([group, items]) => [h("div", { class: "grp" }, group),
+    ...items.map(([id, label]) => h("button", { class: id === tab ? "on" : "", "aria-current": id === tab ? "page" : null, onclick: () => { tab = id; history.replaceState(null, "", `#${id}`); nav(); } },
+      label, id in live ? h("span", { class: `dot ${live[id] ? "on" : ""}`, title: live[id] ? "Connected" : "Not connected" }) : null))]));
+}
+nav();
+addEventListener("hashchange", () => { const id = location.hash.slice(1); if (tabIds.includes(id)) { tab = id; nav(); } });
 
 async function load() {
   info = await api("/api/integrations");
@@ -169,6 +221,10 @@ async function load() {
   for (const [k, v] of Object.entries(info.heygen.fields)) { const s = $(`s-${k}`); if (s) s.textContent = v ? "✓ saved" : ""; }
   st($("zm-state"), info.zoom.connected);
   for (const [k, v] of Object.entries(info.zoom.fields)) { const s = $(`s-${k}`); if (s) s.textContent = v ? "✓ saved" : ""; if ($(k)) $(k).placeholder = v ? "•••••••• saved, type to replace" : ""; }
+  // only the line chosen above: the other form is one click away
+  $("aisensy-card").hidden = info.provider !== "aisensy"; $("cloud-card").hidden = info.provider !== "cloud";
+  $("line-note").hidden = info.provider === "aisensy" || info.provider === "cloud";
+  $("line-note").textContent = "Messages stay on this machine. Choose AiSensy or Meta Cloud API above to connect a real number.";
   $("ig-hook").textContent = `Comments webhook: ${info.instagram.webhook}`;
   $("cloud-hook").textContent = info.cloud.webhook;
   if (info.aisensy.webhook) {
@@ -189,6 +245,8 @@ async function load() {
   $("team").replaceChildren(...team.map((t) => h("div", { class: "row", style: "padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap" },
     h("span", { style: "flex:0 0 120px" }, h("b", {}, t.name), h("div", { class: "small muted" }, t.on_shift ? `on shift · ${t.leads_today} leads today` : "off shift")),
     h("input", { value: t.shift, title: "Shift", style: "flex:0 0 130px", onchange: (e) => teamSet(t.id, { shift: e.target.value }) }),
+    h("input", { value: t.licence || "", title: "Broker licence number", placeholder: "Licence no.", style: "flex:0 0 110px", onchange: (e) => teamSet(t.id, { licence: e.target.value }) }),
+    h("input", { type: "date", value: t.licence_expiry || "", title: t.licence_ok ? "Licence expiry" : "This licence has expired: no new leads go to them", style: "flex:0 0 140px", onchange: (e) => teamSet(t.id, { licence_expiry: e.target.value }) }),
     h("span", { class: "days", title: "Working days (the office's opening days apply too)" }, ..."MTWTFSS".split("").map((d, i) => {
       const on = !t.days || t.days.includes(i);
       return h("button", { class: on ? "on" : "", "aria-pressed": String(on), title: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][i],
@@ -198,7 +256,53 @@ async function load() {
     h("label", { style: "flex:0 0 auto;display:flex;gap:6px;align-items:center;margin:0" }, h("input", { type: "checkbox", checked: t.away, style: "width:auto", onchange: (e) => teamSet(t.id, { away: e.target.checked }) }), "Away today"))));
   $("models").replaceChildren(...Object.entries(info.meta).map(([k, on]) => h("span", { class: "pill" }, h("span", { class: `dot ${on ? "on" : ""}` }),
     { meta: "Muse Spark (Meta Model API)", baseten: "Muse Spark Open · Baseten", fireworks: "Muse Spark Open · Fireworks", modal: "Muse Spark Open · Modal", voice: "Muse Voice Transcribe" }[k] || k)));
+  live = { whatsapp: info.aisensy.connected || info.cloud.connected, instagram: info.instagram.connected, portals: pp.feed, video: info.heygen.connected || info.zoom.connected, models: info.meta.meta };
+  nav();
 }
+
+const DEPT = { sales: "Sales", mkt: "Marketing", ops: "Operations", fin: "Finance", comp: "Compliance" };
+async function loadSales() {
+  const r = await api("/api/sales/rules");
+  const num = (k, label, hint, v = r[k], min = 1) => { const i = h("input", { type: "number", min, value: v, id: `sr-${k}`, style: "width:100px" });
+    return h("label", { class: "row", style: "justify-content:space-between;padding:6px 0" }, h("span", {}, label, h("div", { class: "small muted" }, hint)), i); };
+  const heat = h("div", {}, h("h3", {}, "What makes a lead hot"),
+    h("label", { class: "row" }, h("input", { type: "checkbox", id: "sr-fit", checked: r.heat.budget_fits }), "Their budget fits a listing"),
+    h("label", { class: "row" }, h("input", { type: "checkbox", id: "sr-fin", checked: r.heat.finance_ready }), "Cash, or a mortgage already pre-approved"),
+    num("timeline_days", "Buying within (days)", "0 turns this off", r.heat.timeline_days, 0),
+    h("p", { class: "small muted" }, "The score shows on every lead. To call a lead hot on it, tick \"They meet the heat rules\" on the Qualifying page."));
+  const reply = h("textarea", { id: "sr-reply", rows: 2, style: "width:100%" }, r.not_lead_reply);
+  $("salesbox").replaceChildren(num("call_minutes", "Call limit (minutes)", "What Rania promises the client; then it moves to the next free broker"),
+    num("reply_minutes", "Reply limit (minutes)", "For anything that isn't a call"), num("pool_minutes", "Pool after (minutes)", "Nobody acted: any broker on shift can claim it"),
+    num("call_reminder_minutes", "Remind before a call (minutes)", "For a call at a time the client chose"), num("outcome_nudge_hours", "Ask for the outcome after (hours)", "After a call with none recorded"),
+    h("div", { style: "padding:6px 0" }, h("span", {}, "Morning brief runs on"), h("div", { class: "row", id: "sr-days", style: "gap:10px;margin-top:4px" },
+      ...["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) => h("label", { class: "row", style: "gap:4px" }, h("input", { type: "checkbox", value: i, checked: r.brief_days.includes(i) }), d)))),
+    h("label", { class: "row", style: "justify-content:space-between;padding:6px 0" }, h("span", {}, "The broker's daily list at"), h("input", { type: "time", id: "sr-sweep", value: r.sweep_time })),
+    num("licence_warn_days", "Warn before a broker's licence ends (days)", "An expired licence takes no new leads"), num("match_days", "New listing counts as new for (days)", "For matching to waiting clients"),
+    heat, h("h3", {}, "Check a budget that looks too small"), num("buyer", "Buying, below (AED)", "Rania asks them to confirm", r.budget_floor.buyer), num("tenant", "Renting, below (AED)", "Rania asks them to confirm", r.budget_floor.tenant),
+    h("h3", {}, "Reply to spam, job seekers and suppliers"), reply,
+    h("button", { class: "primary", style: "margin-top:10px", onclick: async () => {
+      const v = (k) => $(`sr-${k}`).value;
+      try { await post("/api/sales/rules", { by: "layla", value: { call_minutes: v("call_minutes"), reply_minutes: v("reply_minutes"), pool_minutes: v("pool_minutes"), call_reminder_minutes: v("call_reminder_minutes"),
+        outcome_nudge_hours: v("outcome_nudge_hours"), sweep_time: $("sr-sweep").value, brief_days: [...$("sr-days").querySelectorAll("input:checked")].map((x) => Number(x.value)), licence_warn_days: v("licence_warn_days"), match_days: v("match_days"), not_lead_reply: reply.value,
+        heat: { budget_fits: $("sr-fit").checked, finance_ready: $("sr-fin").checked, timeline_days: v("timeline_days") }, budget_floor: { buyer: v("buyer"), tenant: v("tenant") } } }); toast("Saved"); } catch (e) { toast(e.message); } } }, "Save"));
+}
+loadSales();
+async function loadLogins() {
+  const people = await api("/api/auth/people");
+  $("logins").replaceChildren(...people.map((p) => {
+    const box = h("input", { type: "password", autocomplete: "new-password", placeholder: p.has_login ? "New password" : "Set a password (8 or more characters)", style: "flex:1;min-width:180px", "aria-label": `Password for ${p.name}` });
+    const send = async (password) => {
+      try { await post("/api/auth/password", { person: p.id, password }); toast(password ? `${p.name} can sign in with that password` : `${p.name} can no longer sign in`); loadLogins(); }
+      catch (e) { toast(e.message); }
+    };
+    return h("div", { class: "row", style: "padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap", "data-person": p.id },
+      h("span", { style: "flex:0 0 190px" }, h("b", {}, p.name), h("div", { class: "small muted" }, DEPT[p.department] ? `${p.role} · ${DEPT[p.department]}` : p.role)),
+      h("span", { class: `chip ${p.has_login ? "ok" : ""}`, style: "flex:0 0 auto" }, p.has_login ? "can sign in" : "no login"), box,
+      h("button", { class: "primary", style: "flex:0", onclick: () => send(box.value) }, "Set"),
+      p.has_login && p.department ? h("button", { style: "flex:0", onclick: () => send("") }, "Remove") : null);
+  }));
+}
+loadLogins();
 
 async function save(keys) {
   const values = {};

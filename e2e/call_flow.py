@@ -89,7 +89,7 @@ with sync_playwright() as p:
     pg.wait_for_timeout(900)
     banner = pg.locator("#chat .banner.att").inner_text()
     check(7, "Moved on the calendar: Ali is messaged in the chat, and the broker's call card is due at 15:00",
-          "has moved your phone call" in msgs[-1] and "3:00 PM" in msgs[-1] and "15:00" in banner and "11:00" not in banner.split("due")[-1],
+          "has moved your phone call" in msgs[-1] and "3:00 PM" in msgs[-1] and "15:00" in banner.splitlines()[0] and "11:00" not in banner.splitlines()[0].split("due")[-1],
           shot("07-moved-message"), msgs[-1][:110])
     r = customer(A, "what's the time we booked?", "Ali Rahman")
     check(8, "'What's the time we booked?' is answered from the calendar, with the new time",

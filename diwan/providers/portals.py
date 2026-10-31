@@ -28,6 +28,7 @@ MAX_FEED = 10_000_000
 FIELDS = {  # our name: the names feeds and lead payloads use for it, first match wins
     "ref": ("reference_number", "reference", "ref", "listing_reference", "property_reference", "property_ref", "listing_ref"),
     "permit": ("permit_number", "permit", "rera_permit", "trakheesi", "dld_permit", "advertisement_permit"),
+    "permit_until": ("permit_expiry", "permit_expires", "permit_valid_until", "permit_end_date"),
     "title": ("title_en", "title", "name", "property_title"),
     "price": ("price", "price_aed", "selling_price", "amount"),
     "beds": ("bedroom", "bedrooms", "beds", "no_of_bedrooms"),
@@ -141,13 +142,13 @@ def parse_feed(xml: str | bytes) -> list[dict]:
     items = [el for el in root.iter() if el.tag.lower() in ("property", "listing", "unit")]
     out = []
     for el in items:
-        f = {k: _text(el, v) for k, v in FIELDS.items() if k in ("ref", "permit", "title", "price", "beds", "type", "community",
+        f = {k: _text(el, v) for k, v in FIELDS.items() if k in ("ref", "permit", "permit_until", "title", "price", "beds", "type", "community",
                                                                   "offering", "agent_email", "agent_name", "description", "size",
                                                                   "geopoints", "lat", "lng", "completion", "project")}
         if not f["ref"] or _int(f["price"]) is None:
             continue
         t = (f["type"] or "apartment").lower()
-        out.append({"ref": f["ref"], "permit": f["permit"], "price_aed": _int(f["price"]), "beds": _int(f["beds"]) or 0,
+        out.append({"ref": f["ref"], "permit": f["permit"], "permit_until": (f.get("permit_until") or "")[:10] or None, "price_aed": _int(f["price"]), "beds": _int(f["beds"]) or 0,
                     "type": TYPES.get(t, t), "community": f["community"] or "Dubai",
                     "title": f["title"] or f"{f['ref']}, {f['community'] or 'Dubai'}", "offering": OFFERING.get((f["offering"] or "").lower(), (f["offering"] or "").lower() or None),
                     "agent_email": f["agent_email"], "agent_name": f["agent_name"],

@@ -16,14 +16,14 @@ from diwan.office import Office
 from diwan.people import name
 from diwan.slots import DUBAI
 
-QUIET = {"after_hours": [20, 72, 168], "quiet_from": "21:00", "quiet_to": "09:00", "friday_prayer": True,
+QUIET = {"after_hours": [20, 72, 168], "after_visit_hours": [24, 72, 144, 216], "quiet_from": "21:00", "quiet_to": "09:00", "friday_prayer": True,
          "template": None, "then": "nurture", "then_after_hours": 72}
 THEN = {"nurture": "Move them to Nurture (Marketing)", "broker": "Give the broker one \"gone quiet\" card", "nothing": "Nothing more"}
 PRAYER = ((11, 30), (13, 30))  # Friday, Dubai time
 WINDOW = timedelta(hours=24)
 STOP = (r"^\W*(stop|unsubscribe|opt out|remove me|leave me alone|"
         r"(please )?(don'?t|do not|stop) (message|messaging|text|texting|contact|contacting|send(ing)?)( me)?( any ?more| again)?)\W*$"
-        r"|^\W*(توقف|لا ترسل|لا تراسلني)\W*$")
+        r"|^\W*(توقف|لا ترسل|لا تراسلني|стоп|хватит|отписаться|बंद करो|रोकें|停止|退订)\W*$")
 CLOSED = {"Won", "Lost"}
 
 
@@ -51,6 +51,13 @@ def set_settings(office: Office, value: dict, *, by: str) -> dict:
     if not 1 <= len(hours) <= 5 or any(h <= 0 for h in hours) or hours != sorted(set(hours)):
         raise ValueError("Follow-ups: one to five times, each later than the one before")
     v["after_hours"] = [int(h) if h == int(h) else h for h in hours]
+    try:
+        visit = [float(h) for h in v["after_visit_hours"]]
+    except (TypeError, ValueError):
+        raise ValueError("After a visit: times like 1d, 3d, 6d, 9d") from None
+    if not 1 <= len(visit) <= 5 or any(h <= 0 for h in visit) or visit != sorted(set(visit)):
+        raise ValueError("After a visit: one to five times, each later than the one before")
+    v["after_visit_hours"] = [int(h) if h == int(h) else h for h in visit]
     _hhmm(v["quiet_from"]), _hhmm(v["quiet_to"])
     if v["then"] not in THEN:
         raise ValueError("Pick what happens after the last follow-up")
@@ -123,6 +130,23 @@ def set_for_lead(office: Office, chat: str, *, by: str, after_hours: list | None
     return office.graph().nodes[f"deal:{deal}"].props.get("followups")
 
 
+def opted_out(g: Graph, chat) -> bool:
+    """They said stop and have not written since. If they write again the door is open: a person may answer them."""
+    d = g.nodes.get(f"deal:{chat.deal}")
+    op = d.props.get("optout") if d else None
+    return bool(op) and not any(m["type"] == "received" and _at(m["at"]) > _at(op["at"]) for m in chat.props["messages"])
+
+
+def after_visit(g: Graph, chat):
+    """Their last appointment that took place, while they have not written since: the follow-ups count from it."""
+    vs = [v for v in g.of("viewing", status="done") if v.props.get("chat") == chat.props["phone"]]
+    if not vs:
+        return None
+    v = max(vs, key=lambda x: _at(x.props["at"]))
+    last_in = next((m for m in reversed(chat.props["messages"]) if m["type"] == "received"), None)
+    return None if last_in and last_in["event"] > v.props.get("closed_event", 0) else v
+
+
 def why_not(g: Graph, chat, now: datetime) -> str | None:
     """Why this conversation gets no follow-up, in words a broker understands, or None when it is in the schedule."""
     d = g.nodes.get(f"deal:{chat.deal}")
@@ -145,7 +169,7 @@ def why_not(g: Graph, chat, now: datetime) -> str | None:
         return "waiting for our reply"
     if any(v.props.get("chat") == chat.props["phone"] and _at(v.props["at"]) > now for v in g.of("viewing", status="booked")):
         return "a viewing is coming up"
-    if any(a.props["chat"] == chat.props["phone"] for a in g.of("attention", status="open")):
+    if any(a.props["chat"] == chat.props["phone"] for a in g.of("attention", status="open")) and not after_visit(g, chat):
         return "the broker has it (an open card)"
     return None
 
@@ -158,30 +182,50 @@ def state(g: Graph, chat, now: datetime) -> dict:
     last_in = next((m for m in reversed(chat.props["messages"]) if m["type"] == "received"), None)
     since = last_in["event"] if last_in else 0
     done = [n for n in p.get("nudges", []) if n["event"] > since]
+    visit = after_visit(g, chat)
+    own = bool((p.get("followups") or {}).get("after_hours"))
+    hours = s["after_hours"] if own or not visit else s["after_visit_hours"]
+    if visit:
+        done = [n for n in done if _at(n["at"]) > _at(visit.props["at"])]
     out = {"sent": len(done), "delivered": sum(1 for n in done if n.get("sent") is not False),
-           "of": len(s["after_hours"]), "last": done[-1] if done else None, "next": None, "then": None,
-           "why_not": why_not(g, chat, now), "own": p.get("followups"), "after_hours": s["after_hours"],
+           "of": len(hours), "last": done[-1] if done else None, "next": None, "then": None, "visit": visit.id if visit else None,
+           "why_not": why_not(g, chat, now), "own": p.get("followups"), "after_hours": hours,
            "steps": [{"n": n["n"], "at": n["at"], "status": "sent" if n.get("sent") is not False else "skipped", "why": n.get("why"),
                       "text": next((m["text"] for m in chat.props["messages"] if m.get("nudge") == n["n"] and m["event"] > since), None)} for n in done]}
     if out["why_not"] or not last_in:
         return out
-    base = _at(last_in["at"])
+    base = _at(visit.props["at"]) if visit else _at(last_in["at"])
     out["steps"] += [{"n": i + 1, "at": next_allowed(s, base + timedelta(hours=h)).isoformat(), "status": "planned"}
-                     for i, h in enumerate(s["after_hours"]) if i >= len(done)]
-    if len(done) < len(s["after_hours"]):
-        out["next"] = next_allowed(s, base + timedelta(hours=s["after_hours"][len(done)])).isoformat()
+                     for i, h in enumerate(hours) if i >= len(done)]
+    if len(done) < len(hours):
+        out["next"] = next_allowed(s, base + timedelta(hours=hours[len(done)])).isoformat()
     elif s["then"] != "nothing" and not p.get("went_quiet", 0) > since:
         out["then"] = next_allowed(s, _at(done[-1]["at"]) + timedelta(hours=s["then_after_hours"])).isoformat() if done else None
     return out
 
 
-def text_for(g: Graph, deal: str, chat, arabic: bool) -> tuple[str, list[str]]:
-    """Something useful, picking up where they left off."""
+VISIT_TEXT = ["{hi}, thank you for coming to see {what}. What did you think?",
+              "{hi}, any thoughts on {what}? If something didn't fit, tell me and I'll look for better options.",
+              "{hi}, would you like to see {what} again, or shall I look for something else?",
+              "{hi}, no rush at all. I'm here whenever you'd like to pick this up."]
+VISIT_TEXT_AR = ["{hi}، شكراً لزيارتك {what}. ما رأيك؟",
+                 "{hi}، هل لديك أي ملاحظات على {what}؟ إذا لم يناسبك شيء، أخبرني وسأبحث عن خيارات أفضل.",
+                 "{hi}، هل تود رؤية {what} مرة أخرى، أم أبحث لك عن خيار آخر؟",
+                 "{hi}، لا عجلة أبداً. أنا هنا متى ما أردت المتابعة."]
+
+
+def text_for(g: Graph, deal: str, chat, arabic: bool, visit=None, n: int = 1) -> tuple[str, list[str]]:
+    """Something useful, picking up where they left off. After a visit, about that visit."""
     from diwan import qualify
     from diwan.agents import reception
     d = g.nodes[f"deal:{deal}"].props
     first = reception.first_name(chat.label)
     hi = f"Hi {first}" if first else "Hi"
+    if visit:
+        lst = g.nodes.get(f"listing:{visit.props.get('listing')}")
+        what = lst.props["title"] if lst else ("العقار" if arabic else "the property")
+        texts = VISIT_TEXT_AR if arabic else VISIT_TEXT
+        return texts[min(n, len(texts)) - 1].format(hi=f"مرحباً{' ' + first if first else ''}" if arabic else hi, what=what), [lst.id] if lst else []
     sent = set(d.get("recommended") or [])
     if sent and not (d.get("hot") or {}).get("listing"):
         new = [n for n in reception.recommend(g, deal, 5) if n.id not in sent]
@@ -236,7 +280,7 @@ def sweep(office: Office, now: datetime | None = None) -> list[str]:
             n = st["sent"] + 1
             last_in = next(m for m in reversed(chat.props["messages"]) if m["type"] == "received")
             arabic = any(re.search(r"[؀-ۿ]", m["text"]) for m in chat.props["messages"] if m["type"] == "received")
-            text, refs = text_for(g, deal, chat, arabic)
+            text, refs = text_for(g, deal, chat, arabic, g.nodes.get(f"viewing:{st['visit']}") if st["visit"] else None, n)
             template = None
             if now - _at(last_in["at"]) >= WINDOW:  # WhatsApp: an approved template only
                 t = next((t for t in inbox.templates() if t["name"] == s["template"]), None) if s["template"] else None

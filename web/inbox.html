@@ -246,6 +246,7 @@ async function load() {
   if (current) loadDetail();
 }
 
+const stageLabel = (r) => r.stage === "Qualifying" && r.progress ? `Qualifying ${r.progress.done}/${r.progress.of}` : r.stage;
 const TABS = [["all", "All"], ["attention", "Needs you"], ["mine", "Mine"], ["new", "New"], ["waiting", "Waiting"], ["pool", "Pool"], ["nurture", "Nurture"]];
 function renderBar() {
   const c = data.counts;
@@ -279,7 +280,7 @@ function renderList() {
           r.hot ? h("span", { class: "tg hot", title: r.hot === "yes" ? "Hot lead" : `Hot lead: interested in ${r.hot}` }, r.hot === "yes" ? "🔥 hot" : `🔥 ${r.hot}`) : null,
           r.nurture ? h("span", { class: "tg nur", title: r.nurture.reason === "not a fit" ? "Not a fit: Marketing nurtures them" : `Only looking for now: "${r.nurture.quote || ""}"` }, "🌱 nurture") : null,
           r.viewing ? h("span", { class: "tg view", title: r.viewing }, "📅 booked") : null,
-          r.stage && r.stage !== "New" && !r.viewing ? h("span", { class: "tg" }, r.stage) : null,
+          r.stage && r.stage !== "New" && !r.viewing ? h("span", { class: "tg" }, stageLabel(r)) : null,
           PORTAL[r.source] ? h("span", { class: "tg" }, PORTAL[r.source]) : null,
           r.mode !== "ai" ? h("span", { class: "tg person" }, `${NAMES[r.handled_by] || "A person"} has it`) : null,
           r.no_calls ? h("span", { class: "tg", title: "They asked not to be called" }, "📵 no calls") : null,
@@ -318,6 +319,7 @@ function renderChat() {
     h("button", { class: "pbtn", "aria-label": "Lead profile", onclick: () => $("cols").classList.add("prof-open") }, "👤 Profile"));
   const banners = [];
   if (d.attention) banners.push(attentionBanner(d));
+  if (d.needs_outcome) banners.push(outcomeBanner(d));
   if (d.viewing) banners.push(h("div", { class: "banner view" }, "📅 ", d.viewing.replace(/^viewing of /, "Viewing booked: ")));
   const left = d.window_closes ? (new Date(d.window_closes) - Date.now()) / 36e5 : 0;
   if (!d.window_open && !d.window_closes && PORTAL[d.source]) banners.push(h("div", { class: "banner warn" },
@@ -328,20 +330,26 @@ function renderChat() {
   else if (left < 3) banners.push(h("div", { class: "banner warn" }, `24-hour window closes in ${left < 1 ? Math.max(1, (left * 60) | 0) + " min" : left.toFixed(1) + " h"}.`));
   const thread = h("div", { class: "thread" });
   let lastDay = "";
-  for (const m of d.messages) {
+  // one suggestion per client message: the newest stands, a regenerated one replaces it
+  const lastIn = d.messages.reduce((n, m) => m.type === "received" ? m.event : n, 0);
+  const lastSug = d.messages.reduce((n, m) => m.type === "suggested" ? m.event : n, 0);
+  for (const m of d.messages.filter((x) => x.type !== "suggested" || (x.event === lastSug && x.event > lastIn))) {
     const dd = day(m.at);
     if (dd !== lastDay) { thread.append(h("div", { class: "day" }, new Date(m.at).toDateString() === new Date().toDateString() ? "Today" : dd)); lastDay = dd; }
     const person = m.type === "sent" && m.by !== "rania";
     const by = m.type === "received" ? null : m.type === "suggested" ? "Rania · suggested reply" : m.by === "rania" ? "Rania · AI" : NAMES[m.by] || m.by;
     thread.append(h("div", { class: `b ${m.type} ${person ? "person" : ""} ${m.status === "failed" ? "failed" : ""}`, dir: "auto" },
-      by ? h("span", { class: "by" }, by) : null, m.text,
+      by ? h("span", { class: "by" }, by) : null,
+      m.image ? h("img", { src: m.image, alt: "", loading: "lazy", style: "display:block;width:100%;max-width:280px;border-radius:10px;margin:2px 0 6px" }) : null,
+      m.text,
       h("div", { class: "m" }, m.chat && m.chat !== d.phone ? h("span", { class: "chip", title: "From their other conversation (merged)" }, `via ${shown(m.chat)}`) : null,
         m.nudge ? h("span", { class: "chip" }, `follow-up ${m.nudge}`) : null, m.template ? h("span", { class: "chip" }, `template · ${m.template}`) : null,
         m.reminder ? h("span", { class: "chip" }, `reminder ${m.reminder}`) : null,
         ...(m.refs || []).filter((r) => r.startsWith("listing:")).map((r) => h("span", { class: "chip" }, r.replace("listing:", ""))),
         clock(m.at), m.type === "sent" ? h("span", { title: m.via === "sandbox" ? "Sandbox: not sent to WhatsApp" : `Sent via ${m.via}` }, m.status === "failed" ? "⚠" : m.via === "sandbox" ? "✓ sandbox" : "✓") : null),
       m.status === "failed" ? h("div", { class: "err" }, `Not delivered: ${m.error || "the provider refused it"}`) : null,
-      m.type === "suggested" ? h("button", { style: "margin-top:6px;font-size:11.5px;padding:4px 10px", onclick: () => { $("box").value = m.text; $("box").focus(); } }, "Use this reply") : null));
+      m.type === "suggested" ? h("div", {}, h("button", { style: "margin-top:6px;font-size:11.5px;padding:4px 10px", onclick: () => { $("box").value = m.text; $("box").focus(); } }, "Use this reply"), " ",
+        h("button", { style: "margin-top:6px;font-size:11.5px;padding:4px 10px", onclick: async () => { try { await post(`/api/chats/${d.phone}/suggest`, { by: ME }); } catch (e) { toast(e.message); } load(); } }, "Try again")) : null));
   }
   const box = h("textarea", { id: "box", rows: 1, dir: "auto", placeholder: d.window_open ? (on ? "Type to take over from Rania…" : "Type a message") : "24-hour window closed: send a template", disabled: !d.window_open });
   box.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
@@ -359,14 +367,33 @@ function attentionBanner(d) {
   const a = d.attention;
   const due = new Date(a.due).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   const set = /^Follow up /.test(a.reason);  // one the broker set for a day, not something the client asked for
-  const why = h("span", { class: "why" }, set ? "⏰ " : a.kind === "call" ? "📞 Wants a call: " : "Needs a reply: ", a.reason, ` · ${NAMES[a.who] || a.who} · due ${due} (${left(a)})`);
+  const why = h("span", { class: "why" }, set ? "⏰ " : a.kind === "call" ? "📞 Wants a call: " : "Needs a reply: ", a.reason, ` · ${NAMES[a.who] || a.who}${a.moved_from ? ` (moved from ${NAMES[a.moved_from] || a.moved_from})` : ""} · due ${due} (${left(a)})`,
+    a.kind === "call" ? h("span", { style: "display:block;margin-top:4px" }, ...(a.last || []).map((m) => h("span", { class: "small muted", style: "display:block" }, `${m.who === "client" ? "Client" : m.who === "rania" ? "Rania" : NAMES[m.who] || m.who}: ${m.text}`))) : null);
   if (a.pooled) return h("div", { class: "banner att late" }, why,
     h("button", { class: "primary", onclick: async () => { try { await post(`/api/chats/${d.phone}/claim?by=${ME}`); toast("Claimed: it's yours"); } catch (e) { toast(e.message); } load(); } }, "Claim this lead"));
-  return h("div", { class: `banner att ${a.overdue ? "late" : ""}` }, why, ...ACTS.map(([k, l]) => h("button", { onclick: async () => {
+  return h("div", { class: `banner att ${a.overdue ? "late" : ""}` }, why,
+    a.kind === "call" && !d.phone.startsWith("ig:") && !d.no_calls ? h("a", { class: "btn primary", href: `tel:+${d.phone}` }, "📞 Call now") : null,
+    d.hot ? h("a", { class: "btn", href: `calendar.html?book=${encodeURIComponent(d.phone)}&as=${encodeURIComponent(ME)}` }, "📅 Book a viewing") : null,
+    ...ACTS.map(([k, l]) => h("button", { onclick: async () => {
     let note = "";
     if (k === "not_needed") { note = prompt("Why is it not needed?") || ""; if (!note.trim()) return; }
     try { await post(`/api/attention/${a.id}/clear`, { action: k, by: ME, note }); } catch (e) { toast(e.message); }
     load(); } }, l)));
+}
+
+// After a call the broker says what came of it: nothing is left without a next step.
+const LOST = { price: "Price", finance_refused: "Finance refused", valuation: "Valuation", found_elsewhere: "Found elsewhere", changed_mind: "Changed their mind",
+               no_response: "No response", compliance: "Compliance", seller_withdrew: "Seller withdrew", other: "Other" };
+function outcomeBanner(d) {
+  const box = h("span", {});
+  const say = async (outcome, extra = {}) => { try { await post(`/api/chats/${d.phone}/outcome`, { by: ME, outcome, ...extra }); toast("Outcome recorded"); } catch (e) { toast(e.message); } load(); };
+  const lost = () => { const sel = h("select", { id: "olost", "aria-label": "Reason" }, ...Object.entries(LOST).map(([k, v]) => h("option", { value: k }, v))), note = h("input", { id: "onote", placeholder: "A note (needed for Other)" });
+    box.replaceChildren(sel, " ", note, " ", h("button", { class: "primary", onclick: () => say("not_interested", { reason: sel.value, note: note.value }) }, "Save")); };
+  const later = () => { const day = h("input", { type: "date", value: new Date(Date.now() + 864e5 + 144e5).toISOString().slice(0, 10) }), t = h("input", { type: "time", value: "10:00" });
+    box.replaceChildren(day, " ", t, " ", h("button", { class: "primary", onclick: () => say("follow_up", { at: `${day.value}T${t.value}:00+04:00` }) }, "Save")); };
+  return h("div", { class: "banner warn" }, h("span", { class: "why" }, "What came of the call? "),
+    h("button", { onclick: () => { $("cols").classList.add("prof-open"); toast("Use Convert in the profile"); } }, "Converted…"), h("button", { onclick: later }, "Follow up on…"),
+    h("button", { onclick: lost }, "Not interested…"), h("button", { onclick: () => say("no_response") }, "No response"), box);
 }
 
 // Notices: the bell, and a browser notification when one arrives for whoever is viewing.
@@ -559,8 +586,22 @@ function qualifyPanel(q) {
     q.hot ? h("div", { class: "fact small", style: "color:var(--bad)" }, "🔥 Hot lead: ", h("b", {}, q.hot.listing ? `${q.hot.listing.replace("listing:", "")} (${q.hot.why})` : q.hot.why),
       q.hot.quote ? h("div", { class: "small muted" }, `"${q.hot.quote}"`) : null) : null,
     ...(q.open_questions || []).map((x) => h("div", { class: "fact small" }, "Asked, not answered yet: ", h("b", { dir: "auto" }, x))),
-    h("div", { class: "small muted", style: "margin-top:6px" }, q.reasons.join("; "), ` · rules version ${q.version}`),
+    h("div", { class: "small muted", style: "margin-top:6px" }, q.reasons.join("; "), ` · question form v${q.version}`),
     h("a", { class: "small", href: "qualify.html" }, "Questions and conditions →"));
+}
+
+// A converted deal is the lead's biggest moment: what was agreed, on which property, and the way to the paperwork.
+function convertedCard(d, desk) {
+  const a = desk.agreed;
+  if (!a) return null;
+  const P = desk.property || {}, from = P.sources?.[P.value?.source];
+  const compared = a.pct == null ? null : a.pct < 0 ? `${-a.pct}% below the listing` : a.pct > 0 ? `${a.pct}% above the listing` : "At the listing price";
+  return h("div", { class: "converted", id: "converted" },
+    h("div", { class: "chead" }, h("span", { class: "ctick" }, "✓"), "Converted", h("span", { class: "cstage" }, d.stage)),
+    h("div", { class: "camount" }, `AED ${Number(a.amount ?? 0).toLocaleString("en")}`),
+    P.needed ? h("div", { class: "cprop cmissing" }, "Which property? Still to say") : h("div", { class: "cprop" }, d.property),
+    h("div", { class: "cmeta" }, [from, compared, a.by ? `by ${NAMES[a.by] || a.by}` : null].filter(Boolean).join(" · ")),
+    h("a", { class: "copen", href: `/web/deal.html?deal=${encodeURIComponent(d.deal)}` }, "Open the deal →"));
 }
 
 // Acting on the lead (docs/lead-profile-spec.md): its stage under the Deal desk's rules, and the quick actions.
@@ -576,11 +617,14 @@ function actPanel(d) {
   sel.onchange = () => {
     const to = sel.value, back = to === "Lost" || cur === "Lost" || order.indexOf(to) < order.indexOf(cur);
     if (!back) { go(`/api/chats/${d.phone}/stage`, { stage: to }, () => `Moved to ${to}`); return; }
-    show(h("label", { for: "preason" }, to === "Lost" ? "Why is this lead lost?" : `Why move it back to ${to}?`),
-      h("input", { id: "preason", placeholder: to === "Lost" ? "e.g. bought elsewhere, not reachable" : "e.g. the seller withdrew the offer" }),
+    const code = to === "Lost" ? h("select", { id: "plost", "aria-label": "Reason" }, ...Object.entries(LOST).map(([k, v]) => h("option", { value: v }, v))) : null;
+    show(h("label", { for: "preason" }, to === "Lost" ? "Why is this lead lost?" : `Why move it back to ${to}?`), code,
+      h("input", { id: "preason", placeholder: to === "Lost" ? "A note (optional, needed for Other)" : "e.g. the seller withdrew the offer" }),
       h("div", { class: "btns" }, h("button", { onclick: () => { sel.value = cur; hide(); } }, "Cancel"),
-        h("button", { class: "primary", onclick: () => go(`/api/chats/${d.phone}/stage`, { stage: to, reason: $("preason").value }, () => `Moved to ${to}`) }, "Save")));
-    $("preason").focus();
+        h("button", { class: "primary", onclick: () => { const note = $("preason").value.trim();
+          if (code && code.value === "Other" && !note) { toast("Say what the reason was"); return; }
+          go(`/api/chats/${d.phone}/stage`, { stage: to, reason: code ? code.value + (note ? `: ${note}` : "") : note }, () => `Moved to ${to}`); } }, "Save")));
+    (code || $("preason")).focus();
   };
   const qa = h("div", { class: "qa" });
   qa.append(h("button", { class: d.hot ? "on" : "", disabled: !can, title: d.hot ? "Mark it not hot" : "Mark it hot",
@@ -589,7 +633,9 @@ function actPanel(d) {
     h("select", { id: "pto" }, ...team.filter((t) => t.id !== d.broker).map((t) => h("option", { value: t.id }, `${t.name}${t.on_shift ? "" : " (off)"}`))),
     h("div", { class: "btns" }, h("button", { onclick: hide }, "Cancel"),
       h("button", { class: "primary", onclick: () => go(`/api/chats/${d.phone}/assign`, { to: $("pto").value }, () => `Transferred to ${NAMES[$("pto").value] || $("pto").value}`) }, "Transfer"))) }, "⇄ Transfer"));
-  if (!desk.agreed && !desk.pending) qa.append(h("button", { disabled: !can || closed, onclick: () => show(
+  if (!desk.agreed && !desk.pending && desk.property?.needed) qa.append(h("button", { disabled: !can || closed, title: "The Deal desk asks which property it is, then the agreed price",  // docs/deal-desk.md item 17
+    onclick: () => { location.href = `/web/deal.html?deal=${encodeURIComponent(d.deal)}&as=${encodeURIComponent(ME)}&convert=1`; } }, "✓ Convert"));
+  else if (!desk.agreed && !desk.pending) qa.append(h("button", { disabled: !can || closed, onclick: () => show(
     h("label", { for: "pamount" }, `Agreed price (AED)${desk.listing_aed ? ` · listed at ${desk.listing_aed.toLocaleString("en")}` : ""}`),
     h("input", { id: "pamount", type: "number", min: 1, step: 1000, value: desk.listing_aed || "" }),
     h("div", { class: "small muted" }, `Converting moves the deal to ${desk.converted_at || "its converted stage"} and starts the paperwork. Further below the listing than the owner's limit, it waits for the owner.`),
@@ -612,9 +658,9 @@ function actPanel(d) {
     h("div", { class: "small muted" }, "Both histories show here; their answers fill what this lead is missing; the other lead closes as merged, and what they send there arrives here."),
     h("div", { class: "btns" }, h("button", { onclick: hide }, "Cancel"),
       h("button", { class: "primary", onclick: () => go(`/api/chats/${encodeURIComponent(d.phone)}/merge`, { other: $("pmerge").value.trim() }, () => "Merged into this lead") }, "Merge"))) }, "🔗 Merge…"));
-  if (desk.agreed) qa.append(h("div", { class: "done" }, `✓ Converted at AED ${Number(desk.agreed.amount_aed ?? desk.agreed.amount ?? 0).toLocaleString("en")}`));
   if (desk.pending) qa.append(h("div", { class: "wait" }, `Waiting for the owner: ${desk.pending.text}`));
   return h("div", { class: "act" },
+    convertedCard(d, desk),
     h("div", {}, h("label", { for: "pstage" }, "Stage"), sel),
     !can ? h("div", { class: "small muted" }, `Only ${NAMES[d.broker] || d.broker} (the broker), the transactions officer or the owner changes this lead.`) : null,
     closed ? h("div", { class: "small muted" }, "This deal is closed.") : null,
@@ -631,14 +677,15 @@ function renderProfile() {
   $("prof").replaceChildren(
     h("button", { class: "pclose", "aria-label": "Close the profile", onclick: () => $("cols").classList.remove("prof-open") }, "✕"),
     h("div", { class: "big" }, avatar(d.name), h("h3", {}, d.name), h("div", { class: "small muted" }, shown(d.phone)),
-      h("div", { class: "tags" }, h("span", { class: "tg" }, d.stage), d.hot ? h("span", { class: "tg hot" }, "🔥 hot") : null,
+      h("div", { class: "tags" }, h("span", { class: "tg" }, stageLabel(d)), d.hot ? h("span", { class: "tg hot" }, "🔥 hot") : null,
+        d.heat ? h("span", { class: "tg", title: d.heat.parts.map((p) => `${p.ok ? "✓" : "✗"} ${p.name}`).join("\n") }, `heat ${d.heat.score}/${d.heat.of}`) : null,
         d.qualify?.nurture ? h("span", { class: "tg nur" }, "🌱 nurture") : null, PORTAL[d.source] ? h("span", { class: "tg" }, PORTAL[d.source]) : null)),
     actPanel(d),
     h("div", { class: "kv" }, h("span", {}, "Deal"), h("span", {}, d.property || "—"),
       h("span", {}, "Broker"), h("span", {}, NAMES[d.broker] || d.broker || "—"), h("span", {}, "Replying"), h("span", {}, d.mode === "ai" ? "Rania (AI)" : NAMES[d.handled_by] || "A person")),
     h("div", { class: "pipe", title: d.stage }, d.stages.slice(0, 8).map((s, i) => h("i", { class: i <= idx ? "done" : "", title: s }))),
-    h("div", { class: "small muted" }, `${d.stage}${idx >= 0 && idx < 8 ? ` · step ${idx + 1} of 8` : ""}`),
-    d.chips.length ? h("div", { class: "ichips", style: "margin-top:12px" }, d.chips.map((c) => h("span", { class: `ic ${c.kind}` }, c.label))) : null,
+    h("div", { class: "small muted" }, stageLabel(d)),
+    d.chips.length ? h("div", { class: "ichips", style: "margin-top:12px" }, d.chips.map((c) => h("span", { class: `ic ${c.kind}`, title: c.quote ? `Their words: "${c.quote}"` : "" }, c.label))) : null,
     d.qualify ? qualifyPanel(d.qualify) : null,
     visitPanel(d.visit),
     followupsPanel(d),
@@ -673,14 +720,20 @@ team = await api("/api/team");
 $("me").replaceChildren(...[...team.map((t) => [t.id, `${t.name} · broker`]), ["layla", "Layla · owner"]].map(([id, l]) => h("option", { value: id, selected: id === ME }, `Viewing as ${l}`)));
 $("me").onchange = (e) => { ME = e.target.value; try { localStorage.setItem("diwan.inbox.as", ME); } catch {} view = "attention"; load(); loadNotices(); };
 loadNotices();
-integ = await api("/api/integrations");
+integ = await api("/api/line");
 const p = integ.provider;
 // the line as it really is: a provider that is chosen but not connected is said so, and nothing leaves the sandbox
 const connected = (p === "aisensy" && integ.aisensy.connected) || (p === "cloud" && integ.cloud.connected);
 const pname = { aisensy: "AiSensy", cloud: "Meta Cloud API" }[p];
-$("line").replaceChildren(h("a", { class: "pill", href: "settings.html", title: connected ? "Real WhatsApp messages are sent and received" : "Replies stay in the sandbox until a line is connected (Settings)" },
-  h("span", { class: `dot ${connected ? "on" : pname ? "warn" : ""}` }),
-  connected ? `WhatsApp via ${pname}` : pname ? `${pname} chosen · not connected · sandbox only` : "Sandbox · no WhatsApp line yet"));
+// the model and the line are separate: a live model with no WhatsApp line yet still answers in the sandbox
+const live = (await api("/api/health")).providers;
+const model = live.meta ? "Muse Spark" : live.nvidia ? "Muse Glimmer" : null;
+$("line").replaceChildren(
+  h("span", { class: "pill", title: model ? "Rania replies from the live model" : "No model connected: Rania replies from plain rules" },
+    h("span", { class: `dot ${model ? "on" : "warn"}` }), model ? `AI: ${model} connected` : "AI: not connected · plain rules"),
+  h("a", { class: "pill", href: "settings.html#whatsapp", title: connected ? "Real WhatsApp messages are sent and received" : "Replies stay in the sandbox until a line is connected (Settings)" },
+    h("span", { class: `dot ${connected ? "on" : pname ? "warn" : ""}` }),
+    connected ? `WhatsApp via ${pname}` : pname ? `WhatsApp: ${pname} not connected · sandbox only` : "WhatsApp: no line yet · sandbox only"));
 if (connected) $("phonehint").textContent = "WhatsApp is connected: real messages arrive too. This sandbox still works for testing.";
 load();
 follow((evs) => {

@@ -28,7 +28,7 @@ def hot(o, phone, *msgs):
     return g.nodes[f"chat:{phone}"].deal
 
 
-OFF_PLAN = ("I want to buy off-plan", "Dubai Creek Harbour", "An apartment", "2 bed", "Budget is 2 million", "Cash", "1-3 months", "The first one")
+OFF_PLAN = ("I want to buy off-plan", "Dubai Creek Harbour", "An apartment", "2 bed", "Budget is 2 million", "Cash", "1-3 months", "To live in", "UAE resident", "The first one")
 
 
 def test_a_hot_off_plan_lead_gets_a_deck_from_the_project_and_the_archive(office):
@@ -45,7 +45,7 @@ def test_a_hot_off_plan_lead_gets_a_deck_from_the_project_and_the_archive(office
 
 
 def test_what_is_missing_becomes_a_task_for_the_broker_never_a_guess(office):
-    deal = hot(office, "971500008002", "I want to buy off-plan", "Business Bay", "An apartment", "2 bed", "Budget is 2.4 million", "Cash", "1-3 months",
+    deal = hot(office, "971500008002", "I want to buy off-plan", "Business Bay", "An apartment", "2 bed", "Budget is 2.4 million", "Cash", "1-3 months", "To live in", "UAE resident",
                "The first one")
     g = office.graph()
     d = deck.view(g, deck.latest(g, deal).id)
@@ -58,7 +58,7 @@ def test_what_is_missing_becomes_a_task_for_the_broker_never_a_guess(office):
 
 
 def test_a_ready_deck_shows_price_and_viewing(office):
-    deal = hot(office, "971500008003", "I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now",
+    deal = hot(office, "971500008003", "I want to buy", "Dubai Marina", "An apartment", "2 bed", "Budget is 2.7 million", "Cash", "Now", "To live in", "UAE resident",
                "The second one, Saturday at 11am")
     g = office.graph()
     d = deck.view(g, deck.latest(g, deal).id)
