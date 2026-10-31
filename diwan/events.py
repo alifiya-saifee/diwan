@@ -28,8 +28,15 @@ TYPES = {
     "stage.changed", "autonomy.changed", "lesson.added", "lesson.removed",
     # the Deal desk's links to clients: signing a form, and the documents they send
     "sign.link", "sign.signed", "docs.requested", "docs.received", "docs.rejected", "docs.reminded", "docs.confirmed",
+    "sign.opened", "docs.opened", "docs.renewed", "sign.renewed", "document.voided", "client.queued", "client.released",
+    # the closed loop: the spec's own names for what passes between the rooms (docs/closed-loop-spec.md)
+    "task.reopened", "case.converted", "case.lost", "case.closed", "deal.ready_for_transfer",
+    "compliance.cleared", "compliance.needs_info", "compliance.blocked", "compliance.rated", "screening.hit", "screening.resolved",
+    "payment.marked_received", "payment.undone", "payment.flagged", "payment.reminded", "invoice.written_off",
+    "form.sent", "form.recalled", "portal.drafted", "portal.submitted", "transfer.booked", "transfer.completed",
     # the content studio: what it saw, what it pinned, what it made, and footage people uploaded
-    "post.seen", "post.read", "product.saved", "mchat.said", "mchat.upload", "mchat.analysed", "photos.added", "plan.made", "plan.started", "competitor.checked", "board.pinned", "board.unpinned", "content.made", "footage.added", "step.blocked",
+    "post.seen", "post.read", "photo.read", "content.idea", "content.briefed", "content.scripted", "content.ready",
+    "post.approved", "post.live", "post.paused", "post.withdrawn", "campaign.started", "campaign.ended", "lead.attributed", "product.saved", "mchat.said", "mchat.upload", "mchat.analysed", "photos.added", "plan.made", "plan.started", "competitor.checked", "board.pinned", "board.unpinned", "content.made", "footage.added", "step.blocked",
     "qa.passed", "qa.failed", "qa.escalated",
     "lobby.posted", "lobby.seen", "lobby.reminded", "lobby.late", "lobby.done", "lobby.cancelled",
     "chat.received", "chat.sent", "chat.suggested", "chat.handover", "appointment.booked", "appointment.cancelled",
@@ -40,6 +47,10 @@ TYPES = {
     "qualify.form", "qualify.type", "qualify.answer", "qualify.asked", "qualify.passed", "qualify.not_fit", "qualify.open",
     "agent.added", "agent.paused", "agent.resumed", "agent.removed", "lead.recommended", "lead.hot", "lead.kind",
     "followup.drafted", "followup.sent", "followup.dismissed", "lead.nurture", "lead.reopened", "followup.nudged", "lead.optout", "lead.went_quiet", "appointment.moved", "appointment.reminded", "appointment.done", "appointment.noshow", "calendar.morning", "visit.summarized", "calendar.blocked", "calendar.unblocked", "appointment.link", "appointment.link_removed", "lead.unhot", "lead.no_calls", "lead.followups", "chat.merged",
+    # the Sales room: a card moved to the next broker, what came of a call, the broker's list, a nudge
+    "attention.moved", "lead.outcome", "lead.sweep", "lead.nudged", "notify.digest",
+    # the Front Desk: the first open of the day, errands that wait for a yes, and the meeting Nova sits in on
+    "nova.arrived", "errand.drafted", "errand.confirmed", "errand.cancelled", "pocket.started", "pocket.line", "pocket.ended",
 }
 
 

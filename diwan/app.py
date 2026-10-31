@@ -6,6 +6,7 @@ office, agents and charters the tests exercise.
 from __future__ import annotations
 
 import asyncio
+import re
 import contextlib
 from datetime import datetime
 from pathlib import Path
@@ -17,8 +18,9 @@ from fastapi.responses import PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from diwan import demo, slots
-from diwan.agents import compliance, nova, reception, scribe
+from diwan import demo, sales, slots
+from diwan import access
+from diwan.agents import compliance, frontdesk, nova, reception, scribe
 from diwan.agents.charters import ROSTER
 from diwan.config import env
 from diwan.events import EventLog
@@ -58,22 +60,37 @@ async def morning_loop():
     from diwan import leads
     from diwan.agents import lobby, nudge, reminders
     ticks = 0
+
+    def guarded(step: str, fn, *a):  # one job failing is logged and the rest still run
+        try:
+            return fn(*a)
+        except Exception as e:  # noqa: BLE001
+            S.office.log.append("step.blocked", actor="office-loop", content={"step": step, "needs": f"{type(e).__name__}: {e}"[:300]})
+
     while True:
         now = datetime.now(slots.DUBAI)
         gr = S.office.graph()
         first = min(nova.briefing_time(gr, p) for p in PEOPLE)
-        if nova.briefing_due(now, S.last_brief, first, lead_minutes=30):
+        if sales.brief_day(gr, now) and nova.briefing_due(now, S.last_brief, first, lead_minutes=30):
             nova.rounds(S.office, now)
             S.last_brief = now.date().isoformat()
-        lobby.chase(S.office, now)
-        from diwan import documents
-        documents.sweep(S.office, now)  # the Deal desk: remind clients of documents still missing
-        leads.sweep(S.office, now)
-        nudge.sweep(S.office, now)  # follow-ups when a client goes quiet (the owner's schedule)
-        reminders.sweep(S.office, now)  # appointment reminders; each broker's morning list
+        guarded("lobby", lobby.chase, S.office, now)
+        from diwan import client_msgs, documents
+        from diwan.agents import finance
+        guarded("documents", documents.sweep, S.office, now)  # the Deal desk: the ladder for documents still missing
+        guarded("client messages", client_msgs.sweep, S.office, now)  # what quiet hours held
+        if ticks % 30 == 0:
+            guarded("finance reminders", finance.sweep, S.office, now)  # overdue invoices, instalments, rent cheques
+        guarded("leads", leads.sweep, S.office, now)
+        guarded("follow-ups", nudge.sweep, S.office, now)  # follow-ups when a client goes quiet (the owner's schedule)
+        guarded("reminders", reminders.sweep, S.office, now)  # appointment reminders; each broker's morning list
+        guarded("sales", sales.sweep, S.office, now)  # the broker's list, reminders before calls, missing outcomes, the midday summary
+        guarded("front desk", frontdesk.sweep, S.office, now)  # "remind me Thursday": at its time, once
         from diwan.agents import rhythm, studio
         if (ref := rhythm.due(S.office)):  # the studio's automatic run, when the Marketing manager turned it on
-            asyncio.create_task(studio.run(S.office, ref))
+            asyncio.create_task(studio.run(S.office, ref, auto=not rhythm.approved(S.office, ref)))  # a day a person approved needs no second yes
+        await asyncio.to_thread(guarded, "scheduled posts", studio.publish_due, S.office)  # approved posts go out at their time
+        await asyncio.to_thread(__import__("diwan.agents.marketing", fromlist=["tick"]).tick, S.office)  # tracing, posts following the facts, the day's lists
         if rhythm.refresh_due(S.office):  # the daily refresh of competitor posts, when the Marketing manager turned it on
             asyncio.create_task(asyncio.to_thread(studio.refresh_competitors, S.office, by="mrival", auto=True))
         if env("LISTING_FEED_URL") and ticks % 30 == 0:
@@ -107,6 +124,7 @@ async def lifespan(_):
 
 
 app = FastAPI(title="Diwan", lifespan=lifespan)
+app.include_router(access.router)
 from diwan.brand_api import router as brand_router  # noqa: E402
 app.include_router(brand_router)
 from diwan.knowledge_api import router as knowledge_router  # noqa: E402
@@ -204,7 +222,7 @@ async def marketing_run(ref: str = "MC-1204"):
     """Run a listing through the studio for real; steps that lack a connection say what they need."""
     from diwan.agents import studio
     from diwan import products, topics
-    if f"listing:{ref}" not in g().nodes and ref not in products.items(S.office) and ref not in topics.items(S.office):
+    if f"listing:{ref}" not in g().nodes and ref not in products.items(S.office) and not topics.get(S.office, ref):
         raise HTTPException(404, "no such listing, product or topic")
     asyncio.create_task(studio.run(S.office, ref))
     return {"started": ref}
@@ -213,7 +231,7 @@ async def marketing_run(ref: str = "MC-1204"):
 @app.get("/api/studio")
 def studio_view(ref: str = "MC-1204"):
     from diwan import business, costs
-    from diwan.agents import analysis, approvers, freevideo, rhythm, strategy, studio
+    from diwan.agents import analysis, approvers, freevideo, journey, rhythm, strategy, studio
     from diwan.providers import instagram, meta
     blocked = {}
     for e in S.office.log.list():
@@ -222,7 +240,7 @@ def studio_view(ref: str = "MC-1204"):
         elif e["type"] in ("agent.pack", "content.made") and e["agent"] in blocked:
             blocked.pop(e["agent"])
     made = {k: studio.made(S.office, k, ref if k not in ("lanes", "slot", "playbook") else None)
-            for k in ("ideas", "lanes", "film list", "script", "take check", "playbook", "cut", "remix plan", "post text", "cover", "slot", "versions", "transcript", "published")}
+            for k in ("ideas", "lanes", "film list", "script", "take check", "playbook", "cut", "remix plan", "post text", "cover", "slot", "versions", "transcript", "published", "slides")} | {"scheduled": __import__("diwan.agents.studio", fromlist=["scheduled"]).scheduled(S.office).get(ref)}
     reqs = [n for n in g().of("request", status="open") if n.props.get("agent") in ("mpub", "mcopy")]
     from diwan.providers import heygen
     ig = instagram.check()  # green only when Instagram accepts the token, not merely when one is set
@@ -236,16 +254,16 @@ def studio_view(ref: str = "MC-1204"):
             "rhythm": {"settings": rhythm.settings(S.office), "next": rhythm.next_run(S.office), "plan": rhythm.current(S.office),
                        "started": sorted(rhythm.started(S.office))},
             "footage": studio.footage(S.office, ref), "approvals": [{"id": n.id, "text": n.props["text"], "kind": n.props.get("kind"),
-                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises", "cards", "built_like", "own", "problems", "shots", "format")} | {"stale": studio.stale(S.office, x)}
+                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises", "cards", "built_like", "own", "problems", "shots", "format", "slides")} | {"stale": studio.stale(S.office, x)}
                                        for x in studio.script_options(S.office, n.props["text"])] if n.props.get("kind") == "use_script" else []} for n in reqs],
-            "strategy": strategy.report(S.office), "costs": costs.summary(),
+            "strategy": strategy.report(S.office), "journey": journey.report(S.office), "costs": costs.summary(),
             "script_approved": bool(studio.approved_script(S.office, ref)), "heygen": heygen.ready(),
             "chain": studio.chain(S.office, ref),
             "brand_voice": __import__("diwan.brand", fromlist=["profile"]).profile(S.office)["voice"]["value"],
             "approvers": {r: {"id": w, "label": approvers.label(S.office, r)} for r, w in approvers.get(S.office).items()},
             "free_video": {"missing": freevideo.missing(), "photos": len(freevideo.photos(S.office, ref)), "voice": freevideo.voice()},
             "listings": [{"ref": p["ref"], "title": p["title"], "permit": p.get("permit"), "kind": p.get("kind")} for p in __import__("diwan.products", fromlist=["items"]).items(S.office).values()]
-            + [{"ref": t["ref"], "title": t["title"], "permit": None, "kind": "topic"} for t in __import__("diwan.topics", fromlist=["items"]).items(S.office).values()]
+            + [{"ref": t["ref"], "title": t["title"], "permit": None, "kind": "topic"} for t in [*journey.items(S.office).values(), *__import__("diwan.topics", fromlist=["items"]).items(S.office).values()]]
             + [{"ref": n.props["ref"], "title": n.props["title"], "permit": n.props.get("permit"), "kind": "listing"} for n in g().of("listing")],
             "permit_needed": business.permit_needed(S.office),
             "topics": {"typed": __import__("diwan.topics", fromlist=["typed"]).typed(S.office),
@@ -433,10 +451,11 @@ async def upload_footage(ref: str = Form(...), file: UploadFile = File(...), by:
 
 @app.post("/api/studio/photos")
 async def upload_photos(ref: str = Form(...), files: list[UploadFile] = File(...), by: str = Form("maya")):
-    """Photos of a listing for the free video (the listing's own photos from the feed are used too)."""
+    """Photos of a listing for the free video (the listing's own photos from the feed are used too), or of a moment."""
+    from diwan import topics
     from diwan.providers import meta
-    if f"listing:{ref}" not in g().nodes:
-        raise HTTPException(404, f"no listing {ref}")
+    if f"listing:{ref}" not in g().nodes and not topics.get(S.office, ref):
+        raise HTTPException(404, f"no listing or moment {ref}")
     meta.MEDIA.mkdir(exist_ok=True)
     n, paths = sum(1 for e in S.office.log.list() if e["type"] == "photos.added"), []
     for i, f in enumerate(files):
@@ -469,20 +488,32 @@ class DecideIn(BaseModel):
     by: str = "layla"
     note: str = ""
     choice: str | None = None  # which of the offered scripts
+    at: str | None = None  # a publishing time the person chose
 
 
 @app.post("/api/requests/{rid}/decide")
 async def decide(rid: str, body: DecideIn):
     """A person answers an agent's request. Approving a publish request publishes, or says what is still missing."""
     from diwan.agents import studio
+    from diwan.agents import approvers, marketing
+    from diwan.agents.charters import get as get_charter
     n = g().nodes.get(rid)
     if not n or n.type != "request":
         raise HTTPException(404, "no such request")
-    ref_of = next((x.props["ref"] for x in g().of("listing") if x.props["ref"] in n.props["text"]), None)
+    role = {"use_script": "script", "approve_brief": "script", "publish": "publish"}.get(n.props.get("kind"))
+    who = approvers.get(S.office)[role] if role else None
+    if who and body.by != who and not access.is_owner(body.by):  # the person named in Setup, or the owner
+        raise HTTPException(403, f"This waits for {approvers.label(S.office, role)}.")
+    options = studio.script_options(S.office, n.props["text"]) if n.props.get("kind") == "use_script" else []
+    # the scripts say what they are for: a listing, a product, a topic or a post about the brand
+    ref_of = options[0]["ref"] if options else next((x.props["ref"] for x in g().of("listing") if x.props["ref"] in n.props["text"]), None)
     if n.props.get("kind") == "use_script" and ref_of:
-        offered = [x["id"] for x in studio.script_options(S.office, n.props["text"])]
+        offered = [x["id"] for x in options]
         if body.choice and body.choice not in offered:
             raise HTTPException(400, f"{body.choice} is not one of the scripts offered ({', '.join(offered)})")
+        wrong = next((x.get("problems") for x in options if x["id"] == body.choice and x.get("problems")), None)
+        if wrong and body.decision == "approve":
+            return {"ok": False, "needs": wrong}
         if body.decision == "revise":
             if not body.choice or not (body.note or "").strip():
                 raise HTTPException(400, "say which script to change and what to change")
@@ -491,11 +522,30 @@ async def decide(rid: str, body: DecideIn):
             return {"ok": True, "next": f"{body.choice} back to the Script writer with your change"}
         S.office.log.append("decision.made", actor=body.by, content={"card": rid, "answer": body.decision, "note": body.note, "choice": body.choice})
         asyncio.get_event_loop().create_task(studio.after_script(S.office, ref_of) if body.decision == "approve" else studio.script_rejected(S.office, ref_of, body.note))
-        return {"ok": True, "next": "film list to the broker" if body.decision == "approve" else "back to the Script writer"}
+        filmed = "reel" in marketing.format_of(S.office, ref_of).lower()
+        return {"ok": True, "next": ("film list to the broker" if filmed else "the pictures are being made, then it waits for your approval") if body.decision == "approve" else "back to the Script writer"}
     S.office.log.append("decision.made", actor=body.by, content={"card": rid, "answer": body.decision, "note": body.note})
+    said = re.match(r"Publish the (\S+) ", n.props["text"]) if n.props.get("kind") == "publish" else None
+    if said and body.decision == "revise":  # the finished post: the change goes to whoever can fix it
+        if not (body.note or "").strip():
+            raise HTTPException(400, "say what to change")
+        ref = said.group(1)
+        who = studio.change_goes_to(studio.approved_script(S.office, ref), body.note)
+        asyncio.get_event_loop().create_task(studio.change_post(S.office, ref, body.note))
+        return {"ok": True, "next": f"your change is with the {get_charter(who).name}"}
+    brief = re.match(r"Approve the brief for (\S+):", n.props["text"]) if n.props.get("kind") == "approve_brief" else None
+    if brief and body.decision == "approve":
+        asyncio.get_event_loop().create_task(studio.after_brief(S.office, brief.group(1)))
+        return {"ok": True, "next": "the Script writer starts on it"}
+    if body.decision == "reject" and (said or brief):  # stopped by a person: it comes off, and no list shows it as waiting
+        from diwan.agents import marketing
+        marketing.withdraw(S.office, (said or brief).group(1), body.note or f"stopped by {body.by}")
+        return {"ok": True, "next": "it is off the plan"}
     if body.decision == "approve" and n.props.get("kind") == "publish":
-        ref = next((x.props["ref"] for x in g().of("listing") if x.props["ref"] in n.props["text"]), None)
-        return studio.publish(S.office, ref, by=body.by) if ref else {"ok": False, "needs": ["a listing reference"]}
+        ref = said.group(1) if said else None
+        if not ref:
+            return {"ok": False, "needs": ["a listing reference"]}
+        return studio.publish(S.office, ref, by=body.by) if body.note == "now" else studio.approve_post(S.office, ref, by=body.by, at=body.at)
     return {"ok": True}
 
 
@@ -515,7 +565,8 @@ async def ig_receive(request: Request):
         raise HTTPException(401, "bad signature")
     for c in instagram.parse_comments(await request.json()):
         if c["username"] and c["text"]:
-            reception.message(S.office, f"ig:{c['username']}", c["text"], name_=f"@{c['username']}", comment_id=c["comment_id"])
+            reception.message(S.office, f"ig:{c['username']}", c["text"], name_=f"@{c['username']}", comment_id=c["comment_id"], media_id=c.get("media_id"))
+            __import__("diwan.agents.marketing", fromlist=["comment"]).comment(S.office, f"ig:{c['username']}", c.get("media_id"))
     return {"ok": True}
 
 
@@ -628,7 +679,7 @@ def reset(correction: bool = False):
 
 @app.get("/api/events")
 def events(deal: str | None = None, agent: str | None = None, after: int = 0):
-    return S.office.log.list(deal=deal, agent=agent, after=after)
+    return access.visible(S.office.log.list(deal=deal, agent=agent, after=after))
 
 
 @app.get("/api/graph")
@@ -656,7 +707,8 @@ async def ws_events(ws: WebSocket, after: int = 0):
             new = S.office.log.list(after=last)
             if new:
                 last = new[-1]["id"]
-                await ws.send_json({"events": new})
+                if seen := access.visible(new):
+                    await ws.send_json({"events": seen})
             await asyncio.sleep(0.4)
     except (WebSocketDisconnect, RuntimeError):
         pass
@@ -684,6 +736,71 @@ def route(body: Ask):
 def say(body: Ask):
     """One box for talking to Nova: questions, instructions, requests for people, read-backs, settings."""
     return nova.converse(S.office, body.text, body.person, session=body.session or body.person)
+
+
+# ---------- the Front Desk: each signed-in person's PA ----------
+
+class PaIn(BaseModel):
+    person: str = "layla"
+    text: str = ""
+    session: str | None = None
+    mode: str | None = None
+
+
+def _me(person: str) -> str:
+    return access.USER.get() or person
+
+
+@app.post("/api/pa/say")
+def pa_say(body: PaIn):
+    """The chat box on every page: the signed-in person's own PA."""
+    return frontdesk.say(S.office, body.text, _me(body.person), session=body.session)
+
+
+@app.get("/api/pa/day")
+def pa_day(person: str = "layla"):
+    return frontdesk.day(S.office, _me(person), datetime.now(slots.DUBAI))
+
+
+@app.post("/api/pa/arrive")
+def pa_arrive(body: PaIn):
+    """The first open of the day: a greeting and the top three."""
+    return frontdesk.arrive(S.office, _me(body.person), datetime.now(slots.DUBAI))
+
+
+@app.post("/api/pa/mode")
+def pa_mode(body: PaIn):
+    try:
+        who = _me(body.person)
+        if body.mode == "meeting":
+            return frontdesk.start_pocket(S.office, who)
+        if body.mode == "normal" and frontdesk.mode(g(), who) == "meeting":
+            return frontdesk.end_pocket(S.office, who, datetime.now(slots.DUBAI))
+        return {"mode": frontdesk.set_mode(S.office, who, body.mode or "")}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.post("/api/pa/errands/{eid}/{what}")
+def pa_errand(eid: str, what: str, body: PaIn):
+    """A person's yes, or no, to a draft. Nothing else moves an errand on."""
+    if what not in ("confirm", "cancel"):
+        raise HTTPException(404, "no such step")
+    try:
+        return frontdesk.decide_errand(S.office, eid, by=_me(body.person), yes=what == "confirm")
+    except KeyError:
+        raise HTTPException(404, "no such errand") from None
+
+
+@app.post("/api/pa/reminders/{tid}/done")
+def pa_reminder_done(tid: str, body: PaIn):
+    try:
+        frontdesk.finish_reminder(S.office, tid, by=_me(body.person))
+    except KeyError:
+        raise HTTPException(404, "no such reminder") from None
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    return {"ok": True}
 
 
 @app.post("/api/nova/rounds")
@@ -984,7 +1101,7 @@ async def incoming(body: ChatIn):
 def person_send(phone: str, body: SendIn):
     try:
         return reception.person_sends(S.office, phone, body.text, by=body.by)
-    except reception.WindowClosed as e:
+    except (reception.WindowClosed, reception.OptedOut) as e:
         raise HTTPException(409, str(e))
 
 
@@ -1171,8 +1288,135 @@ def chat_assign(phone: str, body: AssignIn):
         raise HTTPException(404, "no such conversation")
     try:
         return leads.reassign(S.office, phone, body.to, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
     except ValueError as e:
         raise HTTPException(422, str(e))
+
+
+# ---------- the Sales room ----------
+
+@app.get("/api/sales/board")
+def sales_board(person: str | None = None):
+    return sales.board(S.office, person or access.USER.get())
+
+
+@app.get("/api/sales/rules")
+def sales_rules():
+    return sales.settings(g())
+
+
+class SalesRulesIn(BaseModel):
+    by: str = "layla"
+    value: dict
+
+
+@app.post("/api/sales/rules")
+def sales_rules_save(body: SalesRulesIn):
+    try:
+        return sales.set_settings(S.office, body.value, by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class SuggestIn(BaseModel):
+    by: str = "omar"
+
+
+@app.post("/api/chats/{phone}/suggest")
+def chat_suggest(phone: str, body: SuggestIn):
+    try:
+        return reception.suggest_again(S.office, phone, by=body.by)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class OutcomeIn(BaseModel):
+    by: str
+    outcome: str
+    reason: str = ""
+    note: str = ""
+    at: str | None = None
+    kind: str = "call"
+
+
+@app.post("/api/chats/{phone}/outcome")
+def chat_outcome(phone: str, body: OutcomeIn):
+    """What came of the call: follow up on a date, not interested and why, or no response."""
+    try:
+        return sales.record_outcome(S.office, phone, body.outcome, by=body.by, reason=body.reason, note=body.note, kind=body.kind,
+                                    at=_when(body.at, "day and time") if body.at else None, now=datetime.now(slots.DUBAI))
+    except KeyError:
+        raise HTTPException(404, "no such conversation") from None
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class LeadIn(BaseModel):
+    by: str = "layla"
+    name: str
+    phone: str
+    source: str
+    note: str = ""
+    email: str = ""
+    ref: str = ""
+    referred_by: str = ""
+
+
+@app.post("/api/leads/add")
+def lead_add(body: LeadIn):
+    """A walk-in, a phone call or a referral: a lead like any other, with where it came from."""
+    try:
+        return sales.add_lead(S.office, by=body.by, name_=body.name, phone=body.phone, source=body.source, note=body.note, email=body.email,
+                              ref=body.ref, referred_by=body.referred_by)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class WebformIn(BaseModel):
+    token: str
+    name: str
+    phone: str
+    message: str = ""
+    email: str = ""
+    ref: str = ""
+
+
+@app.post("/api/portals/webform")
+def lead_webform(body: WebformIn):
+    """The office's own website form, posted by its server with the shared token. Off until WEBFORM_TOKEN is set."""
+    import hmac
+    want = env("WEBFORM_TOKEN")
+    if not want or not hmac.compare_digest(want, body.token):
+        raise HTTPException(403, "not allowed")
+    try:
+        return sales.add_lead(S.office, by="website", name_=body.name, phone=body.phone, source="website", note=body.message, email=body.email, ref=body.ref)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class MatchIn(BaseModel):
+    by: str
+    ref: str
+
+
+@app.post("/api/chats/{phone}/send-match")
+def chat_send_match(phone: str, body: MatchIn):
+    """The broker's yes: a new listing goes to this client."""
+    try:
+        return sales.send_match(S.office, phone, body.ref, by=body.by)
+    except KeyError:
+        raise HTTPException(404, "not found") from None
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except reception.OptedOut as e:
+        raise HTTPException(409, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from None
 
 
 @app.get("/api/team")
@@ -1186,6 +1430,8 @@ class TeamIn(BaseModel):
     days: list[int] | None = None
     away: bool | None = None
     phone: str | None = None
+    licence: str | None = None
+    licence_expiry: str | None = None
     by: str = "layla"
 
 
@@ -1193,7 +1439,7 @@ class TeamIn(BaseModel):
 def sales_team_set(person: str, body: TeamIn):
     from diwan import leads
     try:
-        for k in ("shift", "days", "away", "phone"):
+        for k in ("shift", "days", "away", "phone", "licence", "licence_expiry"):
             if (v := getattr(body, k)) is not None:
                 leads.set_agent(S.office, person, k, v, by=body.by)
     except ValueError as e:
@@ -1395,6 +1641,8 @@ class FrontIn(BaseModel):
     by: str
     nurture_to: str | None = None
     portal_template: str | None = None
+    greeting: str | None = None
+    greeting_ar: str | None = None
 
 
 @app.get("/api/rania/front")
@@ -1418,6 +1666,7 @@ def front_set(body: FrontIn):
 class QuietIn(BaseModel):
     by: str
     after_hours: list[float] | None = None
+    after_visit_hours: list[float] | None = None
     quiet_from: str | None = None
     quiet_to: str | None = None
     friday_prayer: bool | None = None
@@ -1675,6 +1924,8 @@ def appointment_after(vid: str, what: str, body: ApptIn):
         raise HTTPException(409, "It hasn't happened yet")
     from diwan.agents import followup, visit
     ev = S.office.log.append(f"appointment.{what}", actor=body.by, deal=v.deal, content={"id": vid, "notes": (body.notes or "").strip() or None})
+    if what == "noshow":
+        return {"ok": True, "then": sales.no_show(S.office, vid, ev["id"])}
     if what == "done" and (body.notes or "").strip():  # the broker's notes: the visit summary the follow-up is built on
         visit.summarize(S.office, v.deal, said=body.notes, source="notes", appointment=vid, by=body.by, cause=ev["id"])
     if what == "done" and v.props.get("chat") and v.props.get("where", "property") == "property":
@@ -1788,6 +2039,14 @@ def release(phone: str, by: str = "omar"):
 
 # ---------- integrations: AiSensy, Meta's WhatsApp Cloud API ----------
 
+@app.get("/api/line")
+def whatsapp_line():
+    """Which WhatsApp line is in use and whether it is connected: all the Inbox needs, with no addresses or tokens."""
+    from diwan.providers import aisensy
+    return {"provider": env("WHATSAPP_PROVIDER") or ("aisensy" if aisensy.available() else "cloud" if whatsapp.available() else "sandbox"),
+            "aisensy": {"connected": aisensy.available()}, "cloud": {"connected": whatsapp.available()}}
+
+
 @app.get("/api/integrations")
 def integrations(request: Request):
     from diwan.providers import aisensy
@@ -1890,6 +2149,10 @@ async def no_store(request: Request, call_next):
     if request.url.path.startswith("/web"):
         r.headers["Cache-Control"] = "no-store"
     return r
+
+
+app.add_middleware(access.Gate)  # last added runs first: nothing reaches the app without passing it
+access.chat_guard = lambda person, phone: f"chat:{phone}" not in g().nodes or sales.may_see(g(), phone, person)
 
 
 @app.get("/favicon.ico", include_in_schema=False)

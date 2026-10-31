@@ -20,8 +20,18 @@ export function h(tag, attrs = {}, ...kids) {
   return el;
 }
 
+/** Who is signed in. Screens read this; the server decides what they get either way. */
+export const SESSION = await fetch("/api/auth/me").then((r) => r.json()).catch(() => ({}));
+if (SESSION.person && !SESSION.owner) {  // only the owner switches between people: everyone else is themselves
+  document.documentElement.classList.add("staff");
+  for (const k of ["diwan.inbox.as", "diwan.cal.as", "desk.as", "kn.as", "diwan.memory.as", "diwan.qualify.as", "diwan.settings.as"]) {
+    try { localStorage.setItem(k, SESSION.person); } catch {}
+  }
+}
+
 export async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  if (r.status === 401 && SESSION.auth) location.href = `/web/login.html?next=${encodeURIComponent(location.pathname)}`;
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(body.detail || `${r.status}`);
   return body;
@@ -87,6 +97,15 @@ export function describe(e) {
     case "attention.raised": return `${c.kind === "call" ? "call" : "reply"} needed from ${NAMES[c.who] || c.who}: ${c.reason}`;
     case "attention.overdue": return `${c.id} is overdue`;
     case "attention.cleared": return `${c.id} done: ${{ called: "called", messaged: "messaged", no_answer: "no answer", not_needed: `not needed (${c.note})` }[c.action] || c.action}`;
+    case "attention.moved": return `the call moved from ${NAMES[c.from] || c.from} to ${NAMES[c.to] || c.to}`;
+    case "lead.outcome": return `outcome: ${c.outcome.replace("_", " ")}${c.reason ? ` (${c.reason.replace("_", " ")})` : ""}`;
+    case "lead.sweep": return `${NAMES[c.broker] || c.broker}'s list for today`;
+    case "nova.arrived": return "came in";
+    case "errand.drafted": return `drafted: ${c.title}`;
+    case "errand.confirmed": return "approved a draft";
+    case "errand.cancelled": return "cancelled a draft";
+    case "pocket.started": return "meeting notes started";
+    case "pocket.ended": return "meeting notes finished";
     case "lead.pooled": return `lead moved to the Pool: ${NAMES[c.from] || c.from} had not acted`;
     case "lead.claimed": return `${NAMES[c.to] || c.to} claimed the lead from the Pool`;
     case "notify.sent": return `told ${NAMES[c.to] || c.to}: ${c.text}`;
@@ -129,8 +148,8 @@ export const LOGO = `<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGr
   <rect x="8" y="8" width="16" height="16" rx="1.5" transform="rotate(45 16 16)"/></g><circle cx="16" cy="16" r="3" fill="url(#lg)"/></svg>`;
 
 export function header(active) {
-  const pages = [["office3d.html", "Office"], ["index.html", "Nova"], ["inbox.html", "Inbox"], ["studio.html", "Studio"], ["meeting.html", "Meeting"], ["deal.html", "Deals"], ["knowledge.html", "Knowledge"],
-                 ["graph.html", "Memory"], ["team.html", "Team"], ["settings.html", "Settings"]];
+  const pages = [["office3d.html", "Office"], ["index.html", "Nova"], ["sales.html", "Sales"], ["inbox.html", "Inbox"], ["studio.html", "Studio"], ["meeting.html", "Meeting"], ["deal.html", "Deals"], ["knowledge.html", "Knowledge"],
+                 ["graph.html", "Memory"], ["team.html", "Team"], ["settings.html", "Settings"]].filter(([href]) => !SESSION.pages || SESSION.pages.includes(href));
   const status = h("div", { class: "status" });
   api("/api/health").then((s) => {
     const p = (on, label) => h("span", { class: "pill" }, h("span", { class: `dot ${on ? "on" : ""}` }), label);
@@ -138,13 +157,40 @@ export function header(active) {
                   p(s.providers.baseten || s.providers.fireworks || s.providers.modal, "Open weights"),
                   h("span", { class: "pill meta-badge" }, "Built with Meta Muse"));
   }).catch(() => {});
-  const brand = h("a", { class: "brand", href: "office3d.html" });
+  const brand = h("a", { class: "brand", href: SESSION.home || "office3d.html" });
   brand.innerHTML = LOGO;
   brand.append(h("span", { class: "word" }, "Diwan"), h("span", { class: "tag" }, "The office you can correct"));
   const top = h("header", { class: "top" }, brand,
     h("nav", {}, pages.map(([href, label]) => h("a", { href, class: href === active ? "on" : "" }, label))), search(), status);
   top.insertBefore(h("button", { class: "hsbtn", "aria-label": "Search", onclick: () => { top.classList.toggle("searching"); top.querySelector(".hsearch input").focus(); } }, "Search"), status);
+  if (SESSION.auth && SESSION.person) top.append(h("button", { class: "signout", title: `Signed in as ${SESSION.name}, ${SESSION.role}`, onclick: async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    location.href = "/web/login.html";
+  } }, `${SESSION.name} · Sign out`));
   document.body.prepend(top);
+  if (SESSION.person || !SESSION.auth) paBox();
+}
+
+/** The chat box on every page: the signed-in person's own PA (Nova for the owner). */
+function paBox() {
+  const session = `page-${SESSION.person || "layla"}`, me = SESSION.person || "layla";
+  const log = h("div", { class: "pa-log" });
+  const input = h("input", { placeholder: "Ask your PA", "aria-label": "Ask your PA" });
+  const panel = h("div", { class: "pa-panel", hidden: true });
+  const add = (text, cls, kids = []) => { log.append(h("div", { class: `pa-m ${cls}` }, text, ...kids)); log.scrollTop = 1e9; };
+  const send = async (text) => {
+    if (!text.trim()) return;
+    add(text, "me");
+    try {
+      const r = await post("/api/pa/say", { text, person: me, session });
+      if (r.kind === "silent") return;
+      add(r.text, r.kind || "", (r.options || []).map((o) => h("button", { onclick: () => send(o) }, o)));
+    } catch (e) { add(e.message, "refused"); }
+  };
+  input.onkeydown = (e) => { if (e.key === "Enter") { const t = input.value; input.value = ""; send(t); } };
+  const who = SESSION.owner ? "Nova" : `${SESSION.name || "Your"}'s PA`;
+  panel.append(h("div", { class: "pa-head" }, who, h("button", { "aria-label": "Close", onclick: () => { panel.hidden = true; } }, "✕")), log, input);
+  document.body.append(panel, h("button", { class: "pa-open", title: `Ask ${who}`, onclick: () => { panel.hidden = !panel.hidden; if (!panel.hidden) input.focus(); } }, "✦ Ask your PA"));
 }
 
 const TAB = { company: "Company", answer: "Approved answer", project: "Project", area: "Area", people: "People", brand: "Brand", listing: "Listing" };

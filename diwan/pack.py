@@ -57,6 +57,7 @@ ACTIONS = {
     "hold": "Hold an item for a person",
     "publish": "Publish or schedule a post",
     "use_script": "Use a script for filming (spends filming, editing and model time)",
+    "approve_brief": "Approve the brief for a post the automatic run started",
     "send": "Send a message to a customer or third party",
     "reply": "Reply to a customer's enquiry from listings and company knowledge",
     "book_viewing": "Book a viewing in a broker's free slot",

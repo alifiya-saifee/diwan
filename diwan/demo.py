@@ -65,10 +65,10 @@ def projects(office: Office) -> None:
         return
     knowledge.add(office, "project", "Creek Vista Heights",
                   "Harbour Lane Developments (fictional). Payment plan: 10% on booking, 50% during construction in 5 instalments, "
-                  "40% on handover. Handover Q4 2027. Dubai Land Department fee 4% on booking.", by="layla", valid_until="2027-12-31")
+                  "40% on handover. Handover Q4 2027. Dubai Land Department fee 4% on booking.", by="layla", valid_until="2027-12-31", source="demo")
     knowledge.add(office, "project", "Bayline Residences",
                   "Canalside Developers (fictional). Payment plan: 20% on booking, 40% during construction, 40% on handover. "
-                  "Handover Q2 2028.", by="layla", valid_until="2028-06-30")
+                  "Handover Q2 2028.", by="layla", valid_until="2028-06-30", source="demo")
     office.file_document(kind="brochure", title="Creek Vista Heights brochure, floor plans and payment plan", date="2026-09-20",
                          party="Harbour Lane Developments", text="Fictional developer brochure for the demo.")
 

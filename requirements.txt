@@ -6,3 +6,4 @@ websockets==13.1
 pillow==13.0.0
 python-multipart==0.0.20
 faster-whisper==1.2.1
+tzdata==2026.6

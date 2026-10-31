@@ -227,6 +227,39 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
             n.props["reason"] = c.get("reason")
             if c.get("result"):
                 n.props["result"] = c["result"]
+        elif t == "task.reopened" and c.get("id") in g.nodes:  # a person undid it: it is open again, and why is kept
+            n = g.nodes[c["id"]]
+            n.status = "queued"
+            n.props["reason"] = c.get("reason")
+            n.props.pop("result", None)
+        elif t == "screening.hit" and c.get("id") in g.nodes:  # stays open: a hold until the officer resolves it
+            g.nodes[c["id"]].props |= {"result": "possible match", "hit": c.get("note")}
+        elif t == "payment.marked_received" and c.get("task") in g.nodes:
+            g.nodes[c["task"]].props.setdefault("payments", []).append(dict(c) | {"at": e["at"], "by": e["actor"]})
+        elif t == "payment.undone" and c.get("task") in g.nodes:
+            n = g.nodes[c["task"]]
+            n.props["payments"] = [p for p in n.props.get("payments", []) if p["id"] != c["payment"]]
+            n.props.setdefault("undone", []).append(dict(c) | {"at": e["at"], "by": e["actor"]})
+        elif t in ("compliance.cleared", "compliance.needs_info", "compliance.blocked") and f"deal:{deal}" in g.nodes:
+            g.nodes[f"deal:{deal}"].props["compliance"] = dict(c) | {"state": t.split(".")[1], "by": e["actor"], "at": e["at"]}
+        elif t == "compliance.rated" and f"deal:{deal}" in g.nodes:
+            g.nodes[f"deal:{deal}"].props["risk"] = dict(c) | {"by": e["actor"], "at": e["at"]}
+        elif t == "deal.ready_for_transfer" and f"deal:{deal}" in g.nodes:
+            g.nodes[f"deal:{deal}"].props["ready"] = dict(c) | {"by": e["actor"], "at": e["at"]}
+        elif t == "transfer.booked" and f"deal:{deal}" in g.nodes:
+            g.nodes[f"deal:{deal}"].props["transfer"] = dict(c) | {"by": e["actor"], "at": e["at"]}
+        elif t == "transfer.completed" and f"deal:{deal}" in g.nodes:
+            g.nodes[f"deal:{deal}"].props["transferred"] = dict(c) | {"by": e["actor"], "at": e["at"]}
+        elif t in ("form.sent", "form.recalled") and c.get("draft") in g.nodes:
+            g.nodes[c["draft"]].props["sent" if t == "form.sent" else "recalled"] = dict(c) | {"at": e["at"], "by": e["actor"]}
+        elif t in ("portal.drafted", "portal.submitted") and c.get("task") in g.nodes:
+            g.nodes[c["task"]].props["portal"] = (g.nodes[c["task"]].props.get("portal") or {}) | dict(c) | {"state": t.split(".")[1], "at": e["at"], "by": e["actor"]}
+        elif t == "invoice.written_off" and c.get("id") in g.nodes:
+            n = g.nodes[c["id"]]
+            n.status, n.props["result"], n.props["reason"] = "done", "written off", c.get("reason")
+        elif t == "document.voided" and c.get("id") in g.nodes:
+            n = g.nodes[c["id"]]
+            n.status, n.props["voided"] = "voided", c.get("reason")
         elif t == "approval.given":
             n = g.add(c["id"], "approval", c["action"], e, deal=deal, status="given", props=dict(c))
             for f in c.get("rests_on", []):
@@ -282,7 +315,8 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                                              "text": c["text"], "refs": c.get("refs", []), "via": c.get("via"),
                                              "status": c.get("status"), "error": c.get("error"), "template": c.get("template"),
                                              "comment_id": c.get("comment_id"), "channel": c.get("channel"), "nudge": c.get("nudge"),
-                                             "reminder": c.get("reminder")})
+                                             "reminder": c.get("reminder"), "image": c.get("image"), "email": c.get("email"),
+                                             "media_id": c.get("media_id"), "referred_by": c.get("referred_by")})
                 ch.props["last_at"] = e["at"]
                 if (into := g.nodes.get(f"chat:{ch.props.get('merged_into')}")) is not None:  # merged: it shows in that lead's thread too
                     into.props["messages"].append(ch.props["messages"][-1] | {"chat": ch.props["phone"]})
@@ -304,6 +338,10 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
             g.nodes[c["id"]].status = "removed"
         elif t == "setting.changed":
             g.settings.setdefault(c["person"], {})[c["key"]] = c["value"]
+            if c["key"] == "property" and c["person"] in g.nodes:  # the deal's real property replaces its placeholder everywhere
+                g.nodes[c["person"]].props["property"] = c["value"]["label"]
+                g.nodes[c["person"]].label = c["value"]["label"]
+                g.nodes[c["person"].replace("deal:", "property:", 1)].label = c["value"]["label"]
         elif t == "rounds.started":
             g.rounds = {"event": e["id"], "at": e["at"], "reports": {}}
         elif t == "agent.pack" and g.rounds and e.get("caused_by") == g.rounds["event"]:
@@ -362,6 +400,7 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                 v.props.setdefault("reminded", []).append(c["which"])
             else:
                 v.status = "done" if t == "appointment.done" else "no_show"
+                v.props["closed_event"] = e["id"]
         elif t == "lead.assigned" and f"deal:{deal}" in g.nodes:
             d = g.nodes[f"deal:{deal}"]
             d.props.update(broker=c["to"], assigned_at=c.get("at") or e["at"], assigned_why=c.get("why"))
@@ -373,13 +412,15 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                 g.nodes[c["replaces"]].status = "replaced"
             n = g.add(f"AT{e['id']}", "attention", c["reason"], e, deal=deal, status="open", props=dict(c))
             g.link(n.id, "about", f"chat:{c['chat']}", e)
-        elif t in ("attention.overdue", "attention.cleared", "lead.pooled", "lead.claimed") and c.get("id") in g.nodes:
+        elif t in ("attention.overdue", "attention.cleared", "attention.moved", "lead.pooled", "lead.claimed") and c.get("id") in g.nodes:
             n = g.nodes[c["id"]]
-            if t == "attention.overdue":
+            if t == "attention.moved":  # nobody called in time: it goes to the next free broker, with a new limit
+                n.props.update(who=c["to"], due=c["due"], overdue=False, escalated=n.props.get("escalated", 0) + 1, moved_from=c["from"])
+            elif t == "attention.overdue":
                 n.props["overdue"] = True
             elif t == "attention.cleared":
                 n.status = "cleared"
-                n.props.update(action=c["action"], note=c.get("note"), cleared_by=e["actor"], cleared_at=e["at"])
+                n.props.update(action=c["action"], note=c.get("note"), cleared_by=e["actor"], cleared_at=e["at"], cleared_event=e["id"])
             elif t == "lead.pooled":
                 n.props["pooled"] = True
                 if f"deal:{deal}" in g.nodes:
@@ -403,6 +444,8 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
             d = g.nodes[f"deal:{deal}"].props
             if t == "qualify.asked":
                 d["qualify_asked"], d["qualify_asked_event"] = c["field"], e["id"]
+                if c.get("checked") is not None:  # Rania asked them to confirm a figure: once
+                    d["budget_checked"] = str(c["checked"])
             elif t == "qualify.type":
                 d.update(qtype=c["type"], qtype_quote=c.get("quote"), qtype_source=c.get("source"))
             elif t == "qualify.answer":
@@ -423,7 +466,7 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                 d["followup"] = dict(c) | {"status": "draft", "at": e["at"], "id": e["id"]}
             elif d.get("followup"):
                 d["followup"]["status"] = "sent" if t == "followup.sent" else "dismissed"
-        elif t in ("lead.recommended", "lead.hot", "lead.unhot", "lead.no_calls", "lead.followups", "lead.kind", "lead.nurture", "lead.reopened", "followup.nudged", "lead.optout",
+        elif t in ("lead.recommended", "lead.hot", "lead.unhot", "lead.no_calls", "lead.followups", "lead.kind", "lead.nurture", "lead.reopened", "followup.nudged", "lead.optout", "lead.outcome",
                    "lead.went_quiet") and f"deal:{deal}" in g.nodes:
             d = g.nodes[f"deal:{deal}"].props
             if t == "followup.nudged":  # a follow-up while the client was quiet, sent or skipped (and why)
@@ -444,6 +487,10 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                     d.pop("no_calls", None)
             elif t == "lead.kind":
                 d["kind"], d["kind_name"] = c["kind"], c["name"]
+            elif t == "lead.outcome":  # what came of the call, as the broker recorded it
+                d["outcome"] = {"event": e["id"], "outcome": c["outcome"], "reason": c.get("reason"), "note": c.get("note"), "at": e["at"], "by": e["actor"]}
+            elif t == "lead.recommended" and c.get("offered"):  # a new listing the broker sent: their list so far stays
+                d["offered"] = (d.get("offered") or []) + list(c["refs"])
             elif t == "lead.recommended":
                 d["recommended"] = list(c["refs"])
             elif t == "lead.nurture":  # not ready yet: nurtured (by Marketing, by default) until they come back
