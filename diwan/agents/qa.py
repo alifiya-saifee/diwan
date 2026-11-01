@@ -51,6 +51,8 @@ GENERIC = {"unit", "apartment", "villa", "townhouse", "flat", "dubai", "with", "
 
 def _names_listing(o: Office, ref: str, text: str) -> bool:
     """The text is about this listing: it names the ref, or a distinctive word of its title (the building, the villa)."""
+    if _listing(o, ref)["item"] == "topic":
+        return True  # a topic like "About us" has no name to repeat
     t = text.lower()
     words = {w for w in __import__("re").findall(r"[a-z]{4,}|\d+", _listing(o, ref)["title"].lower())} - GENERIC  # "Villa 88" is named by its number
     return ref.lower() in t or any(w in t for w in words)
@@ -59,6 +61,21 @@ def _names_listing(o: Office, ref: str, text: str) -> bool:
 def _money(text: str) -> set[int]:
     from diwan.agents.studio import _amounts
     return _amounts(text)
+
+
+MAX_SPOKEN = 65  # about 25 seconds at 2.5 words a second
+BROCHURE = re.compile(r"\b(premier|solutions?|seamless(ly)?|world.class|unparalleled|one.stop|state.of.the.art|personali[sz]ed care|second to none)\b", re.I)
+
+
+def _creative(o: Office, ref: str, it: dict) -> tuple[bool, str]:
+    """Only pictures the AI made are judged here: a post's real photos are the post."""
+    from diwan.agents import director
+    if it.get("background") != "Muse Image":
+        return True, ""
+    seen = director.review(o, _listing(o, ref)["title"], " ".join(x["text"] for x in it["images"]), [x["path"] for x in it["images"]])
+    if not seen or not seen["failed"]:
+        return True, ""
+    return False, f"{seen['score']}/5: " + next(iter(seen["failed"].values()))[:120]
 
 
 def _script_text(item: dict) -> str:
@@ -116,6 +133,12 @@ CHECKS: dict[str, list[Check]] = {
     "script": [
         Check("script-hook-short", "The hook is 12 words or fewer.", "mscript",
               lambda o, ref, it: (len(it["hook_en"].split()) <= 12, f"{len(it['hook_en'].split())} words: \"{it['hook_en'][:80]}\""), "Cut the hook to 12 words or fewer."),
+        Check("script-short", f"At most {MAX_SPOKEN} spoken words, about 25 seconds.", "mscript",
+              lambda o, ref, it: (bool(it.get("slides")) or len(_script_text(it).split()) <= MAX_SPOKEN, f"{len(_script_text(it).split())} words"),  # pictures are read, not spoken
+              f"Cut it to {MAX_SPOKEN} words or fewer, keeping one idea."),
+        Check("script-plain", "No brochure language: it sounds like someone talking.", "mscript",
+              lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(BROCHURE.search(_script_text(it))),
+              "Say it in plain spoken words: what the person gets, not how good we are."),
         Check("script-length", "5 to 8 lines, about 30 seconds.", "mscript",
               lambda o, ref, it: (5 <= len(it["lines_en"]) <= 8, f"{len(it['lines_en'])} lines"), "Write 5 to 8 lines."),
         Check("script-real-amounts", "Every amount is on the listing.", "mscript",
@@ -173,6 +196,8 @@ CHECKS: dict[str, list[Check]] = {
               lambda o, ref, it: (lambda ls: (not ls, ls["rule"] if ls else ""))(lessons.broken(o.log, "mwriter", it["text"])), "Follow the lesson."),
     ],
     "slides": [
+        Check("slides-creative", "AI-made pictures pass the Creative Director. Real photos are not held back here.", "mart",
+              lambda o, ref, it: _creative(o, ref, it), "Make a picture that clearly belongs to this business and this post, not generic art."),
         Check("slides-exist", "Every image exists and is 1080 by 1350.", "mart",
               lambda o, ref, it: (lambda bad: (not bad, ", ".join(bad)))([x["served"] for x in it["images"] if not _right_size(x["path"])]), "Make the image again."),
         Check("slides-count", "1 to 10 images.", "mart", lambda o, ref, it: (1 <= len(it["images"]) <= 10, f"{len(it['images'])} images"), "Keep to Instagram's limit of 10."),

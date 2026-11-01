@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from diwan import agency_forms, deal_property, desk_rules, roles
+from diwan import agency_forms, deal_property, desk_rules, lobby_room, roles
 from diwan.graph import Graph
 from diwan.people import PEOPLE, name
 
@@ -80,6 +80,7 @@ def move(office: Office, deal: str, stage: str, by: str, reason: str = "") -> No
         deal_property.reserve(office, deal, by)
     if stage != "Lost" and order.index(stage) >= order.index(conv):
         agency_forms.on_convert(office, deal, by)
+        lobby_room.on_convert(office, deal)
 
 
 def _money_on_lost(office: Office, deal: str) -> None:
@@ -179,7 +180,7 @@ def _record(office: Office, deal: str, by: str, amount: int, c: dict, *, approve
     """The agreed price becomes the deal's price (a fact, so commission, forms and Form F rest on it and a later change
     sends them back), the comparison is kept for the KPIs, and the deal moves to its conversion stage."""
     g = office.graph()
-    live = (g.facts(deal, "deal_term") or [None])[-1]
+    live = ([f for f in g.facts(deal, "deal_term") if f.props.get("amount_aed")] or [None])[-1]  # a price replaces a price, not "off plan mostly"
     if not live or live.props.get("amount_aed") != amount:
         office.record_fact(deal, "deal_term", f"Agreed price, entered by {name(by)} at conversion: AED {amount:,}", name(by), actor=by,
                            replaces=live.id if live else None, amount_aed=amount)
@@ -189,6 +190,8 @@ def _record(office: Office, deal: str, by: str, amount: int, c: dict, *, approve
     if (office.graph().nodes[f"deal:{deal}"].props.get("stage") or "New") != conv:
         move(office, deal, conv, by, "converted" if _is_back(office.graph(), deal, conv) else "")
     deal_property.reserve(office, deal, by)
+    from diwan.agents import finance
+    finance.expect_deposit(office, deal)
     g = office.graph()
     office.log.append("case.converted", actor=by, agent="ops", deal=deal, content={"amount": amount, "path": desk_rules.path_of(g, deal), "facts": [f.id for f in g.facts(deal)]})
 

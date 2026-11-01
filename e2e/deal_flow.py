@@ -125,9 +125,9 @@ with sync_playwright() as p:
     pg.goto(f"{BASE}/web/index.html")
     pg.fill("#say", "Who is paying for Karim?")
     pg.click("#go")
-    pg.wait_for_selector(".answer")
+    pg.wait_for_function("[...document.querySelectorAll('.answer')].some((a) => a.innerText.includes('(F7)'))")
     shot("6-nova", full=False)
-    ans = pg.locator(".answer").inner_text()
+    ans = pg.locator(".answer").last.inner_text()
     check("1m", "Nova: Karim pays, citing F7 and F3 since replaced", "(F7)" in ans and "(F3), since replaced" in ans)
 
     # ---------- 3. Compliance, on a fresh demo office, as Priya ----------

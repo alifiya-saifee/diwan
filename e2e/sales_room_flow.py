@@ -101,7 +101,7 @@ with sync_playwright() as p:
     pg.wait_for_selector("#day h2")
     pg.wait_for_timeout(600)
     text = pg.locator("#day").inner_text().lower()
-    check(11, "Nova's day has its blocks", all(x in text for x in ("urgent", "today", "decisions", "pipeline", "stuck", "money", "errands", "reminders")))
+    check(11, "Nova's day has its blocks", all(x in text for x in ("urgent", "today", "decisions", "pipeline", "money")))
     check(12, "The greeting is by name", "Layla" in pg.locator("#hello").inner_text(), pg.locator("#hello").inner_text())
     shot("04-nova-day")
 

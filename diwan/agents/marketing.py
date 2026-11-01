@@ -87,7 +87,9 @@ def _mark(office: Office, type_: str, ref: str, **content) -> None:
 
 # ---------- posts follow the facts ----------
 
-def _subject(office: Office, ref: str) -> dict | None:
+def _subject(office: Office, ref: str | None) -> dict | None:
+    if not ref:  # a planned day with nothing on it
+        return None
     try:
         return studio._listing(office, ref)
     except KeyError:
@@ -149,6 +151,10 @@ def withdraw(office: Office, ref: str, why: str, *, archived: bool = False) -> N
     _mark(office, "post.withdrawn", ref, why=why, archived=archived)
     if archived:
         return
+    for t in office.graph().of("task", status="queued"):  # nobody films a post that was stopped
+        if t.props.get("agent") == "mshoot" and ref in t.props.get("action", ""):
+            office.log.append("task.withdrawn", actor="mkt", agent="mkt", content={"id": t.id, "reason": why})
+    rhythm.take_off(office, ref, by="mkt")
     from diwan import leads
     leads.notify(office, person(office), f"{ref} is withdrawn: {why}", kind="info")
     if p.get("stage") == "live" or p.get("was") == "live":
@@ -251,7 +257,7 @@ def code_for(office: Office, ref: str) -> str:
     lst = _subject(office, ref) or {"title": ref}
     from diwan import brand
     skip = GENERIC | {w.lower() for w in re.findall(r"[A-Za-z]+", brand.profile(office)["name"]["value"])}
-    word = next((w for w in re.findall(r"[A-Za-z]{4,}", lst["title"]) if w.lower() not in skip), "POST").upper()
+    word = next((w for w in re.findall(r"[A-Za-z]{4,}", lst["title"]) if w.lower() not in skip), "HELLO").upper()
     taken = set(have.values())
     code, n = word, 1
     while code in taken:
@@ -261,7 +267,7 @@ def code_for(office: Office, ref: str) -> str:
 
 
 def _attribute(office: Office, deal: str, ref: str | None, via: str, *, post: str | None = None, code: str | None = None) -> None:
-    sc = studio.approved_script(office, ref) if ref else None
+    sc = studio.approved_script(office, ref, past=True) if ref else None
     office.log.append("lead.attributed", actor="mkt", agent="mkt", deal=deal, key=f"attr:{deal}",
                       content={"ref": ref, "via": via, "post": post, "code": code, "angle": (sc or {}).get("angle")})
 
@@ -322,7 +328,7 @@ def results(office: Office) -> list[dict]:
         p = have.get(ref, {})
         deals = leads_by.get(ref, [])
         post = seen.get(p.get("instagram_id"), {})
-        sc = studio.approved_script(office, ref) or {}
+        sc = studio.approved_script(office, ref, past=True) or {}
         out.append({"ref": ref, "title": (_subject(office, ref) or {}).get("title") or p.get("title") or ref, "stage": p.get("stage"), "angle": sc.get("angle"),
                     "leads": len(deals), "qualified": sum(d in qualified for d in deals), "viewings": sum(d in viewed for d in deals),
                     "deals": sum(d in sold for d in deals), "commission_aed": sum(sold.get(d, 0) for d in deals),
@@ -386,13 +392,18 @@ def tick(office: Office, now: datetime | None = None) -> None:
 
 # ---------- the plan and what waits for a person ----------
 
+def stage_labels(office: Office) -> dict[str, str]:
+    """{ref: where its post is now, in words}, for the plan."""
+    return {r: LABELS.get(p["stage"], "") for r, p in pieces(office).items()}
+
+
 def format_of(office: Office, ref: str | None) -> str:
     """The kind of post a subject will be, in words."""
     from diwan.agents import eventpost
     lst = _subject(office, ref) if ref else None
     if not lst:
         return ""
-    if lst.get("moment"):
+    if eventpost.shape(office, lst):
         return eventpost.suggest(office, ref)["label"]
     return "Reel, to camera" if lst["item"] == "topic" else "Reel, voice-over"
 
@@ -426,12 +437,16 @@ def plan_view(office: Office) -> dict:
         days.append({"date": d["date"], "ref": ref, "title": (_subject(office, ref) or {}).get("title") or ref or "", "why": d.get("why", ""), "format": format_of(office, ref),
                      "job": journey.JOBS[d["job"]]["label"] if d.get("job") in journey.JOBS else ("Teach something" if d.get("type") == "topic" else "Offer something"),
                      "state": state, "stage": LABELS.get(piece.get("stage"), "") if d["date"] in begun else ""})
+    from diwan.agents import planner
+    based = planner.evidence(office, [d["ref"] for d in days if d["ref"]])
+    days = [d | {"evidence": based.get(d["ref"], "")} for d in days]
     going = [{"ref": r, "title": (_subject(office, r) or {}).get("title") or r, "at": s["at"]} for r, s in studio.scheduled(office).items()]
     removed = [{"date": r["date"], "title": (_subject(office, r["ref"]) or {}).get("title") or r["ref"]} for r in (p or {}).get("removed") or []]
     stopped = [{"ref": r, "title": x.get("title") or r, "why": x.get("why", "")} for r, x in have.items() if x["stage"] == "withdrawn"]
     live = [{"ref": r, "title": x.get("title") or r, "since": x["since"][:10]} for r, x in have.items() if x["stage"] == "live"]
     return {"days": days, "waiting": waiting(office), "scheduled": going, "removed": removed, "stopped": stopped, "live": live,
-            "rhythm": rhythm.settings(office)["rhythm"], "automatic": rhythm.settings(office)["auto"] == "on", "next": rhythm.next_run(office)}
+            "rhythm": rhythm.settings(office)["rhythm"], "automatic": rhythm.settings(office)["auto"] == "on", "next": rhythm.next_run(office),
+            "chosen_by": (p or {}).get("chosen_by", "rules"), "plan_ahead": rhythm.settings(office)["plan_ahead"] == "on"}
 
 
 # ---------- campaigns ----------

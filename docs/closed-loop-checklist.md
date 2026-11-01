@@ -17,7 +17,7 @@ Tick a line only when it works and has a test. Update this file in the same chan
 
 ## Where it stands
 
-**Updated 31 Oct, after the Front Desk and Sales rooms, and the Deal, Operations, Finance and Compliance rooms, were built** (docs/deal-desk.md item 18, decisions in [open-questions.md](open-questions.md)). A ticked line in those rooms may still say what was missing when it was written: the tick is the current state. Checked with 711 tests and `e2e/rooms_flow.py`, `e2e/deal_flow.py` and `e2e/property_flow.py` in the browser. The upload tables and each deal type's step tables were not re-marked line by line.
+**Updated 31 Oct, after the Front Desk and Sales rooms, and the Deal, Operations, Finance and Compliance rooms, were built** (docs/deal-desk.md item 18, decisions in [open-questions.md](open-questions.md)). A ticked line in those rooms may still say what was missing when it was written: the tick is the current state. The Lobby followed. Checked with 860 tests and `e2e/lobby_flow.py`, `e2e/rooms_flow.py`, `e2e/deal_flow.py` and `e2e/property_flow.py` in the browser. The upload tables and each deal type's step tables were not re-marked line by line.
 
 | Area | Built | Partly | Not built |
 |---|---:|---:|---:|
@@ -25,7 +25,7 @@ Tick a line only when it works and has a test. Update this file in the same chan
 | Rules in every room | 7 | 8 | 4 |
 | PAs | 38 | 29 | 34 |
 | Who sees which rooms | 2 | 5 | 1 |
-| Room 1: Front Desk | 23 | 8 | 4 |
+| Room 1: Front Desk | 25 | 8 | 2 |
 | Room 2: Sales | 34 | 4 | 1 |
 | Room 3: Deal | 25 | 13 | 5 |
 | Uploads and their checks | 2 | 28 | 22 |
@@ -34,8 +34,8 @@ Tick a line only when it works and has a test. Update this file in the same chan
 | Room 6: Compliance | 25 | 7 | 7 |
 | Room 7: Review | 0 | 9 | 12 |
 | Room 8: Records | 3 | 14 | 11 |
-| Room 9: Lobby | 0 | 3 | 10 |
-| Marketing | 24 | 13 | 4 |
+| Room 9: Lobby | 12 | 2 | 0 |
+| Marketing | 25 | 13 | 3 |
 | Each deal type, step by step | 1 | 34 | 7 |
 | When things go wrong | 0 | 12 | 8 |
 | Cases from Part 4 | 0 | 9 | 8 |
@@ -120,7 +120,7 @@ The spec's own rule says: where parts disagree, build neither side until answere
 - [ ] **D7. Does every Fact go to Compliance first, or money only?** The spec says every Fact; the code does money only, so "it's 3.1M not 2.8M" never reaches Compliance. Recommended: every money, identity, price and finance Fact.
 - [ ] **D8. Does Review stand before every approval?** It would change every approval path. Does Studio's room-lead check count as Review?
 - [ ] **D9. Commission and closing.** The stage table needs commission received before `closed_won`. The failure table and end-to-end box 8 close the Case and report commission due. The code requires it paid. Box 8 cannot pass until this is decided.
-- [ ] **D10. Name clash: "Lobby".** In the code it is the staff request board; in the spec a learning room. Recommended: rename the code's to "Requests".
+- [x] **D10. Name clash: "Lobby".** Screens now say "Requests board" for the staff board; the spec's room is the Lobby. The board's `lobby.*` events stay, since the log can't be rewritten ([open-questions.md](open-questions.md)).
 
 **Sales**
 
@@ -277,7 +277,7 @@ Today only Nova is real, and only the owner can reach her; a test expects staff 
 
 - [x] Greets on arrival, once a day, by name, with the top 3.
 - [x] Morning brief across the rooms: urgent, today, pipeline, money, decisions, stuck, on the Nova page. Compliance flags, overdue money and unanswered calls are in it.
-- [ ] 🟡 Weekly Monday numbers and one Lobby idea. Needed: Rooms 8 and 9, not built yet. The slot on the page is ready.
+- [ ] 🟡 Weekly Monday numbers and one Lobby idea. There: the Lobby idea. Needed: the weekly numbers (Room 8).
 - [x] "How's the Marina deal?"
 - [x] "Who hasn't called Sara back?"
 - [ ] 🟡 "Book my trip from this email." There: travel search with sources, ending in a draft for a yes, using Muse web search. Needed: reading email and holding a booking (outside).
@@ -394,10 +394,10 @@ Built at department level in `access.py`. The spec's table is finer, and "Status
 
 - [x] **Owner:** all nine.
 - [x] Sign-in, department pages and routes, forced identity, event filtering, client documents limited to the deal team.
-- [ ] 🟡 **Broker.** Needed: own brief; own leads and deals (sees all today, D16); status only for Ops and Compliance (sees all); own commission; own Review items; own numbers; Lobby read.
+- [ ] 🟡 **Broker.** Needed: own brief; own leads and deals (sees all today, D16); status only for Ops (sees all; Compliance is status only since 1 Nov); own commission; own Review items; own numbers; Lobby read.
 - [ ] 🟡 **Sales lead.** There: all leads and deals. Needed: own brief, status-only views, team commission, team items, team numbers, Lobby read and propose.
-- [ ] 🟡 **Deal and Ops staff.** There: Deal and Ops. Needed: own brief, Sales read (403 today), status-only Finance and Compliance, Deals in Records, Lobby read.
-- [ ] 🟡 **Finance.** There: no Sales, all Finance. Needed: Deal amounts only (sees quotes today), no Ops, payment flags only in Compliance, Money in Records, own brief, Lobby read.
+- [ ] 🟡 **Deal and Ops staff.** There: Deal and Ops. There too: Compliance is status only. Needed: own brief, Sales read (403 today), status-only Finance, Deals in Records, Lobby read.
+- [ ] 🟡 **Finance.** There: no Sales, all Finance. There too: payment flags only in Compliance, no client documents. Needed: Deal amounts only (sees quotes today), no Ops in the deal view, Money in Records, own brief, Lobby read.
 - [ ] 🟡 **Compliance officer.** There: all Compliance. Needed: Sales read (403 today, a test expects it), read-only Deal and Ops, Payments, compliance files in Records, own brief, Lobby read.
 - [ ] **Status-only views** in every room that needs them.
 
@@ -425,7 +425,7 @@ Built 31 Oct: `diwan/agents/frontdesk.py`, the Nova page, and the "Ask your PA" 
 - [x] Pipeline: new, hot, moved, by stage, and stuck over the owner's N days.
 - [x] Money: payments marked, invoices, commission due.
 - [ ] 🟡 Decisions. There: each with an Open link to the Deal desk. Needed: approve and send-back buttons on the card, which come with the Review room.
-- [ ] One Lobby idea. Needs Room 9.
+- [x] One Lobby idea.
 
 ### Errands, all ending in a draft the owner approves
 
@@ -444,7 +444,7 @@ Built 31 Oct: `diwan/agents/frontdesk.py`, the Nova page, and the "Ask your PA" 
 ### Blocks on screen
 
 - [x] Today · Urgent · Decisions · Pipeline · Money · Stuck · Errands · Reminders · Mode chip.
-- [ ] Lobby idea of the day.
+- [x] Lobby idea of the day.
 
 ### Personal PAs (the shared kit)
 
@@ -877,21 +877,22 @@ Today Review is an automatic check on drafts: does this rest on words that were 
 
 ## Room 9: Lobby
 
-Nothing of the spec's Lobby exists. `agents/lobby.py` is a different thing: the staff request board (D10).
+Built on 31 Oct 2026: `diwan/lobby_room.py`, `diwan/lobby_api.py`, `web/lobby.html`, the Lobby on the floor. Checked by `tests/test_lobby_room.py` and in a real browser (`e2e/lobby_flow.py`). `agents/lobby.py` is the staff requests board (D10). Decisions L1 to L6 are in [open-questions.md](open-questions.md).
 
-- [ ] Lobby room on the floor, with a host and a rep per room.
-- [ ] Input: anonymised, opt-in playbooks from other offices.
-- [ ] 🟡 Input: competitor posts: in Studio, nothing reads them here.
-- [ ] Input: portal trends, DLD data, news on projects and regulation (outside).
-- [ ] 🟡 Input: send-backs, lost reasons, Rania's unanswered questions: logged, nothing reads them.
-- [ ] Weekly thread per room, ending in at most one experiment.
-- [ ] Experiment: change, audience, period, metric.
-- [ ] Owner approves; Records reports; keep or roll back.
-- [ ] One idea a day in the brief.
-- [ ] 🟡 Agents cannot apply their own changes. There: lessons need a person's yes. Needed: a way for agents to suggest.
-- [ ] Compliance rules and Settings cannot change from the Lobby.
-- [ ] Blocks: threads, playbook cards, proposed, running, kept and rolled back.
-- [ ] Test: an experiment changes a template only for its audience and period.
+- [x] Lobby room on the floor, with a host and a rep per room.
+- [ ] 🟡 Input: anonymised, opt-in playbooks from other offices. There: the opt-in, the no-client-data filter, and playbooks people file by hand. Needed: something that carries them between offices (outside).
+- [x] Input: competitor posts: the Marketing rep reads the best one of the week.
+- [ ] 🟡 Input: portal trends, DLD data, news on projects and regulation (outside). There: a person can file what they read as a playbook. Needed: the feeds.
+- [x] Input: send-backs, lost reasons, Rania's unanswered questions: as counts and topics, never a client's words.
+- [x] Weekly thread per room, ending in at most one experiment. Written by rules from the log: no model is called.
+- [x] Experiment: change, audience, period, metric.
+- [x] Owner approves; Records reports; keep or roll back. Half the audience is the comparison; the change stops by itself at the end of the period.
+- [x] One idea a day in the brief.
+- [x] Agents cannot apply their own changes: they suggest, the owner approves, and it is a dated lesson while it runs.
+- [x] Compliance rules and Settings cannot change from the Lobby: refused by kind, by word and by agent, on proposal and again on approval.
+- [x] Blocks: threads, playbook cards, proposed, running, kept and rolled back.
+- [x] Test: an experiment changes a template only for its audience and period.
+- [x] Monthly: experiments kept and rolled back, on the 1st.
 
 ## Marketing
 
@@ -915,7 +916,7 @@ One stage per piece of content, `idea` to `archived`, folded from the spec's eve
 - [x] Idea from a topic the owner sets.
 - [x] Idea from a new listing or a price change: suggested on the Results tab, written only when a person presses.
 - [ ] 🟡 Idea from a competitor signal: read in every run; a signal does not start one.
-- [ ] Idea from a Lobby idea.
+- [x] Idea from a Lobby idea: an approved content experiment reaches the Studio as an idea its people may write.
 - [x] Brief approved by a person: pressing Write is the yes; an automatic run waits for one. `briefed` stage.
 - [x] Scripted: three scripts from their own Facts, the person picks.
 - [ ] 🟡 In production: video, captions, cover. Free video has a Windows voice, not run end to end; HeyGen is (outside).

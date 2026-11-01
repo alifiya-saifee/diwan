@@ -304,7 +304,7 @@ def test_marketing_reaches_its_new_screens_and_a_broker_does_not():
 def test_the_setup_form_loads_every_switch_as_a_tick():
     from pathlib import Path
     page = (Path(__file__).parent.parent / "web/studio.html").read_text(encoding="utf-8")
-    assert 'RH_SWITCH = ["auto", "refresh", "auto_post", "approve_brief"]' in page and "RH_SWITCH.includes(k)) $(id).checked" in page
+    assert 'RH_SWITCH = ["auto", "refresh", "auto_post", "approve_brief", "plan_ahead"]' in page and "RH_SWITCH.includes(k)) $(id).checked" in page
 
 
 def test_a_long_spoken_turn_becomes_short_captions_in_order():
@@ -360,14 +360,22 @@ def test_approved_stays_on_its_day_and_needs_no_second_yes(office):
     assert v["state"] == "approved" and v["ref"] == ref and rhythm.approved(office, ref)
 
 
-def test_rejected_comes_off_and_the_day_takes_the_next_best(office):
+def test_removed_comes_off_and_the_day_stays_empty(office):
     p = week(office)
     day, ref = p["days"][1]["date"], p["days"][1]["ref"]
     rhythm.decide_day(office, day, "reject", by="maya")
     v = marketing.plan_view(office)
-    assert v["days"][1]["ref"] != ref and v["days"][1]["state"] == "pending"
+    assert len(v["days"]) == len(p["days"]) - 1 and day not in {d["date"] for d in v["days"]} and ref not in {d["ref"] for d in v["days"]}
     assert [r["date"] for r in v["removed"]] == [day]
-    assert len({d["ref"] for d in v["days"] if d["ref"]}) == len([d for d in v["days"] if d["ref"]])
+
+
+def test_removing_every_day_leaves_no_plan_and_no_old_plan_comes_back(office):
+    p = week(office)
+    for d in p["days"]:
+        rhythm.decide_day(office, d["date"], "reject", by="maya")
+    v = marketing.plan_view(office)
+    assert v["days"] == [] and len(v["removed"]) == len(p["days"])
+    assert len(week(office)["days"]) == len(p["days"])  # a new plan still works
 
 
 def test_everything_waiting_is_in_one_list(office, monkeypatch):
@@ -419,3 +427,104 @@ def test_a_floor_nobody_gave_is_a_made_up_claim():
     from diwan.agents import qa
     assert [m.group(1) for m in qa.CLAIM.finditer("You are on the 12th floor, 15 years of trust, 3-storey villa")] == ["12", "15", "3"]
     assert not qa.CLAIM.search("One bedroom on a high floor")
+
+
+def test_a_stopped_post_is_gone_everywhere_and_a_new_run_starts_clean(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from diwan import app as appmod
+    monkeypatch.setattr(meta, "MEDIA", tmp_path / "media")
+    with TestClient(appmod.app) as c:
+        o = appmod.S.office
+        asyncio.run(studio.run(o, "MC-1204", pause=0))
+        studio.approve_script_now(o, "MC-1204", choice=studio.script_options(o, studio.script_request(o, "MC-1204").props["text"])[0]["id"])
+        o.log.append("footage.added", actor="maya", content={"id": "F9", "ref": "MC-1204", "path": "x.mp4", "served": "/media/x.mp4"})
+        studio._made(o, "mart", "cut", "MC-1204", {"served": "/media/x.mp4", "lines": 3}, None)
+        studio.ask_to_publish(o, "MC-1204", studio.made(o, "cut", "MC-1204"), studio.made(o, "post text", "MC-1204"), studio.schedule(o, None), None)
+        film = [t for t in o.graph().of("task", status="queued") if t.props.get("agent") == "mshoot" and "MC-1204" in t.props["action"]]
+        assert film
+        w = next(x for x in marketing.waiting(o) if x["ref"] == "MC-1204" and x["kind"] == "publish")
+        assert c.post(f"/api/requests/{w['id']}/decide", json={"decision": "reject", "note": "Not good enough", "by": "maya"}).json()["ok"]
+        s = c.get("/api/studio?ref=MC-1204").json()
+        assert s["stopped"]["why"] == "Not good enough" and not s["script_approved"] and s["footage"] is None
+        assert not any(s["made"][k] for k in ("cut", "script", "post text", "film list", "ideas", "cover"))
+        assert all(x["state"] == "not yet" for x in s["chain"])
+        assert not [t for t in o.graph().of("task", status="queued") if t.props.get("agent") == "mshoot" and "MC-1204" in t.props["action"]]
+        assert "MC-1204" not in {u["ref"] for u in rhythm.used(o)}
+        assert studio.publish(o, "MC-1204", by="maya").get("ok") is False
+        asyncio.run(studio.run(o, "MC-1204", pause=0))
+        s = c.get("/api/studio?ref=MC-1204").json()
+        assert s["stopped"] is None and s["made"]["ideas"] and s["made"]["cut"] is None and s["footage"] is None
+
+
+def test_a_stopped_post_leaves_the_plan_and_stays_off_it(office):
+    p = week(office)
+    day = next(d for d in p["days"] if d.get("ref") and not d["ref"].startswith("JOB-"))
+    rhythm.start_day(office, day["date"], by="maya")
+    marketing.withdraw(office, day["ref"], "not good enough")
+    assert day["ref"] not in {d.get("ref") for d in marketing.plan_view(office)["days"]}
+    assert day["date"] not in {d["date"] for d in marketing.plan_view(office)["days"]}
+    again = rhythm.make_plan(office, date.fromisoformat(day["date"]), auto=False, days_ahead=7)
+    assert day["ref"] not in {d.get("ref") for d in again["days"]}
+
+
+def test_a_stopped_first_post_still_has_to_be_done(office):
+    from diwan.agents import journey
+    business.save(office, {"posted_before": "no"}, by="maya")
+    brand.save(office, {"name": "Diwan Realty", "positioning": "A Dubai brokerage."}, by="maya")
+    asyncio.run(studio.run(office, "JOB-introduce", pause=0))
+    studio.approve_script_now(office, "JOB-introduce", choice=studio.script_options(office, studio.script_request(office, "JOB-introduce").props["text"])[0]["id"])
+    assert journey.report(office)["steps"][0]["state"] == "done"
+    marketing.withdraw(office, "JOB-introduce", "the pictures look wrong")
+    r = journey.report(office)
+    assert r["steps"][0]["state"] == "waiting" and r["next"]["ref"] == "JOB-introduce"
+
+
+def waiting_post(o, ref="MC-1204"):
+    asyncio.run(studio.run(o, ref, pause=0))
+    studio.approve_script_now(o, ref, choice=studio.script_options(o, studio.script_request(o, ref).props["text"])[0]["id"])
+    studio._made(o, "mart", "cut", ref, {"served": "/media/x.mp4", "lines": 3}, None)
+    studio.ask_to_publish(o, ref, studio.made(o, "cut", ref), studio.made(o, "post text", ref), studio.schedule(o, None), None)
+    return next(x for x in marketing.waiting(o) if x["ref"] == ref and x["kind"] == "publish")
+
+
+def test_a_yes_that_can_not_happen_leaves_the_post_waiting(office, monkeypatch):
+    from fastapi.testclient import TestClient
+    from diwan import app as appmod
+    with TestClient(appmod.app) as c:
+        o = office
+        monkeypatch.setattr(appmod.S, "office", o)
+        w = waiting_post(o)
+        for body in ({"decision": "approve", "note": "now"}, {"decision": "approve"}):
+            r = c.post(f"/api/requests/{w['id']}/decide", json=body | {"by": "maya"}).json()
+            assert r["ok"] is False and r["needs"]
+            assert w["id"] in {x["id"] for x in marketing.waiting(o)}
+        monkeypatch.setattr(studio, "_missing", lambda o, ref: [])
+        assert c.post(f"/api/requests/{w['id']}/decide", json={"decision": "approve", "by": "maya", "at": "2020-01-01T10:00"}).json()["needs"] == ["a time still ahead"]
+        assert w["id"] in {x["id"] for x in marketing.waiting(o)}
+        assert c.post(f"/api/requests/{w['id']}/decide", json={"decision": "approve", "by": "maya", "at": "2099-01-01T10:00"}).json()["ok"]
+        assert w["id"] not in {x["id"] for x in marketing.waiting(o)} and "MC-1204" in studio.scheduled(o)
+        assert c.post("/api/studio/unschedule", json={"ref": "MC-1204", "by": "maya"}).json()["ok"]
+        assert "MC-1204" not in studio.scheduled(o) and [x for x in marketing.waiting(o) if x["ref"] == "MC-1204" and x["kind"] == "publish"]
+
+
+def test_the_page_shows_only_this_posts_cards_and_points_to_the_others(office, monkeypatch):
+    from fastapi.testclient import TestClient
+    from diwan import app as appmod
+    with TestClient(appmod.app) as c:
+        o = office
+        monkeypatch.setattr(appmod.S, "office", o)
+        other = next(y["ref"] for y in rhythm.listings(o) if y["ref"] != "MC-1204")
+        asyncio.run(studio.run(o, "MC-1204", pause=0))
+        s = c.get(f"/api/studio?ref={other}").json()
+        assert s["approvals"] == [] and "MC-1204" in {x["ref"] for x in s["others"]}
+        s = c.get("/api/studio?ref=MC-1204").json()
+        assert s["approvals"] and "MC-1204" not in {x["ref"] for x in s["others"]}
+
+
+def test_a_stopped_moment_does_not_come_back_as_news(office):
+    from diwan import topics
+    from diwan.agents import journey
+    ref = topics.save_moment(office, {"title": "New office", "what": "We opened a new office in the Marina this week."}, by="maya")
+    assert ref in {m["ref"] for m in journey.moments(office)}
+    marketing.withdraw(office, ref, "not this")
+    assert ref not in {m["ref"] for m in journey.moments(office)}

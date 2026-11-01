@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan Lobby</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  /* the spec's blocks: this week's threads, playbooks, proposed, running, kept and rolled back */
+  .top { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+  .top h1 { margin: 0; } .top .sp { flex: 1; }
+  .idea { border: 1px solid rgba(232, 199, 122, .4); background: var(--gold-soft); border-radius: 12px; padding: 12px 14px; margin-bottom: 18px; }
+  .idea small, .sub { color: var(--muted); font-size: 12.5px; }
+  .block { margin-bottom: 26px; } .block > h2 { font-size: 15px; margin: 0 0 10px; display: flex; gap: 8px; align-items: baseline; } .block > h2 .n { font: 600 12px var(--mono); color: var(--gold); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: rgba(255, 255, 255, .02); }
+  .card.wait { border-color: rgba(240, 179, 94, .45); background: var(--warn-soft); }
+  .card h3 { font-size: 14px; margin: 0 0 6px; }
+  .card .say { font-size: 13px; margin: 5px 0; } .card .say b { color: var(--gold-2); font-weight: 600; }
+  .said { font-size: 13px; padding: 8px 10px; border-left: 2px solid var(--gold); background: rgba(0, 0, 0, .2); margin: 8px 0; white-space: pre-wrap; }
+  .meta { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 3px 10px; font-size: 12.5px; margin: 8px 0; } .meta span:nth-child(odd) { color: var(--muted); }
+  .bars { margin: 8px 0; font-size: 12.5px; } .bars .b { display: grid; grid-template-columns: 74px 1fr 92px; gap: 8px; align-items: center; margin: 3px 0; }
+  .bars i { display: block; height: 8px; border-radius: 4px; background: var(--gold); min-width: 2px; } .bars .ctrl i { background: var(--muted); }
+  .verdict { font-weight: 600; } .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; } .chips a { font: 500 11.5px var(--mono); margin-right: 6px; }
+  form.add { display: grid; gap: 8px; max-width: 640px; } form.add .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .empty { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main id="main"><p class="empty">Loading the Lobby…</p></main>
+<script type="module">
+import { h, api, post, header, toast, SESSION } from "./app.js";
+header("lobby.html");
+const $ = (id) => document.getElementById(id);
+const when = (s) => new Date(s).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+const send = async (url, body, ok) => {
+  try {
+    await post(url, { by: SESSION.person, ...body });
+    if (ok) toast(ok);
+    document.querySelectorAll("details[open]").forEach((d) => { d.open = false; });
+    show();
+  } catch (e) { toast(e.message || "That didn't work"); }
+};
+let R = null, editing = null, typing = false;
+
+function result(r) {
+  if (!r) return null;
+  const top = Math.max(r.test.rate || 0, r.control.rate || 0) || 1, pct = r.metric === "leads_per_post" || r.metric === "send_backs" ? (x) => x ?? "none" : (x) => (x == null ? "none" : `${Math.round(x * 100)}%`);
+  const names = r.metric === "send_backs" ? ["During", "Before"] : ["With it", "Without"];
+  const row = (label, s, cls) => h("div", { class: `b ${cls}` }, h("span", {}, label), h("span", {}, h("i", { style: `width:${((s.rate || 0) / top) * 100}%` })), h("span", {}, `${pct(s.rate)} (${s.n} of ${s.of})`));
+  const links = [...(r.test.refs || []), ...(r.control.refs || [])].slice(0, 12).map((d) => h("a", { href: `deal.html?deal=${encodeURIComponent(d)}` }, d));
+  return h("div", { class: "bars" }, h("div", { class: "sub" }, r.label, " · from Records"), row(names[0], r.test, "tst"), row(names[1], r.control, "ctrl"),
+    h("div", { class: "verdict" }, r.verdict[0].toUpperCase() + r.verdict.slice(1)),
+    links.length ? h("details", {}, h("summary", {}, "The rows behind it"), h("div", { class: "chips" }, ...links)) : null);
+}
+
+function meta(x) {
+  return h("div", { class: "meta" }, h("span", {}, "What"), h("span", {}, x.kind_label + (x.kind === "followup" ? ` (follow-up ${x.n})` : "") + (x.agent ? ` for ${R.agents[x.agent] || x.agent}` : "")),
+    h("span", {}, "For whom"), h("span", {}, x.who + (x.status === "kept" ? "" : x.control_pct ? `, ${100 - x.control_pct}% get it, ${x.control_pct}% are the comparison` : "")),
+    h("span", {}, "How long"), h("span", {}, x.starts ? `${when(x.starts)} to ${when(x.ends)}` : `${x.days} days`), h("span", {}, "Watching"), h("span", {}, x.metric_label),
+    h("span", {}, "From"), h("span", {}, `${x.by}, ${x.room}`));
+}
+
+function proposed(x) {
+  const body = [h("h3", {}, `${x.id} · ${x.title}`), x.why ? h("div", { class: "sub" }, x.why) : null];
+  if (editing === x.id) {
+    const text = h("textarea", { rows: 3 }); text.value = x.text;
+    const days = h("input", { type: "number", min: 3, max: 90, value: x.days });
+    const lang = h("select", {}, ...[["", "Any language"], ["en", "English"], ["ar", "Arabic"]].map(([v, l]) => h("option", { value: v, ...(x.audience.language === v ? { selected: true } : {}) }, l)));
+    body.push(h("label", {}, "The words", text), h("label", {}, "Days", days), h("label", {}, "Language", lang),
+      h("div", { class: "acts" }, h("button", { class: "primary", onclick: () => { editing = null; typing = false; send(`/api/lobby-room/${x.id}/approve`, { edits: { text: text.value, days: +days.value, audience: { ...x.audience, language: lang.value } } }, "Approved: it's running"); } }, "Approve as edited"),
+        h("button", { onclick: () => { editing = null; typing = false; show(true); } }, "Cancel")));
+  } else {
+    body.push(h("div", { class: "said" }, x.text), meta(x));
+    if (R.owner) {
+      const why = h("input", { placeholder: "Why not (optional)" });
+      body.push(h("div", { class: "acts" }, h("button", { class: "primary", onclick: () => send(`/api/lobby-room/${x.id}/approve`, {}, "Approved: it's running") }, "Approve"),
+        h("button", { onclick: () => { editing = x.id; typing = true; show(true); } }, "Edit first"),
+        why, h("button", { onclick: () => send(`/api/lobby-room/${x.id}/refuse`, { reason: why.value }, "Refused") }, "Refuse")));
+    }
+  }
+  return h("div", { class: "card" }, ...body.filter(Boolean));
+}
+
+function running(x) {
+  return h("div", { class: "card" }, h("h3", {}, `${x.id} · ${x.title}`), h("div", { class: "said" }, x.text), meta(x), result(x.result),
+    R.owner ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/lobby-room/${x.id}/rollback`, { reason: "Stopped early" }, "Rolled back") }, "Stop and roll back")) : null);
+}
+
+function waiting(x) {
+  return h("div", { class: "card wait" }, h("h3", {}, `${x.id} · ${x.title}`), h("div", { class: "sub" }, "The period is over and the change has stopped. Records says:"), result(x.result), h("div", { class: "say" }, x.result.line),
+    R.owner ? h("div", { class: "acts" }, h("button", { class: "primary", onclick: () => send(`/api/lobby-room/${x.id}/keep`, {}, "Kept: the whole audience gets it") }, "Keep it"),
+      h("button", { onclick: () => send(`/api/lobby-room/${x.id}/rollback`, {}, "Rolled back: the office is as it was") }, "Roll it back")) : null);
+}
+
+function done(x) {
+  return h("div", { class: "card" }, h("h3", {}, `${x.id} · ${x.title}`), h("div", { class: "sub" }, `${x.status[0].toUpperCase() + x.status.slice(1)} by ${x.decided_by || "the owner"}${x.ended_at ? `, ${when(x.ended_at)}` : ""}${x.reason ? `: ${x.reason}` : ""}`),
+    x.result ? h("div", { class: "say" }, x.result.line) : null,
+    x.status === "kept" && R.owner ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/lobby-room/${x.id}/rollback`, { reason: "No longer wanted" }, "Rolled back") }, "Roll it back")) : null);
+}
+
+function block(title, items, render, empty) {
+  return h("section", { class: "block" }, h("h2", {}, title, items.length ? h("span", { class: "n" }, String(items.length)) : null),
+    items.length ? h("div", { class: "grid" }, ...items.map(render)) : h("p", { class: "empty" }, empty));
+}
+
+function playbookForm() {
+  const room = h("select", {}, ...Object.entries(R.rooms).map(([k, v]) => h("option", { value: k }, v)));
+  const pattern = h("input", { placeholder: "The pattern, e.g. a follow-up on day 3 with a floor plan" }), where = h("input", { placeholder: "Where it was seen" }), evidence = h("input", { placeholder: "The evidence" });
+  const kind = h("select", {}, h("option", { value: "" }, "Just note it"), ...Object.entries(R.kinds).filter(([k]) => k !== "instruction").map(([k, v]) => h("option", { value: k }, v.label)));
+  const text = h("textarea", { rows: 2, placeholder: "The words of the change, if it should become a proposal when it fits" });
+  return h("details", {}, h("summary", {}, "Add a playbook"), h("form", { class: "add", onsubmit: (e) => { e.preventDefault(); typing = false; send("/api/lobby-room/playbooks", { draft: { room: room.value, pattern: pattern.value, where: where.value, evidence: evidence.value, source: "public", kind: kind.value, text: text.value } }, "Added"); } },
+    room, pattern, h("div", { class: "two" }, where, evidence), kind, text, h("button", { class: "primary" }, "Add")));
+}
+
+function proposeForm() {
+  const kind = h("select", {}, ...Object.entries(R.kinds).map(([k, v]) => h("option", { value: k }, v.label)));
+  const metric = h("select", {});
+  const fill = () => metric.replaceChildren(...Object.entries(R.kinds[kind.value].metrics).map(([k, v]) => h("option", { value: k }, v)));
+  kind.addEventListener("change", fill); fill();
+  const title = h("input", { placeholder: "The change in a few words" }), text = h("textarea", { rows: 3, placeholder: "The words. {name} and {broker} are filled in on a follow-up. An instruction starts with Always." }), why = h("input", { placeholder: "Why this office needs it" });
+  const days = h("input", { type: "number", min: 3, max: 90, value: R.rules.period_days });
+  const agent = h("select", {}, ...Object.entries(R.agents).map(([k, v]) => h("option", { value: k }, v)));
+  return h("details", {}, h("summary", {}, "Propose an experiment"), h("form", { class: "add", onsubmit: (e) => { e.preventDefault(); typing = false; send("/api/lobby-room/propose", { draft: { kind: kind.value, title: title.value, text: text.value, why: why.value, metric: metric.value, days: +days.value, agent: kind.value === "instruction" ? agent.value : null } }, "Proposed for the owner"); } },
+    h("div", { class: "two" }, kind, metric), title, text, why, h("div", { class: "two" }, days, agent), h("button", { class: "primary" }, "Propose")));
+}
+
+async function show(force) {
+  if (force !== true && (typing || document.querySelector("details[open] form"))) return;  // never redraw over what someone is typing
+  try { R = await api(`/api/lobby-room?by=${encodeURIComponent(SESSION.person)}`); } catch (e) { $("main").replaceChildren(h("p", { class: "empty" }, "Can't reach Diwan. Trying again…")); return; }
+  $("main").replaceChildren(
+    h("div", { class: "top" }, h("h1", {}, "Lobby"), h("span", { class: "sub" }, "What others do, what went wrong here, and what we try next. Nothing changes until the owner approves."), h("span", { class: "sp" }),
+      R.owner ? h("button", { onclick: () => send("/api/lobby-room/threads/run", {}, "This week's threads are written") }, "Write this week's threads now") : null),
+    R.idea ? h("div", { class: "idea" }, h("b", {}, "Idea of the day: "), R.idea.text, R.idea.why ? h("div", {}, h("small", {}, R.idea.why)) : null) : null,
+    R.waiting.length ? block("Finished: your decision", R.waiting, waiting, "") : h("span"),
+    block("Proposed experiments", R.proposed, proposed, "Nothing waiting. The reps propose after each week's threads."),
+    block("Running", R.running, running, "No experiment is running."),
+    block(`This week's threads${R.week ? `, ${R.week}` : ""}`, R.threads, (t) => h("div", { class: "card" }, h("h3", {}, t.room), ...t.lines.map((l) => h("div", { class: "say" }, h("b", {}, l.name, ": "), l.text))), "No threads yet. They are written on the owner's day each week."),
+    h("section", { class: "block" }, h("h2", {}, "Playbooks", R.playbooks.length ? h("span", { class: "n" }, String(R.playbooks.length)) : null),
+      R.playbooks.length ? h("div", { class: "grid" }, ...R.playbooks.map((b) => h("div", { class: "card" }, h("h3", {}, b.pattern), h("div", { class: "meta" }, h("span", {}, "Room"), h("span", {}, b.room), h("span", {}, "Seen"), h("span", {}, b.where), h("span", {}, "Evidence"), h("span", {}, b.evidence)),
+        R.may_propose ? h("div", { class: "acts" }, h("button", { onclick: () => send(`/api/lobby-room/playbooks/${b.id}/remove`, {}, "Removed") }, "Remove")) : null))) : h("p", { class: "empty" }, "No playbooks yet. Offices don't share them by themselves: add what you've seen in public, with its evidence."),
+      R.may_propose ? playbookForm() : null, R.may_propose ? proposeForm() : null),
+    block("Kept", R.kept, done, "Nothing kept yet."), block("Rolled back", R.rolled_back, done, "Nothing rolled back."),
+    R.refused.length ? block("Refused", R.refused, done, "") : h("span"));
+}
+show();
+setInterval(() => show(), 15000);
+</script>
+</body>
+</html>

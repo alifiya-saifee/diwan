@@ -17,9 +17,16 @@ CONFLICTS = {"payer": "payer", "deal_term": "amount_aed"}  # kinds where two dif
 class Office:
     def __init__(self, log: EventLog):
         self.log = log
+        self.folded: tuple[int, Graph] | None = None  # the graph is the log's fold: it only changes when the log does
 
     def graph(self, upto: int | None = None) -> Graph:
-        return build(self.log.list(), upto)
+        events = self.log.list()
+        if upto is not None:
+            return build(events, upto)
+        last = events[-1]["id"] if events else 0
+        if not self.folded or self.folded[0] != last:
+            self.folded = (last, build(events, None))
+        return self.folded[1]
 
     def _next(self, g: Graph, type: str, prefix: str) -> str:
         return f"{prefix}{len(g.of(type)) + 1}"

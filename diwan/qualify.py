@@ -137,10 +137,16 @@ def owner_ids() -> set[str]:
 
 # ---------- the form ----------
 
-def form(g: Graph) -> dict:
-    """The form in force: the owner's latest saved version, or the default (version 0)."""
+def form(g: Graph, deal: str | None = None) -> dict:
+    """The form in force: the owner's latest saved version, or the default (version 0). For a lead, plus the question of an
+    experiment the owner approved for them, which stays out of the owner's own form."""
     saved = getattr(g, "qualify_form", None)
-    return copy.deepcopy(saved) if saved else copy.deepcopy(DEFAULT_FORM) | {"version": 0}
+    f = copy.deepcopy(saved) if saved else copy.deepcopy(DEFAULT_FORM) | {"version": 0}
+    if deal:
+        from diwan import lobby_room
+        if extra := lobby_room.question_field(g, deal):
+            f["common"] = f.get("common", []) + [extra]
+    return f
 
 
 def validate(f: dict) -> list[str]:
@@ -274,7 +280,7 @@ def evaluate(f: dict, qtype: str | None, answers: dict) -> dict:
 
 def state(g: Graph, deal: str) -> dict:
     d = g.nodes[f"deal:{deal}"].props
-    f = form(g)
+    f = form(g, deal)
     answers = d.get("answers", {})
     v = evaluate(f, d.get("qtype"), answers)
     labels = {x["key"]: x["label"] for x in fields_for(f, d.get("qtype"))}
@@ -341,7 +347,7 @@ def record(office: Office, deal: str, *, qtype: str | None, type_quote: str | No
     from diwan.pack import norm
     g = office.graph()
     d = g.nodes[f"deal:{deal}"].props
-    f = form(g)
+    f = form(g, deal)
     keys = {x["key"]: x for x in fields_for(f, qtype or d.get("qtype"))}
     kept = []
     if qtype and qtype in f["types"] and qtype != d.get("qtype"):

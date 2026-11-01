@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from diwan import agency_forms, deal_gates, deal_property, desk_kpis, desk_rules, desk_stages, documents, invoices, roles, signing
+from diwan import access, agency_forms, deal_gates, deal_property, desk_kpis, desk_rules, desk_stages, documents, invoices, roles, signing
 from diwan.agents import compliance, finance, operations, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
@@ -143,7 +143,11 @@ class Ledger:
                  "unscreened": any(t.status in OPEN for t in screens),
                  "checks": any(c.status == "open" and dept(c.props.get("agent")) == "comp" for c in by["check"]), "proof": bool(funds["missing"]),
                  "uncleared": bool(g.settings.get(f"deal:{deal}", {}).get("agreed")) and not compliance.state(g, deal)["ok"]}
-        if any(t.props.get("result") == "possible match" for t in screens):
+        if not access.sees_compliance():  # status only, for everyone outside Compliance (the spec's table)
+            flags.update(unscreened=False, proof=False, cash=False, checks=False, match=False)  # no count or filter can point at a deal
+            cs = compliance.state(g, deal)
+            comp = ("ok", "Cleared") if cs["ok"] else ("warn", "With Compliance") if screens or cs["state"] != "not cleared" else ("none", "Nothing yet")
+        elif any(t.props.get("result") == "possible match" for t in screens):
             comp = ("bad", "Possible match")
         elif self.open_tasks(deal, "report"):
             comp = ("bad", "Cash report to file")
@@ -258,7 +262,7 @@ class Ledger:
             if s["flags"]["uncleared"]:
                 st = compliance.state(self.g, deal)
                 items.append(base | {"id": f"{deal}:clear", "who": roles.holder(self.g, "compliance"), "kind": "Clearance", "sev": "bad" if st["state"] == "blocked" else "warn", "at": s["changed"], "act": "open",
-                                     "title": st["reason"] if st["state"] != "not cleared" else "Converted: clear this deal so its paperwork can go on"})
+                                     "title": ("Converted: clear this deal so its paperwork can go on" if st["state"] == "not cleared" else st["reason"] if access.sees_compliance() else compliance.public_reason(st))})
             risk = self.g.nodes[f"deal:{deal}"].props.get("risk") or {}
             owner = next((p for p, v in PEOPLE.items() if v.get("role") == "Owner"), None)
             if compliance.needs_senior(risk) and not risk.get("senior"):
@@ -314,11 +318,15 @@ class Ledger:
         causes = {made["id"]} | {e["id"] for e in evs if e["caused_by"] == made["id"] and e["type"] == "fact.superseded"}
         after = [e for e in evs if e["caused_by"] in causes]
         olds = [g.nodes[o] for o in f.props.get("replaces", []) if o in g.nodes]
+        rest = {n.id for o in olds for n in g.impact(o.id)}
+        from diwan.floor import room_of
         return {"deal": f.deal, "customer": g.nodes[f"deal:{f.deal}"].props.get("customer"), "fact": f.id, "quote": f.props["quote"],
                 "old": [{"id": o.id, "quote": o.props["quote"]} for o in olds], "at": f.at,
                 "compliance_first": bool(after) and after[0]["type"] == "check.raised",
                 "withdrawn": sum(e["type"] == "task.withdrawn" for e in after), "approvals": sum(e["type"] == "decision.needed" for e in after),
-                "sent_back": sum(e["type"] == "review.returned" for e in after)}
+                "sent_back": sum(e["type"] == "review.returned" for e in after), "recalled": sum(e["type"] == "form.recalled" for e in after),
+                "other": sum(e["type"] == "task.withdrawn" and e["content"]["id"] not in rest for e in after),
+                "rooms": sorted({r for e in after if (r := room_of(e["agent"]))})}
 
 
 def _k(n: float) -> str:
@@ -379,7 +387,7 @@ def deal(deal: str, request: Request):
     try:
         g = _office().graph()
         p = desk_rules.path(g, deal)
-        return deal_view(g, deal) | {"summary": Ledger(g, date.today()).summary(deal), "roles": roles.table(g),
+        return _for_viewer(g, deal_view(g, deal) | {"summary": Ledger(g, date.today()).summary(deal), "roles": roles.table(g),
                                      "path": {"id": p["id"], "name": p["name"], "chosen": bool(g.settings.get(f"deal:{deal}", {}).get("path")),
                                               "from_desk": bool(g.nodes[f"deal:{deal}"].props.get("kind"))},
                                      "commission": finance.commission(g, deal), "closing": operations.closing(g, deal),
@@ -387,9 +395,25 @@ def deal(deal: str, request: Request):
                                      "schedule": dict(zip(("kind", "payee", "document"), finance.SCHEDULE[p["id"]])) if p["id"] in finance.SCHEDULE else None,
                                      "stages": desk_stages.view(g, deal), "agency": _agency_view(g, deal, _base(request)),
                                      "documents": _docs_view(g, deal, _base(request)), "compliance": _compliance_view(g, deal), "gates": deal_gates.view(g, deal),
-                                     "party_types": desk_rules.PARTY_TYPES, "doc_kinds": documents.KINDS}
+                                     "party_types": desk_rules.PARTY_TYPES, "doc_kinds": documents.KINDS})
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
+
+
+def _for_viewer(g: Graph, v: dict) -> dict:
+    """What the person asking may read of a deal. Outside Compliance: its status and nothing behind it, on the server, so no screen
+    can show it by mistake. Finance also doesn't see client documents. People keep anything addressed to them."""
+    me = access.USER.get()
+    if not access.sees_compliance():
+        c = v["compliance"]
+        v["compliance"] = {"state": c["state"], "ok": c["ok"], "reason": compliance.public_reason(c), "hold": c.get("hold"), "risk": None, "blockers": [], "sof_needed": False, "needs_senior": False}
+        v["funds"] = {"numbers": [], "proof": [], "missing": 0}
+        v["tasks"] = [t for t in v["tasks"] if t["dept"] != "comp" or t["needs_person"] == me]
+        v["cards"] = [c for c in v["cards"] if c["dept"] != "comp" or c["who"] == me]
+        v["drafts"] = [d for d in v["drafts"] if d["dept"] != "comp"]
+    if access.department(me) == access.FIN:
+        v["documents"] = {"requests": [], "profile": {}}
+    return v
 
 
 class Answer(BaseModel):
@@ -584,6 +608,8 @@ def prepare_formf(deal: str, body: Run):
     g = o.graph()
     if f"deal:{deal}" not in g.nodes:
         raise HTTPException(404, f"There is no deal {deal!r}.")
+    if (pid(body.by) or body.by) not in desk_stages.movers(g, deal):
+        raise HTTPException(403, "Only the deal's broker, the transactions officer or the owner prepares Form F.")
     if ready := [d for d in g.of("draft", deal) if d.props["kind"] == "Form F" and d.status != "sent_back"]:
         raise HTTPException(409, f"{ready[-1].id} is the current Form F plan.")
     tid = o.add_task(deal, "formf", "Prepare Form F from the live facts", by=pid(body.by) or body.by)

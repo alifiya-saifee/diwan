@@ -160,6 +160,17 @@ ROSTER: list[Charter] = [
       "Someone asks about the numbers", "Records lead", "Says which period or record it would need", ("draft",), (),
       "Estimate a number it cannot compute from the records", "rules"),
 
+    # the Lobby (the spec's Room 9): a host, and one rep from each room, who read and propose and can change nothing
+    C("lhost", "Lobby host", "Runs the discussions", "nova", "lead", "rules",
+      "Runs the weekly thread for each room: what others do, whether it fits this office, and at most one proposed experiment for the owner.",
+      "Reps' notes; playbooks", "Counts and reasons from the log, never what a client said", "One thread per room; proposals with change, audience, period and metric",
+      "Weekly", "The owner", "No signal: no proposal", ("draft",), (), "Apply a change, touch a setting or a compliance rule, or hold client data", "rules"),
+    *[C(i, f"{room} rep", f"{room} in the Lobby", "lhost", None, "rules", f"Reads what went wrong and what worked for {room} this week and suggests one change, its own instructions included.",
+        "Send-backs, lost reasons, unanswered questions, competitor posts", "Counts and reasons from the log, never what a client said", "A note for the week's thread",
+        "Weekly", "Lobby host", "Says there is nothing this week", ("draft",), (), "Apply its own suggestion", "rules")
+      for i, room in (("lfront", "Front desk"), ("lsales", "Sales"), ("lmkt", "Marketing"), ("ldeal", "Deal"), ("lops", "Operations"), ("lfin", "Finance"),
+                      ("lcomp", "Compliance"), ("lreview", "Review"), ("lrecords", "Records"))],
+
     # the content studio: five rooms and a library, modelled on how a short-form content team works
     C("mkt", "Marketing lead", "Runs the content studio", "nova", "lead", "spark",
       "Turns listings and the brand into short videos that bring enquiries, and hands every enquiry to Rania and Sales.",

@@ -9,6 +9,8 @@ writers. Topics are named by the model for the business's own industry, so nothi
 """
 from __future__ import annotations
 
+from collections import Counter
+
 import httpx
 
 from diwan import brand, business
@@ -240,6 +242,15 @@ def _need(found: list, wins: list, j: dict | None = None, whose: str = "their") 
     if len(wins) < MIN_WINS:
         return f"Not enough posts yet to tell: {len(wins)} winning post{'s' if len(wins) != 1 else ''} read, a pattern needs {MIN_WINS} that share it."
     return "No clear pattern yet: the winners differ from each other as much as from the ordinary posts."
+
+
+def winning(office: Office) -> dict:
+    """What competitors' winning posts show, pooled across accounts: one account alone has too few to say."""
+    done = reads(office)
+    wins = [done[p["id"]] for ps in _saved_posts(office).values() for p in ps if p["id"] in done and studio.is_outlier(p)]
+    shows = Counter(r.get("on_screen") for r in wins if r.get("on_screen") not in (None, "", "something else"))
+    top = ", ".join(f"{k} ({n} of {len(wins)})" for k, n in shows.most_common(3))
+    return {"posts": len(wins), "on_screen": dict(shows), "line": top or "not known yet"}
 
 
 def patterns(office: Office) -> dict:

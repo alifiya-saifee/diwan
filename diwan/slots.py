@@ -161,7 +161,7 @@ def is_open(g: Graph, broker: str, t: datetime, minutes: int = 60, ignore: str |
 
 def _may(by: str, broker: str) -> None:
     from diwan import leads, qualify
-    if broker not in leads.brokers():
+    if broker not in leads.brokers() and not (broker == by and by in qualify.owner_ids()):  # the owner keeps time of their own too
         raise ValueError(f"{broker} is not a broker")
     if by != broker and by not in qualify.owner_ids():
         raise PermissionError("A broker changes only their own calendar; the owner changes anyone's")

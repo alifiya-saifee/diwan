@@ -75,6 +75,20 @@ def test_a_missed_call_moves_to_the_next_free_broker_and_keeps_the_client_covere
     assert g.nodes[c.id].props["who"] == next_up and g.nodes[c.id].props["moved_from"] == first and not g.nodes[c.id].props.get("overdue")
 
 
+def test_a_call_late_a_second_time_is_said_once_not_every_minute(office, monkeypatch):
+    say(office, "call me")
+    leads.sweep(office, NOON + timedelta(minutes=11))  # moved to the next broker
+    monkeypatch.setattr(leads, "next_free", lambda *a: None)  # nobody left to move it to
+    late = NOON + timedelta(minutes=30)
+    leads.sweep(office, late)
+    count = lambda: sum(e["type"] == "notify.sent" and e["content"]["kind"] == "overdue" for e in office.log.list())  # noqa: E731
+    said = count()
+    for m in range(1, 6):
+        leads.sweep(office, late + timedelta(minutes=m))
+    assert count() == said
+    assert office.graph().nodes[card(office).id].props["overdue"]
+
+
 def test_a_follow_up_the_broker_set_does_not_move_when_it_runs_late(office):
     say(office, "Hello")
     leads.follow_up_on(office, PH, by=deal(office)["broker"], at=NOON + timedelta(hours=1), kind="call", note="", now=NOON)

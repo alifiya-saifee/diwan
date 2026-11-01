@@ -84,7 +84,10 @@ def report(office: Office, now: datetime | None = None) -> dict:
     enquiries = marketing.leads_by_angle(office)  # what brought people in counts for more than what got likes
     market: dict[str, list[float]] = {}
     big: dict[str, int] = {}  # outliers per angle: above their account's average
+    saved = {n.lower() for n in studio.competitors(office.graph())}
     for p in studio.posts(office, "competitor"):
+        if p["account"].lower() not in saved and not p.get("imported"):
+            continue  # an account no longer followed says nothing about this market
         a = angle_of(p.get("caption") or "")
         if a and p.get("score"):
             market.setdefault(a, []).append(p["score"])

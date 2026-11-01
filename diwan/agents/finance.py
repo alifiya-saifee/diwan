@@ -38,6 +38,26 @@ def payment_rules(office: Office, deal: str, cause: int) -> None:
         office.add_task(deal, "pay", f"Expect AED {p.props['amount_aed']:,} by {p.props.get('method') or 'a method not yet stated'} from {who}",
                         rests_on=rests, caused_by=cause)
         g = office.graph()
+    expect_deposit(office, deal, cause)
+
+
+def expect_deposit(office: Office, deal: str, cause: int | None = None) -> None:
+    """A converted ready sale always has a deposit to expect, even if the client never said one: the owner's percentage of the
+    agreed price. Without it Finance has nothing to mark and the gate could never pass. It rests on the price, so a changed price
+    makes it again. Words the client said about a deposit take its place."""
+    g = office.graph()
+    if not g.settings.get(f"deal:{deal}", {}).get("agreed"):
+        return
+    p = desk_rules.path(g, deal)
+    price = (g.facts(deal, "deal_term") or [None])[-1]
+    if p["id"] != "ready" or not price or not price.props.get("amount_aed") or g.facts(deal, "payment_promise"):
+        return
+    if any(t.props["agent"] == "pay" and t.status in OPEN | {"done"} for t in g.of("task", deal)):
+        return
+    pct, d = p["deposit_pct"], g.nodes[f"deal:{deal}"].props
+    amount = round(price.props["amount_aed"] * pct / 100)
+    office.add_task(deal, "pay", f"Expect the deposit AED {amount:,} ({pct}% of the agreed price) from {d['customer']}", rests_on=[price.id], caused_by=cause,
+                    props={"amount_aed": amount, "deposit": True})
 
 
 # ---------- when, received, overdue, release ----------
@@ -74,7 +94,7 @@ def expected(g: Graph, task: Node, today: date) -> dict:
                 "from": task.props.get("document"), "payee": task.props.get("payee"), "overdue": task.props["due"] < today.isoformat() and task.status in OPEN}
     promise = next((g.nodes[f] for f in task.props.get("rests_on", []) if f in g.nodes and g.nodes[f].props.get("kind") == "payment_promise"), None)
     if not promise:  # worked out from the rules (a rental's deposit), not promised in words: no day was said
-        return {"amount_aed": task.props.get("amount_aed"), "due": None, "due_words": None, "kind": "security deposit", "overdue": False, "paid": paid(task), "payments": task.props.get("payments", [])} if task.props.get("amount_aed") else {}
+        return {"amount_aed": task.props.get("amount_aed"), "due": None, "due_words": None, "kind": "deposit" if task.props.get("deposit") else "security deposit", "overdue": False, "paid": paid(task), "payments": task.props.get("payments", [])} if task.props.get("amount_aed") else {}
     said = datetime.fromisoformat(promise.at).astimezone(DUBAI).date()
     due = due_date(promise.props.get("due"), said)
     return {"amount_aed": promise.props.get("amount_aed"), "due": due.isoformat() if due else None, "due_words": promise.props.get("due"),
@@ -141,6 +161,8 @@ def mark_received(office: Office, tid: str, by: str, reference: str, *, today: d
     except TypeError:
         raise ValueError("Give the day it arrived.") from None
     who = payer.strip() or next((g.nodes[f].props["payer"] for f in t.props.get("rests_on", []) if f in g.nodes and g.nodes[f].props.get("kind") == "payer"), "")
+    if want > 0 and amount > want and not confirm:
+        raise ProofMismatch(f"That is AED {amount - want:,} more than the AED {want:,} still expected. Check it, or save it anyway.")
     if proof_amount not in (None, ""):
         seen = round(float(proof_amount))
         if seen != amount and not confirm:

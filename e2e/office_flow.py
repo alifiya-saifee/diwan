@@ -2,7 +2,7 @@
  1. a customer messages on the sandbox WhatsApp line and Rania answers in the inbox; a broker takes over and replies
  2. the owner teaches Rania a lesson on the Team page, and her next reply keeps it
  3. an Instagram comment arrives and shows in the inbox with Rania's reply
- 4. the owner tells Nova to give Priya a job; Nova reads it back, a yes puts it on the Lobby board, Priya marks it done
+ 4. the owner tells Nova to give Priya a job; Nova reads it back, a yes puts it on the requests board, Priya marks it done
 Run against a server: python e2e/office_flow.py http://127.0.0.1:8031 [shots dir]"""
 import json
 import random
@@ -106,10 +106,10 @@ with sync_playwright() as p:
     expect(pg.locator("#zbody")).to_contain_text("L", timeout=60_000)
     pg.wait_for_timeout(1000)
     step(f"Nova: {pg.locator('#zbody').inner_text().strip().splitlines()[-1][:120]}")
-    pg.get_by_role("button", name="Lobby board").first.click() if pg.get_by_role("button", name="Lobby board").count() else None
+    pg.get_by_role("button", name="Requests board").first.click() if pg.get_by_role("button", name="Requests board").count() else None
     lob = httpx.get(f"{BASE}/api/lobby").json()
     assert any(x["to"] == "priya" and "Karim" in x["text"] for x in lob), lob
-    step("card on the Lobby board for Priya")
+    step("card on the requests board for Priya")
     pg.screenshot(path=str(SHOTS / "o4-nova-lobby.png"))
     pg.fill("#say", "What did we sell last month?")
     pg.click("#send")

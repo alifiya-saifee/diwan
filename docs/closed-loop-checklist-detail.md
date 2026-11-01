@@ -2101,6 +2101,8 @@ Checked against the working tree on 2026-10-31 (uncommitted files included). "De
 
 ### Room 9 · Lobby (L279-295)
 
+**Built 31 Oct 2026.** Room 9 now exists: [lobby_room.py](../diwan/lobby_room.py), [lobby.html](../web/lobby.html), tests: [test_lobby_room.py](../tests/test_lobby_room.py), browser: [lobby_flow.py](../e2e/lobby_flow.py). The ❌ lines below record the audit before it; [closed-loop-checklist.md](closed-loop-checklist.md) has the current state. Still partly done: playbooks from other offices and outside feeds.
+
 `diwan/agents/lobby.py` is not this room: it is the "Lobby board", a request board where staff ask each other for work. [lobby.py:1](../diwan/agents/lobby.py#L1)
 
 - [ ] ❌ **A shared Lobby room for reading what works elsewhere** (L281). Needed: a new room, page and events.

@@ -41,7 +41,7 @@ def view(g: Graph, deal: str) -> dict:
             and not any(x.props["kind"] == d.props["kind"] and x.status != "sent_back" for x in g.of("draft", deal))]
     a = _approval(g, deal)
     owner = next((p for p, v in PEOPLE.items() if v.get("role") == "Owner"), None)
-    gates = [{"key": "compliance", "label": "Compliance", "ok": comp["ok"], "note": "Cleared on the current facts" if comp["ok"] else comp["reason"] or comp["state"], "who": roles.holder(g, "compliance")},
+    gates = [{"key": "compliance", "label": "Compliance", "ok": comp["ok"], "note": "Cleared on the current facts" if comp["ok"] else compliance.public_reason(comp), "who": roles.holder(g, "compliance")},
              {"key": "finance", "label": "Finance", "ok": bool(got), "note": f"{len(got)} payment{'s' if len(got) != 1 else ''} marked received" if got
               else "A payment is with Compliance before its receipt" if held else "No deposit marked received yet", "who": roles.holder(g, "finance")},
              {"key": "paperwork", "label": "Paperwork", "ok": not waiting and signed, "note": "Forms signed" if not waiting and signed else

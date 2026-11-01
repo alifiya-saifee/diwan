@@ -163,11 +163,11 @@ def save_rhythm(body: RhythmIn):
 
 @router.post("/api/studio/plan/week")
 def plan_week(by: str = "maya"):
-    """Plan from today by hand, on the current rhythm (weekly: the next 7 days). Nothing is written until each day."""
+    """Plan this week and next from today: the Strategist chooses. Nothing is written until each day."""
     from datetime import datetime, timezone
     from diwan import business
     from diwan.agents import rhythm
-    return rhythm.make_plan(_office(), business.local(datetime.now(timezone.utc), _office()).date(), auto=False, by=by)
+    return rhythm.make_plan(_office(), business.local(datetime.now(timezone.utc), _office()).date(), auto=False, by=by, days_ahead=rhythm.AHEAD_DAYS, think=True)
 
 
 class MoveIn(BaseModel):
@@ -423,6 +423,7 @@ def marketing_plan():
 
 class PlanIn(BaseModel):
     days: int = 7
+    per_week: int = 0
     by: str = "maya"
 
 
@@ -434,13 +435,19 @@ def make_marketing_plan(body: PlanIn):
     from diwan.agents import rhythm
     if not 1 <= body.days <= 31:
         return {"ok": False, "error": "Plan 1 to 31 days."}
-    rhythm.make_plan(_office(), business.local(datetime.now(timezone.utc), _office()).date(), auto=False, by=body.by, days_ahead=body.days)
+    if body.per_week:
+        try:
+            rhythm.save(_office(), {"posts_per_week": body.per_week}, by=body.by)
+        except rhythm.Invalid as e:
+            return {"ok": False, "error": str(e)}
+    rhythm.make_plan(_office(), business.local(datetime.now(timezone.utc), _office()).date(), auto=False, by=body.by, days_ahead=body.days, think=True)
     return {"ok": True}
 
 
 class DayIn(BaseModel):
     day: str
     decision: str = ""
+    why: str = ""
     by: str = "maya"
 
 
@@ -451,15 +458,51 @@ def _may_plan(by: str) -> bool:
     return not who or by == who or access.is_owner(by)
 
 
-@router.post("/api/marketing/plan/day")
-def decide_plan_day(body: DayIn):
-    """Approved stays on the plan. Rejected comes off, and the day takes the next best post."""
+@router.get("/api/marketing/learned")
+def marketing_learned():
+    """What the studio has learned from decisions and results."""
+    from diwan.agents import taste
+    return taste.learned(_office())
+
+
+class ForgetIn(BaseModel):
+    key: str
+    by: str = "maya"
+
+
+@router.post("/api/marketing/learned/forget")
+def marketing_forget(body: ForgetIn):
+    from diwan.agents import taste
+    taste.forget(_office(), body.key, by=body.by)
+    return {"ok": True}
+
+
+class ChangeDayIn(BaseModel):
+    day: str
+    ref: str
+    by: str = "maya"
+
+
+@router.post("/api/marketing/plan/change")
+def change_plan_day(body: ChangeDayIn):
+    """Put something else on a planned day."""
     from diwan.agents import approvers, rhythm
     if not _may_plan(body.by):
         return {"ok": False, "error": f"This waits for {approvers.label(_office(), 'script')}."}
     try:
-        rhythm.decide_day(_office(), body.day, body.decision, by=body.by)
-        return {"ok": True}
+        return {"ok": True, "plan": rhythm.change_day(_office(), body.day, body.ref, by=body.by)}
+    except rhythm.Invalid as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/api/marketing/plan/day")
+def decide_plan_day(body: DayIn):
+    """Approved stays on the plan. Rejected comes off, and the day stays empty."""
+    from diwan.agents import approvers, rhythm
+    if not _may_plan(body.by):
+        return {"ok": False, "error": f"This waits for {approvers.label(_office(), 'script')}."}
+    try:
+        return {"ok": True, "plan": rhythm.decide_day(_office(), body.day, body.decision, by=body.by, why=body.why)}
     except rhythm.Invalid as e:
         return {"ok": False, "error": str(e)}
 
@@ -555,9 +598,10 @@ class UnscheduleIn(BaseModel):
 
 @router.post("/api/studio/unschedule")
 def unschedule(body: UnscheduleIn):
-    """Stop an approved post before its time."""
-    from diwan.agents import studio
+    """Stop an approved post before its time. It goes back to waiting for a yes: cancelling the time is not stopping the post."""
+    from diwan.agents import marketing, studio
     studio.unschedule(_office(), body.ref, by=body.by)
+    marketing._resume(_office(), body.ref, {})
     return {"ok": True}
 
 

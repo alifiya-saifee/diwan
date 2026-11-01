@@ -59,6 +59,38 @@ The first four are the owner's answers. The rest were built the recommended way,
 | Names | Who attends a site visit? | The lead's broker only: they have the client and are the point of contact. The listing's agent is told, so the keys reach them. **The owner's decision.** | Done |
 | Working days | Which days the brief runs | Monday to Saturday, a setting. **The owner's decision.** | Done |
 
+## Lobby, decided 31 Oct
+
+Built the recommended way, to confirm.
+
+| # | Question | Decided | Who confirms |
+|---|---|---|---|
+| D10 | Two things called Lobby | The screens now say "Requests board" for the staff board, and the spec's room is the Lobby. The board's old `lobby.*` events stay, because the log can't be rewritten. | Product owner |
+| L1 | Who gets an experiment? | Half of its audience, by a stable hash; the other half is the comparison (`control_pct`, a Lobby rule). Kept, the whole audience gets it. | Product owner |
+| L2 | What happens at the end of the period? | The change stops by itself. Records reports. Nothing goes back on unless the owner presses Keep. | Product owner |
+| L3 | When can Records say it worked? | At 20 on each side (`min_sample`), by a 95% test. Below that it says "too few to say", and the owner still decides. | Product owner |
+| L4 | Does "kept" change the owner's settings? | No. A kept change stays an overlay in the Lobby, so it can always be rolled back and the owner's forms and schedules are untouched. | Product owner |
+| L5 | Words that can't be proposed | Anything naming compliance, screening, KYC, AML, source of funds, permits, thresholds, clearance, gates, settings, commission rates or quiet hours. Blunt on purpose: a harmless line can be refused, a rule change can't slip through. | Compliance officer |
+| L6 | English words for Arabic-speaking clients | An experiment doesn't reach them unless its audience says Arabic. | Product owner |
+
+## 3D office, decided 1 Nov
+
+- F1. Model replies aren't streamed, so typing runs at a fixed speed while the model really is writing, and the text appears when it arrives. Tying it to the token rate needs streaming in `providers/chat.py`.
+- F2. Work done by rules takes milliseconds. Its pose stays on show for about 3 seconds so it can be seen; the event and its words are real.
+- F3. Not every event has an outside consumer, so the Stuck pile holds overdue work and failed agents. An unknown event type also falls there.
+- F4. A broker's other clients and Compliance's reasons are cut from the feed. The ripple's counts stay visible to all staff, without its words.
+
+## Who reads what on the Deal desk, decided 1 Nov
+
+Built the recommended way, to confirm.
+
+| # | Question | Decided | Who confirms |
+|---|---|---|---|
+| A1 | What may people outside Compliance see? | Cleared, not cleared, or "With Compliance". Never the reason, a match, the risk rating, source of funds or a count that points at a deal. | Compliance officer |
+| A2 | Does Finance see why a payment is held? | No: "With Compliance" on the payment. Ahmed sees the flags his own entry raised. | Compliance officer |
+| A3 | Can the owner do a role's work? | Only by giving herself the role. Signed in, her name goes on what she does, and work that belongs to a role is refused. | Product owner |
+| A4 | Does Finance see client ID documents? | No. | Compliance officer |
+
 ## Open, not built
 
 - D3: the demo database holds a real brokerage's data. Needs a clean snapshot.
@@ -68,6 +100,10 @@ The first four are the owner's answers. The rest were built the recommended way,
 - D20: several offers on one unit. One live deal per listing stays.
 - D39: "my brother will pay part of it". Two live payers are still treated as a contradiction.
 - D40: who holds a deposit, and returning it. The options are prepared for the owner when a deal is lost; nothing moves money.
+- Playbooks from other Diwan offices: the opt-in and the filter exist, but nothing carries a pattern between offices. People add public ones by hand.
+- Portal trends, DLD data, news on projects and regulation: no feed. A person can file what they read as a playbook.
+- Lobby threads are written by rules from counts. A model could discuss better; none is called.
+- A follow-up experiment past WhatsApp's 24 hours needs an approved template named on the experiment.
 - Listing side (seller signs up, Form A first, permits, photos): not a deal path yet.
 - Off-plan resale and commercial: not built.
 - Mortgage figures: the steps exist, the amounts are not tracked.

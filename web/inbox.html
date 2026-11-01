@@ -353,6 +353,9 @@ function renderChat() {
   }
   const box = h("textarea", { id: "box", rows: 1, dir: "auto", placeholder: d.window_open ? (on ? "Type to take over from Rania…" : "Type a message") : "24-hour window closed: send a template", disabled: !d.window_open });
   box.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
+  const was = $("box"), kept = was?.dataset.chat === d.phone ? { text: was.value, focused: document.activeElement === was, at: was.selectionStart } : null;  // a redraw never loses what someone is typing
+  box.dataset.chat = d.phone;
+  if (kept) box.value = kept.text;
   const tools = h("div", { class: "rowc tools" },
     h("button", { class: "ib", title: "Quick replies", "aria-label": "Quick replies", onclick: (e) => quick(e.currentTarget.parentNode), disabled: !d.window_open }, "⚡"),
     h("button", { class: "ib", title: "Send an approved template", "aria-label": "Template", onclick: templates }, "📋"),
@@ -360,6 +363,7 @@ function renderChat() {
     h("button", { class: "sendb primary", title: "Send", "aria-label": "Send", onclick: send, disabled: !d.window_open }, "➤"));
   $("chat").replaceChildren(head, ...banners, thread, h("div", { class: "compose" }, tools));
   thread.scrollTop = 1e9;
+  if (kept?.focused) { box.focus(); box.setSelectionRange(kept.at, kept.at); }
 }
 
 // The card for this conversation: why it needs a person, by when, and the only ways it leaves Attention.

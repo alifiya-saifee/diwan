@@ -10,6 +10,7 @@ Off until IG_ACCESS_TOKEN and IG_USER_ID are set.
 """
 from __future__ import annotations
 
+import threading
 import time
 
 import httpx
@@ -34,17 +35,35 @@ def ready() -> bool:
 
 
 _CHECKED: dict[int, tuple[float, dict]] = {}
+_CHECKING: set[int] = set()
 
 
-def check(ttl: float = 600) -> dict:
+def check(ttl: float = 600, wait: bool = True) -> dict:
     """Does Instagram accept our token? {"ok": True, "username"} or {"ok": False, "why"}. One cheap call, remembered for
-    ttl seconds, so a page can show the truth without calling Instagram on every load."""
+    ttl seconds, so a page can show the truth without calling Instagram on every load. With wait=False the call goes on in
+    the background and this answers at once from what is known: a page never waits for Instagram."""
     if not ready():
         return {"ok": False, "why": "needs " + ", ".join(missing())}
     key = hash((env("IG_ACCESS_TOKEN"), env("IG_USER_ID")))
     hit = _CHECKED.get(key)
     if hit and time.monotonic() - hit[0] < ttl:
         return hit[1]
+    if not wait:
+        if key not in _CHECKING:
+            _CHECKING.add(key)
+            threading.Thread(target=_refresh, args=(key,), daemon=True).start()
+        return hit[1] if hit else {"ok": False, "why": "Checking Instagram…", "checking": True}
+    return _ask(key)
+
+
+def _refresh(key: int) -> None:
+    try:
+        _ask(key)
+    finally:
+        _CHECKING.discard(key)
+
+
+def _ask(key: int) -> dict:
     try:
         out = {"ok": True, "username": _get(env("IG_USER_ID"), {"fields": "username"}).get("username")}
     except (InstagramError, httpx.HTTPError) as e:

@@ -5,7 +5,8 @@ Setup so they can delete any they disagree with. Nothing is guessed: every note 
   picked    the angle they pick most, once they have picked at least MIN_PICKS scripts
   wrote     how their own scripts are built (hook length, number of lines), once they wrote one
 
-The Script writer reads the notes that are not deleted, next to the brand profile.
+The Script writer reads the notes that are not deleted, next to the brand profile. What a person turns down is learned from
+in taste.py.
 """
 from __future__ import annotations
 

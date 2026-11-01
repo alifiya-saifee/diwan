@@ -21,13 +21,15 @@ from diwan.office import Office
 
 DEFAULTS = {"auto": "off", "at": "09:00", "rhythm": "daily", "repeat_angle_days": "3", "repeat_listing_days": "7", "compare_months": "12",
             "refresh": "off", "refresh_at": "07:00", "topic_share": "50", "repeat_topic_days": "14",
-            "auto_post": "off", "approve_brief": "on", "archive_days": "90", "ad_budget": "0", "cpl_limit": "0"}
+            "auto_post": "off", "approve_brief": "on", "archive_days": "90", "ad_budget": "0", "cpl_limit": "0", "plan_ahead": "off", "posts_per_week": "0"}
+STOPPED_DAYS = 30
+AHEAD_DAYS, TOP_UP_DAYS = 7, 3  # planning by itself covers a week, renewed when 3 days are left: fewer model calls
 EVERY = {"daily": 1, "every 2 days": 2, "weekly": 7}
 LABELS = {"auto": "Automatic", "at": "Start at", "rhythm": "Rhythm", "repeat_angle_days": "Don't repeat an angle within (days)",
           "repeat_listing_days": "Don't repeat a listing within (days)", "compare_months": "Compare posts from the last (months)",
           "refresh": "Refresh competitor posts every day", "refresh_at": "Refresh at",
           "topic_share": "Informational videos, as a share of all (%)", "repeat_topic_days": "Don't repeat a topic within (days)",
-          "auto_post": "Post by itself at the approved time", "approve_brief": "An automatic run waits for a yes on the brief",
+          "plan_ahead": "Plan the next week by itself", "posts_per_week": "Posts a week", "auto_post": "Post by itself at the approved time", "approve_brief": "An automatic run waits for a yes on the brief",
           "archive_days": "Archive live posts after (days)", "ad_budget": "Ad budget a month (AED)", "cpl_limit": "Limit per qualified lead (AED)"}
 
 
@@ -50,7 +52,7 @@ def save(office: Office, values: dict, *, by: str) -> list[str]:
         if k not in DEFAULTS:
             continue
         v = str(v).strip()
-        if k in ("auto", "refresh", "auto_post", "approve_brief") and v not in ("on", "off"):
+        if k in ("auto", "refresh", "auto_post", "approve_brief", "plan_ahead") and v not in ("on", "off"):
             raise Invalid(f"{LABELS[k]} is on or off.")
         if k == "rhythm" and v not in EVERY:
             raise Invalid(f"Rhythm is one of: {', '.join(EVERY)}.")
@@ -65,6 +67,8 @@ def save(office: Office, values: dict, *, by: str) -> list[str]:
             raise Invalid("The share is a whole number from 0 to 100.")
         if k in ("archive_days", "ad_budget", "cpl_limit") and not v.isdigit():
             raise Invalid(f"{LABELS[k]} is a whole number.")
+        if k == "posts_per_week" and not (v.isdigit() and 0 <= int(v) <= 7):
+            raise Invalid("Posts a week is a whole number from 1 to 7.")
         if k == "compare_months" and not (v.isdigit() and 1 <= int(v) <= 60):
             raise Invalid("Months are a whole number from 1 to 60.")
         if v != cur[k]:
@@ -83,9 +87,10 @@ def every(office: Office) -> timedelta:
 def used(office: Office) -> list[dict]:
     """[{ref, angle, at}] for every script a person approved."""
     made = {e["content"]["id"]: e["content"] for e in office.log.list() if e["type"] == "content.made"}
+    last = {e["content"].get("ref"): e["id"] for e in office.log.list() if e["type"] == "post.withdrawn" and not e["content"].get("archived")}  # a stopped post was not used
     out = [{"ref": made[c["choice"]]["ref"], "angle": made[c["choice"]].get("angle"), "job": made[c["choice"]].get("job"), "at": e["at"][:10]}
            for e in office.log.list() if e["type"] == "decision.made" and (c := e["content"]).get("answer") == "approve"
-           and c.get("choice") in made and made[c["choice"]].get("kind") == "script"]
+           and c.get("choice") in made and made[c["choice"]].get("kind") == "script" and e["id"] > last.get(made[c["choice"]]["ref"], 0)]
     return out
 
 
@@ -108,6 +113,8 @@ def current(office: Office, today: date | None = None) -> dict | None:
     """The latest plan that still has a day from today on."""
     today = today or _local_today(office)
     for p in reversed(plans(office)):
+        if not p["days"] and "decided_by" in p:
+            return p  # someone removed every day: an older plan does not come back
         if any(date.fromisoformat(d["date"]) >= today for d in p["days"]):
             return p
     return None
@@ -135,11 +142,13 @@ def _pick(office: Office, day: date, taken: dict[str, date]) -> tuple[str | None
         d = date.fromisoformat(u["at"])
         if u["ref"] not in last or d > last[u["ref"]]:
             last[u["ref"]] = d
+    from diwan.agents import taste
     pool = listings(office)
     if not pool:
         return None, "No listing has a permit yet, so there is nothing to make a video for."
+    pool = [x for x in pool if not taste.ruled_out(office, x["ref"])] or pool  # repeatedly turned down: not chosen while anything else can be
     free = [x for x in pool if x["ref"] not in last or (day - last[x["ref"]]).days >= days]
-    ranked = sorted(free or pool, key=lambda x: last.get(x["ref"], date.min))
+    ranked = sorted(free or pool, key=lambda x: (-taste.score(office, x["ref"]), last.get(x["ref"], date.min)))
     ref = ranked[0]["ref"]
     if free:
         return ref, f"Last posted {(day - last[ref]).days} days ago" if ref in last else "Not posted yet"
@@ -187,13 +196,15 @@ def _pick_topic(office: Office, day: date, taken: dict[str, date]) -> tuple[str 
         d = date.fromisoformat(u["at"])
         if u["ref"] not in last or d > last[u["ref"]]:
             last[u["ref"]] = d
+    from diwan.agents import taste
     pool = [t for t in topics.items(office).values() if not t.get("moment")]
     if not pool:
         return None, "No topic to make a video about yet."
+    pool = [t for t in pool if not taste.ruled_out(office, t["ref"])] or pool
     market = _market_words(office)
     hit = lambda t: sorted({market[w] for w in re.findall(r"[a-z]{4,}", f"{t['title']} {t['what']}".lower()) if w in market})  # noqa: E731
     free = [t for t in pool if t["ref"] not in last or (day - last[t["ref"]]).days >= days]
-    ranked = sorted(free or pool, key=lambda t: (-len(hit(t)), t["source"] != "typed", -min(len(t["features"]), 5), last.get(t["ref"], date.min)))
+    ranked = sorted(free or pool, key=lambda t: (-taste.score(office, t["ref"]), -len(hit(t)), t["source"] != "typed", -min(len(t["features"]), 5), last.get(t["ref"], date.min)))
     t = ranked[0]
     if not free:
         return t["ref"], f"covered {(day - last[t['ref']]).days} days ago: only {len(pool)} topic{'s' if len(pool) != 1 else ''}, fewer than your {days}-day rule needs"
@@ -201,17 +212,42 @@ def _pick_topic(office: Office, day: date, taken: dict[str, date]) -> tuple[str 
     return t["ref"], why + (f". It is working for @{hit(t)[0]} right now" if hit(t) else "")
 
 
-def make_plan(office: Office, today: date, *, auto: bool, by: str = "mkt", days_ahead: int | None = None) -> dict:
+def posting_day(i: int, per_week: int) -> bool:
+    """Whether the i-th day from today gets a post: spread through the week, starting today. 0 means nobody has said, so every day."""
+    return not per_week or i * per_week % 7 < per_week
+
+
+def make_plan(office: Office, today: date, *, auto: bool, by: str = "mkt", days_ahead: int | None = None, think: bool = False) -> dict:
     """One day (daily, every 2 days) or the next 7 (weekly), each with its subject (a listing or a topic) and why. A post
-    with a reason to go first (a moment, a comeback, the first nine) takes its day; the rest keep the usual mix."""
-    from diwan.agents import journey
+    with a reason to go first (a moment, a comeback, the first nine) takes its day; the rest keep the usual mix. A day a
+    person approved, or one already started, stays as it is. With think, the Strategist then chooses (planner.py)."""
+    from diwan.agents import journey, planner
     n = days_ahead or (7 if settings(office)["rhythm"] == "weekly" else 1)
     days, taken, types = [], {}, []
-    first = journey.upcoming(office, n, today)
+    begun = started(office)
+    old = current(office, today)
+    keep = {x["date"]: x for x in (old or {}).get("days", []) if x["date"] >= today.isoformat() and (x.get("status") == "approved" or x["date"] in begun)}
+    removed = [r for r in (old or {}).get("removed") or [] if r["date"] >= today.isoformat()]  # off that day's plan, not for ever
+    for r in removed:
+        taken[r["ref"]] = date.max  # what a person took off stays off, however far the plan runs
+    stopped = stopped_lately(office, today)
+    for r in stopped:
+        taken[r] = date.max
+    for x in keep.values():
+        if x.get("ref"):
+            taken[x["ref"]] = date.fromisoformat(x["date"])
+    first = [s for s in journey.upcoming(office, n + len(keep), today) if s["ref"] not in taken]
+    per_week = int(settings(office)["posts_per_week"])
     for i in range(n):
         d = today + timedelta(days=i)
-        if i < len(first):
-            slot = first[i]
+        if d.isoformat() in keep:
+            days.append(keep[d.isoformat()])
+            types.append(keep[d.isoformat()].get("type") or "listing")
+            continue
+        if not posting_day(i, per_week):
+            continue
+        slot = first.pop(0) if first else None
+        if slot:
             if slot["ref"]:
                 taken[slot["ref"]] = d
             types.append(slot["type"])
@@ -225,14 +261,57 @@ def make_plan(office: Office, today: date, *, auto: bool, by: str = "mkt", days_
             taken[ref] = d
         types.append(typ)
         days.append({"date": d.isoformat(), "ref": ref, "why": why, "type": typ, "status": "pending"})
-    content = {"rhythm": settings(office)["rhythm"], "auto": auto, "days": days}
+    days += [keep[k] for k in sorted(keep) if k > (today + timedelta(days=n - 1)).isoformat()]  # approved further out than this plan runs
+    chosen_by = "rules"
+    if think:
+        days, chosen_by = planner.choose(office, days, today, set(keep), {r["ref"] for r in removed} | stopped)
+    content = {"rhythm": settings(office)["rhythm"], "auto": auto, "days": days, "removed": removed, "chosen_by": chosen_by}
     office.log.append("plan.made", actor=by, agent="plan", content=content)
     return content
 
 
-def decide_day(office: Office, day: str, decision: str, *, by: str) -> dict:
+def stopped_lately(office: Office, today: date) -> set[str]:
+    """Posts stopped in the last while don't come back by themselves. The first nine's posts do, as a new version: that job is still to do."""
+    out: dict[str, str] = {}
+    for e in office.log.list():
+        c = e["content"]
+        if e["type"] == "post.withdrawn" and not c.get("archived"):
+            out[c.get("ref")] = e["at"][:10]
+        elif e["type"] == "content.idea":
+            out.pop(c.get("ref"), None)
+    return {r for r, at in out.items() if not r.startswith("JOB-") and (today - date.fromisoformat(at)).days < STOPPED_DAYS}
+
+
+def take_off(office: Office, ref: str, *, by: str) -> None:
+    """A stopped post comes off the days ahead, even one already started, and the day stays empty."""
+    p, today = current(office), _local_today(office).isoformat()
+    if not p or not any(d.get("ref") == ref and d["date"] >= today for d in p["days"]):
+        return
+    office.log.append("plan.made", actor=by, agent="plan", content={**{k: p[k] for k in ("rhythm", "auto")}, "days": [d for d in p["days"] if d.get("ref") != ref or d["date"] < today],
+                                                                    "removed": p.get("removed") or [], "decided_by": by, "chosen_by": p.get("chosen_by", "rules")})
+
+
+def plan_due(office: Office, now: datetime | None = None) -> bool:
+    """Called every minute. With planning ahead on, once fewer than a week of days are left, the Strategist plans this week
+    and next. Nothing is written or filmed by this: it only says what comes next."""
+    s = settings(office)
+    if s["plan_ahead"] != "on" or s["posts_per_week"] == "0":  # nobody has said how many: it does not guess
+        return False
+    local = business.local(now or datetime.now(timezone.utc), office)
+    if local.strftime("%H:%M") < s["at"]:
+        return False
+    today = local.date()
+    p = current(office, today)
+    ahead = (date.fromisoformat(max(d["date"] for d in p["days"])) - today).days + 1 if p and p["days"] else 0
+    if ahead >= TOP_UP_DAYS:
+        return False
+    make_plan(office, today, auto=True, days_ahead=AHEAD_DAYS, think=True)
+    return True
+
+
+def decide_day(office: Office, day: str, decision: str, *, by: str, why: str = "") -> dict:
     """A person's answer on a planned day. Approved stays on the plan and goes ahead without asking about its brief again.
-    Rejected comes off, and the day takes the next best post (never one already rejected from this plan)."""
+    Rejected comes off and the day stays empty: nothing takes its place until someone plans again."""
     p = current(office)
     if not p:
         raise Invalid("There is no plan to change.")
@@ -251,15 +330,45 @@ def decide_day(office: Office, day: str, decision: str, *, by: str) -> dict:
         d["status"] = "approved"
     else:
         if d.get("ref"):
-            removed.append({"date": day, "ref": d["ref"], "by": by})
-        when = date.fromisoformat(day)
-        taken = {x["ref"]: date.fromisoformat(x["date"]) for x in ds if x.get("ref") and x is not d} | {r["ref"]: when for r in removed}
-        ref, why = _pick(office, when, taken)
-        if ref in {r["ref"] for r in removed} or any(x.get("ref") == ref for x in ds if x is not d):
-            ref, why = None, "Removed. Nothing else to suggest for this day yet."
-        d.update(ref=ref, why=why, type="listing", status="pending", job=None)
-    content = {**{k: p[k] for k in ("rhythm", "auto")}, "days": ds, "removed": removed, "decided_by": by}
+            removed.append({"date": day, "ref": d["ref"], "by": by, **({"why": why.strip()} if why.strip() else {})})
+        ds = [x for x in ds if x is not d]
+    content = {**{k: p[k] for k in ("rhythm", "auto")}, "days": ds, "removed": removed, "decided_by": by, "chosen_by": p.get("chosen_by", "rules")}
     office.log.append("plan.made", actor=by, agent="plan", content=content)
+    from diwan.agents import taste
+    taste.signal(office, d.get("ref"), 1 if decision == "approve" else 0, "plan", by=by, why=why)
+    return content
+
+
+def change_day(office: Office, day: str, ref: str, *, by: str) -> dict:
+    """A person puts something else on a day. Their choice counts as approved, so a new plan keeps it."""
+    from diwan.agents import studio
+    p = current(office)
+    if not p:
+        raise Invalid("There is no plan to change.")
+    ds = [dict(d) for d in p["days"]]
+    d = next((x for x in ds if x["date"] == day), None)
+    if d is None:
+        raise Invalid("That day isn't on the plan.")
+    if day in started(office):
+        raise Invalid("That day's post has started: stop it from Waiting for you.")
+    try:
+        lst = studio._listing(office, ref)
+    except KeyError:
+        raise Invalid("That isn't something the studio can post about.") from None
+    if lst["item"] == "listing" and ref not in {x["ref"] for x in listings(office)}:
+        raise Invalid(f"{lst['title']} can't go on the plan: it has no permit, or it is sold or let.")
+    other = next((x for x in ds if x.get("ref") == ref and x is not d), None)
+    if other:
+        raise Invalid(f"{lst['title']} is already on {other['date']}.")
+    was = d.get("ref")
+    d.update(ref=ref, why="You chose this", type="topic" if lst["item"] == "topic" else "listing", status="approved", job=ref[4:] if ref.startswith("JOB-") else None)
+    content = {**{k: p[k] for k in ("rhythm", "auto")}, "days": ds, "removed": [r for r in p.get("removed") or [] if r["ref"] != ref],
+               "decided_by": by, "chosen_by": p.get("chosen_by", "rules")}
+    office.log.append("plan.made", actor=by, agent="plan", content=content)
+    from diwan.agents import taste
+    taste.signal(office, ref, 1, "plan change", by=by)
+    if was and was != ref:
+        taste.signal(office, was, 0, "plan change", by=by, strength=0.5)
     return content
 
 
@@ -296,8 +405,9 @@ def move(office: Office, day: str, step: int, *, by: str) -> dict:
     ds[i]["ref"], ds[j]["ref"] = ds[j]["ref"], ds[i]["ref"]
     if "type" in ds[i] and "type" in ds[j]:
         ds[i]["type"], ds[j]["type"] = ds[j]["type"], ds[i]["type"]
-    ds[i]["why"] = ds[j]["why"] = "moved by hand"
-    content = {**{k: p[k] for k in ("rhythm", "auto")}, "days": ds, "removed": p.get("removed") or [], "moved_by": by}
+    ds[i]["why"], ds[j]["why"] = ds[j]["why"], ds[i]["why"]
+    ds[i]["job"], ds[j]["job"] = ds[j].get("job"), ds[i].get("job")
+    content = {**{k: p[k] for k in ("rhythm", "auto")}, "days": ds, "removed": p.get("removed") or [], "moved_by": by, "chosen_by": p.get("chosen_by", "rules")}
     office.log.append("plan.made", actor=by, agent="plan", content=content)
     return content
 
@@ -316,12 +426,16 @@ def due(office: Office, now: datetime | None = None) -> str | None:
     if today.isoformat() in started(office):
         return None
     p = current(office, today)
+    if s["posts_per_week"] != "0" and p and not any(d["date"] == today.isoformat() for d in p["days"]):
+        return None  # the plan runs on and today is not one of its days
     if not p or not any(d["date"] == today.isoformat() for d in p["days"]):
         last = next((date.fromisoformat(x["days"][0]["date"]) for x in reversed(plans(office)) if x.get("auto")), None)
         if last and (today - last).days < EVERY[s["rhythm"]] and s["rhythm"] != "weekly":
             return None  # every 2 days: not today
         p = make_plan(office, today, auto=True)
-    slot = next(d for d in p["days"] if d["date"] == today.isoformat())
+    slot = next((d for d in p["days"] if d["date"] == today.isoformat()), None)
+    if not slot:
+        return None
     office.log.append("plan.started", actor="mkt", agent="mkt", content={"date": today.isoformat(), "ref": slot["ref"], "auto": True})
     return slot["ref"]
 

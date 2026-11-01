@@ -1,0 +1,12 @@
+.env
+.env.*
+*.db
+*.bak
+*.jsonl
+data
+media
+tests
+e2e
+docs
+**/__pycache__
+.pytest_cache

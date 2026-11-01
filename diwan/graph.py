@@ -146,6 +146,10 @@ class Graph:
         if n.type == "listing":
             return (f"{p['ref']} · {p['title']}, {p['community']} · {p['beds']} bed {p['type']} · AED {p['price_aed']:,} · "
                     f"permit {p.get('permit') or 'MISSING'} · {n.status}")
+        if n.type == "experiment":
+            return f"{n.id} · experiment: {n.label} · {n.status}"
+        if n.type == "playbook":
+            return f"{n.id} · playbook: {p['pattern']} · seen: {p['where']} · evidence: {p['evidence']}"
         if n.type == "lobby":
             due = datetime.fromisoformat(p["due"]).strftime("%a %I:%M %p").replace(" 0", " ") if p.get("due") else "no deadline"
             return f"{n.id} · for {name(p.get('to') or p['team'])}: {p['text']} · due {due} · asked by {name(p['by'])} · {n.status}"
@@ -472,7 +476,7 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
             if t == "followup.nudged":  # a follow-up while the client was quiet, sent or skipped (and why)
                 d.setdefault("nudges", []).append({"event": e["id"], "at": e["at"], "n": c["n"], "sent": c.get("sent"), "why": c.get("why")})
             elif t == "lead.optout":
-                d["optout"] = {"quote": c.get("quote"), "at": e["at"]}
+                d["optout"] = {"quote": c.get("quote"), "at": e["at"], "event": e["id"]}
             elif t == "lead.went_quiet":
                 d["went_quiet"] = e["id"]
             elif t == "lead.unhot":  # a person says it isn't hot after all
@@ -500,6 +504,31 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                 d["reopened"] = {"quote": c.get("quote"), "at": e["at"]}
             else:
                 d["hot"] = {"listing": c.get("listing"), "why": c.get("why"), "quote": c.get("quote"), "at": e["at"]}
+        elif t == "thread.posted":
+            g.add(c["id"], "thread", c["title"], e, status="posted", props=dict(c))
+        elif t == "playbook.added":
+            g.add(c["id"], "playbook", c["pattern"], e, status="live", props=dict(c))
+        elif t == "playbook.removed" and c["id"] in g.nodes:
+            g.nodes[c["id"]].status = "removed"
+        elif t == "experiment.proposed":
+            g.add(c["id"], "experiment", c["title"], e, status="proposed", props=dict(c) | {"by": e["actor"]})
+        elif t.startswith("experiment.") and c.get("id") in g.nodes:
+            n, rest = g.nodes[c["id"]], {k: v for k, v in c.items() if k != "id"}
+            if t == "experiment.switched":  # what a change left behind: a lesson, a topic
+                n.props.update(rest)
+            elif t == "experiment.approved":
+                n.status = "running"
+                n.props.update(rest | {"started": e["id"], "decided_by": e["actor"]})
+                n.label = c["title"]
+            elif t == "experiment.refused":
+                n.status = "refused"
+                n.props.update(reason=c.get("reason"), decided_by=e["actor"])
+            elif t == "experiment.reported":
+                n.status = "reporting"
+                n.props["result"] = c["result"]
+            elif t == "experiment.ended":
+                n.status = c["outcome"]
+                n.props.update(reason=c.get("reason"), decided_by=e["actor"], ended_at=c.get("at"))
         elif t == "notify.sent":
             g.add(f"NT{e['id']}", "notice", c["text"], e, status="new", props=dict(c))
         elif t == "notify.read":

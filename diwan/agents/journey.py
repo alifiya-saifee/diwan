@@ -24,6 +24,7 @@ FIRST_NINE = ("introduce", "why-us", "educate", "offer", "prove", "educate", "of
 INTRO_POSTS, GROW_POSTS = 9, 30
 SILENT_DAYS = 45       # no post for this long is a comeback
 NEW_PROJECT_DAYS = 14  # a project card confirmed this recently is a moment
+NEW_LISTING_DAYS, BULK_LISTINGS = 7, 3  # a listing added this recently is too, unless it came in a batch: an import is not news
 HOUSEKEEPING = {"fees", "hours", "policy", "policies", "contact"}  # true, but not what a brand post is about, and their numbers are not results
 
 STAGES = {"unknown": "Not known yet", "introduce": "Introduce", "build": "Build trust", "grow": "Grow", "comeback": "Comeback"}
@@ -58,7 +59,7 @@ JOBS = {  # job: label, what the post must do, how it closes; the brand's own jo
                             "ask-them": "Ask followers what they want to see"}},
     "educate": {"label": "Teach something", "brief": "Teach one useful thing to a viewer who will not buy today. Do not sell in this post."},
     "offer": {"label": "Offer something", "brief": "Now show what we offer, with its real facts."},
-    "moment": {"label": "React to this moment", "brief": "This is about something that just happened. Say what it means for the viewer, using only the facts given. Stay calm and useful.",
+    "moment": {"label": "Something new", "brief": "This is about something that just happened. Say what it means for the viewer, using only the facts given. Stay calm and useful.",
                "angles": {"what-happened": "Say plainly what happened", "what-it-means": "Open on what it means for the viewer, then what happened",
                           "what-to-do": "What the viewer can do now, only from the facts given"}},
 }
@@ -182,12 +183,27 @@ def _confirmed_on(office: Office) -> dict[str, str]:
     return out
 
 
-def moments(office: Office) -> list[dict]:
-    """What matters more than the plan right now: typed moments still in date, and projects newly confirmed, until a
-    script for them is approved."""
+def _new_listings(office: Office, today: date, done: set[str]) -> list[dict]:
+    """Listings added by themselves in the last few days that can be posted about, newest first."""
     from diwan.agents import rhythm
-    done = {u["ref"] for u in rhythm.used(office)}
+    first, batch = {}, Counter()
+    for e in office.log.list():
+        ref = e["content"].get("ref")
+        if e["type"] == "listing.added" and e["content"].get("title") and ref not in first:
+            first[ref] = (e["at"][:10], e["actor"], e["content"]["title"])
+            batch[e["actor"], e["at"][:10]] += 1
+    live = {x["ref"] for x in rhythm.listings(office)}
+    new = [(on, ref, title) for ref, (on, who, title) in first.items() if ref in live and ref not in done
+           and batch[who, on] <= BULK_LISTINGS and (today - date.fromisoformat(on)).days <= NEW_LISTING_DAYS]
+    return [{"job": "moment", "ref": ref, "title": title, "type": "listing", "why": f"Just added on {on}, so show it while it is new"} for on, ref, title in sorted(new, reverse=True)]
+
+
+def moments(office: Office) -> list[dict]:
+    """What matters more than the plan right now: typed moments still in date, projects newly confirmed and listings just
+    added, until a script for them is approved."""
+    from diwan.agents import rhythm
     today = _today(office)
+    done = {u["ref"] for u in rhythm.used(office)} | rhythm.stopped_lately(office, today)  # stopped means no: it does not come back as news
     out = [{"job": "moment", "ref": t["ref"], "title": t["title"], "type": "topic", "why": f"you added this moment; it holds until {t['until']}"}
            for t in topics.items(office).values() if t.get("moment") and t["ref"] not in done]
     seen = _confirmed_on(office)
@@ -195,7 +211,7 @@ def moments(office: Office) -> list[dict]:
         on = seen.get(n.id)
         if on and (today - date.fromisoformat(on)).days <= NEW_PROJECT_DAYS and n.id not in done and n.id in topics.items(office):
             out.append({"job": "moment", "ref": n.id, "title": n.props.get("title") or n.label, "type": "topic", "why": f"a new project, confirmed on {on}"})
-    return out
+    return out + _new_listings(office, today, done)
 
 
 def _left(office: Office) -> tuple[list[str], list[bool]]:
@@ -234,6 +250,8 @@ def upcoming(office: Office, n: int, day: date | None = None) -> list[dict]:
         left, _ = _left(office)
         a = account(office)
         jobs = left[:INTRO_POSTS - a["posts"] - a["waiting"]]
+    stock = [m for m in out if m["type"] == "listing"] if jobs[:1] == ["introduce"] else []  # a stranger meets us before a listing
+    out = [m for m in out if m not in stock]
     for job in jobs:
         if len(out) >= n:
             break
@@ -246,6 +264,7 @@ def upcoming(office: Office, n: int, day: date | None = None) -> list[dict]:
         out.append({"job": job, "ref": ref, "why": why, "type": "listing" if job == "offer" else "topic"})
         if not ref:
             break  # the brand's first posts wait for the brand: the rest do not jump ahead of them
+    out[1:1] = stock
     return out[:n]
 
 

@@ -106,7 +106,7 @@
   <div class="head"><div class="orb" id="orb"></div><div class="who"><div class="n" id="ztitle">Nova</div><div class="r" id="zsub">Chief of staff · the front desk</div></div>
     <button id="back" hidden>← HQ</button></div>
   <div class="body" id="zbody"></div>
-  <div class="foot"><input id="say" placeholder="Ask Nova, or tell her who needs to do what…"><button id="mic" title="Speak">🎙</button><button class="primary" id="send">Send</button></div>
+  <div class="foot"><input id="say" placeholder="Ask your PA, or tell her who needs to do what…"><button id="mic" title="Speak">🎙</button><button class="primary" id="send">Send</button></div>
 </aside>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -118,6 +118,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 <script type="module">
 import { h, api, post, follow, header, describe, loadAgents, NAMES, toast } from "./app.js";
+import { attachFloor } from "./floor.js";
 header("office3d.html");
 const AG = await loadAgents();
 const ROSTER = Object.values(AG);
@@ -127,7 +128,7 @@ const kids = (id) => ROSTER.filter((a) => a.parent === id);
 
 // ---------- departments: one room each on the HQ floor; enter one to see its whole team ----------
 const DEPTS = {
-  front:   { name: "Front desk", lead: "nova", color: 0xe8c77a, x: 0, z: 11, w: 15, d: 7.5, core: "Lobby board", about: "Nova talks to the staff · Rania answers customers" },
+  front:   { name: "Front desk", lead: "nova", color: 0xe8c77a, x: 0, z: 11, w: 15, d: 7.5, core: "Requests board", about: "Nova talks to the staff · Rania answers customers" },
   mkt:     { name: "Marketing", lead: "mkt", color: 0xf08fc0, x: -16, z: 11, w: 12, d: 7.5, core: "Brand brain", about: "The content studio: research → planning → scripting → editing → publishing" },
   meet:    { name: "Meeting room", lead: null, color: 0x7ea6f8, x: 16, z: 11, w: 12, d: 7.5, about: "Where the Scribe listens. Opens the meeting table." },
   sales:   { name: "Sales", lead: "sales", color: 0x7ea6f8, x: -16, z: 0, w: 12, d: 8, core: "Deal memory", about: "Meetings become quoted facts; decks use live facts only" },
@@ -137,6 +138,7 @@ const DEPTS = {
   fin:     { name: "Finance", lead: "fin", color: 0x82d99f, x: 0, z: -11, w: 12, d: 8, core: "Ledger", about: "Every expected payment rests on the exact words it came from" },
   deal:    { name: "Deal room", lead: "deal", color: 0xe8a35c, x: 0, z: -22, w: 12, d: 8, core: "Gates", about: "From the yes to signed paperwork · the gates stand before anything binding" },
   comp:    { name: "Compliance", lead: "comp", color: 0xf27d7d, x: 16, z: -11, w: 12, d: 8, core: "Rule book", about: "Hears every payment change first · never decides suspicion" },
+  lobby:   { name: "Lobby", lead: "lhost", color: 0x9fd0e8, x: 16, z: -22, w: 12, d: 8, core: "Playbooks", about: "A rep from each room reads what works · nothing changes until the owner approves" },
 };
 const DEPT_OF = {};
 for (const [k, d] of Object.entries(DEPTS)) if (d.lead) DEPT_OF[d.lead] = k;
@@ -174,7 +176,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x080b11);
 scene.fog = new THREE.FogExp2(0x080b11, 0.011);
 const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 500);
-const HQ_HOME = { pos: new THREE.Vector3(1.5, 30, 33), look: new THREE.Vector3(0, 0, 0) };
+const HQ_HOME = { pos: new THREE.Vector3(0, 46, 40), look: new THREE.Vector3(0, 0, -5) };  // every room in view
 let FLOOR_HOME = { pos: new THREE.Vector3(27, 26, 27), look: new THREE.Vector3(-1, 0, -1) };
 camera.position.set(0, 80, 95);
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -240,15 +242,16 @@ function makeRobot(color, lead, chief) {
   const shell = new THREE.MeshStandardMaterial({ color: 0xe9ebf1, roughness: .32, metalness: .15 });
   const body = new THREE.Mesh(new THREE.CylinderGeometry(.36, .46, .95, 28), shell); body.position.y = .72; body.castShadow = true; bot.add(body);
   const collar = new THREE.Mesh(new THREE.CylinderGeometry(.3, .36, .08, 28), new THREE.MeshStandardMaterial({ color: 0x2a3142 })); collar.position.y = 1.22; bot.add(collar);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(.42, 32, 20), shell); head.scale.set(1.05, .86, .95); head.position.y = 1.62; head.castShadow = true; bot.add(head);
-  const face = new THREE.Mesh(new THREE.BoxGeometry(.6, .26, .1), new THREE.MeshStandardMaterial({ color: 0x07090e, roughness: .2, metalness: .6 })); face.position.set(0, 1.63, .34); bot.add(face);
-  const eyeMat = emissive(color, 2.2);
-  for (const ex of [-.13, .13]) { const e = new THREE.Mesh(new THREE.SphereGeometry(.05, 16, 12), eyeMat); e.position.set(ex, 1.64, .4); bot.add(e); }
+  const headG = new THREE.Group(); headG.position.y = 1.45; bot.add(headG);  // turns at the neck
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.42, 32, 20), shell); head.scale.set(1.05, .86, .95); head.position.y = .17; head.castShadow = true; headG.add(head);
+  const face = new THREE.Mesh(new THREE.BoxGeometry(.6, .26, .1), new THREE.MeshStandardMaterial({ color: 0x07090e, roughness: .2, metalness: .6 })); face.position.set(0, .18, .34); headG.add(face);
+  const eyeMat = emissive(color, 2.2), eyes = [];
+  for (const ex of [-.13, .13]) { const e = new THREE.Mesh(new THREE.SphereGeometry(.05, 16, 12), eyeMat); e.position.set(ex, .19, .4); headG.add(e); eyes.push(e); }
   if (lead) { const halo = new THREE.Mesh(new THREE.TorusGeometry(chief ? .38 : .28, .022, 8, 40), emissive(0xe8c77a, chief ? 2.2 : 1.2)); halo.rotation.x = Math.PI / 2; halo.position.y = 2.2; bot.add(halo); }
-  return { bot, eyeMat, body, head };
+  return { bot, eyeMat, body, head, headG, eyes };
 }
 
-const SCREEN_W = 320, SCREEN_H = 200;
+const SCREEN_W = 320, SCREEN_H = 200, SCREEN_SCALE = 1.6;
 function station(group, id, x, z, color, { scale = 1, screen = true, rotY = 0 } = {}) {
   const a = AG[id];
   const g = new THREE.Group(); g.position.set(x, .18, z); g.rotation.y = rotY; g.scale.setScalar(scale);
@@ -257,7 +260,7 @@ function station(group, id, x, z, color, { scale = 1, screen = true, rotY = 0 } 
   const modesty = new THREE.Mesh(new THREE.BoxGeometry(2.0, .75, .05), new THREE.MeshStandardMaterial({ color: 0x161b27 })); modesty.position.set(0, .42, 1.62); g.add(modesty);
   let canvas = null, tex = null;
   if (screen) {
-    canvas = document.createElement("canvas"); canvas.width = SCREEN_W; canvas.height = SCREEN_H;
+    canvas = document.createElement("canvas"); canvas.width = SCREEN_W * SCREEN_SCALE; canvas.height = SCREEN_H * SCREEN_SCALE;
     tex = new THREE.CanvasTexture(canvas);
     const scr = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.0), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
     scr.position.set(0, 2.85, -.85); g.add(scr);
@@ -271,7 +274,7 @@ function station(group, id, x, z, color, { scale = 1, screen = true, rotY = 0 } 
   const tag = label(a ? a.name : id, { size: screen ? 26 : 32, accent: hex(color) }); tag.position.set(0, screen ? 3.75 : 2.85, screen ? -.85 : -.2); g.add(tag);
   r.body.userData.agent = r.head.userData.agent = id;
   group.add(g);
-  const st = { id, g, bot: r.bot, eyeMat: r.eyeMat, home: g.position.clone(), color, glow: 0, bubble: null, bubbleT: 0, walk: null, canvas, tex, tag };
+  const st = { id, g, bot: r.bot, eyeMat: r.eyeMat, body: r.body, headG: r.headG, eyes: r.eyes, ring, home: g.position.clone(), color, glow: 0, bubble: null, bubbleT: 0, walk: null, canvas, tex, tag };
   if (canvas) drawScreen(st);
   if (id === "rania") addPhone(st);
   return st;
@@ -283,8 +286,11 @@ const KIND = { mtrend: "tiles", mrival: "tiles", research: "tiles", mtrans: "wav
   mpermit: "check", mpub: "calendar", rania: "chat", scribe: "wave", deck: "tiles", pay: "bars", analyst: "bars", archivist: "list", screen: "check", sof: "bars",
   report: "text", formf: "list", factcheck: "check", devil: "text" };
 const lastWork = {};
+let live = null;  // the live floor (floor.js)
 function drawScreen(st) {
   const x = st.canvas.getContext("2d"), W = SCREEN_W, H = SCREEN_H, col = hex(st.color);
+  x.setTransform(SCREEN_SCALE, 0, 0, SCREEN_SCALE, 0, 0);
+  if (live?.drawMonitor(st, x, W, H)) { st.tex.needsUpdate = true; return; }
   const w = lastWork[st.id];
   const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#0f1420"); g.addColorStop(1, "#090c13");
   x.fillStyle = g; x.fillRect(0, 0, W, H);
@@ -552,6 +558,12 @@ async function drawWalls(f) {
   const card = (x, i, title, sub, accent, flag) => {
     const X = 40 + i * 330, Y = 120;
     x.fillStyle = "rgba(255,255,255,.04)"; x.beginPath(); x.roundRect(X, Y, 300, 420, 22); x.fill();
+    if (f.dept !== "mkt") {  // the words themselves, large: a room's walls have no pictures to wait for
+      x.fillStyle = accent; x.fillRect(X + 18, Y + 22, 54, 6);
+      x.fillStyle = "#ece8df"; x.font = "500 34px Inter, system-ui"; wrap(x, title, X + 20, Y + 80, 260, 42, 6);
+      x.fillStyle = "#8b92a3"; x.font = "500 21px Inter, system-ui"; wrap(x, sub, X + 20, Y + 370, 260, 26, 2);
+      return;
+    }
     const g = x.createLinearGradient(X, Y, X + 300, Y + 260); g.addColorStop(0, accent + "55"); g.addColorStop(1, "#0b0f18");
     x.fillStyle = g; x.beginPath(); x.roundRect(X + 12, Y + 12, 276, 250, 16); x.fill();
     x.fillStyle = "#ece8df"; x.font = "600 26px Inter, system-ui";
@@ -582,10 +594,9 @@ async function drawWalls(f) {
   } else {
     // a Deal desk floor shows its own department's work (the same records as web/deal.html); other floors the office's
     const mine = (n) => deptOf(n.props.agent) === f.dept;
-    const desk = ["comp", "fin", "ops", "review"].includes(f.dept);
+    const desk = f.dept !== "records";  // every room's walls are its own; Records keeps the whole office's
     const DRAFT = { "cash report": "comp", "Form F": "ops" };
-    const money = ["payer", "payment_promise", "income_claim"];
-    const facts = nodes.filter((n) => n.type === "fact" && n.status === "live" && (!["comp", "fin"].includes(f.dept) || money.includes(n.props.kind)));
+    const facts = nodes.filter((n) => n.type === "fact" && n.status === "live" && roomFact(f.dept, n));
     const replaced = nodes.filter((n) => n.type === "fact" && n.status === "superseded");
     const cards = nodes.filter((n) => ["check", "decision", "request", "question"].includes(n.type) && n.status === "open" && (!desk || mine(n)));
     const tasks = nodes.filter((n) => n.type === "task" && ["queued", "open", "waiting"].includes(n.status) && (!desk || mine(n)));
@@ -617,6 +628,8 @@ function wrap(x, text, X, Y, maxW, lh, maxLines) {
 }
 
 // ---------- state from the graph: who is working, who waits for a person ----------
+const MONEY_FACTS = ["payer", "payment_promise", "income_claim"];
+const roomFact = (room, n) => (["comp", "fin"].includes(room) ? MONEY_FACTS.includes(n.props.kind) : ["hq", "sales", "records", "review", "deal"].includes(room) || (room === "ops" && !MONEY_FACTS.includes(n.props.kind)));
 let gstate = { waiting: {}, working: {} };
 function agentState(id) {
   if (gstate.working[id] && performance.now() - gstate.working[id] < 9000) return "working";
@@ -630,11 +643,12 @@ async function refreshState() {
     if (["request", "check", "decision", "question"].includes(n.type) && n.status === "open" && n.props.agent) waiting[n.props.agent] = (waiting[n.props.agent] || 0) + 1;
   }
   gstate.waiting = waiting;
-  const open = gr.nodes.filter((n) => n.type === "task" && n.status === "queued").length;
-  const needs = gr.nodes.filter((n) => ["decision", "check", "question", "request"].includes(n.type) && n.status === "open").length;
-  const facts = gr.nodes.filter((n) => n.type === "fact").length;
+  const ours = where === "hq" ? null : new Set(deptAgents(where)), here = (n) => !ours || ours.has(n.props.agent);
+  const open = gr.nodes.filter((n) => n.type === "task" && n.status === "queued" && here(n)).length;
+  const needs = gr.nodes.filter((n) => ["decision", "check", "question", "request"].includes(n.type) && n.status === "open" && here(n)).length;
+  const facts = gr.nodes.filter((n) => n.type === "fact" && n.status === "live" && roomFact(where, n)).length;
   const stat = (v, l) => h("div", { class: "stat" }, h("b", {}, v), h("span", {}, l));
-  $("hud").replaceChildren(stat(ROSTER.length, "Agents"), stat(open, "Tasks in hand"), stat(needs, "Need people"), stat(facts, "Quoted facts"));
+  $("hud").replaceChildren(stat(ours ? ours.size : ROSTER.length, "Agents"), stat(open, "Tasks in hand"), stat(needs, "Need people"), stat(facts, "Quoted facts"));
   for (const [k, room] of Object.entries(hqRooms)) drawRoomScreen(k, room, gr);
   if (floor) { for (const st of Object.values(floor.stations)) if (st.canvas) drawScreen(st); drawWalls(floor); refreshTags(); }
   if (where !== "hq" || zone !== "front") renderSide();
@@ -703,7 +717,7 @@ function play(e, quiet = false) {
       const owner = QA_OWNER[e.content.kind] || (e.content.returned_to || [])[0], ob = owner && botFor(owner);
       if (ob && ob !== tb) walkTo(tb, ob);
     }
-    if (fb && fb !== tb) send(fb, tb, e.type === "check.raised" ? 0xf27d7d : e.type === "review.returned" ? 0xb591f3 : fb.color, floor && TICKET[teamOfAgent(who)]);
+    if (fb && fb !== tb && where !== "hq") send(fb, tb, e.type === "check.raised" ? 0xf27d7d : e.type === "review.returned" ? 0xb591f3 : fb.color, floor && TICKET[teamOfAgent(who)]);
     if (!["agent.started", "chat.received", "fact.superseded"].includes(e.type)) {
       const txt = (where === "hq" && tb.id !== who ? `${AG[who].name}: ` : "") + (lastWork[who]?.text || describe(e));
       say(tb, txt);
@@ -779,13 +793,13 @@ async function enter(dept) {
   camera.position.set(45, 40, 45); controls.target.copy(FLOOR_HOME.look);
   flyTo(FLOOR_HOME.pos, FLOOR_HOME.look, 1.6);
   $("fade").classList.remove("on"); $("entering").classList.remove("on");
-  drawWalls(floor); refreshTags(); renderBar(); renderTitle(); renderSide(); renderDemo();
+  drawWalls(floor); refreshTags(); refreshState(); renderBar(); renderTitle(); renderSide(); renderDemo();
 }
 function leave() {
   brainOpen = null;
   if (floor) { scene.remove(floor.group); floor = null; }
   hq.visible = true; where = "hq"; zone = "front";
-  camera.position.set(0, 60, 70); flyTo(HQ_HOME.pos, HQ_HOME.look, 1.4);
+ refreshState();
   renderBar(); renderTitle(); renderSide(); renderDemo();
 }
 
@@ -828,6 +842,7 @@ function renderBar() {
 }
 function renderDemo() {
   const btns = [h("span", { class: "lbl" }, "Demo")];
+  if (where === "lobby") btns.push(h("a", { class: "btn", href: "lobby.html" }, "Open the Lobby room"));
   if (where === "mkt" || where === "hq") btns.push(h("button", { onclick: async () => { if (where === "hq") await enter("mkt"); await post("/api/marketing/demo?ref=MC-1204"); toast("A listing is going through the studio"); } }, "Run a listing through marketing"));
   if (where !== "mkt") btns.push(h("button", { onclick: correction }, "Karim corrects himself"));
   btns.push(h("button", { onclick: async () => { await post("/api/demo/reset"); location.reload(); } }, "Reset"));
@@ -898,7 +913,7 @@ function renderDeptCard(k) {
 function renderLobby() {
   api("/api/lobby").then((cards) => $("zbody").replaceChildren(
     h("div", { class: "row", style: "margin-bottom:12px" }, h("button", { onclick: () => { tab = "talk"; renderNova(); } }, "← Back to Nova"), h("span", {})),
-    h("h2", {}, "Lobby board"),
+    h("h2", {}, "Requests board"),
     ...(cards.length ? cards.map((c) => h("div", { class: "boardcard" },
       h("div", { class: "row" }, h("strong", {}, `${NAMES[c.to] || c.to} · ${c.text}`), h("span", { style: "flex:0" }, h("span", { class: `chip ${c.status === "late" ? "bad" : c.status === "done" ? "ok" : "warn"}` }, c.status))),
       h("div", { class: "small muted", style: "margin-top:4px" }, `${c.id} · asked by ${NAMES[c.by] || c.by} · due ${c.due ? new Date(c.due).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "none"}`),
@@ -917,7 +932,7 @@ function renderNova() {
         Object.entries(NAMES).map(([k, v]) => h("option", { value: k, selected: k === person }, v)))),
       h("div", {}, h("label", {}, "Brief me at"), h("input", { type: "time", value: briefAt,
         onchange: async (e) => { briefAt = e.target.value; await post(`/api/settings/${person}`, { briefing_time: briefAt }); toast(`Nova will do her rounds before ${briefAt}`); } })),
-      h("div", { class: "full" }, h("button", { onclick: () => post("/api/nova/rounds") }, "Do rounds now"), h("button", { onclick: () => { tab = "lobby"; renderLobby(); } }, "Lobby board"))),
+      h("div", { class: "full" }, h("button", { onclick: () => post("/api/nova/rounds") }, "Do rounds now"), h("button", { onclick: () => { tab = "lobby"; renderLobby(); } }, "Requests board"))),
     h("button", { class: `primary talk ${talking ? "on" : ""}`, onclick: () => talking ? stopTalk() : startTalk() }, wave,
       talking ? (listening ? "Listening… tap to stop" : "Nova is speaking… tap to stop") : "Play briefing"),
     ...(convo.length ? [] : [h("p", { class: "hint" }, "Nova greets you, gives every department's update, then listens. Ask anything, or give work: “Tell Priya I need the Karim review by this evening.”")]),
@@ -954,7 +969,8 @@ async function ask(text) {
   zone = where === "hq" ? "front" : "nova"; tab = "talk"; renderSide();
   convo.push({ from: "you", text }); renderNova();
   if (hqBots.nova && where === "hq") say(hqBots.nova, "Let me check…", 2);
-  const r = await post("/api/nova/say", { text, person, session });
+  const r = await post("/api/pa/say", { text, person, session });
+  if (r.kind === "silent") return;  // in a meeting: the words are kept and she says nothing
   convo.push({ from: "nova", text: r.text, cites: r.cites, options: r.options }); renderNova();
   if (hqBots.nova && where === "hq") say(hqBots.nova, r.text, 7);
   speakingOnce = !talking;
@@ -999,7 +1015,9 @@ function hit(ev) {
   return ray.intersectObjects((where === "hq" ? hq : floor.group).children, true).find((i) => i.object.userData.phone || i.object.userData.dept || i.object.userData.agent || i.object.userData.core);
 }
 renderer.domElement.addEventListener("click", (ev) => {
-  const x = hit(ev); if (!x) return;
+  const x = hit(ev);
+  if (live?.click(ray, ev)) return;
+  if (!x) return;
   if (x.object.userData.phone) return openPhone();
   if (where === "hq") {
     const k = x.object.userData.dept || deptOf(x.object.userData.agent);
@@ -1059,6 +1077,8 @@ window.__diwanOverlaps = () => {  // for the browser test: visible labels that o
 };
 const clock = new THREE.Clock();
 let screenTick = 0, phoneTick = 0;
+live = attachFloor({ THREE, scene, DEPTS, AG, hqRooms, deptOf, label, hq, leave, where: () => where, floor: () => floor, isWaiting: (id) => agentState(id) === "waiting",
+  flash(k, color = null, amount = 1) { const r = hqRooms[k]; if (r) r.flash = Math.max(r.flash, amount); } });
 (function tick() {
   const dt = Math.min(clock.getDelta(), .05), t = clock.elapsedTime;
   const bots = [...Object.values(hqBots), ...Object.values(floor?.stations || {})];
@@ -1074,6 +1094,7 @@ let screenTick = 0, phoneTick = 0;
       if (r.walk.t >= 1) { r.bot.rotation.z = 0; r.walk = null; }
     }
   }
+  live?.animate(bots, dt, t, drawScreen);
   for (const room of Object.values(hqRooms)) {
     room.top.material.emissiveIntensity = room.flash * (.28 + Math.sin(t * 12) * .1);
     room.rimMat.emissiveIntensity = .9 + room.flash * 2.5; room.flash = Math.max(0, room.flash - dt * .25);
@@ -1122,7 +1143,7 @@ api("/api/integrations").then((i) => { phoneLine = { aisensy: "AiSensy", cloud: 
 follow((evs) => evs.forEach((e) => play(e)), past.at(-1)?.id || 0);
 const q = new URLSearchParams(location.search).get("enter");
 if (q && DEPTS[q]) setTimeout(() => enter(q), 1200);
-Object.assign(window.__diwan, { enter, leave, goStop, play, hqBots, phoneState,
+Object.assign(window.__diwan, { enter, leave, goStop, play, hqBots, phoneState, live,
   phoneXY: () => {  // for the browser test: where Rania's phone is on screen
     const st = phones.find((s) => s.g.parent?.visible !== false && (where === "hq" ? s === hqBots.rania : s === floor?.stations.rania));
     if (!st) return null;

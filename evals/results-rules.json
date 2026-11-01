@@ -1,11 +1,11 @@
 {
- "at": "2026-10-31T09:01:39",
+ "at": "2026-11-01T14:39:00",
  "mode": "rules",
  "suites": {
   "Scribe": {
    "passed": 12,
    "total": 12,
-   "seconds": 0.0,
+   "seconds": 0.2,
    "cases": [
     {
      "case": "We're looking at two point six million for the Marina unit.",
@@ -84,7 +84,7 @@
   "Rania": {
    "passed": 14,
    "total": 14,
-   "seconds": 0.1,
+   "seconds": 1.2,
    "cases": [
     {
      "case": "Hi",
@@ -101,14 +101,14 @@
      "by": "rules"
     },
     {
-     "case": "I want to buy → Dubai Marina → An apartment → 2 bed → Budget is 2.7 million → Cash → Now",
+     "case": "I want to buy → Dubai Marina → An apartment → 2 bed → Budget is 2.7 million → Cash → Now → To live in → UAE resident",
      "pass": true,
      "why": "",
      "reply": "Thank you! Based on what you told me, these fit best:\n1. Unit 1204, Marina Crest, Dubai Marina: 2 bed apartment, AED 2,600,000 (ref MC-1204, permit SAMPLE-71204)",
      "by": "rules"
     },
     {
-     "case": "I want to buy → Dubai Marina → An apartment → 2 bed → Budget is 2.7 million → Cash → Now → The first one",
+     "case": "I want to buy → Dubai Marina → An apartment → 2 bed → Budget is 2.7 million → Cash → Now → To live in → UAE resident → The first one",
      "pass": true,
      "why": "",
      "reply": "Great choice! Unit 1204, Marina Crest (MC-1204). I've told Omar, who will call you shortly. Would you like to see it? Omar is free Wednesday 28 Oct, 10:00 AM, We",
@@ -125,7 +125,7 @@
      "case": "Hi → Any 1 bed in Downtown?",
      "pass": true,
      "why": "",
-     "reply": "I've passed this to Omar, who hears about new ones first and will contact you with options that fit.",
+     "reply": "Noted. Omar will look for options that fit and contact you. Are you looking to buy, rent, sell or let out a property?",
      "by": "rules"
     },
     {
@@ -189,7 +189,7 @@
   "Nova": {
    "passed": 18,
    "total": 18,
-   "seconds": 0.2,
+   "seconds": 1.7,
    "cases": [
     {
      "case": "Who is paying for Karim?",
@@ -216,7 +216,7 @@
      "case": "What is the seller's name on the Marina unit?",
      "pass": true,
      "why": "",
-     "reply": "I don't have that in the office's records. Omar was in the meeting and would know.",
+     "reply": "Not recorded. Omar was in the meeting and would know.",
      "by": null
     },
     {
@@ -314,7 +314,7 @@
      "case": "Hi Nova, how are you?",
      "pass": true,
      "why": "",
-     "reply": "Good morning, Layla. All good here. Nothing needs you right now.",
+     "reply": "Good afternoon, Layla. All good here. Nothing needs you right now.",
      "by": "rules"
     }
    ]
@@ -431,7 +431,7 @@
   "Studio": {
    "passed": 14,
    "total": 14,
-   "seconds": 0.1,
+   "seconds": 0.3,
    "cases": [
     {
      "case": "Competitor watch finds every post above its account's average for its kind",

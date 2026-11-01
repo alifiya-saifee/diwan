@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from bisect import bisect_right
 import threading
 from datetime import datetime, timezone
 
@@ -37,7 +38,9 @@ TYPES = {
     # the content studio: what it saw, what it pinned, what it made, and footage people uploaded
     "post.seen", "post.read", "photo.read", "content.idea", "content.briefed", "content.scripted", "content.ready",
     "post.approved", "post.live", "post.paused", "post.withdrawn", "campaign.started", "campaign.ended", "lead.attributed", "product.saved", "mchat.said", "mchat.upload", "mchat.analysed", "photos.added", "plan.made", "plan.started", "competitor.checked", "board.pinned", "board.unpinned", "content.made", "footage.added", "step.blocked",
-    "qa.passed", "qa.failed", "qa.escalated",
+    "qa.passed", "qa.failed", "qa.escalated", "taste.signal", "taste.reason", "taste.forgotten",
+    # the Lobby room (the spec's Room 9), not the requests board below, which kept the old "lobby." names
+    "thread.posted", "playbook.added", "playbook.removed", "experiment.proposed", "experiment.refused", "experiment.approved", "experiment.switched", "experiment.reported", "experiment.ended",
     "lobby.posted", "lobby.seen", "lobby.reminded", "lobby.late", "lobby.done", "lobby.cancelled",
     "chat.received", "chat.sent", "chat.suggested", "chat.handover", "appointment.booked", "appointment.cancelled",
     # the lead desk: who owns a lead, what needs a person by when, the Pool, and notices to people
@@ -50,7 +53,7 @@ TYPES = {
     # the Sales room: a card moved to the next broker, what came of a call, the broker's list, a nudge
     "attention.moved", "lead.outcome", "lead.sweep", "lead.nudged", "notify.digest",
     # the Front Desk: the first open of the day, errands that wait for a yes, and the meeting Nova sits in on
-    "nova.arrived", "errand.drafted", "errand.confirmed", "errand.cancelled", "pocket.started", "pocket.line", "pocket.ended",
+    "email.sent", "email.failed", "note.added", "note.done", "nova.arrived", "nova.watched", "nova.headsup", "errand.drafted", "errand.confirmed", "errand.cancelled", "pocket.started", "pocket.line", "pocket.ended",
 }
 
 
@@ -63,6 +66,7 @@ class EventLog:
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.lock = threading.Lock()
+        self.seen: list[dict] = []  # append-only, so each row is parsed once; a page reads the log hundreds of times
         self.db.executescript("""
             create table if not exists events (
               id integer primary key autoincrement, at text not null, request text, deal text,
@@ -94,11 +98,8 @@ class EventLog:
             return self._row(self.db.execute("select * from events where id=?", (cur.lastrowid,)).fetchone())
 
     def list(self, *, deal: str | None = None, agent: str | None = None, after: int = 0) -> list[dict]:
-        q, args = "select * from events where id > ?", [after]
-        for col, v in (("deal", deal), ("agent", agent)):
-            if v:
-                q += f" and {col} = ?"
-                args.append(v)
         with self.lock:  # one connection is shared by the web threads and the studio's workers (a browser run found the race)
-            rows = self.db.execute(q + " order by id", args).fetchall()
-        return [self._row(r) for r in rows]
+            rows = self.db.execute("select * from events where id > ? order by id", (self.seen[-1]["id"] if self.seen else 0,)).fetchall()
+            self.seen.extend(self._row(r) for r in rows)  # reading what is new also finds another process's writes
+            seen = self.seen[bisect_right(self.seen, after, key=lambda e: e["id"]):] if after else list(self.seen)
+        return [e for e in seen if (not deal or e["deal"] == deal) and (not agent or e["agent"] == agent)] if deal or agent else seen  # rows are shared: read them, never change them

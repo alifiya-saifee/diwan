@@ -91,7 +91,7 @@ def progress(g: Graph, deal: str | None) -> dict | None:
     d = g.nodes[f"deal:{deal}"].props
     if not d.get("qtype"):
         return None
-    f, answers = qualify.form(g), d.get("answers", {})
+    f, answers = qualify.form(g, deal), d.get("answers", {})
     need = [x for x in qualify.fields_for(f, d["qtype"]) if x.get("required") and (not x.get("ask_if") or qualify.holds(x["ask_if"], answers))]
     done = [x for x in need if x["key"] in answers and not (answers[x["key"]].get("unsure") and x.get("strict"))]
     return {"done": len(done), "of": len(need), "complete": len(done) == len(need)}

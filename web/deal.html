@@ -79,7 +79,7 @@
   /* the deal panel (today's deal page, unchanged inside) */
   .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 40; }
   aside.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 100vw); z-index: 41; background: var(--bg-2); border-left: 1px solid var(--line-2);
-    overflow-y: auto; padding: 18px 22px 40px; box-shadow: -30px 0 60px -20px rgba(0, 0, 0, .7); }
+    overflow-y: auto; padding: 18px 22px 96px; box-shadow: -30px 0 60px -20px rgba(0, 0, 0, .7); }
   .drawer .closebtn { position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; padding: 0; }
   .strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
   .strip div { border-radius: 12px; padding: 9px 10px; border: 1px solid var(--line); font-size: 13px; }
@@ -169,23 +169,29 @@
     <aside class="drawer" role="dialog" aria-label="Deal"><button class="closebtn" id="close" aria-label="Close">✕</button><div id="main"></div></aside></div>
 </main>
 <script type="module">
-import { h, api, post, follow, header, describe, who, loadAgents, time, NAMES, toast } from "./app.js";
+import { h, api, post, follow, header, describe, who, loadAgents, time, NAMES, toast, SESSION } from "./app.js";
 header("deal.html");
 await loadAgents();
 const $ = (id) => document.getElementById(id);
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 let deal = new URLSearchParams(location.search).get("deal"), view = null;
+let dirty = false;  // something typed in the deal and not sent yet: a refresh would wipe it, even after the focus has moved to a button
 let filter = new URLSearchParams(location.search).get("filter") || "", stage = "", query = "", sort = "changed", desc = true, page = 1, group = "all";
 $("as").replaceChildren(...Object.entries(NAMES).map(([k, v]) => h("option", { value: k }, v)));
 // who holds each Deal desk role comes from the office's settings, never from a name in this page
 let ROLES = await api("/api/desk/roles");
 const TEAM = await api("/api/people"), OWNER = Object.keys(TEAM).find((k) => TEAM[k].role === "Owner");
 const R = (role) => ROLES.find((r) => r.role === role) || {};
-const holds = (role) => !!R(role).holder && R(role).holder === me();
+const holds = (role) => !!R(role).holder && R(role).holder === (SESSION.auth ? SESSION.person : me());  // signed in, the owner can look through someone's eyes but acts as herself
 const rname = (role) => R(role).holder_name || `the ${R(role).title?.toLowerCase() || role} (nobody assigned)`;
-$("as").value = store.get("desk.as") || R("compliance").holder || Object.keys(NAMES)[0];
+$("as").value = (SESSION.auth && SESSION.person) || store.get("desk.as") || R("compliance").holder || Object.keys(NAMES)[0];  // signed in, everyone starts as themselves
 $("as").onchange = () => { store.set("desk.as", $("as").value); render(); show(); };
 const me = () => $("as").value;
+const seesCompliance = !SESSION.auth || SESSION.owner || SESSION.department === "comp";
+if (SESSION.auth && !SESSION.owner) {  // the rooms a department doesn't have are not offered (the server refuses them anyway)
+  const dept = SESSION.department, rooms = { compliance: ["comp"], finance: ["fin", "comp"], operations: ["ops", "comp"] };
+  for (const [v, may] of Object.entries(rooms)) if (!may.includes(dept)) document.querySelector(`#views a[data-v=${v}]`)?.remove();
+}
 const aed = (n) => !n ? "0" : n >= 1e6 ? `${(n / 1e6).toFixed(2).replace(/\.?0+$/, "")}M` : `${Math.round(n / 1000)}k`;
 const ago = (iso) => { const m = (Date.now() - new Date(iso)) / 6e4; return m < 1 ? "just now" : m < 60 ? `${Math.round(m)} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 const st = ([s, t]) => h("span", { class: `chip ${{ ok: "ok", warn: "warn", bad: "bad" }[s] || ""}` }, t);
@@ -241,9 +247,9 @@ async function overview() {  // the rules panel loads its own data
       tile("Money · next 7 days", `AED ${aed(o.money.next7)}`, row(`Expected (${o.money.next7_n})`, `AED ${aed(o.money.next7)}`, () => goDeals("expected")),
         row(`Overdue (${o.money.overdue_n} deals)`, o.money.overdue ? `AED ${aed(o.money.overdue)}` : 0, () => goDeals("overdue"))),
       tile("Compliance", o.comp.unscreened + o.comp.proof + o.comp.cash + o.comp.checks + o.comp.match,
-        row("Converted, not cleared", o.comp.uncleared, () => goDeals("uncleared")), row("Not screened", o.comp.unscreened, () => goDeals("unscreened")), row("Possible match", o.comp.match, () => goDeals("match")),
-        row("Payer changed, to review", o.comp.checks, () => goDeals("checks")), row("Proof missing", o.comp.proof, () => goDeals("proof")),
-        row("Cash report to file", o.comp.cash, () => goDeals("cash"))),
+        row("Converted, not cleared", o.comp.uncleared, () => goDeals("uncleared")), !seesCompliance ? null : row("Not screened", o.comp.unscreened, () => goDeals("unscreened")), !seesCompliance ? null : row("Possible match", o.comp.match, () => goDeals("match")),
+        ...(seesCompliance ? [row("Payer changed, to review", o.comp.checks, () => goDeals("checks")), row("Proof missing", o.comp.proof, () => goDeals("proof")),
+          row("Cash report to file", o.comp.cash, () => goDeals("cash"))] : [])),
       tile("Paperwork", o.paper.submit + o.paper.sentback + o.paper.transfer, row("Form F to submit", o.paper.submit, () => goDeals("submit")),
         row("Form F sent back", o.paper.sentback, () => goDeals("sentback")), row("In transfer", o.paper.transfer, () => goDeals("transfer")))),
     h("section", { class: "panel", id: "after", style: "margin-bottom:18px" }, h("h2", {}, "After the sale: closing, then Records"),
@@ -494,7 +500,7 @@ function qrow(x) {
     h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/screen`, { result: "possible match", note: i.value }, "Possible match recorded") }, "Possible match")]; }
   else if (x.act === "filed") { const i = inp("goAML reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/filed`, { reference: i.value }, "Filing recorded") }, "I filed it")]; }
   else if (x.act === "hit") { const i = inp("What you checked"); acts = [i, h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/hit`, { ok: true, note: i.value }, "Resolved: false positive") }, "False positive"), h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/hit`, { ok: false, note: i.value }, "Match confirmed; the deal is blocked") }, "It's a match")]; }
-  else if (x.act === "received") { const i = inp("Bank reference"); acts = [openBtn("Details"), i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/received`, { reference: i.value }, "Marked received") }, "Received")]; }
+  else if (x.act === "received") acts = [h("button", { class: "primary", onclick: () => open(x.deal) }, "Mark what arrived…")];  // amount, method and who paid decide what Compliance sees: no shortcut
   else if (x.act === "submitted") { const i = inp("Portal reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/submitted`, { reference: i.value }, "Form F submitted") }, "I submitted it")]; }
   else if (x.act === "confirm") acts = [h("button", { onclick: () => open(x.deal) }, "Check the figures"), h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/confirm`, {}, "Final figures confirmed") }, "Confirm")];
   else if (x.act === "docs") acts = [h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/docs`, {}, "Closing documents filed") }, "Documents filed")];
@@ -555,6 +561,7 @@ async function open(d) {
   deal = d;
   history.replaceState(null, "", `?deal=${encodeURIComponent(d)}${location.hash}`);
   $("drawerRoot").hidden = false;
+  dirty = false;
   try { view = await api(`/api/desk/deals/${encodeURIComponent(d)}`); ROLES = view.roles; }
   catch (e) { view = null; $("main").replaceChildren(h("div", { class: "empty", style: "padding-top:40px" }, e.message)); return; }
   render(); feed();
@@ -665,7 +672,7 @@ function taskEl(t) {
         try {
           const r = await post(`/api/desk/tasks/${t.id}/received`, { by: me(), reference: ref.value, amount: amt.value, method: how.value, on: on.value, payer: from.value, proof_amount: seen.value, confirm });
           toast(r.held ? `With Compliance before the receipt: ${r.flags.join("; ")}` : r.balance ? `Part received; ${full(r.balance)} still to come` : escrow ? "Marked paid into escrow; receipt filed" : "Marked received; receipt filed"); await open(deal); show();
-        } catch (e) { if (/^Proof shows/.test(e.message) && window.confirm(`${e.message}\n\nSave it anyway?`)) mark(true); else toast(e.message); }
+        } catch (e) { if (/^(Proof shows|That is AED)/.test(e.message) && window.confirm(`${e.message}\n\nSave it anyway?`)) mark(true); else toast(e.message); }
       };
       el.append(isFinance ? h("div", { class: "acts" }, amt, how, on, from, seen, ref, h("button", { class: "primary", onclick: () => mark() }, escrow ? "Paid into escrow" : "Received"))
         : h("div", { class: "acts small muted" }, `Only ${rname("finance")} marks money received.`));
@@ -848,8 +855,9 @@ function stageBar(v) {
   };
   const fmt = (n) => `AED ${Math.round(n).toLocaleString()}`;
   const delta = h("div", { class: "small", id: "delta", style: "flex-basis:100%" });
+  let typedPrice = false;  // the listing's price fills the box until the person types their own
   const amount = h("input", { type: "number", min: 0, step: 1000, value: s.listing_aed || v.summary.value || "", "aria-label": "Agreed price (AED)", style: "flex:1 1 200px",
-    oninput: () => paint() });
+    oninput: () => { typedPrice = true; paint(); } });
   const paint = () => {
     const a = Number(amount.value), L = propDraft?.deal === deal && propDraft.source === "listing" ? propDraft.listing?.price_aed : s.listing_aed;
     if (!L) { delta.textContent = propDraft?.source === "listing" ? "Pick the listing to compare the price." : "Not our listing: nothing to compare."; delta.style.color = "var(--muted)"; return; }
@@ -880,7 +888,7 @@ function stageBar(v) {
     s.pending ? h("div", { class: "card open", style: "margin:6px 0" }, h("strong", {}, `Waiting for ${TEAM[OWNER]?.name || "the owner"}: ${s.pending.text}`),
       me() === OWNER ? h("div", { class: "acts" }, note, h("button", { class: "primary", onclick: () => decide(true) }, "Approve the discount"), h("button", { onclick: () => decide(false) }, "Refuse")) : null)
     : stageAsk === "convert" ? h("div", { class: "card open", id: "convert", style: "margin:6px 0" }, h("strong", {}, "The client said yes: which property, and the agreed price"),
-      propertyPanel(v, (x) => { if (x.price_aed && (!amount.value || Number(amount.value) === propPrice)) amount.value = x.price_aed; propPrice = x.price_aed || 0; paint(); }, paint),
+      propertyPanel(v, (x) => { if (x.price_aed && (!typedPrice || !amount.value)) amount.value = x.price_aed; propPrice = x.price_aed || 0; paint(); }, paint),
       h("div", { class: "acts" }, amount, h("button", { class: "primary", onclick: convertNow }, "Save and convert"), h("button", { onclick: () => { stageAsk = null; render(); feed(); } }, "Cancel"), delta))
     : stageAsk ? h("div", { class: "acts", style: "margin:4px 0 8px" }, stageAsk === "Lost" ? lostWhy : null, reason,
       h("button", { class: "primary", onclick: () => go(stageAsk, stageAsk === "Lost" ? `${lostWhy.value}${reason.value ? `: ${reason.value}` : ""}` : reason.value) }, stageAsk === "Lost" ? "Mark lost" : `Move back to ${stageAsk}`),
@@ -1188,7 +1196,9 @@ if (deal) open(deal).then(() => { if (arrived.get("convert") && view && !view.st
 // live: other people's work shows up here, but never while someone is typing (a refresh would wipe their words)
 let rt, pending = false;
 const typing = () => document.activeElement?.matches("input:not([type=search]), textarea") && document.activeElement.value;
-const refresh = () => { if (typing()) { pending = true; return; } pending = false; show(); if (deal) open(deal); };
+
+$("main").addEventListener("input", (e) => { if (!e.target.matches("[type=search]")) dirty = true; });
+const refresh = () => { if (typing()) { pending = true; return; } pending = false; show(); if (deal && !dirty) open(deal); };
 addEventListener("focusout", () => setTimeout(() => { if (pending) refresh(); }, 50));
 const { events: last } = await api("/api/health");
 follow((evs) => { if (evs.some((e) => e.deal)) { clearTimeout(rt); rt = setTimeout(refresh, 400); } }, last);

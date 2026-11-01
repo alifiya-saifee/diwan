@@ -381,7 +381,7 @@ def closing(g: Graph, deal: str) -> dict | None:
                           else "Draft, send and collect the commission invoice in Finance"})
         else:
             items.append({"key": key, "text": text, "done": not comp_open and comp_state["ok"], "who": roles.holder(g, "compliance"),
-                          "note": f"{len(comp_open)} compliance item(s) still open" if comp_open else None if comp_state["ok"] else comp_state["reason"]})
+                          "note": f"{len(comp_open)} compliance item(s) still open" if comp_open else None if comp_state["ok"] else compliance.public_reason(comp_state)})
     sale = sale_of(g, deal)
     return {"items": items, "ready": all(i["done"] for i in items), "sale": sale.id if sale else None,
             "closed_on": sale.props.get("date") if sale else None}

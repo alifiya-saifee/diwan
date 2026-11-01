@@ -45,12 +45,100 @@ def _speak(text: str, path: Path) -> Path:
 
 def photos(office: Office, ref: str) -> list[str]:
     """The listing's photos (links from the feed) and the ones uploaded for it, in that order."""
+    from diwan.agents import studio
     lst = office.graph().nodes.get(f"listing:{ref}")
     out = list((lst.props.get("photos") or []) if lst else [])
+    drawn: set[str] = set()
     for e in office.log.list():
-        if e["type"] == "photos.added" and e["content"]["ref"] == ref:
+        if studio.ended(e, ref):  # a stopped post's drawings go with it; real photos stay
+            out = [p for p in out if p not in drawn]
+        elif e["type"] == "photos.added" and e["content"]["ref"] == ref:
             out += e["content"]["paths"]
+            drawn |= set(e["content"]["paths"]) if e["content"].get("made_by") else set()
     return out
+
+
+AI_FRAMES, AI_FRAMES_MIN = 6, 3
+FRAME_STYLE = ("A refined editorial illustration, clearly drawn and not a photograph, for a vertical video by this business: {about} "
+               "The post is about: {title}. This frame shows, as one clear scene from that trade and place: {line} "
+               "Fill the frame with one scene, not a collage. Strictly no clip-art icons (compasses, suitcases, coins, magnifying glasses, charts, shields). "
+               "Strictly no text, letters, logos, faces, real people, or real buildings or landmarks.{avoid}")
+FRAME_ROUNDS = 1  # one redraw after the Creative Director's first look: images are paid for and slow
+
+
+def frame_review(office: Office, ref: str) -> dict | None:
+    """What the Creative Director said about this post's AI frames."""
+    from diwan.agents import studio
+    for e in reversed(office.log.list()):
+        if studio.ended(e, ref):
+            return None
+        if e["type"] == "photos.added" and e["content"]["ref"] == ref and e["content"].get("made_by"):
+            return e["content"].get("review")
+    return None
+
+
+def can_draw(office: Office, ref: str) -> bool:
+    """AI frames are for posts about the brand or a topic. A drawn home is not a home: a listing shows its real photos."""
+    from diwan.agents import studio
+    try:
+        return studio._listing(office, ref)["item"] == "topic"
+    except KeyError:
+        return False
+
+
+def ai_frames(office: Office, ref: str, *, by: str) -> dict:
+    """Muse Image draws a frame for moments of the approved script; they become this post's photos. Returns {"ok", "frames"} or {"needs"}."""
+    from concurrent.futures import ThreadPoolExecutor
+    from diwan import business
+    from diwan.agents import director, studio, taste
+    from diwan.providers import meta
+    if not can_draw(office, ref):
+        return {"ok": False, "needs": "real photos: a listing can't use AI pictures, because a buyer would take them for the property"}
+    sc = studio.approved_script(office, ref)
+    if not sc:
+        return {"ok": False, "needs": "an approved script (pick one first)"}
+    if photos(office, ref):
+        return {"ok": False, "needs": "nothing: this post already has its pictures"}
+    if not meta.ready():
+        return {"ok": False, "needs": "the Meta key, for Muse Image"}
+    rows = sc.get("shots") or studio.video_plan(sc, studio._listing(office, ref))
+    lines = [w for r in rows if (w := spoken(r["say"]))]
+    step = max(1, len(lines) / AI_FRAMES)
+    chosen = [lines[int(i * step)] for i in range(min(AI_FRAMES, len(lines)))]
+
+    lst, about = studio._listing(office, ref), " ".join(x for x in (business.describe(office), taste.brief(office)) if x)
+    what = " ".join(lines)
+
+    def draw(job: tuple[int, str, str]) -> tuple[int, str | None]:
+        i, line, avoid = job
+        try:
+            return i, str(meta.media_path(meta.image(FRAME_STYLE.format(about=about, title=lst["title"], line=line, avoid=f" Avoid this: {avoid}." if avoid else ""), f"frame-{ref}-{i}")))
+        except (meta.MetaError, OSError) as e:
+            studio._blocked(office, "mthumb", f"Muse Image failed on a frame: {str(e)[:120]}")
+            return i, None
+
+    with ThreadPoolExecutor(3) as pool:
+        got = {i: p for i, p in pool.map(draw, [(i, x, "") for i, x in enumerate(chosen)]) if p}
+    seen = None
+    for turn in range(FRAME_ROUNDS + 1):
+        keys = sorted(got)
+        seen = director.review(office, lst["title"], what, [got[k] for k in keys])
+        if seen is None:
+            break
+        failed = {keys[n]: why for n, why in seen["failed"].items()}
+        if not failed or turn == FRAME_ROUNDS:
+            for k in failed:
+                got.pop(k)  # still not good enough: it is not offered
+            break
+        with ThreadPoolExecutor(3) as pool:
+            got.update({i: p for i, p in pool.map(draw, [(i, chosen[i], w) for i, w in failed.items()]) if p})
+    paths = [got[k] for k in sorted(got)]
+    if len(paths) < min(AI_FRAMES_MIN, len(chosen)):
+        why = "; ".join(list(failed.values())[:2]) if seen else "Muse Image made too few"
+        return {"ok": False, "needs": f"better frames: only {len(paths)} of {len(chosen)} passed the Creative Director ({why}). Try again, or add real photos"}
+    review = {"score": seen["score"], "checked": True} if seen else {"checked": False}
+    office.log.append("photos.added", actor=by, content={"ref": ref, "paths": paths, "made_by": "muse-image", "review": review})
+    return {"ok": True, "frames": len(paths), "review": review}
 
 
 def _local(src: str, folder: Path, i: int) -> Path | None:
@@ -196,7 +284,7 @@ def make(office: Office, ref: str, *, by: str) -> dict:
         pad = folder / f"voice{i}.wav"
         studio._ffmpeg("-i", str(speech), "-af", f"apad=whole_dur={dur:.2f}", "-ar", "44100", "-ac", "1", str(pad))
         voices.append(pad)
-        if i:  # the hook is the big title; everything after it is a caption
+        if 0 < i < len(rows) - 1:  # the hook is the big title and the end card says the close; the rest are captions
             said.append({"start": round(at, 2), "end": round(at + dur - .15, 2), "text": words})
         show = r["show"].lower()
         last = i == len(rows) - 1

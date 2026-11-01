@@ -503,6 +503,18 @@ def test_losing_a_deal_with_money_in_asks_the_owner_and_ends_what_was_expected(o
     assert any(e["type"] == "case.lost" for e in office.log.list(deal=M))
 
 
+def test_a_deal_from_a_chat_expects_the_deposit_even_if_the_client_never_said_one(office, c):
+    from diwan.agents import reception  # noqa: F401
+    office.log.append("deal.opened", actor="omar", deal="chat-1", content={"property": "Villa 88, JVC", "customer": "Layth Mansour", "broker": "omar"})
+    desk_rules.set_terms(office, "chat-1", {"sides": "both"}, by="omar")
+    assert c.post("/api/desk/deals/chat-1/convert", json={"by": "omar", "amount": 1_000_000, "property": {"source": "agency", "label": "Villa 88, JVC", "other_agency": "Acme", "other_share_pct": 50}}).status_code == 200
+    t = task(office, "chat-1", agent="pay")
+    assert t.props["amount_aed"] == 100_000 and "10%" in t.props["action"]
+    office.record_fact("chat-1", "deal_term", "We settled at nine hundred thousand.", "Layth Mansour", amount_aed=900_000, replaces=office.graph().facts("chat-1", "deal_term")[-1].id)
+    g = office.graph()
+    assert g.nodes[t.id].status == "withdrawn" and task(office, "chat-1", agent="pay").props["amount_aed"] == 90_000  # it follows the price
+
+
 def test_every_spec_moment_is_in_the_log_for_the_other_rooms(office, c):
     b = ready(office, c)
     types = {e["type"] for e in office.log.list(deal=M)}

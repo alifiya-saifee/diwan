@@ -66,8 +66,25 @@ def posts(office: Office, source: str | None = None) -> list[dict]:
     return list(seen.values())
 
 
+def ended(e: dict, ref: str) -> bool:
+    """This event stopped the post about ref. What was made before it belongs to a post that no longer exists: a new run starts clean."""
+    return e["type"] == "post.withdrawn" and e["content"].get("ref") == ref and not e["content"].get("archived")
+
+
+def stopped(office: Office, ref: str) -> dict | None:
+    """Why the post about ref was stopped, until a new one is started."""
+    for e in reversed(office.log.list()):
+        if ended(e, ref):
+            return {"why": e["content"].get("why", ""), "at": e["at"]}
+        if e["type"] == "content.idea" and e["content"].get("ref") == ref:
+            return None
+    return None
+
+
 def made(office: Office, kind: str, ref: str | None = None) -> dict | None:
     for e in reversed(office.log.list()):
+        if ref and ended(e, ref):
+            return None
         if e["type"] == "content.made" and e["content"]["kind"] == kind and (ref is None or e["content"].get("ref") == ref):
             return e["content"]
     return None
@@ -126,7 +143,12 @@ def unpin(office: Office, card: str, *, by: str) -> None:
 
 
 def footage(office: Office, ref: str) -> dict | None:
-    return next((e["content"] for e in reversed(office.log.list()) if e["type"] == "footage.added" and e["content"]["ref"] == ref), None)
+    for e in reversed(office.log.list()):
+        if ended(e, ref):
+            return None
+        if e["type"] == "footage.added" and e["content"]["ref"] == ref:
+            return e["content"]
+    return None
 
 
 def _now() -> datetime:
@@ -832,7 +854,8 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
                                                    f"the {lst['item']}, and build the lines from its features. Every line says something new; never repeat a "
                                                    "line or the name. No placeholders or brackets: if a fact is missing, leave it out. The last "
                                                    "line invites the viewer to get in touch, in the brand's own sign-off if it has one. "
-                                                   "Write how a person really talks to a friend: short, natural spoken sentences that a viewer would keep watching. The first line stops the scroll "
+                                                   "Write how a person really talks to a friend: short, natural spoken sentences that a viewer would keep watching. One idea only, at most 60 spoken words in all, "
+                                                   "about 25 seconds. No brochure words such as premier, solutions or seamless: say what the viewer gets. The first line stops the scroll "
                                                    "with a question or a surprising detail, about the viewer or the place, never about us. Never use a planning word such as an angle's name, "
                                                    "'facts first', 'investor facts' or 'price reveal'. Never say a permit number or a unit reference aloud: they are shown on screen. "
                                                    + ("hook_ar and lines_ar are the Arabic of hook_en and lines_en." if arabic else "hook_ar and lines_ar are empty.")
@@ -850,7 +873,8 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
             + (f"\n\nRevise this draft; change only what is asked, keep everything else:\n{json.dumps({k: base[k] for k in ('hook_en', 'hook_ar', 'lines_en')}, ensure_ascii=False)}" if base else "")
             + (f"\n\n{feedback}" if feedback else ""))
     from diwan.agents import style
-    notes = style.brief(office)
+    from diwan.agents import taste
+    notes = "\n".join(x for x in (style.brief(office), taste.brief(office)) if x)
     user = runner.user_message(task, {_key(office, ref): rec, "brand": brand.brief(office), **({"company": facts} if facts else {}), **({"hook": hook_card["hook"]} if hook_card else {}),
                                       **{f"worked{i + 1}": b for i, b in enumerate(built)}, **({"style": notes} if notes else {})})
     data, by = None, "template"
@@ -998,11 +1022,33 @@ def playbook(office: Office, cause: int | None) -> dict | None:
 CAPTION_WORDS = 6  # a caption is read in a glance: longer spoken turns are split, each part timed by its share of the words
 
 
+HANGING = {"a", "an", "the", "and", "or", "but", "of", "to", "in", "on", "at", "for", "with", "by", "from", "our", "your", "you", "we", "it's", "is", "are", "all", "under"}
+
+
+def _caption_parts(words: list[str]) -> list[list[str]]:
+    """A caption ends where a person would pause: at punctuation, and never on a word that leans on the next one."""
+    parts, cur = [], []
+    for w in words:
+        cur.append(w)
+        stop, pause = w[-1] in ".?!", w[-1] in ",;:" and len(cur) >= 3
+        if stop or pause or len(cur) >= CAPTION_WORDS:
+            carry = []
+            while not (stop or pause) and len(cur) > 2 and cur[-1].lower() in HANGING:
+                carry.insert(0, cur.pop())
+            parts.append(cur)
+            cur = carry
+    if cur:
+        parts.append(cur)
+    if len(parts) > 1 and len(parts[-1]) == 1 and len(parts[-2]) < CAPTION_WORDS:  # no word alone on the screen
+        parts[-2:] = [parts[-2] + parts[-1]]
+    return parts
+
+
 def _short(rows: list[dict]) -> list[dict]:
     out = []
     for r in rows:
         words = str(r.get("text") or "").split()
-        parts = [words[i:i + CAPTION_WORDS] for i in range(0, len(words), CAPTION_WORDS)]
+        parts = _caption_parts(words)
         at, each = r["start"], (r["end"] - r["start"]) / max(1, len(words))
         for p in parts:
             out.append({"start": at, "end": at + each * len(p), "text": " ".join(p)})
@@ -1116,6 +1162,8 @@ def post_text(office: Office, ref: str, sc: dict, cause: int | None, feedback: s
     permit = f"\nPermit {lst['permit']}" if business.permit_needed(office) and lst.get("permit") else ""
     if sc.get("slides"):  # read, not watched: the caption is the post's own words
         facts = "\n".join(x for x in sc["lines_en"] if x != brand.cta(office))
+    elif lst["item"] == "topic":  # the script's spoken lines, not the brand's description of itself
+        facts = " ".join(x for x in sc["lines_en"][:3] if x != brand.cta(office))
     from diwan.agents import marketing
     code = marketing.code_for(office, ref)  # how a lead is traced back to this post
     base = f"{sc['hook_en']}\n\n{facts}{permit}\n\n{brand.cta(office)} Say {code}."
@@ -1450,13 +1498,18 @@ def own_script(office: Office, ref: str, text: str, *, by: str) -> dict:
 
 def script_options(office: Office, text: str) -> list[dict]:
     """The scripts offered in a request, in order."""
-    return [c for c in (_content(office, i) for i in re.findall(r"script (C\d+)", text)) if c]
+    from diwan.agents import taste
+    found = [c for c in (_content(office, i) for i in re.findall(r"script (C\d+)", text)) if c]
+    return sorted(found, key=lambda c: -taste.script_score(office, c))  # what has worked here comes first
 
 
-def approved_script(office: Office, ref: str) -> dict | None:
-    """The script a person approved for filming, if any: the one they picked, or the only one offered."""
+def approved_script(office: Office, ref: str, *, past: bool = False) -> dict | None:
+    """The script a person approved for filming, if any: the one they picked, or the only one offered. With past, also one
+    whose post was stopped: what a post was stays true for its results."""
     g = office.graph()
     for e in reversed(office.log.list()):
+        if not past and ended(e, ref):
+            return None
         if e["type"] == "decision.made" and e["content"].get("answer") == "approve":
             n = g.nodes.get(e["content"]["card"])
             if n and n.props.get("kind") == "use_script" and ref in n.props.get("text", ""):
@@ -1521,6 +1574,8 @@ async def _to_approval(office: Office, ref: str, sc: dict, text: dict, start: in
     """The last gate, the platform versions, the time, and the request to the person who approves publishing."""
     from diwan.agents import eventpost
     step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
+    if not approved_script(office, ref):  # stopped while it was being made
+        return
     ok, sc, text = await step(permit_gate, office, ref, sc, text, start)
     if not ok:
         return

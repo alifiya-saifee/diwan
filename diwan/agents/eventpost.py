@@ -19,6 +19,7 @@ from diwan.office import Office
 from diwan.providers import meta
 
 FORMATS = {"reel": "Reel", "carousel": "Carousel", "image": "Single image", "graphic": "Graphic"}
+MIN_WINNERS = 10  # fewer winning posts than this say nothing about format
 SLIDES = ("carousel", "image", "graphic")  # made here as pictures, not filmed
 W, H = 1080, 1350
 MAX_SLIDES = 10
@@ -130,6 +131,14 @@ def search(office: Office, ref: str, cause: int | None) -> list[dict]:
     return cards
 
 
+def _text_wins(office: Office) -> str | None:
+    """A sentence when competitors' winning posts are clearly more often words on pictures than a person on camera, else None."""
+    from diwan.agents import reader
+    w = reader.winning(office)
+    text, talk = w["on_screen"].get("text on images", 0), w["on_screen"].get("a person talking to camera", 0)
+    return f"{text} of {w['posts']} winning competitor posts are text on images, against {talk} with a person on camera" if w["posts"] >= MIN_WINNERS and text > talk else None
+
+
 def _reels_win(office: Office) -> str | None:
     """A sentence when our own reels clearly beat our other posts, else None."""
     by = {"reel": [], "post": []}
@@ -157,7 +166,8 @@ def suggest(office: Office, ref: str) -> dict:
     elif n:
         fmt, why = "image", f"{n} usable photo{'s' if n != 1 else ''}: one strong picture is better than a thin carousel"
     else:
-        fmt, why = "graphic", "no usable photos yet: words on a clean background"
+        wins = _text_wins(office)
+        fmt, why = "graphic", f"no usable photos yet, and {wins}" if wins else "no usable photos yet: words on a clean background"
     chosen = (topics.get(office, ref) or {}).get("format")
     if chosen and chosen != fmt:
         fmt, why = chosen, f"you chose this (Diwan suggested {FORMATS[fmt].lower()}: {why})"
@@ -175,10 +185,17 @@ def choose(office: Office, ref: str, fmt: str, *, by: str) -> None:
 
 
 def shape(office: Office, lst: dict) -> dict | None:
-    """How a moment's post will be made, for the writers; None for everything else."""
-    if not lst.get("moment"):
+    """How a post made as pictures will be made, for the writers: a moment, or a teaching post when competitors' winners
+    show words on pictures work. None for everything else. A post about the brand stays a person speaking: people buy from people."""
+    from diwan.agents import taste
+    ours = taste.weight(office, "format:graphic"), taste.weight(office, "format:reel, to camera")  # what this business itself said beats what competitors do
+    leans = ours[1] <= taste.BLOCK or (ours[0] > taste.BLOCK and bool(_text_wins(office)))
+    teaching = lst.get("item") == "topic" and not lst.get("job") and not lst["ref"].startswith("JOB-") and leans
+    if not lst.get("moment") and not teaching:
         return None
     s = suggest(office, lst["ref"])
+    if not lst.get("moment") and s["format"] == "reel":
+        return None  # there is real footage: use it
     good = sorted([p for p in photos(office, lst["ref"]) if p["usable"]], key=lambda p: -p.get("strength", 0))
     return s | {"photos": good}
 
@@ -251,8 +268,8 @@ def _background(office: Office, ref: str) -> tuple[Image.Image, str]:
         return plain, "plain"
     voice = brand.profile(office)["voice"]["value"] or "calm, professional"
     try:
-        served = meta.image(f"An abstract background, soft gradients and light, dark tones with a little gold, mood: {voice}. Strictly no text, letters, logos, "
-                            "people, faces, buildings, products or places.", f"bg-{ref}", size="1024x1792")
+        served = meta.image(f"A refined background for a post by this business: {business.describe(office)} Mood: {voice}. Quiet and uncluttered, so words read easily on it, "
+                            "and it clearly suits this trade and place. Strictly no text, letters, logos, people, faces, clip-art icons or real buildings.", f"bg-{ref}", size="1024x1792")
         return _fit(Image.open(meta.media_path(served)).convert("RGB")), "Muse Image"
     except (meta.MetaError, OSError) as e:
         studio._blocked(office, "mthumb", f"Muse Image failed, using a plain background: {str(e)[:120]}")

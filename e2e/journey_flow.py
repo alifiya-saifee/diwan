@@ -61,7 +61,7 @@ with sync_playwright() as p:
     pg.fill("#jm-title", "New golden visa rule")
     pg.fill("#jm-what", "The minimum property value for the golden visa changed this week, so more buyers now qualify.")
     pg.click("#jm-add")
-    pg.wait_for_function("document.querySelector('#jpanel').innerText.includes('React to this moment')")
+    pg.wait_for_function("document.querySelector('#jpanel').innerText.includes('New golden visa rule')")
     ok("a moment goes first", "New golden visa rule" in pg.inner_text("#jpanel"))
     pg.screenshot(path=str(OUT / "3-moment.png"), full_page=True)
 

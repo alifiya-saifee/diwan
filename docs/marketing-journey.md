@@ -122,7 +122,13 @@ Nothing passes either gate without a person.
 | "The lighting is bad, film it again" | Finished reel | The broker, as a task | Editing runs on the new take |
 | A failed check | Any time | The agent who made the work | Twice at most, then a person |
 | A permit hold | The last gate | Whoever caused it | Checked again |
-| **Stop this post** | Finished post | Nobody | It ends there |
+| **Stop this post** | Finished post | Nobody | It ends there: see below |
+
+**What Stop does.** Everything made for that post leaves the Run tab and can't be posted: script, film list, video or images, caption and AI frames. The broker's film task is withdrawn, its day comes off the plan and stays empty, and it is listed under Came off. Real photos stay. Cancel on the "why" question stops nothing. It doesn't come back by itself for 30 days, except one of the first nine posts, which is still to do and comes back as a new version. Running it again starts clean, and the reason goes to the learner.
+
+**A yes that can't happen changes nothing.** With publishing off, or a time already past, Approve and Post now say what is missing and the post keeps waiting. **Cancel it** puts a scheduled post back to waiting for a decision.
+
+**Your turn shows only the post you have open.** Other posts waiting are links at the bottom. A background refresh leaves what you typed or chose alone unless there is something new to decide.
 
 ## 8. When it goes out
 
@@ -175,7 +181,7 @@ Studio → Plan is the one place for what is coming and what is waiting.
 
 - **Waiting for you:** everything that needs a person, across every post: scripts to pick, briefs to approve, posts to publish.
 - **The plan:** choose 1 week, 2 weeks or 1 month. Each day shows the post, why it was chosen and its format.
-  - **Approve** keeps it on its day. **Reject** takes it off, lists it under Came off, and the day takes the next best post.
+  - **Approve** keeps it on its day. **Remove** takes it off and lists it under Came off. The day stays empty until someone makes a new plan.
   - **Write it now** writes that day's three scripts straight away. They appear under Waiting for you, then Read the scripts opens them.
   - Nothing is written or paid for until a day comes or a person presses Write it now.
 - **Going out:** what is scheduled and what is live.
@@ -188,3 +194,31 @@ Once a script is picked the other two options go away, and the chosen one is und
 A new shot about every 2.6 seconds, with moves between them, the hook as a title, captions from the script's own words in chunks of up to
 six words, and an end card with the brand and the code word. Music is added when `DIWAN_FREE_MUSIC` points to a track. The voice is the
 Windows one, which is the part that still sounds like a computer.
+
+## Who chooses what to post
+
+`agents/planner.py`: the Strategist (Muse Spark) chooses each day and says why in a plain sentence. It reads the account's stage, what brought
+leads, what is winning for competitors, and what is new. The code decides what may go on a day: only real options, nothing twice, the no-repeat
+rules, nothing a person rejected, and days a person approved stay as they are. If the model fails, the plain plan stands and the Plan tab says so.
+
+- **Plan from today** first asks how far ahead (just today, this week, 2 weeks, a month) and how many posts a week, then plans only those days, spread through the week.
+- **Change** and **Remove** on any planned day: a person's choice counts as approved, so a new plan keeps it.
+- **Plan the next week by itself** (Setup → Rhythm, off by default) plans a week and renews it when fewer than 3 days are left. It writes nothing.
+- **Run automatically** then writes each day's scripts in the morning, for a person to pick.
+- A listing added on its own in the last 7 days goes first, after the Introduce post on a new account. A batch of more than 3 in a day is an import, not news.
+
+## A video without photos
+
+Muse makes images, not video. For a post about the brand or a topic, **Make the frames with AI** draws 6 illustrations from the approved script
+(about $0.24), and **Make free video** turns them into the reel with the voice, moves and captions. They are illustrations, not photographs, with
+no people, buildings or text. A listing never gets them: a drawn home would pass for the property, so a listing needs its real photos.
+
+## Evidence and the Creative Director
+
+Every planned day says what it is based on: your catalog, your knowledge base or company facts, plus what competitors' winning posts show (`planner.evidence`, `reader.winning`).
+AI-made pictures go to the Creative Director (`agents/director.py`), which scores each out of 5 against the post, the business and competitors. Below 4 it is redrawn, up to twice. If too few pass, nothing is offered and it says why. Real photos are not held back. If the look can't be done, the frames say "not checked". A person still approves everything.
+
+## Format and learning
+
+Real material goes first: footage, then usable photos. A teaching post with neither becomes a graphic when at least 10 winning competitor posts lean to text on images over a person on camera (`eventpost._text_wins`); otherwise it stays to camera. A post about the brand always stays a person speaking.
+It learns (`agents/taste.py`): every yes, no, change and lead updates weights on what the post was, as an online logistic regression, recent decisions counting more and a lead counting double. The weights change the choices: what goes on the plan, the format, which script comes first. After repeated noes a feature stops being chosen. A person's reason is read by the model and becomes features too. The Plan tab shows what it has learned, and any of it can be forgotten.

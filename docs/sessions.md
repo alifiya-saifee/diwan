@@ -163,6 +163,7 @@ booked correctly, from the knowledge store and catalog, with people in control; 
 A new event shape at a meeting point is written in the changelog before either side builds it.
 
 ## Changelog (one line per shared change or new event shape)
+- 31 Oct (Deal desk): `e2e/chat_to_close_flow.py` takes a real chat to a closed deal (WATCH=1 for a visible window). It found and fixed: a ready sale from a chat had no deposit to expect, so Finance's gate could never pass (`finance.expect_deposit`); a page refresh wiped a half-filled form; picking a listing left the client's budget in the price box; a converted deal could be cleared with no documents asked for. **For Front desk & Sales:** the floating "Ask your PA" button sits over the bottom of the deal panel; the panel now leaves room for it.
 - 31 Oct (Deal desk, asked for by the product owner): the four rooms closed up (`docs/deal-desk.md` item 18, `docs/open-questions.md`). New `diwan/client_msgs.py` (one way out to a client: stop, quiet hours, 24 hours, else a broker task), `diwan/deal_gates.py`; `/api/desk/rooms/*`, `/api/desk/board`. **For every session:** new event types in `events.py` (the spec's names: `case.converted`, `case.lost`, `case.closed`, `compliance.*`, `screening.hit`, `payment.*`, `deal.ready_for_transfer`, `form.sent`, `form.recalled`, `transfer.*`, `task.reopened`, `document.voided`). `morning_loop` now guards each job, so one failing job no longer stops the rest (a failure logs `step.blocked`). New lead agent `deal` (Deal manager) and a Deal room on `web/office3d.html`. **For Front desk & Sales:** the Inbox's Lost now has a reason list on the Deal desk (`desk_stages.view` returns `lost_reasons`); `nudge.py:283` looks up `viewing:<id>`, but appointments have no such prefix, so after-visit follow-ups send the general text. **For Marketing:** `studio.publish_due` doesn't recheck a listing's status, price or permit just before posting.
 
 - 31 Oct (Deal desk, approved by the product owner): which property a deal is on (`docs/deal-desk.md` item 17, `diwan/deal_property.py`). `setting.changed` person `deal:<id>`, key `property` ({source: listing, agency or developer, ref, label, project, unit, developer, by}) replaces the deal's placeholder: the graph puts `label` on the deal prop `property`, so the Inbox, forms and `close_sale` read the real name. **For Front desk & Sales and Records:** our listing's status now moves with the deal through `listing.added` (reserved at conversion, available if lost or changed, sold or let at closing); a reserved listing leaves Rania's offers. An automatic Lost (a merge, not a fit) doesn't release a listing yet.
@@ -220,3 +221,31 @@ A new event shape at a meeting point is written in the changelog before either s
 - Free video rebuilt in `freevideo.py`; scripts must sound like a person (`script-natural`), and a floor nobody gave counts as a made-up claim.
 - Studio page says Loading or Can't reach Diwan, and retries, instead of staying blank. `/api/studio` still takes 2 to 4 seconds on the test data.
 - Talk: a dropped transcription closes with a message (code 4002), and a sentence that stalls for 6 seconds goes into the box to send.
+
+## 31 Oct 2026, later: plan controls, speed, the overdue loop
+
+- The plan asks how far ahead and how many posts a week before planning (`posts_per_week`). Any day can be changed or removed.
+- `EventLog.list` parses each row once, and `Office.graph` reuses the fold until the log grows. Both were checked by a full test run against the database: nothing changes a shared row or graph.
+- `leads.sweep`: a card that moved brokers and ran late again reused the key `overdue:{id}`, so the event was refused as a duplicate, the card was never marked and the notices repeated every minute. The key now carries `escalated`.
+
+## 31 Oct 2026, the Lobby room
+
+- Room 9 built: weekly threads by rules, experiments with a comparison group, Records' number, keep or roll back (`diwan/lobby_room.py`, `web/lobby.html`, `e2e/lobby_flow.py`). No model is called.
+- An experiment is an overlay read where the work happens (`nudge.sweep`, `qualify.form(g, deal)`, `desk_stages`), never a setting, so rolling back leaves the office as it was.
+- The staff board now says "Requests board" on screens (D10); its `lobby.*` events stay. New decisions L1 to L6 are in `docs/open-questions.md`.
+
+## 1 Nov 2026, the live 3D office (Part 7, P1)
+
+- One feed for the floor: `diwan/floor.py`, `/ws/floor`, batched every 200 ms, with role cuts on the server. All 203 event types are either routed (`ROUTES`) or deliberately silent (`QUIET`); a test fails on a new one. The feed uses the spec's names (`agent.run_started` and so on) for what the log already says, and adds no event types.
+- Steps of a run (read, write, check, fallback) are pulses in memory (`floor.step`), called from `agents/runner.py`, never written to the log. Replay can't show them.
+- `web/floor.js`: cards along the corridors, the correction ripple, poses with floating hands and status chips, the alive layer, the typing, checklist, compare and form monitors. `office3d.html` only hooks into it.
+- `deal_desk._ripple` now also counts forms recalled, other work touched and rooms alerted, so the ripple and the Deal desk read one count. Every room's walls and HUD are its own; Records keeps the whole office's. The HQ camera pulled back so every room is in view.
+- Checked with `tests/test_floor.py` and `e2e/live_floor_flow.py`. Browser checks need Edge on the real GPU here (`--use-angle=d3d11`): software rendering runs at about 1 frame a second.
+
+## 1 Nov 2026, the Deal desk as the people themselves
+
+- The four-rooms flows ran with sign-in off. `e2e/people_flow.py` and `AUTH=1 e2e/chat_to_close_flow.py` now run them signed in, a browser per person.
+- Found that way and fixed: the owner's Deal desk started as Priya, so her own buttons were missing; My work's one-press Received skipped amount, method and payer, so cash and strangers never reached Compliance; the owner's `by` could be anyone's on the desk, so the record could say Priya cleared what Layla did; brokers, Finance and Operations could read screening matches, the Compliance room and source-of-funds; Form F could be prepared by anyone on the deal team.
+- `compliance.public_reason`, `access.sees_compliance` and `deal_desk._for_viewer`: outside Compliance a hold is a status, on the server. Lists, counts and filters can't point at a deal. Refusals no longer quote why.
+- `finance.mark_received` asks before taking more than is expected.
+- Inbox: every event redrew the message box and wiped what a broker was typing. It now keeps the draft and the cursor.

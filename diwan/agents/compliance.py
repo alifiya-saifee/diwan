@@ -164,11 +164,16 @@ def state(g: Graph, deal: str) -> dict:
     return {"state": "cleared", "ok": True, "reason": c.get("note") or "", "at": c["at"], "by": c["by"]}
 
 
+def public_reason(s: dict) -> str:
+    """What anyone outside Compliance may read: why a hold is on stays with the officer, or a broker could tip a client off."""
+    return s["reason"] if s["state"] in ("not cleared", "stale") else "Waiting for Compliance" if s["state"] != "cleared" else ""
+
+
 def require(g: Graph, deal: str, what: str) -> None:
-    """Called before anything binding. Refuses with the reason; the client is never told it."""
+    """Called before anything binding. Refuses without the reason, which stays with Compliance; the client is never told."""
     s = state(g, deal)
     if not s["ok"]:
-        raise ValueError(f"{what} waits for Compliance: {s['reason'] or s['state']}.")
+        raise ValueError(f"{what} waits for Compliance: {public_reason(s)}.")
 
 
 def rate(office: Office, deal: str, by: str, risk: str, *, pep: bool = False, note: str = "") -> None:
@@ -225,6 +230,8 @@ def blockers(office: Office, deal: str, today: date | None = None) -> list[str]:
     if any(q.props.get("kind") == "funding" for q in g.of("question", deal, "open")):
         out.append("How the purchase is funded is still unanswered")
     events = office.log.list(deal=deal)
+    if g.settings.get(f"deal:{deal}", {}).get("agreed") and not documents.requests(events, deal):
+        out.append("No identity documents have been asked for yet: say who is on the other side of the deal")
     for r in documents.requests(events, deal):
         out += [f"{r['name']}: {documents.KINDS[k].lower()} not confirmed" for k in r["kinds"] if k not in r["confirmed"]]
     out += documents.expired(events, deal, today or date.today())
