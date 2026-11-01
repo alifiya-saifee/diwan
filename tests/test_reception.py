@@ -110,7 +110,9 @@ def test_whatsapp_webhook_parse_verify_sign_and_send(monkeypatch):
     payload = {"entry": [{"changes": [{"value": {"contacts": [{"wa_id": PH, "profile": {"name": "Karim"}}],
                                                  "messages": [{"from": PH, "id": "w1", "type": "text", "text": {"body": "Hi"}},
                                                               {"from": PH, "id": "w2", "type": "image"}]}}]}]}
-    assert whatsapp.parse(payload) == [{"phone": PH, "name": "Karim", "text": "Hi", "id": "w1"}]
+    got = whatsapp.parse(payload)
+    assert (got[0]["phone"], got[0]["name"], got[0]["text"], got[0]["id"], got[0]["echo"]) == (PH, "Karim", "Hi", "w1", False)
+    assert got[1]["text"] == "📷 Image" and got[1]["kind"] == "image"
     monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "v")
     assert whatsapp.verify({"hub.mode": "subscribe", "hub.verify_token": "v", "hub.challenge": "42"}) == "42"
     assert whatsapp.verify({"hub.mode": "subscribe", "hub.verify_token": "x", "hub.challenge": "42"}) is None

@@ -147,8 +147,110 @@ export const LOGO = `<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGr
   <g fill="none" stroke="url(#lg)" stroke-width="2"><rect x="8" y="8" width="16" height="16" rx="1.5"/>
   <rect x="8" y="8" width="16" height="16" rx="1.5" transform="rotate(45 16 16)"/></g><circle cx="16" cy="16" r="3" fill="url(#lg)"/></svg>`;
 
+/** The PA, one conversation on every page: what was said stays when you change page, and Live keeps her on the line. Live listens
+ * with the browser's speech recognition, answers aloud, and listens again; it pauses while she speaks so she doesn't hear herself. */
+export const pa = (() => {
+  const me = () => SESSION.person || "layla", key = () => `diwan.pa.${me()}`;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let log = [], rec = null, on = false, state = "off", busy = false, playing = false, talking = null, turn = 0;
+  try { log = JSON.parse(localStorage.getItem(key()) || "[]"); } catch { log = []; }
+  const subs = new Set(), states = new Set();
+  const push = (m) => { log.push(m); log = log.slice(-60); try { localStorage.setItem(key(), JSON.stringify(log)); } catch {} subs.forEach((f) => f(m)); };
+  const show = (s) => { state = s; states.forEach((f) => f(s)); };
+  const words = (s) => s.toLowerCase().match(/[\p{L}\p{N}']+/gu) || [];
+  const echo = (t) => {  // her own voice coming back through the speakers
+    if (!talking || Date.now() > talking.until) return false;
+    const w = words(t);
+    return w.length > 0 && w.filter((x) => talking.words.has(x)).length / w.length >= 0.6;
+  };
+  const hush = () => { if (playing) window.speechSynthesis?.cancel(); };
+  const hear = () => {  // the mic stays open while she talks and thinks, so she can be cut off
+    if (!on || rec) return;
+    rec = new SR(); rec.lang = "en-US"; rec.continuous = true; rec.interimResults = true;
+    rec.onresult = (e) => {
+      const r = e.results[e.results.length - 1], t = r[0].transcript.trim();
+      if (!t || echo(t)) return;
+      if (words(t).length >= 2) hush();
+      if (r.isFinal) heard(t);
+    };
+    rec.onerror = (e) => { if (["not-allowed", "service-not-allowed", "audio-capture"].includes(e.error)) { stop(); toast("Allow the microphone for this site to talk to your PA"); } };
+    rec.onend = () => { rec = null; if (on) setTimeout(hear, 250); };  // the browser ends it after a silence: she stays on the line
+    try { rec.start(); if (!busy && !playing) show("listening"); } catch { rec = null; }
+  };
+  const mute = () => { if (rec) { rec.onend = null; try { rec.abort(); } catch {} rec = null; } };
+  const speak = (text) => new Promise((done) => {
+    const clean = text.replace(/\b[A-Z]{1,2}\d+\b/g, "").replace(/https?:\S+/g, "").replace(/[*_#`>|~]/g, "").replace(/\s+/g, " ").trim();
+    if (!clean || !window.speechSynthesis) { done(); return; }
+    const u = new SpeechSynthesisUtterance(clean.length > 500 ? `${clean.slice(0, 500).replace(/[^.?!]*$/, "")}` : clean);
+    const v = speechSynthesis.getVoices();
+    u.voice = v.find((x) => /en/i.test(x.lang) && /natural|online|google/i.test(x.name)) || v.find((x) => /^en/i.test(x.lang)) || null;
+    const mine = talking = { words: new Set(words(clean)), until: Infinity };
+    playing = true;
+    const end = () => { clearTimeout(t); if (talking === mine) { playing = false; mine.until = Date.now() + 1500; } done(); };
+    const t = setTimeout(end, Math.min(25000, clean.length * 90 + 1500));  // a browser that never says it finished can't leave her deaf
+    u.onend = end; u.onerror = end;
+    speechSynthesis.cancel(); speechSynthesis.speak(u);
+  });
+  async function say(text, asked, voice = false) {
+    text = (text || "").trim();
+    if (!text) return null;
+    const mine = ++turn, line = { from: "you", text };
+    const history = log.slice(-12).map((m) => ({ who: m.from === "you" ? "You" : "Nova", text: m.text }));
+    if (!voice) push(line);  // off the open mic it only shows once she knows it was meant for her
+    busy = true; hush(); show(on ? "thinking" : "off");
+    const wait = on ? setTimeout(() => { if (mine === turn && busy) speak("One moment."); }, 7000) : null;  // Muse can take a while: she doesn't just go quiet
+    let r;
+    try { r = await post("/api/pa/say", { text: asked || text, person: me(), session: `pa-${me()}`, voice, history }); }
+    catch (e) { r = e.message === "Failed to fetch" ? { kind: "answer", text: "I lost the line for a moment. Say that again?" } : { kind: "refused", text: e.message }; }
+    clearTimeout(wait);
+    if (r.kind !== "silent") {
+      if (voice) push(line);
+      push({ from: "pa", text: r.text, kind: r.kind, options: r.options || [], cites: r.cites || [], asked: text });
+      if (on && mine === turn) { show("speaking"); await speak(r.spoken || r.text); }
+    }
+    if (mine === turn) { busy = false; show(on ? "listening" : "off"); }  // cut off: the newer turn has the floor
+    return r;
+  }
+  const heard = (t) => {
+    if (t.length < 2) return;
+    if (/^(stop listening|go offline|end (the )?call|that'?s all|goodbye nova)\b/i.test(t)) { stop(); return; }
+    const over = playing;
+    hush();
+    if (over && /^(stop|wait|hold on|one (sec|second|moment)|shut up|enough)\W*$/i.test(t)) return;
+    say(t, undefined, true);
+  };
+  function start() {
+    if (!SR) { toast("This browser can't listen. Use Chrome or Edge."); return; }
+    on = true; try { localStorage.setItem(`${key()}.live`, "1"); } catch {}
+    hear();
+  }
+  function stop() {
+    on = false; try { localStorage.removeItem(`${key()}.live`); } catch {}
+    mute(); window.speechSynthesis?.cancel(); show("off");
+  }
+  let timer = null;
+  async function watch() {  // she speaks first: what she has chased, and what is still stuck
+    if (busy) return;
+    let seen = 0, own = 0;
+    try { seen = +localStorage.getItem(`${key()}.seen`) || 0; own = +localStorage.getItem(`${key()}.own`) || 0; } catch {}
+    let news = [];
+    try { news = await api(`/api/pa/heads-up?person=${me()}&after=${seen}&after_private=${own}`); } catch { return; }
+    for (const m of news) {
+      try { localStorage.setItem(`${key()}.${m.private ? "own" : "seen"}`, m.id); } catch {}
+      push({ from: "pa", text: m.text, kind: "answer", options: [], cites: [] });
+      if (on && !busy) { show("speaking"); await speak(m.text); if (!busy) show("listening"); }
+    }
+  }
+  const resume = () => {
+    try { if (localStorage.getItem(`${key()}.live`)) start(); } catch {}
+    if (!timer) { timer = setInterval(watch, 60000); setTimeout(watch, 4000); }
+  };
+  return { say, start, stop, resume, push, get log() { return log; }, get state() { return state; }, get live() { return on; }, subs, states,
+           clear() { log = []; try { localStorage.removeItem(key()); } catch {} } };
+})();
+
 export function header(active) {
-  const pages = [["office3d.html", "Office"], ["index.html", "Nova"], ["sales.html", "Sales"], ["inbox.html", "Inbox"], ["studio.html", "Studio"], ["meeting.html", "Meeting"], ["deal.html", "Deals"], ["knowledge.html", "Knowledge"],
+  const pages = [["office3d.html", "Office"], ["index.html", "Nova"], ["personal.html", "My WhatsApp"], ["sales.html", "Sales"], ["inbox.html", "Inbox"], ["studio.html", "Studio"], ["meeting.html", "Meeting"], ["deal.html", "Deals"], ["lobby.html", "Lobby"], ["knowledge.html", "Knowledge"],
                  ["graph.html", "Memory"], ["team.html", "Team"], ["settings.html", "Settings"]].filter(([href]) => !SESSION.pages || SESSION.pages.includes(href));
   const status = h("div", { class: "status" });
   api("/api/health").then((s) => {
@@ -168,28 +270,26 @@ export function header(active) {
     location.href = "/web/login.html";
   } }, `${SESSION.name} · Sign out`));
   document.body.prepend(top);
-  if (SESSION.person || !SESSION.auth) paBox();
+  if (SESSION.person || !SESSION.auth) {
+    const pill = h("button", { class: "live-pill", hidden: true, title: "End the call", onclick: () => pa.stop() });
+    const paint = (s) => { pill.hidden = s === "off"; pill.textContent = { listening: "Nova · listening", thinking: "Nova · thinking", speaking: "Nova · speaking" }[s] || ""; pill.dataset.s = s; };
+    pa.states.add(paint); top.insertBefore(pill, status); pa.resume();
+  }
+  // the Office and Nova pages have the PA built in: a second box on top of it would only confuse
+  if ((SESSION.person || !SESSION.auth) && !["office3d.html", "index.html"].includes(active)) paBox();
 }
 
 /** The chat box on every page: the signed-in person's own PA (Nova for the owner). */
 function paBox() {
-  const session = `page-${SESSION.person || "layla"}`, me = SESSION.person || "layla";
   const log = h("div", { class: "pa-log" });
   const input = h("input", { placeholder: "Ask your PA", "aria-label": "Ask your PA" });
   const panel = h("div", { class: "pa-panel", hidden: true });
-  const add = (text, cls, kids = []) => { log.append(h("div", { class: `pa-m ${cls}` }, text, ...kids)); log.scrollTop = 1e9; };
-  const send = async (text) => {
-    if (!text.trim()) return;
-    add(text, "me");
-    try {
-      const r = await post("/api/pa/say", { text, person: me, session });
-      if (r.kind === "silent") return;
-      add(r.text, r.kind || "", (r.options || []).map((o) => h("button", { onclick: () => send(o) }, o)));
-    } catch (e) { add(e.message, "refused"); }
-  };
-  input.onkeydown = (e) => { if (e.key === "Enter") { const t = input.value; input.value = ""; send(t); } };
+  const add = (m) => { log.append(h("div", { class: `pa-m ${m.from === "you" ? "me" : m.kind || ""}` }, m.text, ...(m.options || []).map((o) => h("button", { onclick: () => pa.say(o) }, o)))); log.scrollTop = 1e9; };
+  pa.log.forEach(add); pa.subs.add(add);
+  input.onkeydown = (e) => { if (e.key === "Enter") { const t = input.value; input.value = ""; pa.say(t); } };
   const who = SESSION.owner ? "Nova" : `${SESSION.name || "Your"}'s PA`;
-  panel.append(h("div", { class: "pa-head" }, who, h("button", { "aria-label": "Close", onclick: () => { panel.hidden = true; } }, "✕")), log, input);
+  panel.append(h("div", { class: "pa-head" }, who, h("span", {}, h("button", { title: "Keep her on the line: talk without clicking", onclick: () => (pa.live ? pa.stop() : pa.start()) }, "🎙 Live"), " ",
+    h("button", { "aria-label": "Close", onclick: () => { panel.hidden = true; } }, "✕"))), log, input);
   document.body.append(panel, h("button", { class: "pa-open", title: `Ask ${who}`, onclick: () => { panel.hidden = !panel.hidden; if (!panel.hidden) input.focus(); } }, "✦ Ask your PA"));
 }
 

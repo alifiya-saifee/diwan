@@ -525,6 +525,20 @@ def photo_cards(office: Office, phone: str, deal: str, listings: list[Node], cau
         _send(office, phone, deal, f"{i}. {p['title']}" + (f"\n{about}" if about else ""), [n_.id], cause=cause, extra={"image": p["photos"][0]})
 
 
+def line_only(phone: str, text: str) -> None:
+    """A word on the sales line to someone who isn't a client: no lead, no chat, nothing for Rania to carry on with."""
+    from diwan.providers import aisensy
+    from diwan.config import sandbox_only
+    choice = "" if sandbox_only() else env("WHATSAPP_PROVIDER") or ("aisensy" if aisensy.available() else "cloud" if whatsapp.available() else "")
+    try:
+        if choice == "aisensy" and aisensy.available():
+            aisensy.send_text(phone, text)
+        elif choice == "cloud" and whatsapp.available():
+            whatsapp.send(phone, text)
+    except Exception:  # noqa: BLE001  a courtesy: nobody is left waiting on it
+        pass
+
+
 def public_url(path: str) -> str | None:
     """What WhatsApp can fetch: an https address, or a path on this app once it has a public address."""
     if path.startswith("http"):
@@ -561,7 +575,9 @@ def _send(office: Office, phone: str, deal: str, text: str, refs: list[str], by:
                    else aisensy.send_image(phone, image, text) if image else aisensy.send_text(phone, text))["id"]
         elif choice == "cloud" and whatsapp.available():
             via = "cloud"
-            whatsapp.send_image(phone, image, text) if image else whatsapp.send(phone, text)
+            sent = (whatsapp.send_template(phone, template["name"], template.get("params"), template.get("language", "en")) if template
+                    else whatsapp.send_image(phone, image, text) if image else whatsapp.send(phone, text))
+            mid = ((sent or {}).get("messages") or [{}])[0].get("id")
     except Exception as e:  # the send failed: logged on the message, shown in the Inbox, nothing retried silently
         status, err = "failed", str(e)[:300]
     return office.log.append("chat.sent", actor=by, agent=RANIA if by == RANIA else None, deal=deal, caused_by=cause,
@@ -1159,13 +1175,16 @@ def _nurture(office: Office, phone: str, deal: str, text: str, cause: int) -> No
 
 
 def receive(office: Office, phone: str, text: str, *, name_: str | None = None, now: datetime | None = None, tape_root=None,
-            comment_id: str | None = None, media_id: str | None = None) -> dict:
-    """A customer message arrives: kept in the chat at once, and the Scribe hears it. The reply is `message`."""
+            comment_id: str | None = None, media_id: str | None = None, mid: str | None = None) -> dict:
+    """A customer message arrives: kept in the chat at once, and the Scribe hears it. The reply is `message`. `mid`: the
+    provider's id for it, so a webhook delivered twice is one message."""
     now = now or datetime.now(slots.DUBAI)
     deal = _lead(office, phone, name_, now)
-    got = office.log.append("chat.received", actor=f"customer:{phone}", deal=deal,
+    got = office.log.append("chat.received", actor=f"customer:{phone}", deal=deal, key=f"wa:{mid}" if mid else None,
                             content={"chat": phone, "name": name_, "text": text, "comment_id": comment_id, "media_id": media_id,
                                      "channel": "instagram" if phone.startswith("ig:") else "whatsapp"})
+    if got.get("duplicate"):
+        return {"deal": deal, "got": got, "heard": None, "duplicate": True}
     heard = scribe.hear(office, deal, office.graph().nodes[f"deal:{deal}"].props["customer"], text, got["id"], tape_root=tape_root)
     return {"deal": deal, "got": got, "heard": heard}
 
@@ -1282,7 +1301,7 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
             + f"\nTheir new message: {text}")
     # qualification (the owner's form): clear answers read by plain rules first, so the prompt and the verdict see them
     from diwan import qualify
-    form = qualify.form(g)
+    form = qualify.form(g, deal)
     said = " \n ".join(m["text"] for m in chat.props["messages"] if m["type"] == "received")
     dprops = g.nodes[f"deal:{deal}"].props
     stuck_before = qualify.state(g, deal).get("stuck", [])  # before this message's answers

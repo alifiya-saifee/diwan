@@ -182,3 +182,105 @@ def test_the_first_password_is_from_this_machine_only(monkeypatch, tmp_path):
 def test_passwords_are_never_kept_as_they_were_typed(web, tmp_path):
     data = (tmp_path / "auth.db").read_bytes()
     assert b"a good password" not in data
+
+
+# the Deal desk as the people themselves
+
+@pytest.fixture
+def desk(web, monkeypatch):
+    from diwan import app as appmod, demo
+    from diwan.events import EventLog
+    from diwan.office import Office
+    o = Office(EventLog())
+    demo.seed(o)
+    monkeypatch.setattr(appmod.S, "office", o)
+    for who in ("joseph", "rashid"):
+        access.set_password(who, "a good password")
+    return o
+
+
+def hit_on(o, deal="marina-1204", note="UN entry 4411"):
+    from diwan.agents import compliance
+    t = next(t for t in o.graph().of("task", deal) if t.props["agent"] == "screen")
+    compliance.record_screening(o, t.id, "priya", "possible match", note)
+    return t
+
+
+@pytest.mark.parametrize("who,room,ok", [("omar", "compliance", False), ("ahmed", "compliance", False), ("joseph", "compliance", False), ("priya", "compliance", True),
+                                         ("omar", "finance", False), ("ahmed", "finance", True), ("priya", "finance", True), ("ahmed", "operations", False), ("joseph", "operations", True)])
+def test_each_room_is_its_departments(web, desk, who, room, ok):
+    signed_in(web, who)
+    assert (web.get(f"/api/desk/rooms/{room}").status_code == 200) == ok
+
+
+@pytest.mark.parametrize("who", ["omar", "ahmed", "joseph", "rashid"])
+def test_outside_compliance_a_hold_is_a_status_and_nothing_behind_it(web, desk, who):
+    t = hit_on(desk)
+    signed_in(web, who)
+    for path in ("/api/desk/deals/marina-1204", "/api/desk/deals", "/api/desk/overview", "/api/desk/board", "/api/desk/work", "/api/events?deal=marina-1204", "/api/events"):
+        text = web.get(path).text
+        assert "4411" not in text and "Possible match" not in text, path
+    v = web.get("/api/desk/deals/marina-1204").json()
+    assert v["compliance"]["blockers"] == [] and v["compliance"]["risk"] is None and not v["funds"]["numbers"] and t.id not in {x["id"] for x in v["tasks"]}
+    assert web.get("/api/desk/deals?filter=match").json()["total"] == 0  # no filter can point at the deal
+    assert web.get("/api/desk/overview").json()["comp"]["match"] == 0
+
+
+def test_compliance_and_the_owner_still_read_all_of_it(web, desk):
+    hit_on(desk)
+    for who in ("priya", "layla"):
+        signed_in(web, who)
+        assert "4411" in web.get("/api/desk/deals/marina-1204").text
+        assert web.get("/api/desk/deals?filter=match").json()["total"] == 1
+
+
+def test_a_blocked_deals_refusal_doesnt_say_why(web, desk):
+    from diwan.agents import compliance
+    compliance.block(desk, "marina-1204", "priya", "Confirmed match on the UN list")
+    assert "UN list" not in str(compliance.public_reason(compliance.state(desk.graph(), "marina-1204")))
+    signed_in(web, "omar")
+    assert "UN list" not in web.get("/api/desk/deals/marina-1204").text
+
+
+def test_finance_doesnt_get_client_documents(web, desk):
+    signed_in(web, "ahmed")
+    assert web.get("/api/desk/deals/marina-1204").json()["documents"] == {"requests": [], "profile": {}}
+
+
+def test_the_record_says_who_really_did_it_even_for_the_owner(web, desk):
+    signed_in(web, "layla")
+    assert web.post("/api/desk/deals/marina-1204/compliance/clear", json={"by": "priya", "note": "x"}).status_code == 403
+    pay = next(t for t in desk.graph().of("task", "marina-1204") if t.props["agent"] == "pay")
+    assert web.post(f"/api/desk/tasks/{pay.id}/received", json={"by": "ahmed", "reference": "X"}).status_code == 403
+    r = web.post("/api/desk/roles", json={"by": "layla", "role": "finance", "person": "joseph"})  # naming a person stays hers
+    assert r.status_code == 200 and next(x for x in r.json() if x["role"] == "finance")["holder"] == "joseph"
+
+
+def test_form_f_is_prepared_by_the_deals_people_only(web, desk):
+    for who in ("ahmed", "priya"):
+        signed_in(web, who)
+        assert web.post("/api/desk/deals/marina-1204/formf", json={"by": who}).status_code == 403
+
+
+def test_funds_proof_files_are_compliances(web, desk):
+    from diwan.providers import meta
+    meta.MEDIA.mkdir(parents=True, exist_ok=True)
+    (meta.MEDIA / "doc-proof-test.pdf").write_bytes(b"%PDF")
+    try:
+        signed_in(web, "omar")
+        assert web.get("/media/doc-proof-test.pdf").status_code == 403
+        signed_in(web, "priya")
+        assert web.get("/media/doc-proof-test.pdf").status_code == 200
+    finally:
+        (meta.MEDIA / "doc-proof-test.pdf").unlink()
+
+
+def test_more_than_expected_asks_first_and_saves_nothing(web, desk):
+    from datetime import date
+    from diwan.agents import finance
+    pay = next(t for t in desk.graph().of("task", "marina-1204") if t.props["agent"] == "pay")
+    want = finance.expected(desk.graph(), pay, date.today())["amount_aed"]
+    with pytest.raises(finance.ProofMismatch, match="more than"):
+        finance.mark_received(desk, pay.id, "ahmed", "X", today=date.today(), amount=want + 1000)
+    assert not desk.graph().nodes[pay.id].props.get("payments")
+    assert finance.mark_received(desk, pay.id, "ahmed", "X", today=date.today(), amount=want + 1000, confirm=True)

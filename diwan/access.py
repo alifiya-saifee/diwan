@@ -42,33 +42,38 @@ HOME = {SALES: "sales.html", MKT: "studio.html", OPS: "deal.html", FIN: "deal.ht
 OWNER_HOME = "office3d.html"
 
 # no sign-in: what clients and other companies reach, each protected by its own token or signature
-PUBLIC_API = ("/api/auth/", "/api/sign/", "/api/docs/", "/api/whatsapp/webhook", "/api/instagram/webhook", "/api/aisensy/webhook", "/api/portals/")
+PUBLIC_API = ("/api/auth/", "/api/sign/", "/api/docs/", "/api/whatsapp/webhook", "/api/personal/webhook", "/api/instagram/webhook", "/api/aisensy/webhook", "/api/portals/")
 PUBLIC_PAGES = {"login.html", "sign.html", "docs.html"}
 SENSITIVE_MEDIA = ("doc-", "sig-", "deal-")  # IDs, signatures and signed forms; the rest must be fetchable by Instagram and WhatsApp
+FUNDS_PROOF = "/media/doc-proof-"  # source-of-funds proof: the compliance officer's and the owner's only
 
-PAGES = {"sales.html": {SALES}, "inbox.html": {SALES}, "calendar.html": {SALES}, "qualify.html": {SALES}, "meeting.html": {SALES}, "deck.html": {SALES},
+PAGES = {"lobby.html": STAFF, "sales.html": {SALES}, "inbox.html": {SALES}, "calendar.html": {SALES}, "qualify.html": {SALES}, "meeting.html": {SALES}, "deck.html": {SALES},
          "deal.html": DEAL_TEAM, "studio.html": {MKT}, "catalog.html": {SALES, MKT}, "knowledge.html": STAFF}
 
 # (path prefix, who, method): the first that matches decides
-API = [("/api/listings/sync", set(), None),
+API = [("/api/listings/sync", set(), None), ("/api/lobby-room", STAFF, "GET"), ("/api/lobby-room/propose", {SALES}, "POST"), ("/api/lobby-room/playbooks", {SALES}, "POST"),
        ("/api/pa/", STAFF, None), ("/api/health", STAFF, None), ("/api/people", STAFF, None), ("/api/roster", STAFF, None), ("/api/search", STAFF, None),
-       ("/api/events", STAFF, None), ("/ws/events", STAFF, None), ("/api/team", STAFF, "GET"), ("/api/notices/", STAFF, None),
+       ("/api/events", STAFF, None), ("/ws/events", STAFF, None), ("/ws/floor", STAFF, None), ("/api/floor", STAFF, "GET"), ("/api/team", STAFF, "GET"), ("/api/notices/", STAFF, None),
        ("/api/knowledge", STAFF, None), ("/api/items", STAFF, None), ("/api/catalog", STAFF, None), ("/api/proposals", STAFF, None),
        ("/api/listings", {SALES, MKT}, None), ("/api/line", {SALES}, "GET"), ("/api/sales/rules", set(), "POST"), ("/api/sales", {SALES}, None),
        *((p, {SALES}, None) for p in ("/api/chats", "/api/calendar", "/api/appointments", "/api/attention", "/api/leads", "/api/decks",
                                       "/api/meetings", "/api/qualify", "/api/rania", "/api/templates")),
        ("/api/deals", {SALES}, "GET"), ("/api/deal-kinds", {SALES}, "GET"),
+       ("/api/desk/rooms/compliance", {COMP}, None), ("/api/desk/rooms/finance", {FIN, COMP}, None), ("/api/desk/rooms/operations", {OPS, COMP}, None),
        ("/api/desk/", DEAL_TEAM, None),
        *((p, {MKT}, None) for p in ("/api/studio", "/api/marketing", "/api/brand", "/api/products", "/api/topics", "/api/moments",
                                     "/api/requests", "/api/business", "/api/kpis/marketing"))]
+COMP_AGENTS = ("comp", "screen", "sof", "report")
 OWN_PATH = ("/api/notices/",)  # the next part of the path is the person: only their own
 
+LOBBY_EVENTS = ("thread.", "playbook.", "experiment.")  # every room reads the Lobby (the spec's table); counts and reasons, no client data
 DEAL_EVENTS = ("task.", "check.", "review.", "draft.", "question.", "decision.", "approval.", "sign.", "docs.", "document.", "sale.", "stage.",
                "fact.", "execution.", "deal.")
-EVENTS = {SALES: DEAL_EVENTS + ("chat.", "lead.", "appointment.", "attention.", "followup.", "visit.", "qualify.", "calendar.", "listing", "meeting.",
+EVENTS = {SALES: LOBBY_EVENTS + DEAL_EVENTS + ("chat.", "lead.", "appointment.", "attention.", "followup.", "visit.", "qualify.", "calendar.", "listing", "meeting.",
                                 "consent.", "utterance"),
-          OPS: DEAL_EVENTS, FIN: DEAL_EVENTS, COMP: DEAL_EVENTS,
-          MKT: ("post.", "photo.", "campaign.", "lead.attributed", "product.", "mchat.", "photos.", "plan.", "competitor", "board.", "content.", "footage.", "step.", "qa.", "topic.", "listing")}
+          OPS: LOBBY_EVENTS + DEAL_EVENTS, FIN: LOBBY_EVENTS + DEAL_EVENTS + ("payment.", "invoice."),
+          COMP: LOBBY_EVENTS + DEAL_EVENTS + ("payment.", "compliance.", "screening."),
+          MKT: LOBBY_EVENTS + ("post.", "photo.", "campaign.", "lead.attributed", "product.", "mchat.", "photos.", "plan.", "competitor", "board.", "content.", "footage.", "step.", "qa.", "topic.", "listing")}
 
 
 def enabled() -> bool:
@@ -84,6 +89,12 @@ def department(person: str) -> str | None:
 
 def is_owner(person: str | None) -> bool:
     return bool(person) and PEOPLE.get(person, {}).get("role") == "Owner"
+
+
+def sees_compliance() -> bool:
+    """Whether the person asking may read Compliance's work, not only its status (the spec's table): tests and the owner do."""
+    person = USER.get()
+    return person is None or is_owner(person) or department(person) == COMP
 
 
 def owner_id() -> str:
@@ -117,13 +128,16 @@ def visible(events: list[dict]) -> list[dict]:
     person = USER.get()
     if person is None or is_owner(person):
         return events
-    kinds = EVENTS.get(department(person), ())
+    dept = department(person)
+    kinds = EVENTS.get(dept, ())
     out = []
     for e in events:
         t, c = e["type"], e.get("content") or {}
         if t.startswith(("notify.", "lobby.")):
             if person in (c.get("to"), c.get("by"), e.get("actor")):
                 out.append(e)
+        elif dept != COMP and (e.get("agent") in COMP_AGENTS or c.get("agent") in COMP_AGENTS):
+            continue  # what Compliance is doing stays with Compliance: anyone else knowing can tip a client off
         elif t.startswith(kinds):
             out.append(e)
     return out
@@ -348,6 +362,7 @@ class Gate:
         if person is None:
             return await self._refuse(scope, receive, send, 401, "Please sign in", page and f"/web/login.html?next=/web/{page}")
         allowed = (may_open(person, page) if page else
+                   is_owner(person) or department(person) == COMP if path.startswith(FUNDS_PROOF) else
                    department(person) in DEAL_TEAM or is_owner(person) if path.startswith("/media/") else may_call(person, method, path))
         if not allowed:
             return await self._refuse(scope, receive, send, 403, "That belongs to another department", page and f"/web/{home(person)}")
@@ -356,6 +371,8 @@ class Gate:
         token = USER.set(person)
         try:
             if is_owner(person):
+                if path.startswith("/api/desk/") and method in ("POST", "PUT", "PATCH", "DELETE"):  # the record says who really did it, the owner too
+                    scope, receive = await self._body_as(scope, receive, headers, person, keep_person=True)
                 return await self.app(scope, receive, send)
             q = [(k, v) for k, v in parse_qsl(scope.get("query_string", b"").decode("latin1"), keep_blank_values=True) if k not in ("by", "person", "as")]
             scope = dict(scope, query_string=urlencode(q + [("by", person), ("person", person), ("as", person)]).encode())  # never someone else
@@ -365,7 +382,7 @@ class Gate:
         finally:
             USER.reset(token)
 
-    async def _body_as(self, scope, receive, headers, person):
+    async def _body_as(self, scope, receive, headers, person, keep_person=False):
         kind = headers.get("content-type", b"").decode("latin1")
         chunks, more = [], True
         while more:
@@ -384,7 +401,7 @@ class Gate:
                 data = None
             if isinstance(data, dict):
                 data["by"] = person
-                if "person" in data:
+                if "person" in data and not keep_person:  # the owner names a person when assigning a role
                     data["person"] = person
                 body = json.dumps(data).encode()
         new = [(k, v) for k, v in scope["headers"] if k.lower() != b"content-length"] + [(b"content-length", str(len(body)).encode())]

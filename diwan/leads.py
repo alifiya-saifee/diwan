@@ -57,7 +57,7 @@ def setting(g: Graph, person: str, key: str, default=None):
 def set_agent(office: Office, person: str, key: str, value, *, by: str) -> None:
     """A broker's shift ("10:00-19:00"), working days (0 = Monday), whether they are away today, and the WhatsApp number
     notices go to."""
-    if person not in brokers():
+    if person not in brokers() and not (key == "phone" and person in PEOPLE):  # anyone can have a number; only brokers have shifts
         raise ValueError(f"{person} is not a broker")
     if key == "days":
         try:
@@ -202,13 +202,15 @@ def sweep(office: Office, now: datetime | None = None) -> list[str]:
                                       f"{pool_minutes(g)} minutes.", chat=p["chat"], kind="pool", cause=ev["id"])
             out.append(f"pooled {c.id}")
         elif not p.get("overdue") and now >= _at(p["due"]):
-            ev = office.log.append("attention.overdue", actor="rania", agent="rania", deal=c.deal, key=f"overdue:{c.id}",
+            ev = office.log.append("attention.overdue", actor="rania", agent="rania", deal=c.deal, key=f"overdue:{c.id}:{p.get('escalated', 0)}" if p.get("escalated") else f"overdue:{c.id}",
                                    content={"id": c.id, "chat": p["chat"]})
+            if ev.get("duplicate"):
+                continue  # already said: a notice is sent once
             notify(office, p["who"], f"Overdue: {label} ({p['reason']}).", chat=p["chat"], kind="overdue", cause=ev["id"])
             for boss in {owner_id(), manager} - {None, p["who"]}:
                 notify(office, boss, f"{name(p['who'])} is late on {label}: {p['reason']}.", chat=p["chat"], kind="overdue", cause=ev["id"])
             out.append(f"overdue {c.id}")
-            if p["kind"] == "call" and not p.get("set_by") and (next_up := next_free(g, p["who"], now)):  # the client was promised a call
+            if p["kind"] == "call" and not p.get("set_by") and not p.get("pooled") and (next_up := next_free(g, p["who"], now)):  # the client was promised a call
                 office.log.append("attention.moved", actor="sales", agent="sales", deal=c.deal, caused_by=ev["id"], key=f"moved:{c.id}:{p.get('escalated', 0)}",
                                   content={"id": c.id, "chat": p["chat"], "from": p["who"], "to": next_up, "due": (now + timedelta(minutes=due_minutes("call", g))).isoformat()})
                 assign(office, c.deal, next_up, by="sales", why=f"{name(p['who'])} had not called in time", cause=ev["id"], chat=p["chat"], now=now)
@@ -537,7 +539,7 @@ def notify(office: Office, person: str, text: str, *, chat: str | None = None, k
         status = "held"
     phone = setting(g, person, "phone")
     from diwan.config import sandbox_only
-    if lvl == "now" and phone and env("NOTIFY_TEMPLATE") and aisensy.available() and not sandbox_only():
+    if lvl == "now" and phone and env("NOTIFY_TEMPLATE") and aisensy.available() and not sandbox_only() and PEOPLE.get(person, {}).get("role") != "Owner":  # the sales line isn't how Nova reaches the owner
         via = "whatsapp"
         try:
             aisensy.send_template(phone, env("NOTIFY_TEMPLATE"), [text[:900]], "en")
