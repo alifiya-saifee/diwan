@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from diwan import costs
+from diwan import costs, floor
 from diwan.agents.charters import Charter, get
 from diwan.config import env, offline, tape_mode
 from diwan.events import EventLog
@@ -76,9 +76,9 @@ def provider_for(c: Charter) -> ChatProvider | None:
     return p
 
 
-def has_model(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape_root=None) -> bool:
+def has_model(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape_root=None, private: bool = False) -> bool:
     """Whether a turn can run at all: a recording of this exact request, or a live provider within the budget."""
-    if tape_mode() != "off" and tape.load(c.id, tape.key(c.id, system, user, schema), tape_root) is not None:
+    if not private and tape_mode() != "off" and tape.load(c.id, tape.key(c.id, system, user, schema), tape_root) is not None:
         return True
     return not offline() and provider_for(c) is not None and costs.allowed(c.id)
 
@@ -87,13 +87,14 @@ LIVE = float(env("DIWAN_LIVE_TIMEOUT", "25"))         # someone is waiting: Nova
 BACKGROUND = float(env("DIWAN_MODEL_TIMEOUT", "240"))  # nobody is waiting: the studio, overnight work
 
 
-def call(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape_root=None, timeout: float | None = None) -> Reply:
+def call(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape_root=None, timeout: float | None = None, reasoning: str | None = None, private: bool = False) -> Reply:
     """One model turn. `timeout`: how long the model may take; a live caller falls back to rules when it runs out.
 
     Tapes (DIWAN_TAPE): cache (the default) answers an identical request from its recording and saves every new live
     reply, so the same prompt is never paid for twice; replay uses a recording only when no live model is there;
-    record always calls live and saves; off never uses recordings. Live calls stop at the monthly budget."""
-    k, mode = tape.key(c.id, system, user, schema), tape_mode()
+    record always calls live and saves; off never uses recordings. Live calls stop at the monthly budget. `private`: this request
+    holds the owner's personal messages, so it is never recorded or answered from a recording."""
+    k, mode = tape.key(c.id, system, user, schema), "off" if private else tape_mode()
     recorded = tape.load(c.id, k, tape_root) if mode != "off" else None
     if recorded and mode == "cache":
         costs.record(c.id, recorded.usage, cached=True)
@@ -107,9 +108,11 @@ def call(c: Charter, system: str, user: str, *, schema: dict = PACK_SCHEMA, tape
         if recorded:
             return recorded
         raise NotSetUp(f"{c.name} has no live model ({needs(c)}) and no recording of this request")
+    floor.step(c.id, "write")
     try:
-        reply = p.complete_json(system, user, schema, timeout=timeout or BACKGROUND)
+        reply = p.complete_json(system, user, schema, timeout=timeout or BACKGROUND, **({"reasoning": reasoning} if reasoning else {}))
     except ProviderError as e:
+        floor.step(c.id, "fallback")
         if recorded:
             recorded.usage["live_failed"] = str(e)[:200]
             return recorded
@@ -134,6 +137,7 @@ def submit(log: EventLog, c: Charter, pack: Pack, *, sources: dict[str, str], de
            caused_by: int | None = None, usage: dict | None = None) -> Result:
     """Check the quotes, apply the charter's authority to every proposed action, and log the pack."""
     from diwan.agents import lessons
+    floor.step(c.id, "check")
     check_evidence(pack, sources)
     lvl = lessons.level(log, c.id)
     allowed, approvals, refused = [], [], []
@@ -164,6 +168,7 @@ def run(log: EventLog, agent_id: str, *, request: str, task: str, sources: dict[
     c = get(agent_id)
     start = log.append("agent.started", actor=c.id, agent=c.id, request=request, deal=deal, caused_by=caused_by,
                        content={"task": task, "sources": sorted(sources)})
+    floor.step(c.id, "read", task)
     system, user = instructions(c, log), user_message(task, sources)
     try:
         reply = call(c, system, user, tape_root=tape_root, timeout=timeout)

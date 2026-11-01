@@ -134,7 +134,7 @@ def opted_out(g: Graph, chat) -> bool:
     """They said stop and have not written since. If they write again the door is open: a person may answer them."""
     d = g.nodes.get(f"deal:{chat.deal}")
     op = d.props.get("optout") if d else None
-    return bool(op) and not any(m["type"] == "received" and _at(m["at"]) > _at(op["at"]) for m in chat.props["messages"])
+    return bool(op) and not any(m["type"] == "received" and m["event"] > op["event"] for m in chat.props["messages"])  # log order: the clock can tie
 
 
 def after_visit(g: Graph, chat):
@@ -263,7 +263,7 @@ def _template_params(g: Graph, deal: str, chat, t: dict) -> list[str]:
 
 def sweep(office: Office, now: datetime | None = None) -> list[str]:
     """Every minute: send the follow-ups that are due, then the owner's last step for those that stayed quiet."""
-    from diwan import inbox, leads
+    from diwan import inbox, leads, lobby_room
     from diwan.agents import reception
     now = now or datetime.now(timezone.utc)
     out = []
@@ -281,9 +281,13 @@ def sweep(office: Office, now: datetime | None = None) -> list[str]:
             last_in = next(m for m in reversed(chat.props["messages"]) if m["type"] == "received")
             arabic = any(re.search(r"[؀-ۿ]", m["text"]) for m in chat.props["messages"] if m["type"] == "received")
             text, refs = text_for(g, deal, chat, arabic, g.nodes.get(f"viewing:{st['visit']}") if st["visit"] else None, n)
+            trial = lobby_room.followup(g, deal, n, now, arabic=arabic, first=reception.first_name(chat.label), broker=name(g.nodes[f"deal:{deal}"].props["broker"]))  # an approved experiment
+            if trial:
+                text, refs = trial["text"], []
             template = None
             if now - _at(last_in["at"]) >= WINDOW:  # WhatsApp: an approved template only
-                t = next((t for t in inbox.templates() if t["name"] == s["template"]), None) if s["template"] else None
+                use = (trial or {}).get("template") or s["template"]
+                t = next((t for t in inbox.templates() if t["name"] == use), None) if use else None
                 if not t:
                     office.log.append("followup.nudged", actor="rania", agent="rania", deal=deal,
                                       content={"chat": phone, "n": n, "sent": False, "why": "more than 24 hours: no template picked"})
@@ -299,7 +303,7 @@ def sweep(office: Office, now: datetime | None = None) -> list[str]:
             ev = reception._send(office, phone, deal, text, refs, template=template, extra={"nudge": n})
             office.log.append("followup.nudged", actor="rania", agent="rania", deal=deal, caused_by=ev["id"],
                               content={"chat": phone, "n": n, "sent": ev["content"]["status"] == "sent", "text": text,
-                                       "template": template["name"] if template else None})
+                                       "template": template["name"] if template else None, "experiment": trial["experiment"] if trial else None})
             out.append(f"nudged {phone} #{n}")
         elif st["then"] and _at(st["then"]) <= now:
             office.log.append("lead.went_quiet", actor="rania", agent="rania", deal=deal, content={"chat": phone, "after": st["sent"]})

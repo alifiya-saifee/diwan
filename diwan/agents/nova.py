@@ -56,7 +56,8 @@ REFUSE = [
      "No agent tells a customer anything about compliance: that would tip them off. Priya decides what is said."),
     (r"\bsubmit\b", "submit", "Only Joseph submits portal forms. The Form F clerk can fill it and stop before Submit: say \"prepare Form F\"."),
     (r"\bapprove\b|\bsign off\b", "approve", "Approvals are given by the person they wait for, never by an agent. I can remind them."),
-    (r"\brelease\b|\bpay (him|her|them|the (seller|developer|agent))\b|\bwire\b|transfer the (money|funds)", "release_money",
+    (r"\brelease\b|\bpay (him|her|them|the (seller|developer|agent))\b|\bwire\b|transfer the (money|funds)"
+     r"|^(?!.*\b(did|does|has|have|had|when|how|why|who|whether|remember|need to|i must|got to)\b).*\b(pay|settle)\b.*\b(invoices?|bills?|commission)\b", "release_money",
      "Only Ahmed releases money. The Payment tracker shows what is expected."),
     (r"\bfile\b.*\b(str|sar|report|goaml)\b|\b(str|sar)\b", "file_report", "Only Priya files reports. The Report drafter can prepare a draft for her."),
     (r"\bsuspicious\b", "decide_suspicion", "Only Priya decides whether anything is suspicious. The Source-of-funds analyst can lay out what fits and what is missing."),
@@ -184,12 +185,15 @@ def converse(office: Office, text: str, person: str = "layla", *, session: str =
     now = now or datetime.now(DUBAI)
     person = pid(person) or "layla"
     t = text.strip()
-    from diwan.agents import lessons
+    from diwan.agents import frontdesk, lessons
     if out := lessons.follow_up(office.log, t, session, person):
         return out
     if out := lobby.follow_up(office, t, person, session, now):
         return out
-    from diwan.agents import frontdesk
+    if frontdesk.is_owner(person):
+        from diwan.agents import triage
+        if out := triage.follow_up(office, t, person, session, now):
+            return out
     if out := frontdesk.handle(office, t, person, session, now):
         return out
     if m := re.match(r"(?i)^\s*(?:set\s+)?(\w[\w' -]*?)\s+(?:to|on)\s+(autopilot|review everything|review all|review key actions|review key|review)\s*$", t):
@@ -205,11 +209,21 @@ def converse(office: Office, text: str, person: str = "layla", *, session: str =
         at = f"{h:02d}:{m.group(2) or '00'}"
         set_briefing_time(office, person, at)
         return {"kind": "done", "text": f"Done. I'll do my rounds before {at} and have your briefing ready then."}
-    if re.match(r"(?i)^(brief( me)?|play( the)? briefing|what('s| is) (new|happening))\b", t):
+    if re.match(r"(?i)^(brief me|brief|play( the)? briefing|what('s| is) (new|happening))\W*$", t):
         return brief(office, person, log=False, now=now) | {"kind": "brief"}
     if not any(re.search(rx, t.lower()) for rx, _, _ in REFUSE) and (out := lobby.draft(t, person, session, now)):
         return out  # a request for a person; anything only people may do is refused by route() below first
-    q = (t.endswith("?") or re.match(r"(?i)(who|what|when|where|why|how|is|are|does|did|can|which|show|find|any|hi|hello|hey|thanks|summar\w*|tell me|give me)\b", t)
+    low = t.lower()
+    jotting = re.search(r"\b(remember to|don'?t forget|not forget|forget to)\b", low)  # "I need to remember to sign the lease" asks for a note, not a signature
+    if not jotting and any(re.search(rx, low) for rx, _, _ in REFUSE) and re.match(POLITE, low):  # "could you approve it?" is still asking her to approve it
+        return route(office, t, person, tape_root=tape_root)
+    named, _ = resolve_deal(office.graph(), t, person)
+    asking = t.endswith("?") or re.match(ASKING, low)  # a trigger word inside a question is conversation, not an order
+    exact = ((not asking and not jotting and any(re.search(rx, low) for rx, _, _ in REFUSE + ROUTES)) or re.search(HEAR, low) or (re.search(SMALLTALK, low) and len(low.split()) <= 6 and not frontdesk.TURNS.get(session))
+             or (named and asking and len(low.split()) <= 14 and any(re.search(rx, low) for rx in INTENTS.values())))  # a short question about one deal, with its records
+    if not exact and (out := frontdesk.think(office, t, person, session, now)):  # anything else: she thinks, with the whole office in front of her
+        return out
+    q = (t.endswith("?") or re.search(HEAR, t.lower()) or re.match(r"(?i)(who|what|when|where|why|how|is|are|does|did|can|which|show|find|any|hi|hello|hey|thanks|summar\w*|tell me|give me)\b", t)
          or re.search(SMALLTALK, t.lower()))
     return ask(office, t, person, session=session, tape_root=tape_root, today=now.date()) if q else route(office, t, person, tape_root=tape_root)
 
@@ -232,6 +246,11 @@ def ask(office: Office, question: str, person: str = "layla", *, session: str | 
         deal = SESSIONS[session]
     if deal and session:
         SESSIONS[session] = deal
+    if deal is None and (not intents or len(pool) > MANY):  # nothing in the words points at a deal: don't read out the whole pipeline
+        from diwan.agents import frontdesk
+        if not scoped and re.search(r"\b(departments?|teams?|everyone|marketing|sales|finance|compliance|operations|going on|working on|summar\w*|brief)\b", question.lower()):
+            return {"kind": "answer", "text": frontdesk.office_summary(office, person, datetime.now(DUBAI)), "cites": [], "by": "rules", "request": req}
+        return {"kind": "unknown", "text": "I can't reach Muse just now, so I can only do the simple things. Ask me what needs you today, or name a client.", "cites": [], "request": req}
     if deal is None:
         opts = [_label(g, d) for d in pool]
         return _ask_back(office, req, person, f"Which deal do you mean: {' or '.join(opts)}?", opts,
@@ -265,6 +284,10 @@ def ask(office: Office, question: str, person: str = "layla", *, session: str | 
 # ---------- everyday questions the records answer directly ----------
 
 SMALLTALK = r"^\s*(hi|hello|hey|salam|marhaba|good (morning|afternoon|evening))\b|\bhow are you\b|^\s*(thanks|thank you)\b"
+HEAR = r"\b(can|do|could) you (hear|see|read) me\b|\bare you (there|listening|working)\b|^\W*(testing|test|mic check)\W*$"
+ASKING = r"\W*(who|what|when|where|why|how|is|are|does|did|can|which|should|do|has|have|will|would)\b"
+POLITE = r"\W*(please\b|(could|can|would|will) you\b(?!\s+(tell|show|explain|check|see|find)\b)|i (need|want) you to\b)"  # a request dressed as a question
+MANY = 5  # more deals than this is a list nobody can read: ask for a name instead
 FOCUS = r"\b(focus|priorit\w*|what should i (do|look at)|my day|on my plate|anything urgent|urgent)\b"
 JUDGE = (r"\b(good|bad|trustworthy|trusted|reliable|honest|risky|dodgy|safe|serious|genuine)\s+(customer|client|buyer|person|guy|lead)\b"
          r"|\bis \w+ (trustworthy|risky|honest|reliable|suspicious|legit)\b|\bcan (we|i) trust\b")
@@ -280,6 +303,8 @@ def everyday(office: Office, g: Graph, q: str, person: str, req: str) -> dict | 
                       sources={x: g.record(x) for x in cites if x in g.nodes})
         return {"kind": kind, "text": text, "cites": cites, "by": "rules", "request": req}
 
+    if re.search(HEAR, low):
+        return {"kind": "answer", "text": f"Yes, I can hear you, {name(person)}. What do you need?", "cites": [], "by": "rules", "request": req}
     if re.search(SMALLTALK, low) and len(low.split()) <= 6:
         if low.startswith(("thanks", "thank you")):
             return {"kind": "answer", "text": "Any time.", "cites": [], "by": "rules", "request": req}
@@ -311,14 +336,21 @@ def everyday(office: Office, g: Graph, q: str, person: str, req: str) -> dict | 
         facts = [f.id for f in g.facts(deal)] if deal else []
         return answer("I don't judge people, and nobody here decides that from a feeling. Here is what's on record"
                       + (f": {compose(g, deal, {'status'}, facts)}" if facts else ".") + " Anything about risk is Priya's call.", facts)
+    if re.search(r"\b(experiments?|lobby (room|idea)|idea of the day)\b", low):
+        from diwan import lobby_room
+        run = g.of("experiment", status="running")
+        tip = lobby_room.idea(g)
+        refs = [x.id for x in run] + (tip["refs"] if tip else [])
+        return answer((f"{len(run)} experiment{'s' if len(run) != 1 else ''} running: " + "; ".join(f"{x.id}, {x.label}" for x in run) + "." if run else "No experiments are running.")
+                      + (f" Today's idea from the Lobby: {tip['text']}." if tip else ""), refs)
     if re.search(r"\b(lobby|board|requests?|what did i ask|asked for|chas\w*|late|overdue)\b", low):
         cards = [c for c in g.of("lobby") if c.status not in ("cancelled",)]
         live = [c for c in cards if c.status != "done"]
         if not cards:
-            return answer("The Lobby board is empty. Tell me who needs to do what, and by when.", [])
+            return answer("The requests board is empty. Tell me who needs to do what, and by when.", [])
         line = lambda c: f"{c.id}: {name(c.props['to'])}, \"{c.props['text']}\", due {lobby_due(c)}, {c.status}"  # noqa: E731
         late = [c for c in live if c.status == "late"]
-        return answer(f"{len(live)} open on the Lobby board" + (f", {len(late)} late" if late else "") + ". "
+        return answer(f"{len(live)} open on the requests board" + (f", {len(late)} late" if late else "") + ". "
                       + "; ".join(line(c) for c in live) + "." + (f" Done: {len(cards) - len(live)}." if len(cards) > len(live) else ""),
                       [c.id for c in cards])
     if re.search(r"\bviewings?\b", low):
@@ -424,6 +456,8 @@ def route(office: Office, text: str, person: str = "layla", *, tape_root=None) -
     c = get(hits[0])
     lead = get(c.parent)
     deal, pool = resolve_deal(g, text, person)
+    if deal is None and len(pool) > MANY:
+        return _ask_back(office, req, person, "For which client or property?", [], "The instruction does not name a deal.")
     if deal is None:
         opts = [_label(g, d) for d in pool]
         return _ask_back(office, req, person, f"For which deal: {' or '.join(opts)}?", opts, "The instruction does not name a deal.")
@@ -520,7 +554,7 @@ def brief(office: Office, person: str, *, since: int = 0, log: bool = True, now:
     lines: list[dict] = []
     for typ in ("check", "decision", "request", "question"):
         for n in g.of(typ, status="open"):
-            if n.props.get("who") == person:
+            if n.props.get("who") == person and n.props.get("agent") != NOVA:  # her own "which deal?" was answered in the chat, or dropped
                 lines.append({"text": n.props["text"], "refs": [n.id] + list(n.props.get("refs", [])), "needs": True})
     for c in g.of("lobby", status={"open", "seen", "late"}):
         if c.props.get("to") == person:
@@ -540,8 +574,15 @@ def brief(office: Office, person: str, *, since: int = 0, log: bool = True, now:
         if f.deal in mine and f.event > since:
             new = g.nodes[f.props["superseded_by"]]
             if not any({f.id, new.id} <= set(ln["refs"]) for ln in lines):
-                lines.append({"text": f'{name(new.props["speaker"])} took back "{f.props["quote"]}" and said "{new.props["quote"]}".',
-                              "refs": [f.id, new.id], "needs": False})
+                said = (f"{new.props['quote']}." if new.props["quote"].startswith("Agreed price")  # a broker entering a price takes nothing back
+                        else f'{name(new.props["speaker"])} took back "{f.props["quote"]}" and said "{new.props["quote"]}".')
+                lines.append({"text": said, "refs": [f.id, new.id], "needs": False})
+    if PEOPLE.get(person, {}).get("role") == "Owner":  # the Lobby: what finished and waits for the owner, and one idea a day
+        from diwan import lobby_room
+        for x in lobby_room.waiting(g):
+            lines.append({"text": f"Experiment {x.id} has finished: {x.label}. {x.props['result']['line']} Keep it or roll it back.", "refs": [x.id], "needs": True})
+        if tip := lobby_room.idea(g, now):
+            lines.append({"text": f"One idea from the Lobby: {tip['text']}.", "refs": [r for r in tip["refs"] if r in g.nodes], "needs": False, "idea": True})
     departments = []
     if g.rounds:
         scope = LEADS if person == "layla" else [PEOPLE_TEAM.get(person)] if PEOPLE_TEAM.get(person) else []

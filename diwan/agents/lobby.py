@@ -106,40 +106,25 @@ def draft(text: str, person: str, session: str, now: datetime) -> dict | None:
     if not card:
         return None
     card["by"] = person
-    if not card["due"]:
-        DRAFTS[session] = card | {"needs": "due"}
-        return {"kind": "question", "text": f"By when should {name(card['to'])} have \"{card['text']}\" done?",
-                "options": ["Today 6 PM", "Tomorrow 10 AM", "No deadline"]}
     DRAFTS[session] = card
-    return {"kind": "confirm", "text": f"So: {name(card['to'])}, \"{card['text']}\", due {say_due(card['due'])}. Shall I send it?",
-            "options": ["Yes, send it", "Cancel"], "draft": card}
+    due = f", due {say_due(card['due'])}" if card["due"] else ""  # a deadline only when one was said
+    return {"kind": "confirm", "text": f"So: {name(card['to'])}, \"{card['text']}\"{due}. Shall I send it?", "options": ["Yes, send it", "Cancel"], "draft": card}
 
 
 def follow_up(office: Office, text: str, person: str, session: str, now: datetime) -> dict | None:
-    """The answer to a read-back or a 'by when?': yes posts, no drops, a time completes the draft."""
+    """The answer to a read-back: yes posts, no drops. "No, send this instead" drops it and carries on with the rest."""
     card = DRAFTS.get(session)
     if not card:
         return None
     if NO.match(text):
         DRAFTS.pop(session)
-        return {"kind": "answer", "text": "Cancelled. Nothing was sent."}
-    if card.get("needs") == "due":
-        if re.search(r"no deadline", text, re.I):
-            card["due"] = None
-        else:
-            due, _ = due_from(text, now, bare=True)
-            if not due:
-                return {"kind": "question", "text": "Sorry, by when? For example \"6 PM today\" or \"tomorrow morning\".",
-                        "options": ["Today 6 PM", "Tomorrow 10 AM", "No deadline"]}
-            card["due"] = due.isoformat()
-        card.pop("needs")
-        return {"kind": "confirm", "text": f"So: {name(card['to'])}, \"{card['text']}\", due {say_due(card['due'])}. Shall I send it?",
-                "options": ["Yes, send it", "Cancel"], "draft": card}
-    if YES.match(text):
+        other = re.match(r"(?i)\s*(?:cancel|stop|don'?t)\s+(?:my|the)\s+(?!message|draft|email|whatsapp|send)\w", text)  # about something else
+        return None if other or len(text.split()) > 5 else {"kind": "answer", "text": "Cancelled. Nothing was sent."}
+    if YES.match(text) and len(text.split()) <= 5:  # a yes is a short answer, not a sentence that starts with one
         DRAFTS.pop(session)
         lid = post(office, card)
-        return {"kind": "done", "text": f"Sent. It's on the Lobby board as {lid}; the {get(card['team']).name} has it and I'll chase it before it's due.",
-                "card": lid}
+        chase = "I'll chase it before it's due" if card["due"] else "I'll keep an eye on it"
+        return {"kind": "done", "text": f"Sent. It's on the requests board as {lid}; the {get(card['team']).name} has it and {chase}.", "card": lid}
     return None
 
 

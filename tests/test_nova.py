@@ -187,7 +187,7 @@ def test_briefing_runs_at_seven_dubai_once_a_day():
     ("Who is Priya?", "compliance officer"),
     ("Summarise the Marina deal for me", "Unit 1204, Marina Crest, customer Karim Haddad"),
     ("How many viewings do we have this week?", "No viewings are booked yet"),
-    ("What's on the lobby board?", "The Lobby board is empty"),
+    ("What's on the lobby board?", "The requests board is empty"),
 ])
 def test_everyday_questions(corrected, q, expect):
     assert expect in nova.converse(corrected, q, "layla", session="e")["text"]

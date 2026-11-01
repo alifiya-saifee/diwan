@@ -43,10 +43,9 @@ def test_request_is_read_back_and_only_a_yes_posts_it(office):
     assert evs[:4] == [("lobby.posted", "nova"), ("agent.pack", "nova"), ("agent.pack", "comp"), ("task.created", "comp")]
 
 
-def test_no_deadline_asks_by_when_and_no_cancels(office):
-    assert talk(office, "Ask Joseph to prepare Form F for Marina")["text"].startswith("By when should Joseph")
-    assert "Thursday 29 Oct, 10:00 AM" in talk(office, "Tomorrow 10 AM")["text"]
-    assert talk(office, "no")["text"] == "Cancelled. Nothing was sent."
+def test_no_deadline_unless_one_is_said_and_no_cancels(office):
+    assert talk(office, "Ask Joseph to prepare Form F for Marina")["text"] == 'So: Joseph, "Prepare Form F for Marina". Shall I send it?'
+    assert "Cancelled" in talk(office, "no")["text"]
     assert not office.graph().of("lobby")
 
 
