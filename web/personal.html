@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diwan My WhatsApp</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  body { overflow: hidden; }
+  main { max-width: none; padding: 0; }
+  .cols { display: grid; grid-template-columns: 340px minmax(0, 1fr); height: calc(100vh - 64px); }
+  .left { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .lhead { padding: 12px 14px 8px; }
+  .lhead h1 { font-size: 18px; margin: 0 0 8px; }
+  .tabs { display: flex; gap: 6px; margin-top: 8px; }
+  .tabs button { font-size: 12.5px; padding: 4px 11px; border-radius: 999px; }
+  .tabs button.on { background: var(--gold-soft); color: var(--gold-2); }
+  .list { overflow: auto; flex: 1; }
+  .conv { padding: 11px 14px; cursor: pointer; border-bottom: 1px solid var(--line); }
+  .conv:hover { background: rgba(255,255,255,.03); }
+  .conv.on { background: rgba(255,255,255,.06); }
+  .conv .top { display: flex; gap: 8px; align-items: baseline; }
+  .conv .nm { font-weight: 600; font-size: 14px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv .tm { font-size: 11.5px; color: var(--faint); }
+  .conv .pv { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .conv .flag { font-size: 11.5px; color: var(--gold-2); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv .flag.now { color: var(--bad); font-weight: 600; }
+  .right { display: flex; flex-direction: column; min-height: 0; }
+  .chead { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .chead .who { font-weight: 600; flex: 1; }
+  .chead small { display: block; font-weight: 400; color: var(--muted); }
+  .chead select { width: auto; }
+  .thread { flex: 1; overflow: auto; padding: 14px 7% 18px; display: flex; flex-direction: column; gap: 4px;
+            background: radial-gradient(circle at 1px 1px, rgba(255,255,255,.035) 1px, transparent 0) 0 0 / 22px 22px, #0c1018; }
+  .b { max-width: min(72%, 560px); padding: 6px 9px 5px 10px; border-radius: 10px; font-size: 13.8px; line-height: 1.42; white-space: pre-wrap; }
+  .b.in { align-self: flex-start; background: #1f2633; border-top-left-radius: 2px; }
+  .b.out { align-self: flex-end; background: #0b4a3e; border-top-right-radius: 2px; }
+  .b.nova { background: #1d3557; }
+  .b .by { display: block; font-size: 11.5px; font-weight: 600; color: #9cc2ff; }
+  .b .m { font-size: 10.5px; color: rgba(255,255,255,.55); text-align: right; margin-top: 3px; }
+  .ask { border-top: 1px solid var(--line); padding: 10px 16px; background: rgba(255,255,255,.03); }
+  .ask .what { font-size: 13.5px; margin-bottom: 4px; }
+  .ask .draft { font-size: 13.5px; color: var(--muted); margin-bottom: 8px; white-space: pre-wrap; }
+  .ask .acts { display: flex; gap: 8px; }
+  .compose { display: flex; gap: 8px; padding: 10px 150px 10px 16px; border-top: 1px solid var(--line); align-items: center; }
+  .compose textarea { flex: 1; resize: none; height: 40px; min-height: 40px; }
+  nav a { white-space: nowrap; }
+  .none { color: var(--muted); padding: 18px 14px; font-size: 14px; }
+  .blank { flex: 1; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 30px; }
+  dialog { background: var(--panel-solid); color: var(--ink); border: 1px solid var(--line-2); border-radius: 14px; padding: 16px; width: 340px; }
+  dialog form { display: grid; gap: 8px; }
+  [hidden] { display: none !important; }
+  @media (max-width: 800px) { .cols { grid-template-columns: 1fr; } .cols.open .left { display: none; } .cols:not(.open) .right { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="cols" id="cols">
+    <section class="left">
+      <div class="lhead">
+        <h1>My WhatsApp</h1>
+        <input id="q" type="search" placeholder="Search" aria-label="Search chats">
+        <div class="tabs" id="tabs"></div>
+      </div>
+      <div class="list" id="list"></div>
+    </section>
+    <section class="right" id="right"></section>
+  </div>
+  <dialog id="standin"><form method="dialog">
+    <b>Stand-in phone</b>
+    <input id="p" placeholder="Their number" aria-label="Their number">
+    <input id="n" placeholder="Their name" aria-label="Their name">
+    <textarea id="t" rows="3" placeholder="What they wrote" aria-label="What they wrote"></textarea>
+    <button id="go" value="go">Send to my WhatsApp</button>
+  </form></dialog>
+</main>
+<script type="module">
+import { h, api, post, header, toast, time } from "./app.js";
+header("personal.html");
+const $ = (id) => document.getElementById(id);
+const TABS = [["all", "All"], ["needs", "Needs you"], ["owed", "Owed a reply"]];
+let D = null, open = null, tab = "all";
+
+const cap = (s) => s[0].toUpperCase() + s.slice(1);
+const matterOf = (chat) => D.matters.find((m) => m.chat === chat);
+
+function rows() {
+  const q = $("q").value.trim().toLowerCase();
+  return D.chats.filter((c) => (tab === "all" || (tab === "needs" ? matterOf(c.chat) : !c.mine)) && c.who.circle !== "muted"
+    && (!q || `${c.who.name} ${c.text}`.toLowerCase().includes(q)));
+}
+
+function list() {
+  $("tabs").replaceChildren(...TABS.map(([k, label]) => h("button", { class: tab === k ? "on" : "", onclick: () => { tab = k; list(); } }, label)));
+  const r = rows();
+  $("list").replaceChildren(...(r.length ? r.map((c) => {
+    const m = matterOf(c.chat);
+    return h("div", { class: `conv ${open === c.chat ? "on" : ""}`, onclick: () => show(c.chat) },
+      h("div", { class: "top" }, h("span", { class: "nm" }, c.who.name), h("span", { class: "tm" }, time(c.at))),
+      h("div", { class: "pv" }, `${c.mine ? "You: " : ""}${c.text}`),
+      m ? h("div", { class: `flag ${m.level === "now" ? "now" : ""}` }, m.summary) : "");
+  }) : [h("div", { class: "none" }, D.line.connected ? "Nothing here." : "No chats yet. Your WhatsApp isn't linked, so try the stand-in phone.")]));
+}
+
+async function show(chat) {
+  open = chat;
+  $("cols").classList.add("open");
+  list();
+  const c = D.chats.find((x) => x.chat === chat);
+  const m = matterOf(chat);
+  const msgs = await api(`/api/personal/chats/${chat}`);
+  const pick = h("select", { "aria-label": "Who this is", onchange: async () => { await post("/api/personal/contacts", { phone: chat, name: c.who.name, circle: pick.value }); toast("Saved"); refresh(); } },
+    D.circles.map((x) => h("option", { value: x }, cap(x))));
+  pick.value = c.who.circle;
+  const thread = h("div", { class: "thread" }, msgs.map((x) => h("div", { class: `b ${x.mine ? "out" : "in"} ${x.by === "nova" ? "nova" : ""}` },
+    x.by === "nova" ? h("span", { class: "by" }, "Nova") : "", x.text, h("div", { class: "m" }, time(x.at)))));
+  const box = h("textarea", { rows: 1, placeholder: "Type a message", "aria-label": "Type a message" });
+  const send = async () => { if (!box.value.trim()) return; await post(`/api/personal/chats/${chat}/send`, { text: box.value }); box.value = ""; refresh(); };
+  box.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
+  const act = async (what) => { const r = await post(`/api/personal/matters/${m.id}/${what}`, {}); if (r.text) toast(r.text); refresh(); };
+  const ask = m ? h("div", { class: "ask" }, h("div", { class: "what" }, `Nova: ${m.summary}`), m.draft ? h("div", { class: "draft" }, m.draft) : "",
+    h("div", { class: "acts" }, m.draft ? h("button", { onclick: () => act("yes") }, m.needs === "meeting" ? "Book and send" : "Send") : "",
+      m.draft ? h("button", { onclick: () => { box.value = m.draft; box.focus(); } }, "Change") : "", h("button", { onclick: () => act("leave") }, "Leave it"))) : "";
+  $("right").replaceChildren(h("div", { class: "chead" }, h("div", { class: "who" }, c.who.name, h("small", {}, `+${chat}`)), pick,
+    h("button", { onclick: async () => { if (confirm(`Delete everything with ${c.who.name}?`)) { await post(`/api/personal/chats/${chat}/forget`, {}); open = null; refresh(); } } }, "Delete chat")),
+    thread, ask, h("div", { class: "compose" }, box, h("button", { onclick: send }, "Send")));
+  thread.scrollTop = thread.scrollHeight;
+}
+
+function blank() {
+  const b = h("div", { class: "blank" }, h("div", {},
+    h("p", {}, "Only you and Nova see this. It's kept apart from the sales Inbox and the office records."),
+    D.line.connected ? "" : h("button", { id: "phone", onclick: () => $("standin").showModal() }, "📱 Stand-in phone")));
+  $("right").replaceChildren(b);
+}
+
+async function refresh() {
+  D = await api("/api/personal");
+  list();
+  if (open && D.chats.some((c) => c.chat === open)) show(open); else { open = null; blank(); }
+}
+
+$("q").oninput = list;
+$("go").onclick = async () => {
+  if (!$("p").value.trim() || !$("t").value.trim()) return;
+  await post("/api/personal/incoming", { phone: $("p").value, name: $("n").value || null, text: $("t").value });
+  $("t").value = "";
+  refresh();
+};
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>
