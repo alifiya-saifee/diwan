@@ -92,6 +92,8 @@ def walk(office: Office, now: datetime) -> dict:
         for o in owners:
             if text:
                 office.log.append("nova.headsup", actor="nova", agent="nova", content={"to": o, "text": text.strip()})
+                if stuck and not leads.resting(office.graph(), o):
+                    deliver(office, o, [text.strip()], False, now)
     return {"chased": dict(told), "stuck": stuck}
 
 
@@ -124,6 +126,14 @@ def _alert(office: Office, e: dict) -> str | None:
             return f"{who} is unhappy and needs a person now. They wrote: {text[:140]}"
         if re.search(BUYING, text, re.I):
             return f"{who} is ready to go ahead. They wrote: {text[:140]}"
+    elif t == "lead.hot" and e.get("deal") and f"deal:{e['deal']}" in g.nodes:
+        d = g.nodes[f"deal:{e['deal']}"].props
+        lst = g.nodes.get(c.get("listing") or "")
+        said = {"picked it": "picked", "asked to view it": "asked to view"}.get(c.get("why") or "")
+        what = f": {said} {lst.props['title']} ({lst.props['ref']})" if lst and said else f" ({c['why']})" if c.get("why") else ""
+        return f"{d.get('customer') or 'A client'} is a hot lead{what}. {name(d.get('broker'))} has it."
+    elif t == "notify.sent" and c.get("level") == "now" and is_owner(c.get("to") or ""):
+        return c["text"]  # the owner's own urgent notices: a call nobody made, a lead gone to the Pool
     elif t == "screening.hit":
         return f"Compliance: a screening came back with a possible match on {c.get('name') or 'a party'}. Priya has it."
     elif t == "payment.flagged":
@@ -135,23 +145,73 @@ def _alert(office: Office, e: dict) -> str | None:
     return None
 
 
-ALERTS = ("chat.received", "screening.hit", "payment.flagged", "payment.marked_received", "sale.closed")
+ALERTS = ("chat.received", "screening.hit", "payment.flagged", "payment.marked_received", "sale.closed", "lead.hot", "notify.sent")
+TROUBLE = ("screening.hit", "payment.flagged")  # with a bank-details change or an unhappy client: goes at once, whatever they're doing
+HELD_FOR = timedelta(hours=16)  # what waited for a meeting or the night still goes when it's over
+GOOD = ("chat.received", "payment.marked_received", "sale.closed", "lead.hot")  # what may have waited (trouble never waits)
+
+
+def trouble(e: dict) -> bool:
+    from diwan import sales
+    text = e["content"].get("text") or ""
+    return e["type"] in TROUBLE or (e["type"] == "chat.received" and bool(re.search(sales.FRAUD, text, re.I) or re.search(SERIOUS, text, re.I)))
+
+
+def unconfirmed(office: Office, now: datetime) -> list[tuple[str, str]]:
+    """Viewings held for the broker past the owner's time for an answer, still ahead (docs/nova-office-alerts-spec.md)."""
+    from diwan import slots, viewings
+    g, wait = office.graph(), timedelta(minutes=viewings.settings(office.graph())["owner_minutes"])
+    out = []
+    for v in g.of("viewing", status="requested"):
+        p = v.props
+        asked = datetime.fromisoformat(p.get("moved_at") or v.at)
+        if viewings.by_broker(v) and datetime.fromisoformat(p["at"]) > now and now - asked >= wait:
+            hours = int((now - asked).total_seconds() // 3600)
+            out.append((f"held:{v.id}:{p['at']}", f"{name(p['broker'])} hasn't confirmed {p.get('customer') or 'a client'}'s viewing of {p.get('listing')}, "
+                        f"{slots.say(datetime.fromisoformat(p['at']))}. They asked {hours} hour{'' if hours == 1 else 's'} ago."))
+    return out
+
+
+def deliver(office: Office, owner: str, texts: list[str], urgent: bool, now: datetime) -> bool:
+    """To the owner's WhatsApp on Nova's own line, only when they're away from the app; together as one message."""
+    from diwan import novaline
+    if not texts:
+        return False
+    words = {2: "Two", 3: "Three", 4: "Four", 5: "Five"}.get(len(texts), str(len(texts)))
+    body = texts[0] if len(texts) == 1 else f"{words} things. " + " ".join(f"{i}. {t}" for i, t in enumerate(texts, 1))
+    return novaline.push(office, body, "now" if urgent else "soon", now)
 
 
 def alerts(office: Office, now: datetime | None = None) -> int:
-    """Every minute: what the owner would want to hear the moment it happens. Once each; a thanks or a question doesn't interrupt them."""
+    """Every minute: what the owner would want to hear the moment it happens. Once each; a thanks or a question doesn't interrupt
+    them. Trouble goes at once; good news waits while they're in a meeting and outside the hours the owner allows messages. Away
+    from the app, it reaches their WhatsApp on Nova's line (docs/nova-office-alerts-spec.md)."""
     now = now or datetime.now(DUBAI)
     from diwan import leads
+    from diwan.agents import nudge
     told = 0
     g = office.graph()
-    for e in office.log.list():
-        if e["type"] not in ALERTS or _since(e["at"], now) > LOOKBACK or not (text := _alert(office, e)):
-            continue
-        for o in (p for p in PEOPLE if is_owner(p)):
-            if leads.resting(g, o) and (e["type"] in CAN_WAIT or re.search(BUYING, e["content"].get("text") or "", re.I)):
-                continue  # good news keeps until they're out of the meeting; trouble doesn't
-            ev = office.log.append("nova.headsup", actor="nova", agent="nova", key=f"alert:{o}:{e['id']}", caused_by=e["id"], content={"to": o, "text": text, "from_event": e["id"]})
-            told += not ev.get("duplicate")
+    quiet = not nudge.allowed(nudge.settings(g), now)
+    found = [(e, text, f"alert:{{o}}:{e['id']}") for e in office.log.list()
+             if e["type"] in ALERTS and _since(e["at"], now) <= (HELD_FOR if e["type"] in GOOD and not trouble(e) else LOOKBACK) and (text := _alert(office, e))]
+    said = {e["content"].get("chat") for e, _, _ in found if e["type"] != "notify.sent"}
+    found = [f for f in found if not (f[0]["type"] == "notify.sent" and f[0]["content"].get("chat") in said)]  # one matter, one message
+    found += [(None, text, f"alert:{{o}}:{key}") for key, text in unconfirmed(office, now)]
+    for o in (p for p in PEOPLE if is_owner(p)):
+        new, urgent = [], False
+        for e, text, key in found:
+            hard = e is not None and trouble(e)
+            if not hard and (leads.resting(g, o) or quiet):
+                continue  # good news keeps until they're out of the meeting, or the morning; trouble doesn't
+            if e is not None and e["type"] == "notify.sent" and e["content"].get("to") != o:
+                continue
+            ev = office.log.append("nova.headsup", actor="nova", agent="nova", key=key.format(o=o), caused_by=e["id"] if e else None,
+                                   content={"to": o, "text": text, "from_event": e["id"] if e else None})
+            if not ev.get("duplicate"):
+                told += 1
+                new.append(text)
+                urgent = urgent or hard
+        deliver(office, o, new, urgent, now)
     return told
 
 

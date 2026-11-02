@@ -406,7 +406,7 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
         elif t in ("appointment.moved", "appointment.reminded", "appointment.done", "appointment.noshow") and c.get("id") in g.nodes:
             v = g.nodes[c["id"]]
             if t == "appointment.moved":
-                v.props["at"], v.props["moved_from"] = c["at"], c.get("from")
+                v.props["at"], v.props["moved_from"], v.props["moved_at"] = c["at"], c.get("from"), e["at"]
                 if c.get("held"):  # moved by the client: waits again for whoever confirms it (docs/agent-confirms-spec.md)
                     v.status, v.props["confirm"] = "requested", c.get("confirm") or "broker"
                 v.props.pop("reminded", None)  # a new time gets its reminders again
