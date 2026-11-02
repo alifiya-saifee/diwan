@@ -187,9 +187,10 @@ def choose(office: Office, ref: str, fmt: str, *, by: str) -> None:
 def shape(office: Office, lst: dict) -> dict | None:
     """How a post made as pictures will be made, for the writers: a moment, or a teaching post when competitors' winners
     show words on pictures work. None for everything else. A post about the brand stays a person speaking: people buy from people."""
-    from diwan.agents import taste
+    from diwan.agents import rhythm, taste
     ours = taste.weight(office, "format:graphic"), taste.weight(office, "format:reel, to camera")  # what this business itself said beats what competitors do
-    leans = ours[1] <= taste.BLOCK or (ours[0] > taste.BLOCK and bool(_text_wins(office)))
+    week = rhythm.planned_format(office, lst["ref"])  # the week's mix, when this post is on the plan
+    leans = week == "graphic" if week else ours[1] <= taste.BLOCK or (ours[0] > taste.BLOCK and bool(_text_wins(office)))
     teaching = lst.get("item") == "topic" and not lst.get("job") and not lst["ref"].startswith("JOB-") and leans
     if not lst.get("moment") and not teaching:
         return None

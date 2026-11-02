@@ -837,6 +837,17 @@ def _topic_template(t: dict, angle: str, sign_off: str) -> dict:
     return {"hook_en": hooks.get(angle, t.get("hook") or f"{short}, in plain words."), "hook_ar": "", "lines_en": [*lines, sign_off]}
 
 
+def _no_echo(data: dict) -> list[str]:
+    """The model often repeats the hook as the first line, which only costs a rewrite."""
+    plain = lambda t: re.sub(r"[^a-z0-9]", "", t.lower())  # noqa: E731
+    seen, out = {plain(data["hook_en"])}, []
+    for line in data["lines_en"]:
+        if plain(line) not in seen:
+            seen.add(plain(line))
+            out.append(line)
+    return out
+
+
 def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: int | None, feedback: str | None = None,
            angle: str = "price-reveal", why: str = "", base: dict | None = None) -> dict:
     """One script on one angle. `base` is a draft to revise (a person's change request or a supervisor's return): the
@@ -850,8 +861,9 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
     schema = SCRIPT_SCHEMA if not pictures else {**SCRIPT_SCHEMA, "schema": {**SCRIPT_SCHEMA["schema"], "required": [*SCRIPT_SCHEMA["schema"]["required"], "photos"],
                                                                              "properties": {**SCRIPT_SCHEMA["schema"]["properties"], "photos": {"type": "array", "items": {"type": "integer"}}}}}
     arabic = "Arabic" in business.languages(office)
-    system = runner.instructions(c, office.log) + (f"\nWrite in the `script` format: about 30 seconds, 5 to 7 lines. Use only facts and amounts from "
-                                                   f"the {lst['item']}, and build the lines from its features. Every line says something new; never repeat a "
+    system = runner.instructions(c, office.log) + (f"\nWrite in the `script` format: about 30 seconds, 5 to 7 lines after the hook. The hook is not one of the lines: lines_en starts with what comes after it. Use only facts and amounts from "
+                                                   f"the {lst['item']}, and build the lines from its features. The brand's voice decides the word choice, the sentence length and the attitude: "
+                                                   f"playful means truly playful, formal means truly formal, so nobody could mistake this for another brand. Every line says something new; never repeat a "
                                                    "line or the name. No placeholders or brackets: if a fact is missing, leave it out. The last "
                                                    "line invites the viewer to get in touch, in the brand's own sign-off if it has one. "
                                                    "Write how a person really talks to a friend: short, natural spoken sentences that a viewer would keep watching. One idea only, at most 60 spoken words in all, "
@@ -882,6 +894,7 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
         office.log.append("agent.started", actor="mscript", agent="mscript", caused_by=cause, content={"task": f"Writing the {angle} script for {ref} with the model"})
         try:
             data = runner.call(c, system, user, schema=schema).data
+            data = data | {"lines_en": _no_echo(data)}
             by = "muse-spark"
             stray = (_amounts(" ".join([data["hook_en"], *data["lines_en"]])) - _amounts(rec)) - {0}
             if stray:
@@ -1242,6 +1255,18 @@ def schedule(office: Office, cause: int | None) -> dict:
     return m
 
 
+def planned_at(office: Office, ref: str, at: str) -> str:
+    """A post on the plan goes out on its own day, at the hour the slot found best. A day already gone keeps the slot."""
+    from diwan.agents import rhythm
+    t = datetime.fromisoformat(at)
+    day = next((d["date"] for d in (rhythm.current(office) or {}).get("days", []) if d.get("ref") == ref), None)
+    if not day:
+        return at
+    y, m, d = map(int, day.split("-"))
+    moved = t.replace(year=y, month=m, day=d)
+    return moved.isoformat() if moved > datetime.now(timezone.utc) else at
+
+
 def cross(office: Office, ref: str, text: dict, cause: int | None) -> dict:
     t = text["text"]
     versions = {p: (t if len(t) <= n else t[:n - 1] + "…") for p, n in LIMITS.items() if p in (business.platforms(office) or LIMITS)}
@@ -1279,7 +1304,7 @@ def approve_post(office: Office, ref: str, *, by: str, at: str | None = None) ->
         _pack(office, "mpub", f"Approved by {name(by)}; not posted yet. Needs: {', '.join(needs)}.", kind=None)
         return {"ok": False, "needs": needs}
     slot = made(office, "slot", "next")
-    when_at = slot["at"] if slot else None
+    when_at = planned_at(office, ref, slot["at"]) if slot else None
     if at:
         try:
             chosen = datetime.fromisoformat(at)
@@ -1583,6 +1608,7 @@ async def _to_approval(office: Office, ref: str, sc: dict, text: dict, start: in
     slot = made(office, "slot", "next")
     if not slot or datetime.fromisoformat(slot["at"]) <= datetime.now(timezone.utc):  # an old time is no use
         slot = await step(schedule, office, start)
+    slot = slot | {"at": planned_at(office, ref, slot["at"])}
     pics = made(office, "slides", ref) if sc.get("slides") else None
     if pics:
         note = f" · {pics['people']} of the images show people: check they agreed" if pics.get("people") else ""

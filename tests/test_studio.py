@@ -891,3 +891,8 @@ def test_a_card_can_be_left_out_of_the_topics_without_leaving_knowledge(office):
     assert office.graph().nodes[ref].status == "confirmed"  # the agents still answer from it
     topics.exclude(office, ref, by="maya", on=False)
     assert ref in topics.items(office)
+
+
+def test_a_hook_repeated_as_the_first_line_is_taken_out_before_it_costs_a_rewrite():
+    d = {"hook_en": "Want to wake up over the water?", "lines_en": ["Want to wake up over the water!", "Two bedrooms.", "Two bedrooms.", "Message us."]}
+    assert studio._no_echo(d) == ["Two bedrooms.", "Message us."]

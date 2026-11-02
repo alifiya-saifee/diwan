@@ -12,6 +12,7 @@ they are written from that day's facts. Nothing is filmed or published without a
 """
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 
 import re
@@ -265,9 +266,53 @@ def make_plan(office: Office, today: date, *, auto: bool, by: str = "mkt", days_
     chosen_by = "rules"
     if think:
         days, chosen_by = planner.choose(office, days, today, set(keep), {r["ref"] for r in removed} | stopped)
+    days = mix_teaching(office, spread_formats(office, days, set(keep)), set(keep))
     content = {"rhythm": settings(office)["rhythm"], "auto": auto, "days": days, "removed": removed, "chosen_by": chosen_by}
     office.log.append("plan.made", actor=by, agent="plan", content=content)
     return content
+
+
+def spread_formats(office: Office, days: list[dict], locked: set[str]) -> list[dict]:
+    """The week's mix: the same kind of post does not run day after day when another can take its place. What a post can be comes
+    from what exists for it, so this orders the week, it does not invent a format. Days a person fixed and the first nine keep their place."""
+    from diwan.agents import marketing
+    kind = lambda ref: marketing.format_of(office, ref).split(",")[0]  # noqa: E731
+    days = [dict(d) for d in days]
+    free = [d for d in days if d.get("ref") and d["date"] not in locked and not d.get("job")]
+    pool = [{k: d.get(k) for k in ("ref", "why", "type")} | {"kind": kind(d["ref"])} for d in free]
+    last = None
+    for d in days:
+        if d not in free:
+            last = kind(d["ref"]) if d.get("ref") else None
+            continue
+        most = Counter(p["kind"] for p in pool)
+        pick = max((p for p in pool if p["kind"] != last), key=lambda p: most[p["kind"]], default=pool[0])  # the commonest left first, or the end of the week runs out of choices
+        pool.remove(pick)
+        d.update(ref=pick["ref"], why=pick["why"], type=pick["type"])
+        last = pick["kind"]
+    return days
+
+
+def mix_teaching(office: Office, days: list[dict], locked: set[str]) -> list[dict]:
+    """A teaching post with no footage or photos can be a graphic or a person talking to camera: the week takes turns, so it is not all one
+    thing. What this business has turned down repeatedly is left out. Real material, and days a person fixed, are not touched."""
+    from diwan.agents import eventpost, marketing, taste
+    can = [f for f, key in (("graphic", "format:graphic"), ("camera", "format:reel, to camera")) if taste.weight(office, key) > taste.BLOCK] or ["camera"]
+    last = None
+    for d in days:
+        lst = marketing._subject(office, d.get("ref"))
+        plain = lst and lst.get("item") == "topic" and not d.get("job") and not lst.get("moment") and d["date"] not in locked and eventpost.suggest(office, d["ref"])["format"] == "graphic"
+        if plain:
+            d["format"] = next((f for f in can if f != last), can[0])
+            last = d["format"]
+        else:
+            last = None
+    return days
+
+
+def planned_format(office: Office, ref: str) -> str | None:
+    """"graphic" or "camera" when the week's mix chose one for this post."""
+    return next((d.get("format") for d in (current(office) or {}).get("days", []) if d.get("ref") == ref), None)
 
 
 def stopped_lately(office: Office, today: date) -> set[str]:
@@ -361,7 +406,7 @@ def change_day(office: Office, day: str, ref: str, *, by: str) -> dict:
     if other:
         raise Invalid(f"{lst['title']} is already on {other['date']}.")
     was = d.get("ref")
-    d.update(ref=ref, why="You chose this", type="topic" if lst["item"] == "topic" else "listing", status="approved", job=ref[4:] if ref.startswith("JOB-") else None)
+    d.update(ref=ref, why="You chose this", type="topic" if lst["item"] == "topic" else "listing", status="approved", job=ref[4:] if ref.startswith("JOB-") else None, format=None)
     content = {**{k: p[k] for k in ("rhythm", "auto")}, "days": ds, "removed": [r for r in p.get("removed") or [] if r["ref"] != ref],
                "decided_by": by, "chosen_by": p.get("chosen_by", "rules")}
     office.log.append("plan.made", actor=by, agent="plan", content=content)
@@ -407,6 +452,7 @@ def move(office: Office, day: str, step: int, *, by: str) -> dict:
         ds[i]["type"], ds[j]["type"] = ds[j]["type"], ds[i]["type"]
     ds[i]["why"], ds[j]["why"] = ds[j]["why"], ds[i]["why"]
     ds[i]["job"], ds[j]["job"] = ds[j].get("job"), ds[i].get("job")
+    ds[i]["format"], ds[j]["format"] = ds[j].get("format"), ds[i].get("format")
     content = {**{k: p[k] for k in ("rhythm", "auto")}, "days": ds, "removed": p.get("removed") or [], "moved_by": by, "chosen_by": p.get("chosen_by", "rules")}
     office.log.append("plan.made", actor=by, agent="plan", content=content)
     return content

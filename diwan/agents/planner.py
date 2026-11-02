@@ -42,7 +42,8 @@ def options(office: Office, today: date) -> dict[str, dict]:
         out[x["ref"]] = {"title": x.get("title") or x["ref"], "type": "listing", "job": "offer", "says": str(x.get("area") or x.get("what") or "")[:80], "days_since": ago(x["ref"]), "just_added": x["ref"] in fresh}
     from diwan.agents import taste
     fits = {r: round(taste.score(office, r), 2) for r in out}
-    keep = {r: o | {"fit": fits[r]} for r, o in out.items() if not taste.ruled_out(office, r)}  # repeatedly turned down
+    from diwan.agents import marketing
+    keep = {r: o | {"fit": fits[r], "format": marketing.format_of(office, r)} for r, o in out.items() if not taste.ruled_out(office, r)}  # repeatedly turned down
     return dict(sorted((keep or out).items(), key=lambda kv: -fits[kv[0]]))
 
 
@@ -94,7 +95,7 @@ def choose(office: Office, days: list[dict], today: date, locked: set[str], reje
     system = runner.instructions(c, office.log)
     user = runner.user_message(
         "Choose what to post on each of these days, as the head of marketing would for this business right now. One post for each date, "
-        "from the options only, by their key. Build a stranger's trust before selling, mix teaching and offers, put what works sooner, and prefer options with a higher fit, which is learned from this business's own decisions and leads, and "
+        "from the options only, by their key. Build a stranger's trust before selling, mix teaching and offers, vary the format through the week, put what works sooner, and prefer options with a higher fit, which is learned from this business's own decisions and leads, and "
         "never use the same option twice. For each day give why in one plain sentence a business owner would say out loud, naming no codes.",
         {"dates": [d["date"] for d in open_days], "already_on_the_plan": [{"date": d["date"], "title": pool.get(d.get("ref"), {}).get("title", "")} for d in days if d["date"] in locked | fixed],
          "options": pool, "the_account": _context(office)})
