@@ -218,6 +218,10 @@ no people, buildings or text. A listing never gets them: a drawn home would pass
 Every planned day says what it is based on: your catalog, your knowledge base or company facts, plus what competitors' winning posts show (`planner.evidence`, `reader.winning`).
 AI-made pictures go to the Creative Director (`agents/director.py`), which scores each out of 5 against the post, the business and competitors. Below 4 it is redrawn, up to twice. If too few pass, nothing is offered and it says why. Real photos are not held back. If the look can't be done, the frames say "not checked". A person still approves everything.
 
+## The week's mix and time
+
+`rhythm.spread_formats` orders a plan so the same kind of post doesn't run day after day when another can take its place. `rhythm.mix_teaching` has teaching posts with no photos or footage take turns between a graphic and a person to camera, leaving out what has been turned down repeatedly. A post on the plan goes out on its own day at the best hour (`studio.planned_at`). Test results are in `docs/marketing-test-report.md`.
+
 ## Format and learning
 
 Real material goes first: footage, then usable photos. A teaching post with neither becomes a graphic when at least 10 winning competitor posts lean to text on images over a person on camera (`eventpost._text_wins`); otherwise it stays to camera. A post about the brand always stays a person speaking.

@@ -46,7 +46,11 @@ with sync_playwright() as p:
     ok("the Results tab shows the stage by its plain name", "In production" in txt, txt[:300])
     ok("all ten stages are counted", pg.locator("#mktstages li").count() == 10)
 
-    s = httpx.get(BASE + "/api/studio?ref=MC-1204", timeout=30).json()
+    for _ in range(30):  # the caption is written just after the pick
+        s = httpx.get(BASE + "/api/studio?ref=MC-1204", timeout=30).json()
+        if s["made"]["post text"]:
+            break
+        time.sleep(1)
     text = (s["made"]["post text"] or {})
     ok("the caption carries a code word", text.get("code") and f"Say {text['code']}." in text["text"], str(text)[:200])
     code = text.get("code")
