@@ -169,8 +169,8 @@ def why_not(g: Graph, chat, now: datetime) -> str | None:
         return "waiting for our reply"
     if any(v.props.get("chat") == chat.props["phone"] and _at(v.props["at"]) > now for v in g.of("viewing", status="booked")):
         return "a viewing is coming up"
-    if any(v.props.get("chat") == chat.props["phone"] for v in g.of("viewing", status={"requested", "offered"})):
-        return "a viewing is waiting for the owner"
+    if any(v.props.get("chat") == chat.props["phone"] and _at(v.props["at"]) > now for v in g.of("viewing", status={"requested", "offered"})):
+        return "a viewing is waiting to be confirmed"  # once its time has passed, follow-ups pick up again
     if any(t.deal == chat.deal and t.props.get("fraud") for t in g.of("task")):
         return "a message about payment details: a person handles it"
     if any(a.props["chat"] == chat.props["phone"] for a in g.of("attention", status="open")) and not after_visit(g, chat):

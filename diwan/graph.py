@@ -407,8 +407,8 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
             v = g.nodes[c["id"]]
             if t == "appointment.moved":
                 v.props["at"], v.props["moved_from"] = c["at"], c.get("from")
-                if c.get("held"):  # moved by the client: waits for the broker to confirm the new time (docs/agent-confirms-spec.md)
-                    v.status, v.props["confirm"] = "requested", "broker"
+                if c.get("held"):  # moved by the client: waits again for whoever confirms it (docs/agent-confirms-spec.md)
+                    v.status, v.props["confirm"] = "requested", c.get("confirm") or "broker"
                 v.props.pop("reminded", None)  # a new time gets its reminders again
             elif t == "appointment.reminded":
                 v.props.setdefault("reminded", []).append(c["which"])

@@ -920,6 +920,10 @@ def book(office: Office, phone: str, deal: str, listing: Node | None, when: date
     shown = listing if k["where"] == "property" else None  # how this home is viewed (docs/viewing-access-spec.md)
     if shown and shown.status != "available":  # sold, let or reserved since: never booked
         return f"{shown.props['title']} isn't available any more. {name(broker)} can suggest similar homes; would you like some options?", refs
+    same = next((v for v in g.of("viewing", status={"booked", "requested"}) if shown and when and v.props.get("chat") == phone
+                 and v.props.get("listing") == shown.props["ref"] and datetime.fromisoformat(v.props["at"]) > now), None)
+    if same and not dry:  # the same home again at another time: that one moves, never a second viewing
+        return _move_to(office, phone, deal, same, when, now, cause, f"Asked for {slots.say(when)}"), refs + [same.id]
     if shown and not g.nodes[f"deal:{deal}"].props.get("qtype"):  # asking to see a home for sale (or to let) says which they are
         leads.from_listing(office, deal, shown, f"Asked to view {shown.props['ref']}", cause=cause)
         g = office.graph()
@@ -1045,6 +1049,49 @@ def bare_time(low: str) -> str | None:
     return f"{m.group(1)}{':' + m.group(2) if m.group(2) else ''}{m.group(3) or ''}" if m else None
 
 
+def _move_to(office: Office, phone: str, deal: str, v: Node, when: datetime, now: datetime, cause: int, quote: str) -> str:
+    """Their appointment (booked, or held for a confirmation) to a new time they asked for, with the same checks as booking:
+    free, the unit not shown to someone else, a tenant's notice and the gallery's hours. A viewing that needs confirming
+    (the owner's rule, or someone lives there) waits again for whoever confirms it; anything else moves now and the broker
+    is told (docs/agent-confirms-spec.md)."""
+    from diwan import leads, video, viewings
+    g = office.graph()
+    p = v.props
+    k = slots.kind(g, p.get("kind"))
+    listing = g.nodes.get(f"listing:{p['listing']}") if p.get("listing") else None
+    shown = listing if k["where"] == "property" else None
+    what, broker, was, minutes = _what(g, k, listing), p["broker"], datetime.fromisoformat(p["at"]), int(p.get("minutes") or 60)
+
+    def ok(t: datetime) -> bool:
+        return (t > now and slots.is_open(g, broker, t, minutes, ignore=v.id) and not unit_taken(g, p.get("listing"), t, minutes, ignore=v.id)
+                and viewings.allowed(g, shown, t, minutes, now))
+    if not ok(when):
+        opts = sorted([t for t in slots.nearest(g, broker, when, now, 40, minutes, ignore=v.id) if ok(t)][:3])
+        if not opts:
+            return f"That time isn't free. {name(broker)} will reply to you here with other times."
+        keep = "" if v.status == "requested" else f" Your current time, {slots.say(was)}, stays booked until you choose."
+        return f"That time isn't free. {name(broker)} can do {', '.join(slots.say(t) for t in opts)}. Which suits you?{keep}"
+    a = viewings.access(g, shown) if shown else {}
+    confirm = (p.get("confirm") if v.status == "requested" else
+               "broker" if shown and agent_confirms(g) else a.get("who") if a.get("mode") == "ask" else None)
+    held = {"held": True, "confirm": confirm} if confirm and v.status != "requested" else {}
+    ev = office.log.append("appointment.moved", actor=f"customer:{phone}", deal=deal, caused_by=cause,
+                           content={"id": v.id, "at": when.isoformat(), "from": p["at"], "quote": quote[:200]} | held)
+    if v.status != "requested":
+        video.moved(office, v.id, by=f"customer:{phone}", cause=ev["id"])
+    if confirm:
+        lives = f" Someone lives there: check with the {a['who']} too." if confirm == "broker" and a.get("mode") == "ask" else ""
+        then = "Talk to the client, confirm the place, then book." + lives if confirm == "broker" else f"Check with the {confirm}."
+        leads.raise_card(office, phone, kind="reply", to=broker, cause=ev["id"], now=now, replace=True,
+                         reason=f"Viewing moved by the client: {what}, now {slots.say(when)} (was {slots.say(was)}). {then}")
+        return f"Done: I've asked for {slots.say(when)} instead. {viewings.held_line(office.graph(), office.graph().nodes[v.id], it=True)}."
+    leads.notify(office, broker, f"{p['customer']} moved {what} from {slots.say(was)} to {slots.say(when)}.", chat=phone, kind="info", cause=ev["id"])
+    if p.get("where") == "phone":  # the broker's call card is due at the new time
+        leads.raise_card(office, phone, kind="call", cause=ev["id"], now=now, replace=True, due=when, to=broker,
+                         reason=f"Call {slots.say(when)}, as they asked. They said: \u201c{quote[:160]}\u201d")
+    return f"Done: {yours(k, listing)} is now {slots.say(when)} with {name(broker)}."
+
+
 def _move_held(office: Office, phone: str, deal: str, v: Node, text: str, now: datetime, cause: int) -> str:
     """A viewing still waiting to be confirmed: asked about, cancelled, or a new time asked for, which waits the same way."""
     from diwan import leads, viewings
@@ -1071,18 +1118,7 @@ def _move_held(office: Office, phone: str, deal: str, v: Node, text: str, now: d
             if free:
                 return f"{name(broker)} is free for {what} on {', '.join(slots.say(t) for t in free)}. Which suits you?"
         return f"You asked to see {what} on {slots.say(was)}. {viewings.held_line(g, v, it=True)}."
-    if when <= now or not slots.is_open(g, broker, when, minutes, ignore=v.id) or unit_taken(g, p.get("listing"), when, minutes, ignore=v.id) \
-            or not viewings.allowed(g, listing, when, minutes, now):
-        opts = [t for t in slots.nearest(g, broker, when, now, 40, minutes, ignore=v.id) if not unit_taken(g, p.get("listing"), t, minutes, ignore=v.id)
-                and viewings.allowed(g, listing, t, minutes, now)][:3]
-        return (f"That time isn't free. {name(broker)} is free for {what} on {', '.join(slots.say(t) for t in sorted(opts))}. Which suits you?" if opts
-                else f"That time isn't free. {name(broker)} will reply to you here with other times.")
-    ev = office.log.append("appointment.moved", actor=f"customer:{phone}", deal=deal, caused_by=cause,
-                           content={"id": v.id, "at": when.isoformat(), "from": p["at"], "quote": text[:200]})
-    who = "Talk to the client, confirm the place, then book" if viewings.by_broker(v) else f"Check with the {p.get('confirm') or 'owner'}"
-    leads.raise_card(office, phone, kind="reply", to=broker, cause=ev["id"], now=now, replace=True,
-                     reason=f"Viewing request moved: {what}, now {slots.say(when)} (was {slots.say(was)}). {who}.")
-    return f"Done: I've asked for {slots.say(when)} instead. {viewings.held_line(office.graph(), office.graph().nodes[v.id], it=True)}."
+    return _move_to(office, phone, deal, v, when, now, cause, text)
 
 
 def move_or_cancel(office: Office, phone: str, deal: str, appt: Node, text: str, now: datetime, cause: int) -> str:
@@ -1128,23 +1164,8 @@ def move_or_cancel(office: Office, phone: str, deal: str, appt: Node, text: str,
     if not when and (t := bare_time(low := text.lower())):  # "make it 11": the same day as the appointment
         d = (was.astimezone(slots.DUBAI).date() - now.astimezone(slots.DUBAI).date()).days
         when = slots.parse(f"{'today' if d <= 0 else 'tomorrow' if d == 1 else was.strftime('%A')} at {t}", now)
-    if when and when > now and slots.is_open(g, broker, when, int(p.get("minutes") or 60), ignore=appt.id) \
-            and not unit_taken(g, p.get("listing"), when, int(p.get("minutes") or 60), ignore=appt.id):
-        held = (p.get("where") or "property") == "property" and agent_confirms(g)  # the new time waits for the broker too
-        ev = office.log.append("appointment.moved", actor=f"customer:{phone}", deal=deal, caused_by=cause,
-                               content={"id": appt.id, "at": when.isoformat(), "from": p["at"], "quote": text[:200]} | ({"held": True} if held else {}))
-        if held:
-            from diwan import viewings
-            leads.raise_card(office, phone, kind="reply", to=broker, cause=ev["id"], now=now, replace=True,
-                             reason=f"Viewing moved by the client: {what}, now {slots.say(when)} (was {slots.say(was)}). Talk to the client, confirm the place, then book.")
-            return f"Done: I've asked for {slots.say(when)} instead. {viewings.held_line(office.graph(), office.graph().nodes[appt.id], it=True)}."
-        leads.notify(office, broker, f"{appt.props['customer']} moved {what} from {slots.say(was)} to {slots.say(when)}.", chat=phone, kind="info", cause=ev["id"])
-        from diwan import video
-        video.moved(office, appt.id, by=f"customer:{phone}", cause=ev["id"])
-        if p.get("where") == "phone":  # the broker's call card is due at the new time
-            leads.raise_card(office, phone, kind="call", cause=ev["id"], now=now, replace=True, due=when, to=broker,
-                             reason=f"Call {slots.say(when)}, as they asked. They said: \u201c{text[:160]}\u201d")
-        return f"Done: {yours(k, listing)} is now {slots.say(when)} with {name(broker)}."
+    if when and when > now:
+        return _move_to(office, phone, deal, appt, when, now, cause, text)
     from_ = max(slots.parse_day(text, now) or now, now)  # "can we do Thursday instead?": Thursday's free times
     opts = ", ".join(slots.say(t) for t in (slots.nearest(g, broker, when, now, 3, int(p.get("minutes") or 60), ignore=appt.id) if when
                                              else slots.free(g, broker, from_, 3, int(p.get("minutes") or 60), ignore=appt.id)))
@@ -1548,7 +1569,7 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
                 and (re.search(r"\b(see|view|visit|viewing|viewings|show me|tour)\b", low0) or kept_day) and not _listing_named(g, text, chat) else None)
     # a viewing waiting for the owner: "any news?" is answered honestly (docs/viewing-access-spec.md)
     from diwan import viewings
-    owner_wait = viewings.waiting(g, phone) if chat.props["mode"] == "ai" else None
+    owner_wait = viewings.waiting(g, phone, now) if chat.props["mode"] == "ai" else None
     if front is None and owner_wait and not when_ and not day_ and (re.search(ASKS_WHEN, low0) or re.search(
             r"\b(any news|news|update|heard back|owner|landlord|tenant|confirmed|confirm it)\b", low0)):
         front = "owner_wait"
@@ -1703,8 +1724,12 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
         elif front == "wrong_number":
             reply = "لا مشكلة أبداً، يومك سعيد!" if arabic else "No problem at all, have a good day!"
         elif front == "companion":
-            at_ = slots.say(datetime.fromisoformat(appt.props["at"])) + (f", once {name(appt.props['broker'])} confirms it" if viewings.by_broker(appt)
-                                                                        else ", once the owner confirms it" if appt.status == "requested" else "")
+            at_ = slots.say(datetime.fromisoformat(appt.props["at"]))
+            if arabic:
+                at_ += f"، بعد أن يؤكده {name(appt.props['broker'])}" if viewings.by_broker(appt) else "، بعد تأكيد المالك" if appt.status == "requested" else ""
+            else:
+                at_ += (f", once {name(appt.props['broker'])} confirms it" if viewings.by_broker(appt)
+                        else ", once the owner confirms it" if appt.status == "requested" else "")
             ids = (appt.props.get("where") or "property") == "property" and any("photo id" in i["text"].lower() for i in customer_knowledge(g, "viewing photo id lobby", k=6))
             reply = (f"بالتأكيد، أهلاً وسهلاً بهم. نراك {at_}." if arabic else
                      f"Of course, they're very welcome{', ' + fn if fn else ''}. See you {at_}." + (" Please each bring a photo ID for the building lobby." if ids else ""))
@@ -1719,16 +1744,17 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
             reply = "🙂"
         elif front == "ack":
             nxt = upcoming(g, phone, now)
+            at_ = slots.say(datetime.fromisoformat(nxt.props["at"])) if nxt is not None else ""
             if nxt is not None and (nxt.props.get("where") or "property") == "phone":
-                then = f"{name(nxt.props['broker'])} will call you {slots.say(datetime.fromisoformat(nxt.props['at']))}."
+                then = f"سيتصل بك {name(nxt.props['broker'])} {at_}." if arabic else f"{name(nxt.props['broker'])} will call you {at_}."
             elif nxt is not None and nxt.status == "requested":
-                then = viewings.held_line(g, nxt) + ("." if viewings.by_broker(nxt) else ", and I'll message you as soon as they reply.")
+                then = viewings.held_line(g, nxt, arabic=arabic) + ("." if arabic or viewings.by_broker(nxt) else ", and I'll message you as soon as they reply.")
             elif nxt is not None:
-                then = f"See you {slots.say(datetime.fromisoformat(nxt.props['at']))}."
+                then = f"نراك {at_}." if arabic else f"See you {at_}."
             elif (cc := leads.open_card(g, phone)) and cc.props["kind"] == "call" and not leads.no_calls(g, deal):
-                then = f"{broker_name} will call you shortly."
+                then = f"سيتصل بك {broker_name} قريباً." if arabic else f"{broker_name} will call you shortly."
             else:
-                then = "I'm here whenever you need me."
+                then = "أنا هنا متى ما احتجتني." if arabic else "I'm here whenever you need me."
             reply = f"العفو! {then}" if arabic else f"You're welcome{', ' + fn if fn else ''}! {then}"
         elif front == "owner_wait":
             lst = g.nodes.get(f"listing:{owner_wait.props.get('listing')}")

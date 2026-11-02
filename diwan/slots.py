@@ -245,8 +245,11 @@ def nearest(g: Graph, broker: str, want: datetime, now: datetime, n: int = 3, mi
 TOMORROW = r"tomorrow|tommorow|tomorow|tomorrw|tmrw|tmrrw|tmrow|tmr|tmw|tomo|2moro|2morrow|2mrw|2mro"  # how people type it
 
 
-MONTH = r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(?:[a-z]*)\.?"
-COUNTS = r"(?!\s*(?:bed|br|bhk|room|million|m\b|k\b|sq|%|aed|year|min|am|pm|:))"  # "2 bed", "3 million", "4pm": not a date
+# a month only as it is spelled ("mar", "march"), never "Marina"; the first three letters say which
+MONTH = (r"(jan(?=uary\b|\b)|feb(?=ruary\b|\b)|mar(?=ch\b|\b)|apr(?=il\b|\b)|may\b|jun(?=e\b|\b)|jul(?=y\b|\b)|aug(?=ust\b|\b)"
+         r"|sep(?=t\b|tember\b|\b)|oct(?=ober\b|\b)|nov(?=ember\b|\b)|dec(?=ember\b|\b))[a-z]*\.?")
+COUNTS = (r"(?!\s*(?:bed|br|bhk|room|million|m\b|k\b|sq|%|aed|year|min|am|pm|:))"  # "2 bed", "3 million", "4pm": not a date
+          r"(?!\s+(?:of\s+(?:us|them)|people|persons|guests|adults|kids|children)\b)")  # "may 2 of us come?": a count
 NOT_THEN = r"\b(busy|not|can'?t|cannot|no|except|unless)\b[^.,;]{0,8}$"  # "busy Tuesday", "not on Tuesday"
 
 

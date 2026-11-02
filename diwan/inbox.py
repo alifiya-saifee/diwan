@@ -185,7 +185,8 @@ def detail(office: Office, phone: str, now: datetime | None = None) -> dict:
     asked = next((e["content"] for e in reversed(office.log.list()) if e["type"] == "viewing.requested" and e["content"].get("chat") == phone), None)
     return base | {
         "offers": offers.rows(office.log, deal) if deal else [],
-        "viewing_request": asked if asked and not g.of("viewing", deal, "booked") else None,
+        "viewing_request": asked if asked and not g.of("viewing", deal, "booked")
+                           and (asked.get("id") not in g.nodes or g.nodes[asked["id"]].status in ("requested", "offered")) else None,  # not once cancelled
         "messages": c.props["messages"],
         "facts": [{"id": f.id, "text": g.record(f.id).split(" · ", 1)[1], "kind": f.props["kind"]} for f in g.facts(deal)] if deal else [],
         "replaced": [{"id": f.id, "quote": f.props["quote"], "by": f.props.get("superseded_by")} for f in g.of("fact", deal, "superseded")] if deal else [],
@@ -201,7 +202,7 @@ def detail(office: Office, phone: str, now: datetime | None = None) -> dict:
         "quiet": _quiet(g, c, now) if deal and f"deal:{deal}" in g.nodes else None,
         "visit": g.nodes[f"deal:{deal}"].props.get("visit") if deal and f"deal:{deal}" in g.nodes else None,
         "calls": _calls(g, c),
-        "owner_wait": _owner_wait(g, c),
+        "owner_wait": _owner_wait(g, c, now),
         "listing_hint": _listing_hint(g, deal),
         "needs_outcome": _needs_outcome(g, c),
         "outcome": g.nodes[f"deal:{deal}"].props.get("outcome") if deal and f"deal:{deal}" in g.nodes else None,
@@ -231,10 +232,10 @@ def _listing_hint(g: Graph, deal: str | None) -> dict | None:
     return {"ref": n.props["ref"], "title": n.props["title"]} if n is not None and n.status == "available" else None
 
 
-def _owner_wait(g: Graph, chat) -> dict | None:
+def _owner_wait(g: Graph, chat, now: datetime | None = None) -> dict | None:
     """A viewing held for this client while the broker checks with the owner or tenant (docs/viewing-access-spec.md)."""
     from diwan import viewings
-    v = viewings.waiting(g, chat.props["phone"])
+    v = viewings.waiting(g, chat.props["phone"], now)
     if not v:
         return None
     lst = g.nodes.get(f"listing:{v.props.get('listing')}")

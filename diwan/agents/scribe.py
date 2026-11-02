@@ -74,7 +74,7 @@ def _words(tokens: list[str]) -> float:
 
 def amounts(text: str) -> list[float]:
     out = []
-    for m in re.finditer(r"(\d[\d,]*(?:\.\d+)?)\s*(k|m|mn|million|thousand)?\b", text, re.I):
+    for m in re.finditer(r"(?<![A-Za-z]-)(?<![\d,.])(\d[\d,]*(?:\.\d+)?)\s*(k|m|mn|million|thousand)?\b", text, re.I):  # never a ref: "MC-1204"
         base = float(m.group(1).replace(",", ""))
         v = base * SCALES.get((m.group(2) or "").lower(), 1) if base < 10_000 else base  # "2.6 million", never "2,600,000 million"
         out.append(v)

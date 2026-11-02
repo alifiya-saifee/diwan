@@ -270,6 +270,12 @@ def test_a_follow_up_picks_up_the_question_left_open():
             _, _, chat = said(name, confirms)
             assert [m["text"] for m in chat.props["messages"] if m.get("nudge")][:1] == [want], (name, confirms)
 
+
+def test_a_cancelled_request_isnt_offered_for_booking_in_the_inbox():
+    from diwan import inbox
+    o, _, chat = said("reschedule and cancel", True)
+    assert inbox.detail(o, chat.props["phone"], MON + timedelta(days=3))["viewing_request"] is None
+
 if __name__ == "__main__":
     lines = []
     for n, msgs in [(f"{n} [{m}]", (msgs, m == "broker confirms")) for n, msgs in SCENARIOS.items() for m in ("broker confirms", "rania books")]:

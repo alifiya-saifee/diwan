@@ -814,7 +814,7 @@ if (qs.get("book")) setTimeout(async () => {  // from a hot lead: the form opens
   const phone = document.querySelector("#fphone, input[name=phone]");
   if (phone) { phone.value = qs.get("book"); phone.dispatchEvent(new Event("input", { bubbles: true })); }
   if (qs.get("ref") && $("fprop")) { const kind = C.kinds.find((k) => k.where === "property"); if (kind) { $("fkindsel").value = kind.id; $("fkindsel").dispatchEvent(new Event("change")); } $("fprop").value = qs.get("ref"); }
-  if (qs.get("at") && $("fdate")) { const t = new Date(qs.get("at")); const p = (n) => String(n).padStart(2, "0"); $("fdate").value = `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`; $("ftime").value = `${p(t.getHours())}:${p(t.getMinutes())}`; }
+  if (qs.get("at") && $("fdate")) { const t = local(qs.get("at")); const p = (n) => String(n).padStart(2, "0"); $("fdate").value = `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())}`; $("ftime").value = `${p(t.getUTCHours())}:${p(t.getUTCMinutes())}`; }  // Dubai time, whatever the browser's
 }, 600);
 $("addBusy").onclick = () => openForm("busy", { broker: who || (C.owner ? null : me) });
 $("addOff").onclick = () => openForm("off", { broker: who || (C.owner ? null : me) });

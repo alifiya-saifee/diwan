@@ -95,9 +95,11 @@ def agreed(g: Graph, chat: str, ref: str | None, t: datetime):
                  and t.isoformat() in (v.props.get("owner_ok") or [])), None)
 
 
-def waiting(g: Graph, chat: str):
-    """The viewing this client is waiting on the owner for, if any."""
-    return next((v for v in g.of("viewing", status="requested") if v.props.get("chat") == chat), None)
+def waiting(g: Graph, chat: str, now: datetime | None = None):
+    """The next viewing this client is waiting on a confirmation for, if any; one whose time has passed isn't."""
+    now = now or datetime.now(slots.DUBAI)
+    return next(iter(sorted((v for v in g.of("viewing", status="requested") if v.props.get("chat") == chat and datetime.fromisoformat(v.props["at"]) > now),
+                            key=lambda v: v.props["at"])), None)
 
 
 def request(office: Office, phone: str, deal: str, listing: Node, when: datetime, k: dict, now: datetime, cause: int,
@@ -120,8 +122,11 @@ def request(office: Office, phone: str, deal: str, listing: Node, when: datetime
         office.log.append("viewing.requested", actor=reception.RANIA, agent=reception.RANIA, deal=deal, caused_by=ev["id"],
                           content={"chat": phone, "listing": listing.props["ref"], "at": when.isoformat(), "id": vid})
         lives = f" Someone lives there: check with the {a['who']} too." if a["mode"] == "ask" else ""
+        also = [f"{x.props['listing']}, {slots.say(datetime.fromisoformat(x.props['at']))}" for x in office.graph().of("viewing", status="requested")
+                if x.props.get("chat") == phone and x.id != vid and datetime.fromisoformat(x.props["at"]) > now]  # one card: every request open
         leads.raise_card(office, phone, kind="reply", to=broker, cause=ev["id"], now=now, replace=True,
-                         reason=f"Viewing request: {title}, {slots.say(when)}. Talk to the client, confirm the place, then book.{lives}")
+                         reason=f"Viewing request: {title}, {slots.say(when)}{' (also asked: ' + '; '.join(also) + ')' if also else ''}. "
+                                f"Talk to the client, confirm the place, then book.{lives}")
         if re.search(r"[\u0600-\u06ff]", next((m["text"] for m in reversed(chat.props["messages"]) if m["type"] == "received"), "")):
             return f"شكراً، سجلت رغبتك في رؤية {title} {slots.say(when)}. سيتحدث معك {name(broker)} ليؤكد العقار والموعد.", [listing.id, vid]
         return (f"Thanks, I've noted you'd like to see {title}, {slots.say(when)}. {name(broker)} will talk to you and confirm the "
@@ -139,9 +144,13 @@ def by_broker(v: Node) -> bool:
     return v.props.get("confirm") == "broker"
 
 
-def held_line(g: Graph, v: Node, it: bool = False) -> str:
+def held_line(g: Graph, v: Node, it: bool = False, arabic: bool = False) -> str:
     """What the client hears about a held viewing: who confirms it, and when they asked for (`it`: the time was just said)."""
-    at = "it" if it else slots.say(datetime.fromisoformat(v.props["at"]))
+    at = slots.say(datetime.fromisoformat(v.props["at"]))
+    if arabic:
+        return (f"سيؤكد {name(v.props['broker'])} الموعد معك" + ("" if it else f" ({at})") if by_broker(v) else
+                "أنتظر تأكيد المالك" + ("" if it else f" للموعد ({at})"))
+    at = "it" if it else at
     if by_broker(v):
         return f"{name(v.props['broker'])} will confirm {at} with you"
     return f"I'm waiting for the {v.props.get('confirm') or 'owner'} to confirm {at}"
