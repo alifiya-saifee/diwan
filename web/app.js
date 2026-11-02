@@ -152,7 +152,7 @@ export const LOGO = `<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGr
 export const pa = (() => {
   const me = () => SESSION.person || "layla", key = () => `diwan.pa.${me()}`;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let log = [], rec = null, on = false, state = "off", busy = false, playing = false, talking = null, turn = 0;
+  let log = [], rec = null, on = false, state = "off", busy = false, playing = false, talking = null, turn = 0, held = null;
   try { log = JSON.parse(localStorage.getItem(key()) || "[]"); } catch { log = []; }
   const subs = new Set(), states = new Set();
   const push = (m) => { log.push(m); log = log.slice(-60); try { localStorage.setItem(key(), JSON.stringify(log)); } catch {} subs.forEach((f) => f(m)); };
@@ -178,19 +178,44 @@ export const pa = (() => {
     try { rec.start(); if (!busy && !playing) show("listening"); } catch { rec = null; }
   };
   const mute = () => { if (rec) { rec.onend = null; try { rec.abort(); } catch {} rec = null; } };
-  const speak = (text) => new Promise((done) => {
-    const clean = text.replace(/\b[A-Z]{1,2}\d+\b/g, "").replace(/https?:\S+/g, "").replace(/[*_#`>|~]/g, "").replace(/\s+/g, " ").trim();
-    if (!clean || !window.speechSynthesis) { done(); return; }
-    const u = new SpeechSynthesisUtterance(clean.length > 500 ? `${clean.slice(0, 500).replace(/[^.?!]*$/, "")}` : clean);
-    const v = speechSynthesis.getVoices();
-    u.voice = v.find((x) => /en/i.test(x.lang) && /natural|online|google/i.test(x.name)) || v.find((x) => /^en/i.test(x.lang)) || null;
-    const mine = talking = { words: new Set(words(clean)), until: Infinity };
-    playing = true;
-    const end = () => { clearTimeout(t); if (talking === mine) { playing = false; mine.until = Date.now() + 1500; } done(); };
-    const t = setTimeout(end, Math.min(25000, clean.length * 90 + 1500));  // a browser that never says it finished can't leave her deaf
-    u.onend = end; u.onerror = end;
-    speechSynthesis.cancel(); speechSynthesis.speak(u);
+  const loaded = () => new Promise((ok) => {  // the browser lists its voices a moment after the page opens
+    if (!window.speechSynthesis || speechSynthesis.getVoices().length) { ok(); return; }
+    const t = setTimeout(ok, 1000);
+    speechSynthesis.addEventListener("voiceschanged", () => { clearTimeout(t); ok(); }, { once: true });
   });
+  loaded();
+  const talk = async (text) => {
+    const clean = text.replace(/\b[A-Z]{1,2}\d+\b/g, "").replace(/https?:\S+/g, "").replace(/[*_#`>|~]/g, "").replace(/\s+/g, " ").trim();
+    if (!clean || !window.speechSynthesis) return;
+    await loaded();
+    return new Promise((done) => {
+      const words_ = clean.length > 500 ? `${clean.slice(0, 500).replace(/[^.?!]*$/, "")}` : clean;
+      const mine = talking = { words: new Set(words(clean)), until: Infinity };
+      playing = true;
+      let t, watchdog, started = false, tries = 0;
+      const end = () => { clearTimeout(t); clearTimeout(watchdog); if (talking === mine) { playing = false; mine.until = Date.now() + 1500; } done(); };
+      t = setTimeout(end, Math.min(25000, clean.length * 90 + 4000));  // a browser that never says it finished can't leave her deaf
+      const go = () => {
+        const u = new SpeechSynthesisUtterance(words_), v = speechSynthesis.getVoices();
+        u.voice = v.find((x) => /en/i.test(x.lang) && /natural|online|google/i.test(x.name)) || v.find((x) => /^en/i.test(x.lang)) || null;
+        u.onstart = () => { started = true; };
+        u.onend = end;
+        u.onerror = (e) => {
+          if (e.error === "not-allowed") {  // the page came back on its own and the browser wants a click before it makes a sound
+            toast("Tap anywhere to hear Nova");
+            const again = () => { removeEventListener("pointerdown", again); removeEventListener("keydown", again); speak(clean); };
+            addEventListener("pointerdown", again); addEventListener("keydown", again);
+          }
+          end();
+        };
+        speechSynthesis.speak(u);
+        watchdog = setTimeout(() => { if (!started && talking === mine && tries++ < 1) { speechSynthesis.cancel(); go(); } }, 2500);  // it was dropped: once more
+      };
+      go();
+    });
+  };
+  let queue = Promise.resolve();  // one voice at a time: nothing she says cuts off what she's saying
+  const speak = (text) => { const next = queue.then(() => talk(text)); queue = next.catch(() => {}); return next; };
   async function say(text, asked, voice = false) {
     text = (text || "").trim();
     if (!text) return null;
@@ -203,10 +228,14 @@ export const pa = (() => {
     try { r = await post("/api/pa/say", { text: asked || text, person: me(), session: `pa-${me()}`, voice, history }); }
     catch (e) { r = e.message === "Failed to fetch" ? { kind: "answer", text: "I lost the line for a moment. Say that again?" } : { kind: "refused", text: e.message }; }
     clearTimeout(wait);
-    if (r.kind !== "silent") {
+    if (r.kind !== "silent" && (r.text || "").trim()) {
       if (voice) push(line);
       push({ from: "pa", text: r.text, kind: r.kind, options: r.options || [], cites: r.cites || [], asked: text });
-      if (on && mine === turn) { show("speaking"); await speak(r.spoken || r.text); }
+      if (on && mine === turn) { held = null; show("speaking"); await speak(r.spoken || r.text); }
+      else if (on) held = r.spoken || r.text;  // the mic broke their sentence in two: this is the answer unless the next piece has a better one
+    } else if (on && mine === turn && held) {
+      const said = held; held = null;
+      show("speaking"); await speak(said);
     }
     if (mine === turn) { busy = false; show(on ? "listening" : "off"); }  // cut off: the newer turn has the floor
     return r;

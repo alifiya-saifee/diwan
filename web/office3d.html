@@ -845,7 +845,7 @@ function renderDemo() {
   if (where === "lobby") btns.push(h("a", { class: "btn", href: "lobby.html" }, "Open the Lobby room"));
   if (where === "mkt" || where === "hq") btns.push(h("button", { onclick: async () => { if (where === "hq") await enter("mkt"); await post("/api/marketing/demo?ref=MC-1204"); toast("A listing is going through the studio"); } }, "Run a listing through marketing"));
   if (where !== "mkt") btns.push(h("button", { onclick: correction }, "Karim corrects himself"));
-  btns.push(h("button", { onclick: async () => { await post("/api/demo/reset"); location.reload(); } }, "Reset"));
+  btns.push(h("button", { onclick: async () => { if (!confirm("Reset the office? Everything on screen starts again from the demo data. The old log is kept as a backup.")) return; await post("/api/demo/reset"); location.reload(); } }, "Reset"));
   $("demo").replaceChildren(...btns);
 }
 async function correction() {

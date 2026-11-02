@@ -66,6 +66,10 @@ REFUSE = [
     (r"\bsign\b(?! off| up| in)", "sign", "Only a person signs. I can prepare it and show you what it rests on."),
     (r"\b(send|share|give)\b.*\b(bank details|iban|account (number|details))\b", "send_bank_details",
      "No agent sends bank details. Payment instructions come from the signed documents, and Finance confirms them by phone."),
+    (r"\b(move|put|mark|set)\b.*\b(to|as|at|in)\s+(viewed|qualified|qualifying|viewing booked|offer|offer accepted|form f|transfer|won|contract|ejari|reservation|spa|oqood)\b", "move_stage",
+     "I don't move stages: the broker, the transactions officer or you do that in the Inbox or on the Deal page, where its rules are checked."),
+    (r"\b(delete|wipe|erase|purge|remove)\b.*\b(leads?|deals?|clients?|customers?|records?|data|history|contracts?|documents?)\b", "delete_records",
+     "Nothing on the records gets deleted: that history is the office's proof. To close a lead, its broker marks it Lost with a reason."),
     (r"\b(change|update|edit)\b.*\bsettings?\b", "change_settings", "I don't change Settings: the owner does that on the Settings page."),
 ]
 

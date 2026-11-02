@@ -695,7 +695,7 @@ def _broker_asks(office: Office, text: str, person: str, session: str, now: date
         if not when or not ref:
             return {"kind": "question", "text": f"{'Which property' if not ref else 'What day and time'} for {chat.label}?"}
         PENDING[session] = {"book": {"phone": chat.props["phone"], "name": chat.label, "ref": ref, "at": when.isoformat(), "broker": d["broker"]}}
-        return {"kind": "confirm", "text": f"Book {chat.label} to view {ref} with {name(d['broker'])}, {slots.say(when)}?", "options": ["Yes", "Cancel"]}
+        return {"kind": "confirm", "text": f"Book {chat.label} to view {ref} with {name(d['broker'])}, {slots.say(when)}? Saying yes means you've talked to them and the place is available.", "options": ["Yes", "Cancel"]}
     if m := re.match(r"^\s*(?:please\s+)?send\s+(.+?)\s+(?:the\s+)?(\d+|three|two|five)?\s*(?:closest\s+|best\s+)?options\b", low):
         chat = _client(g, m.group(1), person) or _lead_named(g, m.group(1), person)[0]
         if not chat:
@@ -779,7 +779,7 @@ def _follow_up(office: Office, text: str, person: str, session: str, now: dateti
     if b := p.get("book"):
         from diwan import slots
         kind = next(k for k in slots.appointments(office.graph()) if k["where"] == "property")
-        reception.add_by_hand(office, by=person, broker=b["broker"], phone=b["phone"], name_=b["name"], kind_id=kind["id"], ref=b["ref"], when=datetime.fromisoformat(b["at"]), now=now)
+        reception.add_by_hand(office, by=person, broker=b["broker"], phone=b["phone"], name_=b["name"], kind_id=kind["id"], ref=b["ref"], when=datetime.fromisoformat(b["at"]), now=now, confirmed=True)
         return {"kind": "done", "text": f"Booked on the calendar. Reminders go to {b['name']} on the usual schedule."}
     if s := p.get("send"):
         try:
@@ -794,7 +794,11 @@ def _follow_up(office: Office, text: str, person: str, session: str, now: dateti
             leads.reassign(office, c, t["to"], by=person)
         return {"kind": "done", "text": f"Moved {len(t['chats'])} to {name(t['to'])}. They've been told."}
     if r := p.get("relay"):
-        return _record_relay(office, r, person)
+        out = _record_relay(office, r, person)
+        if rest := p.get("more"):
+            PENDING[session] = {"relay": rest[0], "more": rest[1:]}
+            return out | {"kind": "confirm", "text": f"{out['text']} And this on {rest[0]['customer']}'s file: \"{rest[0]['text']}\"?", "options": ["Yes", "Cancel"]}
+        return out
     if h := p.get("handover"):
         office.add_task(None, "nova", h["task"], needs_person=h["to"], by=person)
         leads.notify(office, h["to"], f"Nova: {h['task']}", kind="info")
@@ -829,20 +833,27 @@ def _follow_up(office: Office, text: str, person: str, session: str, now: dateti
 
 # ---------- what the owner heard ----------
 
-RELAY = re.compile(r"^\s*(?P<who>[A-Z][a-z]+)\s+(?:now\s+|also\s+|actually\s+)?(?:wants|said|says|told me|changed|prefers|will pay|is paying|can only|decided)\b", re.U)
+RELAY = re.compile(r"^\s*(?P<who>[A-Za-z]+(?:\s+[A-Za-z]+)??)(?:'s\s+(?:budget|price|offer)\b|\s+(?:now\s+|also\s+|actually\s+)?(?:wants|said|says|told me|changed|prefers|will pay|is paying|can only|decided)\b)", re.I | re.U)
+RECORD_ON = re.compile(r"^\s*record on\s+(.+?)\s*:\s*(.+)$", re.I | re.S)
+SAID = re.compile(r"^\s*[A-Za-z]+(?:\s+[A-Za-z]+)?\s+(?:said|says|told me)(?:\s+that)?[,:\s]+(.+)$", re.I | re.S)
 
 
 def _record_relay(office: Office, r: dict, person: str) -> dict:
     """Someone relays what a client said: their words become a Fact in that person's name, and can trigger the correction rule."""
     from diwan import qualify
     from diwan.agents import scribe
+    from diwan import inbox
     ev = office.log.append("instruction.given", actor=person, agent="nova", deal=r["deal"], content={"text": r["text"], "relayed": True})
-    heard = scribe.hear(office, r["deal"], name(person), r["text"], ev["id"])
+    g = office.graph()
+    d = g.nodes[f"deal:{r['deal']}"].props
+    quoted = SAID.match(r["text"])  # "Mona said I'll pay it myself": "I" is Mona
+    heard = scribe.hear(office, r["deal"], d.get("customer") if quoted else name(person), quoted[1] if quoted else r["text"], ev["id"])
     g = office.graph()
     d = g.nodes[f"deal:{r['deal']}"].props
     _, answers = qualify.read_rules(g, qualify.form(g), d.get("qtype"), r["text"], None)
     kept = qualify.record(office, r["deal"], qtype=None, type_quote=None, answers=answers, said=r["text"], by=person, cause=ev["id"])
     facts = heard["facts"] or ([] if kept else [office.record_fact(r["deal"], "commitment", r["text"], name(person), caused_by=ev["id"])])
+    inbox.auto_stage(office, r["deal"], ev["id"])
     return {"kind": "done", "text": f"Recorded on {d.get('customer')}'s file, in your words" + (f" ({', '.join(facts)})" if facts else "") + ".", "cites": facts}
 
 
@@ -855,6 +866,7 @@ def _record_relay(office: Office, r: dict, person: str) -> dict:
 TURNS: dict[str, list[dict]] = {}  # session -> the conversation so far, for "and what about Sara?"
 VOICE: dict[str, bool] = {}  # session -> this turn came off the open mic
 lobby_other = r"(?i)\s*(?:cancel|stop|don'?t)\s+(?:my|the)\s+(?!message|draft|email|whatsapp|send)\w"
+CLEARLY_ASKING = r"(?i)\W*(?:nova\b\W*)?(?:what|when|where|who|which|how|why|can you|could you|tell me|find|look up|search)\b"  # not "did you...": the open mic overhears the room
 TALK = 45  # seconds Muse may take on a live turn: it is often near 25 at busy hours, and the page says "one moment"
 BRAIN = {"name": "pa_turn", "strict": True, "schema": {"type": "object", "additionalProperties": False, "required": ["reply", "command"],
                                                        "properties": {"reply": {"type": "string"}, "command": {"type": ["string", "null"]}}}}
@@ -963,6 +975,16 @@ def picture(office: Office, person: str, now: datetime) -> str:
             lines.append(f"Department {said}")
     from diwan.agents import watch
     lines += _desks(g, person) + watch.lines(office.log, person, now)[:20] + _rooms(g, person, now)
+    if owner or dept == "sales":
+        from diwan import leads
+        here = {b: leads.on_shift(g, b, now) for b in leads.brokers()}
+        lines.append(f"Brokers on shift now: {', '.join(name(b) for b, on in here.items() if on) or 'nobody'}. Not on shift: {', '.join(name(b) for b, on in here.items() if not on) or 'nobody'}.")
+        pool = [g.nodes[f"chat:{n.props['chat']}"].label for n in g.of("attention", status="open") if n.props.get("pooled")]
+        lines.append(f"In the Pool (leads anyone may claim): {', '.join(pool[:10]) or 'nobody'}.")
+    for n in g.of("deal"):
+        if (v := n.props.get("visit")) and sees_deal(g, n.id.split(":", 1)[1], person):
+            said = [("interest", v.get("interest")), ("liked", ", ".join(v.get("liked") or [])), ("worried about", ", ".join(v.get("worries") or [])), ("budget", v.get("budget_quote")), ("next", v.get("next_step"))]
+            lines.append(f"Last meeting or visit with {n.props.get('customer')}, {_at(v['at']).astimezone(DUBAI):%d %b}: " + "; ".join(f"{a}: {b}" for a, b in said if b and b != "unknown"))
     if owner or dept == "fin":
         lines.append(_sales_line(office, now))
     if owner or dept == "mkt":
@@ -975,6 +997,8 @@ def picture(office: Office, person: str, now: datetime) -> str:
     chats = {c.deal: c for c in g.of("chat") if not c.props.get("merged_into")}
     lines += [_lead_line(g, x, tracks.get(x.deal, {}), chats, now) for x in g.deals()
               if x.props.get("stage") not in ("Won", "Lost") and sees_deal(g, x.deal, person)][:60]
+    from diwan import offers
+    lines += offers.lines(office, [x for x in g.deals() if x.props.get("stage") not in ("Won", "Lost") and sees_deal(g, x.deal, person)])
     return "\n".join(lines)
 
 
@@ -998,7 +1022,7 @@ def think(office: Office, text: str, person: str, session: str, now: datetime) -
               "them to a colleague in place of an answer. If something truly isn't recorded, say so once and offer to ask the person who would know. Never guess a number or a name. "
               "You do nothing yourself: if they want something done, put it in `command`, and the office reads it back to them for a yes. So `reply` must never say you did it, are "
               "doing it or are about to; it holds only the answer to anything else they asked, and is empty if there was nothing else. `command`, or null, is exactly one of: "
-              "'Remind me <when> to <what>'; 'Block my <time> <day> for <why>'; 'Reply on my WhatsApp to <name> saying <what>'; 'Pass <name> to <broker>'; '<name or number> is my <mum, dad, client, vendor, friend...>'; 'Treat <name> as important'; 'Mute <name>'; 'Stop telling me about <name>'; 'Block my whole day <day>'; 'Move my <meeting> to <when>'; 'Cancel my <meeting>'; 'WhatsApp <exact client name> saying <what to tell them>'; 'Chase everyone'; 'Note <item>; <item>'; 'Cross off <item>'; 'Move my reminder to <when>'; 'Cancel my reminder'; 'Email <person or address> about <what>'; 'Prepare Form F for <client>'; 'Rebuild the deck for <client>'; 'Screen the parties for <client>'; "
+              "'Remind me <when> to <what>'; 'Block my <time> <day> for <why>'; 'Record on <client>: <what changed, in their words>' whenever they tell you something new about a client, such as a new budget or who pays; 'Reply on my WhatsApp to <name> saying <what>'; 'Pass <name> to <broker>'; '<name or number> is my <mum, dad, client, vendor, friend...>'; 'Treat <name> as important'; 'Mute <name>'; 'Stop telling me about <name>'; 'Block my whole day <day>'; 'Move my <meeting> to <when>'; 'Cancel my <meeting>'; 'WhatsApp <exact client name> saying <what to tell them>'; 'Chase everyone'; 'Note <item>; <item>'; 'Cross off <item>'; 'Move my reminder to <when>'; 'Cancel my reminder'; 'Email <person or address> about <what>'; 'Prepare Form F for <client>'; 'Rebuild the deck for <client>'; 'Screen the parties for <client>'; "
               "'Tell <person or department> <what>', adding ' by <when>' only if they named a time; 'Draft a reply to <person> about <what>'; 'Book <client> a viewing <when>'; 'Send <client> the 3 closest options'; "
               "'Who hasn't called <client> back?'; 'Research <the whole request, with every detail from the conversation>'. Paying, signing, approving, submitting, filing, clearing a screening and changing settings are done by people: "
               "say who, and leave `command` null. Nothing about compliance ever goes into anything for a client. A day's plan means its appointments, reminders, notebook, marketing posts and what is overdue, not just the calendar. You keep their notebook: when they want something written down, or ask you to list what's "
@@ -1025,7 +1049,7 @@ def think(office: Office, text: str, person: str, session: str, now: datetime) -
         return None
     cmd = (out.get("command") or "").strip()
     if cmd:
-        kept = re.match(r"(?i)\s*(note|cross off|remind me)\b", cmd)  # writing "pay the DEWA bill" down isn't paying it
+        kept = re.match(r"(?i)\s*(note|cross off|remind me|tell|record on)\b", cmd)  # writing "pay the DEWA bill" down isn't paying it; asking a person isn't doing it
         if not kept and (any(re.search(rx, cmd.lower()) for rx, _, _ in nova.REFUSE) or (is_owner(person) and any(re.search(rx, cmd.lower()) for rx, _, _ in nova.ROUTES))):
             return nova.route(office, cmd, person)
         if act := handle(office, cmd, person, session, now) or lobby.draft(cmd, person, session, now):
@@ -1036,10 +1060,10 @@ def think(office: Office, text: str, person: str, session: str, now: datetime) -
             return {"kind": "answer", "text": "I can't find that in your notebook.", "cites": [], "by": "rules"}
         return {"kind": "answer", "text": "I couldn't set that up from what I heard, so nothing has been done. Tell me again what you need and when.", "cites": [], "by": "rules"}
     if not out["reply"].strip() and VOICE.get(session):
-        if len(text.split()) >= 4 and (text.endswith("?") or re.match(nova.ASKING, text.lower())) and (act := handle(office, f"Research {text}", person, session, now)):
+        if len(text.split()) >= 4 and re.match(CLEARLY_ASKING, text) and (act := handle(office, f"Research {text}", person, session, now)):
             return act  # a real question was passed over: look it up rather than say nothing
         return {"kind": "silent", "text": ""}
-    return {"kind": "answer", "text": out["reply"].strip() or "Okay.", "cites": [], "by": "muse"}
+    return {"kind": "answer", "text": out["reply"].strip() or ("Okay." if len(text.split()) <= 3 else "I didn't catch what you need there. Say it once more?"), "cites": [], "by": "muse"}
 
 
 # ---------- what a PA hears before anything else ----------
@@ -1060,7 +1084,12 @@ def handle(office: Office, text: str, person: str, session: str, now: datetime) 
         return start_pocket(office, person)
     if re.search(r"\b(i'?m back|meeting (is )?(over|done|finished)|end (the )?meeting|pocket off|disturb off)\b", low):
         if mode(g, person) == "meeting":
-            return end_pocket(office, person, now)
+            out = end_pocket(office, person, now)
+            from diwan.agents import lobby as _lobby
+            _lobby.DRAFTS.pop(session, None)  # the yes that follows is for what she reads back now
+            if rs := out.get("relays"):  # what the meeting said about a client goes on the file only on a yes, one at a time
+                PENDING[session] = {"relay": rs[0], "more": rs[1:]}
+            return out
         set_mode(office, person, "normal")
         return {"kind": "done", "text": "Welcome back. Anything held is in your notices."}
     if mode(g, person) == "meeting":  # silent: it keeps the words and says nothing
@@ -1081,8 +1110,13 @@ def handle(office: Office, text: str, person: str, session: str, now: datetime) 
         return {"kind": "done", "text": "Done. I've chased " + " and ".join(f"{name(p)} on {n} thing{'' if n == 1 else 's'}" for p, n in r["chased"].items()) + "."}
     if m := re.search(r"\bwho (?:hasn'?t|has not|didn'?t)\s+called\s+(.+?)\s+back\b", low):
         who = m.group(1)
+        everyone = re.fullmatch(r"(?:(?:their|his|her|my|our|the|all|any)\s+)*(?:leads?|clients?|customers?)|anyone|everyone|people", who)
         cards = [n for n in g.of("attention", status="open") if n.props.get("kind") == "call" and sees_deal(g, n.deal, person)
-                 and who in g.nodes[f"chat:{n.props['chat']}"].label.lower()]
+                 and (everyone or who in g.nodes[f"chat:{n.props['chat']}"].label.lower())]
+        if everyone:
+            if not cards:
+                return {"kind": "answer", "text": "Nobody owes a call back right now: no open call on record.", "cites": []}
+            return {"kind": "answer", "text": "Calls owed: " + "; ".join(f"{name(n.props['who'])} owes {g.nodes[f'chat:' + n.props['chat']].label}, due {_at(n.props['due']).astimezone(DUBAI):%H:%M}" for n in cards[:8]) + ".", "cites": []}
         if not cards:
             return {"kind": "answer", "text": f"Nobody owes {who.title()} a call: no open call on record.", "cites": []}
         n = cards[0]
@@ -1125,12 +1159,15 @@ def handle(office: Office, text: str, person: str, session: str, now: datetime) 
             return {"kind": "answer", "text": f"{found['text']}\n\nThese are from a web search, so check them before you buy. I can't book or pay from here.", "sources": sources,
                     "spoken": "Here's what I found, it's on your screen. Check the fares before you buy, I can't book from here."}
         return {"kind": "answer", "text": found["text"], "sources": sources, **({"spoken": "Here's what I found, it's on your screen."} if len(found["text"]) > 320 else {})}
-    if is_owner(person) and (m := RELAY.match(t)):
-        customers = [d for d in g.deals() if m.group("who").lower() in d.props.get("customer", "").lower().split() and d.props.get("stage") not in ("Won", "Lost")]
+    if is_owner(person) and (m := RECORD_ON.match(t) or RELAY.match(t)):
+        who, said = (m[1], m[2]) if m.re is RECORD_ON else (m["who"], t)
+        customers = [d for d in g.deals() if who.lower() in d.props.get("customer", "").lower() and d.props.get("stage") not in ("Won", "Lost")]
         if len(customers) == 1:
             d = customers[0]
-            PENDING[session] = {"relay": {"deal": d.deal, "text": t}}
-            return {"kind": "confirm", "text": f"Record this on {d.props['customer']}'s file ({d.props.get('property')}): \"{t}\"?", "options": ["Yes", "Cancel"]}
+            PENDING[session] = {"relay": {"deal": d.deal, "text": said}}
+            return {"kind": "confirm", "text": f"Record this on {d.props['customer']}'s file ({d.props.get('property')}): \"{said}\"?", "options": ["Yes", "Cancel"]}
+        if len(customers) > 1 and m.re is RECORD_ON:
+            return {"kind": "question", "text": f"Which {who.title()}? There are {len(customers)} open leads with that name, so nothing was recorded. Give me the full name or their broker."}
     return None
 
 
@@ -1199,19 +1236,22 @@ def end_pocket(office: Office, person: str, now: datetime | None = None) -> dict
             card = {"to": to, "team": lobby.PERSON_TEAM.get(to, "sales"), "text": what[:1].upper() + what[1:].rstrip("."), "due": due.isoformat() if due else None, "by": person}
             posted.append(lobby.post(office, card))
             actions.append({"who": name(to), "what": card["text"], "quote": s, "card": posted[-1]})
-    facts = []
+    facts, relays = [], []
     g = office.graph()
     for s in sentences:
         if m := RELAY.match(s):
             hits = [d for d in g.deals() if m.group("who").lower() in d.props.get("customer", "").lower().split() and d.props.get("stage") not in ("Won", "Lost")]
             if len(hits) == 1:
-                facts += _record_relay(office, {"deal": hits[0].deal, "text": s}, person).get("cites", [])
+                relays.append({"deal": hits[0].deal, "text": s, "customer": hits[0].props.get("customer")})
     summary = " ".join(sentences[:3]) if sentences else "Nothing was noted."
     office.log.append("pocket.ended", actor=person, agent="nova", content={"id": cur["id"], "summary": summary, "decisions": decisions, "actions": actions, "facts": facts})
     set_mode(office, person, "normal")
     parts = [f"Summary: {summary}"] + ([f"Decisions: {'; '.join(decisions)}"] if decisions else []) + (
         [f"Action items: {'; '.join(a['who'] + ': ' + a['what'] for a in actions)}"] if actions else [])
-    return {"kind": "done", "text": "\n".join(parts), "summary": summary, "decisions": decisions, "actions": actions, "facts": facts, "cites": posted + facts}
+    if relays:
+        parts.append(f"Record this on {relays[0]['customer']}'s file: \"{relays[0]['text']}\"?")
+    return {"kind": "confirm" if relays else "done", "text": "\n".join(parts), "summary": summary, "decisions": decisions, "actions": actions, "facts": facts, "cites": posted + facts, "relays": relays,
+            **({"options": ["Yes", "Cancel"]} if relays else {})}
 
 
 # ---------- a personal PA for every signed-in person ----------
@@ -1227,6 +1267,8 @@ def say(office: Office, text: str, person: str, *, session: str | None = None, n
         TURNS[session] = [{"who": str(m.get("who"))[:40], "text": str(m.get("text"))[:600]} for m in history[-12:]]
     t = re.sub(r"\b(uh+|um+|erm+|hmm+)\b[,.]?\s*", "", text, flags=re.I).strip()  # how people talk, not what they mean
     out = _turn(office, t, person, session, now)
+    if out.get("text"):
+        out["text"] = re.sub(r"\s*[\[(](?:[A-Z]{1,2}\d+)(?:[,\s]+[A-Z]{1,2}\d+)*[\])]", "", out["text"])  # record numbers are for the screen's links, not for reading
     if is_owner(person):
         from diwan.agents import triage
         triage.SPOKE[session] = now
@@ -1243,6 +1285,8 @@ def _turn(office: Office, t: str, person: str, session: str, now: datetime) -> d
     if is_owner(person):
         return nova.converse(office, t, person, session=session, now=now) | {"pa": who}
     if out := lobby.follow_up(office, t, person, session, now):
+        return out | {"pa": who}
+    if mode(g, person) == "meeting" and (out := handle(office, t, person, session, now)):  # "approve" said in a meeting is a line to keep, not an order to refuse
         return out | {"pa": who}
     if any(re.search(rx, t.lower()) for rx, _, _ in nova.REFUSE):
         return nova.route(office, t, person) | {"pa": who}

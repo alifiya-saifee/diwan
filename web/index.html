@@ -195,7 +195,7 @@ $("correct").onclick = async () => {
   await post(`/api/meetings/${m.id}/turn`, { speaker: "customer", text: "Actually, forget my brother. I'll pay it all myself." });
   brief();
 };
-$("reset").onclick = async () => { await post("/api/demo/reset"); feed.replaceChildren(); toast("Demo office reset"); setTimeout(() => location.reload(), 400); };
+$("reset").onclick = async () => { if (!confirm("Reset the office? Everything on screen starts again from the demo data. The old log is kept as a backup.")) return; await post("/api/demo/reset"); feed.replaceChildren(); toast("Demo office reset"); setTimeout(() => location.reload(), 400); };
 const met = await post("/api/pa/arrive", { person });  // the first open of the day: the greeting and the top three
 if (met.first && met.top.length) pa.push({ from: "pa", text: [met.greeting, ...met.top.map((x, i) => `${i + 1}. ${x.text}`)].join("\n") });
 draw(); paint(pa.state);

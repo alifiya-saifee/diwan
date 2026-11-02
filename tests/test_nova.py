@@ -191,3 +191,11 @@ def test_briefing_runs_at_seven_dubai_once_a_day():
 ])
 def test_everyday_questions(corrected, q, expect):
     assert expect in nova.converse(corrected, q, "layla", session="e")["text"]
+
+
+def test_deleting_the_records_is_refused():
+    import re
+
+    from diwan.agents import nova
+    rule = next(rx for rx, k, _ in nova.REFUSE if k == "delete_records")
+    assert re.search(rule, "delete all the leads") and not re.search(rule, "delete my 3pm")
