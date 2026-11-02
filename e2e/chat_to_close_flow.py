@@ -100,7 +100,9 @@ with sync_playwright() as p:
 
     be("layla")
     api = person("layla")[0].request
-    api.post(f"{BASE}/api/demo/reset")
+    GOING_ON = os.environ.get("CONTINUE") == "1"  # the case study brought this client this far through the real journey
+    if not GOING_ON:
+        api.post(f"{BASE}/api/demo/reset")
     step_text = ""
 
     def say(t):
@@ -155,6 +157,13 @@ with sync_playwright() as p:
 
     def chat():
         global D
+        if GOING_ON:
+            D = deal_of()
+            check("1a", "the same client carries on", bool(D), D)
+            be(view()["broker"])
+            pg.goto(f"{BASE}/web/inbox.html?chat={PHONE}&as={view()['broker']}", timeout=40000)
+            pg.wait_for_selector(".thread .b")
+            return
         say("A client writes on WhatsApp")
         pg.goto(f"{BASE}/web/inbox.html?as=layla")
         pg.wait_for_timeout(800)
@@ -403,7 +412,8 @@ with sync_playwright() as p:
         for f in view()["agency"]["forms"]:
             if f["waiting"]:
                 file = pg.get_by_label(f"Signed Form {f['form']} (PDF)")
-                file.set_input_files({"name": "s.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 signed"})
+                real = api.get(f"{BASE}/api/desk/forms/{f['draft']}.pdf").body()  # what comes back from the printer: a real PDF
+                file.set_input_files({"name": "s.pdf", "mimeType": "application/pdf", "buffer": real})
                 pg.locator("#agency .card", has_text=f"v{f['version']}").filter(has=file).get_by_role("button", name="Upload the signed copy").click()
                 pg.wait_for_timeout(800)
         g = {x["key"]: x for x in view()["gates"]["gates"]}
