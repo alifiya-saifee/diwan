@@ -105,7 +105,7 @@ def window(g: Graph, broker: str, day) -> tuple[int, int] | None:
 
 def booked(g: Graph, broker: str) -> list[tuple[datetime, datetime, str]]:
     out = []
-    for v in g.of("viewing", status="booked"):
+    for v in g.of("viewing", status={"booked", "requested"}):  # a time waiting for the owner is held too
         if v.props["broker"] == broker:
             s = datetime.fromisoformat(v.props["at"])
             out.append((s, s + timedelta(minutes=int(v.props.get("minutes") or 60)), v.id))
@@ -237,7 +237,7 @@ def free(g: Graph, broker: str, after: datetime, n: int = 3, minutes: int = 60, 
 
 def nearest(g: Graph, broker: str, want: datetime, now: datetime, n: int = 3, minutes: int = 60, ignore: str | None = None) -> list[datetime]:
     """Free times closest to the time asked for (same day first), never in the past: what a good receptionist offers."""
-    near = sorted(free(g, broker, max(now, want - timedelta(days=2)), 40, minutes, ignore),
+    near = sorted(free(g, broker, max(now, want - timedelta(days=2)), max(40, n), minutes, ignore),
                   key=lambda t: (t.date() != want.date(), abs(t - want)))
     return sorted(near[:n])
 
@@ -245,14 +245,121 @@ def nearest(g: Graph, broker: str, want: datetime, now: datetime, n: int = 3, mi
 TOMORROW = r"tomorrow|tommorow|tomorow|tomorrw|tmrw|tmrrw|tmrow|tmr|tmw|tomo|2moro|2morrow|2mrw|2mro"  # how people type it
 
 
+MONTH = r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(?:[a-z]*)\.?"
+COUNTS = r"(?!\s*(?:bed|br|bhk|room|million|m\b|k\b|sq|%|aed|year|min|am|pm|:))"  # "2 bed", "3 million", "4pm": not a date
+NOT_THEN = r"\b(busy|not|can'?t|cannot|no|except|unless)\b[^.,;]{0,8}$"  # "busy Tuesday", "not on Tuesday"
+
+
+def _ahead(d: int, m: int, y: int | None, today):
+    """A day and month they wrote: this year, or next year once it has passed (a year they wrote is kept)."""
+    from datetime import date
+    try:
+        x = date(y or today.year, m, d)
+        return date(today.year + 1, m, d) if y is None and x < today else x
+    except ValueError:
+        return None
+
+
+def _date(low: str, local: datetime):
+    """A written date: '10 Nov', 'Nov 10th', '10th of November', '10/11' (day first, as in the UAE), 'the 10th'."""
+    today = local.date()
+    months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+    if m := re.search(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?(?:\s+of)?\s+{MONTH}(?:\s+(\d{{4}}))?\b", low):
+        return _ahead(int(m[1]), months.index(m[2]) + 1, int(m[3]) if m[3] else None, today)
+    if m := re.search(rf"\b{MONTH}\s+(?:the\s+)?(\d{{1,2}})(?:st|nd|rd|th)?\b{COUNTS}", low):
+        return _ahead(int(m[2]), months.index(m[1]) + 1, None, today)
+    if m := re.search(rf"\b(\d{{1,2}})/(\d{{1,2}})(?:/(\d{{2,4}}))?\b{COUNTS}", low):
+        y = int(m[3]) if m[3] else None
+        return _ahead(int(m[1]), int(m[2]), y + 2000 if y and y < 100 else y, today)
+    if m := re.search(r"\b(?:the|on)\s+(\d{1,2})(?:st|nd|rd|th)\b", low):  # "the 10th": this month, or next once it has passed
+        x = _ahead(int(m[1]), today.month, today.year, today)
+        if x is None or x < today:
+            nxt = today.replace(day=1) + timedelta(days=32)
+            x = _ahead(int(m[1]), nxt.month, nxt.year, today)
+        return x
+    return None
+
+
+def _weekday(low: str):
+    """The weekday they mean: the first one said, skipping one they can't do ("busy Tuesday, Wednesday works")."""
+    hits = []
+    for i, d in enumerate(DAYS):
+        short = {"tuesday": "|tues", "wednesday": "|weds", "thursday": "|thur|thurs"}.get(d, "")
+        for m in re.finditer(rf"\b(?:{d}s?|{d[:3]}{short})\b", low):
+            after = low[m.end():m.end() + 20]
+            if re.search(NOT_THEN, low[max(0, m.start() - 20):m.start()]) or re.match(r"\W*(?:is |'s )?(?:not|no good|busy|bad|doesn'?t|won'?t)\b", after):
+                continue
+            hits.append((m.start(), i))
+    return min(hits)[1] if hits else None
+
+
 def _day(low: str, local: datetime):
+    if (written := _date(low, local)) is not None:  # a date they wrote wins over a weekday
+        return written
     if "today" in low or "tonight" in low or "this evening" in low:
         return local.date()
     if re.search(rf"\b(?:{TOMORROW})\b", low):
         return local.date() + timedelta(days=1)
-    for i, d in enumerate(DAYS):
-        if re.search(rf"\b{d}|\b{d[:3]}\b", low):
-            return local.date() + timedelta(days=(i - local.weekday()) % 7 or 7)
+    if (i := _weekday(low)) is not None:
+        return local.date() + timedelta(days=(i - local.weekday()) % 7 or 7)
+    if re.search(r"\bweekend\b", low):  # the UAE weekend: Saturday and Sunday
+        return local.date() + timedelta(days=(5 - local.weekday()) % 7 if local.weekday() != 6 else 0)
+    if re.search(r"\bnext week\b", low):
+        return local.date() + timedelta(days=7 - local.weekday())
+    return None
+
+
+def say_day(d) -> str:
+    return f"{d:%A} {d.day} {d:%b}"
+
+
+def which_day(text: str, now: datetime) -> list | None:
+    """When their words could mean two days, the two (Rania asks rather than guesses): a weekday that isn't the date's
+    ("Wednesday 10 Nov"), "next Tuesday", or today's weekday said today ("Monday at 4" on a Monday)."""
+    low, local = text.lower(), now.astimezone(DUBAI)
+    today, w = local.date(), _weekday(low)
+    if w is None:
+        return None
+    if (d := _date(low, local)) is not None:
+        if w == d.weekday():
+            return None
+        step = (w - d.weekday()) % 7
+        other = d + timedelta(days=step if step <= 3 else step - 7)
+        return sorted([d, other if other >= today else other + timedelta(days=7)])
+    if "today" in low or "tonight" in low or re.search(rf"\b(?:{TOMORROW})\b", low) or re.search(rf"\bthis\s+{DAYS[w][:3]}", low):
+        return None
+    coming = today + timedelta(days=(w - today.weekday()) % 7)
+    if re.search(rf"\bnext\s+{DAYS[w][:3]}", low):
+        coming = coming if coming > today else coming + timedelta(days=7)
+        return [coming, coming + timedelta(days=7)]
+    return [today, today + timedelta(days=7)] if coming == today else None
+
+
+def with_day(text: str, d) -> str:
+    """Their words with the day they confirmed in place of the words that could mean two days."""
+    for rx in (rf"\b\d{{1,2}}(?:st|nd|rd|th)?(?:\s+of)?\s+{MONTH}(?:\s+\d{{4}})?\b", rf"\b{MONTH}\s+(?:the\s+)?\d{{1,2}}(?:st|nd|rd|th)?\b(?!\s*(?:am|pm|:))",
+               r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b", r"\b(?:the|on)\s+\d{1,2}(?:st|nd|rd|th)\b", r"\b(?:next|this|coming)\s+(?=[a-z]*day|tue|wed|thu|fri|sat|sun|mon)",
+               rf"\b(?:{'|'.join(DAYS)})s?\b|\b(?:mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)\b"):
+        text = re.sub(rx, " ", text, flags=re.I)
+    return re.sub(r"\s{2,}", " ", f"{text.strip()} on {say_day(d)}")
+
+
+def answer_day(text: str, options: list, now: datetime):
+    """Their answer to "do you mean A or B?": one of the two, or a date they wrote instead. None if it isn't an answer."""
+    from datetime import date
+    low, local = text.lower(), now.astimezone(DUBAI)
+    opts = [o if isinstance(o, date) else date.fromisoformat(o) for o in options]
+    if re.search(r"\b(first|1st|former|earlier|sooner|this one|the coming)\b", low):
+        return opts[0]
+    if re.search(r"\b(second|2nd|latter|later one|the other|week after|following)\b", low):
+        return opts[-1]
+    if (d := _date(low, local)) is not None:
+        return d
+    if "today" in low and local.date() in opts:
+        return local.date()
+    if (w := _weekday(low)) is not None:
+        same = [o for o in opts if o.weekday() == w]
+        return same[0] if len(same) == 1 else None
     return None
 
 
@@ -290,16 +397,29 @@ def parse(text: str, now: datetime) -> datetime | None:
          or re.search(rf"\b(\d{{1,2}})()()\s+(?:{TOMORROW}|today|tonight)\b", low)  # "10 tmrw"
          or re.search(rf"\b(?:{TOMORROW}|today|tonight)\s+(?:at\s+)?(\d{{1,2}})()()(?!:){unit}\b", low)  # "tmrw 10"
          or re.search(r"\b(?:at|around|by)\s+(\d{1,2})()()\b(?!\s*(?:bed|br|bhk|room|million|m\b|k\b|sq|%|aed|year|min))", low))
-    if day is None or not m:
+    nums = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"]
+    n_ = rf"(\d{{1,2}}|{'|'.join(nums)})"
+    words = re.search(rf"\b(noon|midday)\b|\b(half|quarter)\s+(past|to)\s+{n_}\b|\b{n_}\s*o'?\s*clock\b", low)  # the clock in words
+    if day is None or not (m or words):
         return None
-    h = int(m.group(1))
-    if m.group(3) == "pm" and h < 12:
+    hour = lambda w: int(w) if w.isdigit() else nums.index(w) + 1  # noqa: E731
+    if words and not (m and m.group(3)):
+        if words[1]:
+            h, mi, ampm = 12, 0, "pm"
+        elif words[2]:
+            h, mi, ampm = hour(words[4]), 30 if words[2] == "half" else 15, None
+            if words[3] == "to":
+                h, mi = h - 1, 45 if words[2] == "quarter" else 30
+        else:
+            h, mi, ampm = hour(words[5]), 0, None
+    else:
+        h, mi, ampm = int(m.group(1)), int(m.group(2)) if m.group(2) else 0, m.group(3)
+    if ampm == "pm" and h < 12:
         h += 12
-    elif not m.group(3) and h < 9:
+    elif not ampm and h < 9:
         h += 12  # "at 4" means the afternoon in an office day
     if not 0 <= h < 24:
         return None
-    mi = int(m.group(2)) if m.group(2) else 0
     return datetime(day.year, day.month, day.day, h, mi, tzinfo=DUBAI)
 
 

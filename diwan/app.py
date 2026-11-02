@@ -1983,6 +1983,56 @@ def appointment_change(vid: str, body: ChangeIn):
         raise HTTPException(400, str(e)) from None
 
 
+class OwnerIn(BaseModel):
+    by: str
+    said: str  # yes, other, no
+    times: list[str] = []
+
+
+@app.post("/api/appointments/{vid}/owner")
+def appointment_owner(vid: str, body: OwnerIn):
+    """The broker's answer for the owner or tenant on a viewing waiting for them (docs/viewing-access-spec.md)."""
+    from diwan import viewings
+    try:
+        return viewings.answer(S.office, vid, by=body.by, said=body.said, times=body.times, now=datetime.now(slots.DUBAI))
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class AccessIn(BaseModel):
+    by: str
+    mode: str
+    who: str | None = None
+    notice_hours: int | None = None
+    place: str | None = None
+    open: str | None = None
+    close: str | None = None
+    days: list[int] = []
+
+
+@app.get("/api/listings/{ref}/access")
+def listing_access(ref: str, person: str):
+    from diwan import viewings
+    lst = g().nodes.get(f"listing:{ref.upper()}")
+    if not lst:
+        raise HTTPException(404, "No such listing")
+    return viewings.access(g(), lst) | {"can": viewings.may_change(g(), lst, person), "modes": viewings.MODES}
+
+
+@app.post("/api/listings/{ref}/access")
+def listing_access_set(ref: str, body: AccessIn):
+    """How a listing is viewed: at once, after asking the owner or tenant, or at the developer's gallery."""
+    from diwan import viewings
+    try:
+        return viewings.set_access(S.office, ref, body.model_dump(exclude={"by"}), by=body.by)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
 @app.post("/api/appointments/{vid}/link")
 def appointment_link(vid: str, body: ByIn):
     """Make the video link with the owner's service and send it to the client."""

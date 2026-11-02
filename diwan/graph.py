@@ -320,7 +320,7 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                                              "status": c.get("status"), "error": c.get("error"), "template": c.get("template"),
                                              "comment_id": c.get("comment_id"), "channel": c.get("channel"), "nudge": c.get("nudge"),
                                              "reminder": c.get("reminder"), "image": c.get("image"), "email": c.get("email"),
-                                             "media_id": c.get("media_id"), "referred_by": c.get("referred_by")})
+                                             "media_id": c.get("media_id"), "referred_by": c.get("referred_by"), "which_day": c.get("which_day"), "view_day": c.get("view_day")})
                 ch.props["last_at"] = e["at"]
                 if (into := g.nodes.get(f"chat:{ch.props.get('merged_into')}")) is not None:  # merged: it shows in that lead's thread too
                     into.props["messages"].append(ch.props["messages"][-1] | {"chat": ch.props["phone"]})
@@ -373,8 +373,16 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
                 g.link(d.id, "filed_under", f"deal:{c['deal']}", e)
         elif t == "sale.closed":
             g.add(c["id"], "sale", c["listing"], e, status="closed", props=dict(c))
-        elif t == "appointment.booked":
-            v = g.add(c["id"], "viewing", f"{c.get('kind_name') or 'Viewing'} {c.get('listing') or ''}".strip(), e, deal=deal, status="booked", props=dict(c))
+        elif t == "listing.access" and f"listing:{c['ref']}" in g.nodes:  # how a listing is viewed (docs/viewing-access-spec.md)
+            g.nodes[f"listing:{c['ref']}"].props["access"] = {k: v for k, v in c.items() if k != "ref"}
+        elif t == "appointment.confirmed" and c.get("id") in g.nodes:  # the owner said yes
+            g.nodes[c["id"]].status = "booked"
+        elif t == "appointment.offered" and c.get("id") in g.nodes:  # the owner offered other times; the client picks one
+            g.nodes[c["id"]].status = "offered"
+            g.nodes[c["id"]].props["owner_ok"] = list(c["times"])
+        elif t in ("appointment.booked", "appointment.requested"):
+            v = g.add(c["id"], "viewing", f"{c.get('kind_name') or 'Viewing'} {c.get('listing') or ''}".strip(), e, deal=deal,
+                      status="booked" if t == "appointment.booked" else "requested", props=dict(c))
             if c.get("listing"):
                 g.link(v.id, "of", f"listing:{c['listing']}", e)
             g.link(v.id, "with", g.person(c["broker"], e), e)
@@ -420,6 +428,9 @@ def build(events: list[dict], upto: int | None = None) -> Graph:
             n = g.nodes[c["id"]]
             if t == "attention.moved":  # nobody called in time: it goes to the next free broker, with a new limit
                 n.props.update(who=c["to"], due=c["due"], overdue=False, escalated=n.props.get("escalated", 0) + 1, moved_from=c["from"])
+                n.props["missed"] = [*n.props.get("missed", []), c["from"]]  # never back to someone who missed it
+                if c.get("lead"):
+                    n.props["to_lead"] = True
             elif t == "attention.overdue":
                 n.props["overdue"] = True
             elif t == "attention.cleared":

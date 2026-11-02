@@ -48,6 +48,9 @@ def _where(g: Graph, v) -> str:
     lst = g.nodes.get(f"listing:{p['listing']}") if p.get("listing") else None
     if not lst:
         return ""
+    from diwan import viewings
+    if (a := viewings.access(g, lst))["mode"] == "developer":  # off-plan: shown at the developer's gallery
+        return f"At {a['place']}."
     lp = lst.props
     pin = f" Map: https://maps.google.com/?q={lp['lat']},{lp['lng']}" if lp.get("lat") and lp.get("lng") else ""
     return f"At {lp['title']}, {lp['community']}.{pin}"

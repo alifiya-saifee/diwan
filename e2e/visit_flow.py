@@ -49,9 +49,12 @@ with sync_playwright() as p:
                 break
             pg.wait_for_timeout(150)
 
+    def broker_of(phone):  # leads are shared out between brokers, so look up whose this one is
+        return next(c["broker"] for c in api.get(f"{BASE}/api/chats?view=all&person=layla").json()["rows"] if c["phone"] == phone)
+
     def record(phone, name, turns):
         """From the appointment on the calendar: Record the visit, the client agrees, the words, End."""
-        pg.goto(f"{BASE}/web/calendar.html?as=omar&start={WEEK}")
+        pg.goto(f"{BASE}/web/calendar.html?as={broker_of(phone)}&start={WEEK}")
         pg.wait_for_timeout(700)
         pg.locator(".ev:not(.blk)", has_text=name).first.click()
         pg.wait_for_timeout(300)
@@ -77,7 +80,7 @@ with sync_playwright() as p:
     A = "971506660001"
     customer(A, "Hi", "Sara Khan")
     customer(A, "Can I see MC-1204 on Tuesday at 4pm?", "Sara Khan")
-    pg.goto(f"{BASE}/web/calendar.html?as=omar&start={WEEK}")
+    pg.goto(f"{BASE}/web/calendar.html?as={broker_of(A)}&start={WEEK}")
     pg.wait_for_timeout(700)
     pg.locator(".ev:not(.blk)", has_text="Sara Khan").first.click()
     pg.wait_for_timeout(300)
@@ -92,7 +95,7 @@ with sync_playwright() as p:
                                             ("customer", "Let me talk to my wife and get back to you.")])
     check(2, "Record the visit opens the meeting page for that deal, and nothing is kept until the client agrees",
           has and pre == "Site visit" and gate, shot("02-meeting"))
-    pg.goto(f"{BASE}/web/inbox.html?chat={A}&as=omar")
+    pg.goto(f"{BASE}/web/inbox.html?chat={A}&as={broker_of(A)}")
     pg.wait_for_timeout(900)
     prof = pg.locator("#prof").inner_text()
     check(3, "The lead shows the visit summary: thinking it over, what they liked, what worried them, in their words",
@@ -107,7 +110,7 @@ with sync_playwright() as p:
     customer(B, "Hi", "Ali Noor")
     customer(B, "Can I see MC-1204 on Tuesday at 11am?", "Ali Noor")
     record(B, "Ali Noor", [("customer", "Honestly it's not for us, too far from the school.")])
-    pg.goto(f"{BASE}/web/inbox.html?chat={B}&as=omar")
+    pg.goto(f"{BASE}/web/inbox.html?chat={B}&as={broker_of(B)}")
     pg.wait_for_timeout(900)
     prof = pg.locator("#prof").inner_text()
     f = api.get(f"{BASE}/api/chats/{B}").json()["followup"]
@@ -115,7 +118,7 @@ with sync_playwright() as p:
           "not for them" in prof.lower() and f and "What would you change" in f["text"] and "make an offer" not in f["text"], shot("05-not-for-them"),
           f["text"].replace("\n", " / ") if f else "")
 
-    pg.goto(f"{BASE}/web/calendar.html?as=omar&start={WEEK}")
+    pg.goto(f"{BASE}/web/calendar.html?as={broker_of(A)}&start={WEEK}")
     pg.wait_for_timeout(700)
     pg.locator(".ev:not(.blk)", has_text="Sara Khan").first.click()
     pg.wait_for_timeout(300)
@@ -124,7 +127,7 @@ with sync_playwright() as p:
 
     pg.set_viewport_size({"width": 390, "height": 844})
     over = []
-    for page in (f"calendar.html?as=omar&start={WEEK}", f"inbox.html?chat={A}&as=omar", "meeting.html"):
+    for page in (f"calendar.html?as={broker_of(A)}&start={WEEK}", f"inbox.html?chat={A}&as={broker_of(A)}", "meeting.html"):
         pg.goto(f"{BASE}/web/{page}")
         pg.wait_for_timeout(700)
         if pg.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1"):

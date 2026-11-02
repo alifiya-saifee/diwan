@@ -50,7 +50,7 @@ TYPES = {
     # qualification: the owner's form, the customer type, answers with quotes, and the verdict
     "qualify.form", "qualify.type", "qualify.answer", "qualify.asked", "qualify.passed", "qualify.not_fit", "qualify.open",
     "agent.added", "agent.paused", "agent.resumed", "agent.removed", "lead.recommended", "lead.hot", "lead.kind",
-    "followup.drafted", "followup.sent", "followup.dismissed", "lead.nurture", "lead.reopened", "followup.nudged", "lead.optout", "lead.went_quiet", "appointment.moved", "appointment.reminded", "appointment.done", "appointment.noshow", "calendar.morning", "visit.summarized", "calendar.blocked", "calendar.unblocked", "appointment.link", "appointment.link_removed", "lead.unhot", "lead.no_calls", "lead.followups", "chat.merged",
+    "followup.drafted", "followup.sent", "followup.dismissed", "lead.nurture", "lead.reopened", "followup.nudged", "lead.optout", "lead.went_quiet", "appointment.moved", "appointment.reminded", "appointment.done", "appointment.noshow", "calendar.morning", "visit.summarized", "calendar.blocked", "calendar.unblocked", "appointment.link", "appointment.link_removed", "lead.unhot", "lead.no_calls", "lead.followups", "chat.merged", "listing.access", "appointment.requested", "appointment.confirmed", "appointment.offered",
     # the Sales room: a card moved to the next broker, what came of a call, the broker's list, a nudge
     "attention.moved", "lead.outcome", "lead.sweep", "lead.nudged", "notify.digest",
     # the Front Desk: the first open of the day, errands that wait for a yes, and the meeting Nova sits in on

@@ -78,7 +78,7 @@ function outcomeRow(r) {
     box.replaceChildren(h("div", { class: "acts", style: "margin-top:6px" }, day, t, h("button", { class: "primary", onclick: () => say("follow_up", { at: `${day.value}T${t.value}:00+04:00` }) }, "Save"))); };
   return h("div", { class: "srow", id: `out-${r.chat}` }, h("div", {}, h("a", { class: "nm", href: open(r.chat) }, r.name),
     h("div", { class: "small muted" }, `${r.last.what === "no_answer" ? "No answer" : "Called"} by ${who(r.last.by)}`)),
-    h("div", { class: "acts" }, h("a", { class: "btn", href: open(r.chat) }, "Converted…"), h("button", { onclick: later }, "Follow up on…"), h("button", { onclick: lost }, "Not interested…"),
+    h("div", { class: "acts" }, h("a", { class: "btn", href: `${open(r.chat)}&convert=1` }, "Converted…"), h("button", { onclick: later }, "Follow up on…"), h("button", { onclick: lost }, "Not interested…"),
       h("button", { onclick: () => say("no_response") }, "No response")), box);
 }
 

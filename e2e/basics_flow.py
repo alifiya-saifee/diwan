@@ -51,9 +51,9 @@ with sync_playwright() as p:
         return [m["text"] for m in api.get(f"{BASE}/api/chats/{phone}").json()["messages"] if m["type"] == "sent"]
 
     S, A, V = "971506680001", "971506680002", "971506680003"
-    customer(S, "Can I see MC-1204 on Tuesday at 4pm?", "Sara Khan")
-    customer(A, "Can I see MC-1204 on Wednesday at 11am?", "Ali Noor")
-    r = customer(V, "Could we do a video call on Tuesday at 11am?", "Vera Lopez")
+    customer(S, f"Can I see MC-1204 on Tuesday {TUE.day} {TUE:%b} at 4pm?", "Sara Khan")
+    customer(A, f"Can I see MC-1204 on Wednesday {WED.day} {WED:%b} at 11am?", "Ali Noor")
+    r = customer(V, f"Could we do a video call on Tuesday {TUE.day} {TUE:%b} at 11am?", "Vera Lopez")
     assert r.startswith("Booked"), r
 
     cal(view="month")
@@ -82,7 +82,7 @@ with sync_playwright() as p:
     check(4, "A custom range (3 weeks) is shown as a list with its numbers", "21 days" in pg.locator("#legend").inner_text()
           and "Sara Khan" in ls and "Ali Noor" in ls and "3" in pg.locator(".kpi").first.inner_text(), shot("04-range"))
 
-    cal()
+    cal(person="layla")  # leads are shared out between brokers: the owner sees whoever has Ali
     pg.fill("#q", "ali")
     pg.wait_for_selector("#results:not([hidden]) button")
     res = pg.locator("#results").inner_text()
@@ -113,6 +113,7 @@ with sync_playwright() as p:
     check(8, "Moved from the calendar: on the grid at 17:00, and Sara gets one plain message",
           pg.locator(".ev", has_text="17:00 Sara Khan").count() == 1 and msg.startswith("Hi Sara, Omar has moved your site visit to Unit 1204, Marina Crest (MC-1204): it's now"), shot("08-moved"), msg[:120])
 
+    cal(person="layla")  # Ali may be another broker's: leads are shared out
     pg.locator(".ev", has_text="Ali Noor").click()
     pg.locator("#detail button", has_text="Cancel").first.click()
     pg.fill("#creason", "Omar double-booked a valuation")
@@ -155,7 +156,7 @@ with sync_playwright() as p:
     check(13, "The owner picks Zoom and turns on links at confirmation; it says Zoom isn't connected and where to add the keys",
           "Not connected" in state and "ZOOM_ACCOUNT_ID" in state and vs == {"provider": "zoom", "auto": True}, shot("13-video-settings"), state)
 
-    r2 = customer("971506680004", "Can we do a video call on Wednesday at 3pm?", "Maya Chen")
+    r2 = customer("971506680004", f"Can we do a video call on Wednesday {WED.day} {WED:%b} at 3pm?", "Maya Chen")
     cal(person="omar")
     pg.locator(".ev", has_text="Maya Chen").click()
     det = pg.locator("#detail").inner_text()

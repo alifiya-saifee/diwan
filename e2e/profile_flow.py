@@ -112,14 +112,11 @@ with sync_playwright() as p:
         say(C, t, "Mona Saleh")
     cb = lead(C)["broker"]
     open_as(C, cb)
-    pg.locator(".qa button", has_text="Convert").click()
-    pg.fill("#pamount", "2650000")
-    pg.locator(".actform button", has_text="Convert").click()
-    pg.wait_for_timeout(900)
-    d = lead(C)
-    check(10, "Convert takes the agreed price, moves the deal to its converted stage and shows the price",
-          d["desk"]["agreed"] and d["stage"] == d["desk"]["converted_at"] and "Converted at AED 2,650,000" in pg.locator(".act").inner_text(),
-          shot("10-convert"), f"{d['stage']} · {toast()}")
+    pg.locator(".qa button", has_text="Convert").click()  # no property chosen yet: the Deal desk asks which, then the price
+    pg.wait_for_url("**/web/deal.html**", timeout=8000)
+    pg.wait_for_selector("#convert", timeout=8000)
+    check(10, "Convert with no property chosen opens the Deal desk asking which property and the agreed price",
+          "/web/deal.html" in pg.url and "which property" in pg.locator("#convert").inner_text(), shot("10-convert"), pg.url.split("/web/")[1][:80])
 
     # 2. Asked: no calls
     D = "971508880004"
@@ -173,8 +170,7 @@ with sync_playwright() as p:
     F, IG = "971508880006", "ig:layan.m"
     say(IG, "Hi, I want to buy a 2 bed in Dubai Marina", "@layan.m")
     say(F, "Hello, this is Layan from Instagram", "Layan Mansour")
-    fb = lead(F)["broker"]
-    open_as(F, fb)
+    open_as(F, "layla")  # leads are shared out, so the two may have different brokers: then only a manager or the owner merges
     pg.locator(".qa button", has_text="Merge").click()
     pg.fill("#pmerge", IG)
     pg.locator(".actform button", has_text="Merge").click()

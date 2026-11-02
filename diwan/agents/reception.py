@@ -94,7 +94,8 @@ How to run the conversation:
 - If they ask to view or book without saying which listing, and more than one is in play, ask which one.
 - When they ask something else (fees, hours, process), just answer it. Do not list properties again unless they ask.
 - First reply to a new customer who has not said what they want: say "I'm Rania from {COMPANY}" and ask ONE open
-  question: are they looking to buy, rent, or sell or let out? Never assume they are buying.
+  question, in these words: "Are you looking to buy, rent, sell or let out a property?" Never assume they are buying.
+  Introduce yourself only once in a conversation, and never ask that question again if your last message asked it.
 - Ask at most one question per message. The Qualification block below says what is still needed: its next question is
   the only one you may ask. Read the whole conversation and "What this customer has told us": never ask for anything
   they already said, even if they changed their mind about something else.
@@ -137,7 +138,13 @@ def prompt_sources(g: Graph, deal: str, chat: Node, text: str, *, listings: bool
     named = [n_.id for n_ in advertisable(g) if n_.props["ref"].lower() in text.lower()]
     mentioned = [r for m in chat.props["messages"] for r in m.get("refs", []) if r.startswith("listing:")]
     ids = list(dict.fromkeys(named + [i["id"] for i in found] + [r for r in mentioned if r in g.nodes and knowledge.usable(g.nodes[r])]))
-    out |= {i: f"{g.record(i)} · for {'rent' if 'rent' in (g.nodes[i].props.get('offering') or '') else 'sale'}" for i in ids[:max(n, len(named))]}
+    from diwan import viewings
+    def line(i):
+        p_, feats = g.nodes[i].props, ", ".join(g.nodes[i].props.get("features") or [])
+        how = {"instant": "viewings book at once", "ask": "lived in: a viewing waits for the owner's yes, never promise a time",
+               "developer": "shown at the developer's gallery in its hours"}[viewings.access(g, g.nodes[i])["mode"]]
+        return f"{g.record(i)} · for {'rent' if 'rent' in (p_.get('offering') or '') else 'sale'}" + (f" · features: {feats}" if feats else "") + f" · {how}"
+    out |= {i: line(i) for i in ids[:max(n, len(named))]}
     out |= {i["id"]: i["record"] for i in knowledge.search(g, asked, k=6, tabs=KNOWLEDGE_TABS)}
     who = lambda m: "Customer" if m["type"] == "received" else "Rania" if m["by"] == RANIA else name(m["by"])  # noqa: E731
     history = [m for m in chat.props["messages"] if m["type"] in ("received", "sent")][:-1][-8:]
@@ -225,6 +232,14 @@ NOT_READY = (r"\b(just|only) (looking|browsing|checking|curious)\b|\bnot (now|re
 CALL_ME = (r"\b(call me|call me back|call back|callback|give me a call|phone me|ring me|"
            r"(can|could|would) (you|someone|somebody|anyone) (please )?(call|phone|ring)|(want|like|prefer) (a|to get a|to have a) (phone )?call)\b"
            r"|اتصل (بي|علي)|اتصلوا|كلمني|تتصل")
+COMPLAINT = (r"\b(unhappy|disappointed|complain\w*|terrible|worst|disgusting|unacceptable|rude|angry|furious|fed up|lawyer|sue|"
+             r"legal action|report you|ripped off|very bad service|poor service)\b|غير راض|شكوى|سيء")
+WRONG_NUMBER = r"\b(wrong number|wrong person|wrong chat|sent (this|it) to the wrong|not who i (meant|thought)|didn'?t mean to (text|message))\b"
+COMPANION = (r"\b(wife|husband|partner|fianc[ée]e?|family|kids|children|friend|brother|sister|mother|mum|mom|father|dad|parents|colleague)\b"
+             r".{0,40}\b(come|coming|join|bring|with me|along|too)\b|\bbring (my|a) \w+")
+NO_CALL = (r"\b(don'?t|do not|please don'?t|no need to|pls don'?t|dont)\s+(call|phone|ring)\b|\bno (phone )?calls?\b"
+           r"|\b(message|text|whatsapp|chat)( me)? only\b|\bonly (by )?(message|text|whatsapp|chat)\b|لا تتصل|بدون اتصال")
+ACK = r"\W*(ok+|okay|k|thanks?|thank you( so much| very much)?|thx|ty|great|perfect|cool|noted|sure|alright|sounds good|got it|super|fine|👍|🙏|شكرا|تمام)(\W+(ok+|okay|thanks?|thank you|great|perfect|cool|sure|alright))*\W*"  # nothing to answer
 READY = r"\b(ready|interested|i want to (buy|rent)|looking to (buy|rent)|options|what do you have|send me)\b|مهتم|جاهز"
 HELLO = r"\W*(hi+|hello|hey|salam|assalam\w*( alaikum)?|marhaba|good (morning|afternoon|evening)|مرحبا|السلام عليكم)\W*"  # nothing more to answer
 PROMISE = r"\bwill (contact|call|reach out|message|get back|be in touch|confirm|reply|follow up)\b|سيتواصل|سيتصل"
@@ -469,6 +484,14 @@ def options_reply(office: Office, phone: str, deal: str, arabic: bool, first: st
     g = office.graph()
     recs = recommend(g, deal, n)
     near, differs = ([], "") if recs else nearest(g, deal, n)
+    chat = g.nodes[f"chat:{phone}"]
+    had = {r for m in chat.props["messages"] if m["type"] == "sent" for r in m.get("refs", [])}
+    if recs and all(x.id in had for x in recs):  # the same best fits they already have: named, not sent again
+        names = [f"{x.props['title']} ({x.props['ref']})" for x in recs]
+        said = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+        reply = (f"أفضل الخيارات ما زالت التي أرسلتها لك أعلاه: {said}. هل تود معاينة أحدها، أم أغيّر شيئاً: المنطقة أو الميزانية أو المساحة؟" if arabic else
+                 f"The best fits are still the ones I sent above: {said}. Would you like to see one, or shall I change something: the area, the budget or the size?")
+        return reply, [x.id for x in recs]
     if recs:
         reply = recommendation_text(g, deal, recs, arabic, first)
     elif near:
@@ -512,6 +535,47 @@ def _lead(office: Office, phone: str, who: str | None, now: datetime) -> str:
                      customer=who or f"+{phone}", broker=to, by=RANIA)
     leads.assign(office, deal, to, by=RANIA, why=why, chat=phone, now=now)
     return deal
+
+
+def which_listing(g: Graph, deal: str, n: int, when: datetime | None, timed: bool) -> tuple[str, list[str]]:
+    """"Which one would you like to see?": by ref when they've already seen the list, in full when they haven't; with the day
+    (and time) they gave, so it's clear it was heard."""
+    seen = [g.nodes[r] for r in g.nodes[f"deal:{deal}"].props.get("recommended", []) if r in g.nodes and g.nodes[r].status == "available"]
+    pool = seen or recommend(g, deal, n) or nearest(g, deal, n)[0] or advertisable(g)[:n]  # what they've seen, or what fits; never just any
+    on = (f" on {slots.say(when)}" if timed else f" on {slots.say_day(when)}") if when else ""
+    if seen:
+        refs = [x.props["ref"] for x in pool]
+        said = refs[0] if len(refs) == 1 else f"{', '.join(refs[:-1])} or {refs[-1]}"
+        return f"Happy to arrange it. Which one would you like to see{on}: {said}?", [x.id for x in pool]
+    lines = "\n".join(f"• {_listing_line(x)}" for x in pool)
+    return f"Happy to arrange a viewing. Which of these would you like to see{on}?\n{lines}", [x.id for x in pool]
+
+
+def asked_for(office: Office, phone: str, deal: str, what: str, text: str, chat: Node, broker: str, arabic: bool, cause: int,
+              now: datetime) -> tuple[str, list[str]]:
+    """Photos are sent when the listing has them; a floor plan, or where the office is when nobody wrote it down, comes from
+    the broker: the client is told so honestly and the broker gets a card. Never something made up."""
+    from diwan import leads
+    g = office.graph()
+    if what == "where":
+        place = next((i for i in customer_knowledge(g, "office address location where", k=6)
+                      if re.search(r"\b(address|located|street|road|tower|building|floor|office \d|map)\b", i["text"].lower())), None)
+        if place:
+            return place["text"], [place["id"]]
+        leads.raise_card(office, phone, reason="Asked where the office is: send the location", text=text, kind="reply", cause=cause, now=now)
+        return (f"سيرسل لك {broker} موقع مكتبنا هنا." if arabic else f"I'll have {broker} send you our exact location here."), []
+    listing = _listing_named(g, text, chat)
+    if listing is None:
+        return ("أي عقار تقصد؟ الاسم أو الرقم المرجعي يكفي." if arabic else "Which property do you mean? The name or the ref is perfect."), []
+    p = listing.props
+    if what == "photos" and p.get("photos"):
+        for i, url in enumerate(p["photos"][:3], 1):
+            _send(office, phone, deal, f"{p['title']} ({i}/{min(3, len(p['photos']))})", [listing.id], cause=cause, extra={"image": url})
+        return (f"هذه صور {p['title']}. هل تود معاينته؟" if arabic else f"Those are photos of {p['title']}. Would you like to see it in person?"), [listing.id]
+    thing = "photos" if what == "photos" else "the floor plan"
+    leads.raise_card(office, phone, reason=f"Asked for {thing} of {p['ref']}: please send", text=text, kind="reply", cause=cause, now=now)
+    return (f"سيرسل لك {broker} {'صوراً' if what == 'photos' else 'المخطط'} لـ {p['title']} هنا." if arabic else
+            f"I'll ask {broker} to send you {thing} of {p['title']} here."), [listing.id]
 
 
 def photo_cards(office: Office, phone: str, deal: str, listings: list[Node], cause: int | None = None) -> None:
@@ -665,11 +729,17 @@ def _listing_named(g: Graph, text: str, chat: Node | None) -> Node | None:
         unique = own[n.id] - set().union(*(w for i, w in own.items() if i != n.id))
         if said & unique:
             return n
+    # "it": the listing Rania's last turn about listings showed, only when that turn showed exactly one (after a list of
+    # three, "can I see it?" is asked about, never guessed)
+    turn: set[str] = set()
     for m in reversed(chat.props["messages"] if chat else []):
-        refs = [r for r in m.get("refs", []) if r.startswith("listing:") and r in g.nodes]
-        if len(refs) == 1:
-            return g.nodes[refs[0]]
-    return None
+        if m["type"] == "received":
+            if turn:
+                break
+            continue
+        if m["type"] == "sent":
+            turn |= {r for r in m.get("refs", []) if r.startswith("listing:") and r in g.nodes}
+    return g.nodes[next(iter(turn))] if len(turn) == 1 else None
 
 
 def matches(g: Graph, deal: str, text: str) -> list[Node]:
@@ -709,19 +779,70 @@ def matches(g: Graph, deal: str, text: str) -> list[Node]:
 VIDEO = r"\b(video( call)?|zoom|teams call|google meet|facetime|online meeting)\b"
 OFFICE = r"\b(your office|the office|at the office|office meeting|in person meeting|meet (you )?in person)\b"
 MOVE = (r"\b(move|reschedule|re-schedule|postpone|push (it|back)|change (the|my) (time|day|viewing|appointment|meeting|call)|"
-        r"(make|change|shift|switch|bump) it|another (time|day)|instead)\b")
+        r"(make|change|shift|switch|bump) (it|the call|the viewing|the meeting)|another (time|day)|instead)\b")
 CANCEL = r"\b(cancel|can'?t make it|cannot make it|won'?t make it|call (it )?off)\b"
 ASKS_WHEN = (r"\b(when|what time|what day|which day)\b.{0,30}\b(my|our|the)\s+(viewing|visit|site visit|appointment|meeting|video call|call)\b"
+        r"|\bwhat (time|day|date) (is|was) (it|that)( again)?\b|\b(remind me|what was) (of )?(the )?(time|day|date)\b"
         r"|\b(is|are) (my|our|the) (viewing|visit|appointment|meeting|video call)\b.{0,20}\b(still on|confirmed|booked)\b"
         r"|\b(what'?s|whats|what is|what|which|when)\s+(the\s+)?(time|day|date)?\b.{0,30}\b(we|you|i)\s+(booked|book|agreed|agree|set|scheduled|fixed|arranged|said)\b"
         r"|\bwhat time did (we|you) (book|agree|set|schedule|fix|arrange|say)\b"
         r"|\bwhen (will|is|does|should|are)\s+(he|she|they|you|someone|the (broker|agent)|\w+)\s+(be\s+)?(call|calling|ring|ringing|phone|phoning|come|coming|visit|visiting)\b")
 
 
+KNOWN_WORDS = {"what", "your", "have", "does", "about", "with", "there", "hello", "thanks", "please", "could", "would", "want", "need", "know",
+               "tell", "this", "that", "just", "still", "much", "they", "them", "dubai", "diwan", "realty", "property", "unit", "apartment",
+               "villa", "flat", "here", "there's", "where", "which", "when", "will", "should", "also", "available"}
+ACKS = ["Got it.", "Perfect, thank you.", "Great.", "Noted, thanks."]
+ACKS_AR = ["تمام.", "ممتاز، شكراً.", "رائع.", "حسناً، شكراً."]
+LATER = "I'll send you the best options once I know a little more."
+
+
+def polish(g: Graph, deal: str, chat: Node, reply: str, q_before: dict, q: dict, arabic: bool, said_now: str = "") -> str:
+    """The rules' replies, made to read like a person: what she understood, in different words each time; the line about
+    options only once and only to someone looking for a home; and never the same question word for word twice in a row."""
+    sent = [m["text"] for m in chat.props["messages"] if m["type"] == "sent"]
+    before = {a["key"]: a for a in q_before.get("answers", [])}
+    new = [a for a in q.get("answers", []) if a["key"] not in before and not a.get("unsure")]
+    own = q.get("type") in ("seller", "landlord")
+    if own:  # their own property: where it is, not where they're looking
+        reply = reply.replace("Which area are you looking at?", "Which area is your property in?").replace("في أي منطقة تبحث؟", "في أي منطقة يقع عقارك؟")
+    opener = {"seller": ("Happy to help you sell.", "يسعدنا مساعدتك في البيع."),
+              "landlord": ("Yes, we can help you let and manage it.", "نعم، يمكننا مساعدتك في تأجيره وإدارته.")}.get(q.get("type"), ("", ""))
+    if own and not any(opener[0] in x or opener[1] in x for x in sent) and (reply.startswith("Thank you, noted.") or reply.startswith(tuple(ACKS))):
+        reply = f"{opener[1 if arabic else 0]} {re.sub(r'^(Thank you, noted\.|' + '|'.join(map(re.escape, ACKS)) + ')', '', reply).replace(LATER, '').strip()}"
+        return re.sub(r"\s{2,}", " ", reply).strip()
+    if reply.startswith("Thank you, noted."):
+        rest = reply.removeprefix("Thank you, noted.").strip()
+        area = next((a["value"] for a in new if a["key"] == "areas"), None)
+        unsure = __import__("diwan.qualify", fromlist=["unsure"]).unsure(said_now)
+        said = ("لا مشكلة." if arabic else "No problem.") if unsure else (
+            f"{area}, lovely." if area and not arabic else (ACKS_AR if arabic else ACKS)[len(sent) % 4])
+        if LATER in rest and (q.get("type") not in ("buyer", "tenant") or any(LATER in x for x in sent)):
+            rest = rest.replace(LATER, "").strip()
+        reply = f"{said} {rest}".strip()
+    asked_type = [x for x in sent[-2:] if "buy, rent" in x or "شراء أو إيجار" in x]
+    for q_ in ("Are you looking to buy, rent, sell or let out a property?", "هل تبحث عن شراء أو إيجار أو بيع أو تأجير عقار؟"):
+        if asked_type and q_ in reply:  # still not said: asked again, in other words, and only once
+            again = "للتأكد فقط: هل هو للشراء أم للإيجار؟" if arabic else "Just to check: is it to buy or to rent?"
+            rest = reply.replace(q_, "").strip()
+            reply = rest if (again in sent[-1] and rest) else reply.replace(q_, again)
+    fn = first_name(chat.label)
+    if reply.startswith(f"Hi {fn}, how can I help?" if fn else "Hi, how can I help?") and q.get("next"):  # "hello" while a question is open
+        nq = q["next"]["question_ar" if arabic and q["next"].get("question_ar") else "question_en"]
+        reply = f"مرحباً{' ' + fn if fn else ''}! {nq}" if arabic else f"Hi{' ' + fn if fn else ''}! {nq}"
+    for qn in re.findall(r"[^.!?؟\n]*[?؟]", reply):  # asked in her last message and not answered: asked differently
+        if qn.strip().lower().startswith(("just to check", "للتأكد")) or reply.startswith(("Hi ", "Hi!", "مرحباً")):
+            continue
+        if sent and qn.strip() and qn.strip() in sent[-1]:
+            plain = qn.strip()
+            reply = reply.replace(plain, ("للتأكد فقط: " if arabic else "Just to check: ") + (plain[0].lower() + plain[1:] if not arabic else plain))
+    return re.sub(r"\s{2,}", " ", reply).strip()
+
+
 def appointment_kind(g: Graph, text: str) -> dict | None:
     """The kind of appointment the client asks for, from the owner's list: a video call, the office, or None."""
     low = text.lower()
-    want = "video" if re.search(VIDEO, low) else "office" if re.search(OFFICE, low) else None
+    want = "video" if re.search(VIDEO, low) else "office" if re.search(OFFICE, low) and not re.search(r"\b(hours?|open|opening|clos(e|ing)|address|located|location|where)\b", low) else None
     return next((k for k in slots.appointments(g) if k["where"] == want), None) if want else None
 
 
@@ -785,7 +906,7 @@ def book(office: Office, phone: str, deal: str, listing: Node | None, when: date
     listing's agent they are told, so the keys reach whoever is going.
     The broker's hours, days and other appointments decide what is free. `dry` (Rania is on review) only proposes it.
     `after`: they named a day but no hour ("Saturday morning"), so the free times start there."""
-    from diwan import leads
+    from diwan import leads, viewings
     g = office.graph()
     k = kind or slots.kind(g, None)
     if k["where"] == "property" and agent_confirms(g):
@@ -794,9 +915,15 @@ def book(office: Office, phone: str, deal: str, listing: Node | None, when: date
     agent = listing.props.get("agent") if listing else None
     who = g.nodes[f"chat:{phone}"].label
     what, refs = _what(g, k, listing), [listing.id] if listing else []
-    def unit_free(t: datetime) -> bool:
-        return k["where"] != "property" or not listing or not unit_taken(g, listing.props["ref"], t, k["minutes"])
-    options = [t for t in (slots.nearest(g, broker, when, now, 6, k["minutes"]) if when else slots.free(g, broker, max(after or now, now), 6, k["minutes"])) if unit_free(t)]
+    shown = listing if k["where"] == "property" else None  # how this home is viewed (docs/viewing-access-spec.md)
+    if shown and shown.status != "available":  # sold, let or reserved since: never booked
+        return f"{shown.props['title']} isn't available any more. {name(broker)} can suggest similar homes; would you like some options?", refs
+    if shown and not g.nodes[f"deal:{deal}"].props.get("qtype"):  # asking to see a home for sale (or to let) says which they are
+        leads.from_listing(office, deal, shown, f"Asked to view {shown.props['ref']}", cause=cause)
+        g = office.graph()
+    def unit_free(t: datetime) -> bool:  # nobody else is shown it then, a tenant has had their notice, the gallery is open
+        return (k["where"] != "property" or not listing or not unit_taken(g, listing.props["ref"], t, k["minutes"])) and viewings.allowed(g, shown, t, k["minutes"], now)
+    options = [t for t in (slots.nearest(g, broker, when, now, 150, k["minutes"]) if when else slots.free(g, broker, max(after or now, now), 150, k["minutes"])) if unit_free(t)]
     options = sorted(sorted(options, key=lambda t: abs((t - when).total_seconds()))[:3]) if when else options[:3]
     if when is None or when <= now or not slots.is_open(g, broker, when, k["minutes"]) or not unit_free(when):
         if not options:
@@ -806,6 +933,14 @@ def book(office: Office, phone: str, deal: str, listing: Node | None, when: date
         return f"{lead}I can book {what} with {name(broker)} on {opts}. Which suits you?", refs
     if dry:
         return f"I can book {what} with {name(broker)}, {slots.say(when)}. Shall I confirm it?", refs
+    access = viewings.access(g, shown) if shown else None
+    if shown and (pre := viewings.agreed(g, phone, shown.props["ref"], when)):  # a time the owner offered: booked at once
+        ev = office.log.append("appointment.moved", actor=RANIA, agent=RANIA, deal=deal, caused_by=cause, content={"id": pre.id, "at": when.isoformat(), "from": pre.props["at"]})
+        office.log.append("appointment.confirmed", actor=RANIA, agent=RANIA, deal=deal, caused_by=ev["id"], content={"id": pre.id, "by": RANIA})
+        office.add_task(deal, RANIA, f"Viewing of {shown.props['ref']} with {who}, {slots.say(when)}", needs_person=broker, by=RANIA, caused_by=cause)
+        return f"Booked: {what} with {name(broker)}, {slots.say(when)}. The owner is expecting you.", refs + [pre.id]
+    if access and access["mode"] == "ask":  # someone lives there: the owner or tenant agrees first
+        return viewings.request(office, phone, deal, shown, when, k, now, cause)
     vid = f"V{len(g.of('viewing')) + 1}"
     booked_ev = office.log.append("appointment.booked", actor=RANIA, agent=RANIA, deal=deal, caused_by=cause,
                       content={"id": vid, "listing": listing.props["ref"] if listing else None, "broker": broker, "at": when.isoformat(),
@@ -818,7 +953,7 @@ def book(office: Office, phone: str, deal: str, listing: Node | None, when: date
                      chat=phone, kind="info", cause=booked_ev["id"])
     from diwan import video
     url = video.make(office, vid, by=RANIA, cause=booked_ev["id"]) if k["where"] == "video" and video.settings(g)["auto"] else None
-    place = {"property": "", "office": " at our office", "phone": " by phone",
+    place = {"property": f" at {access['place']}" if access and access["mode"] == "developer" else "", "office": " at our office", "phone": " by phone",
              "video": f" by video ({k['minutes']} min). Join here at that time: {url}" if url else f" by video ({k['minutes']} min): {name(broker)} will send the link"}[k["where"]]
     lobby = k["where"] == "property" and any("photo id" in i["text"].lower() for i in customer_knowledge(g, "viewing photo id lobby", k=6))
     return (f"Booked: {what} with {name(broker)}, {slots.say(when)}{place}." + (" Please bring a photo ID for the building lobby." if lobby else "")), refs + [vid]
@@ -827,7 +962,7 @@ def book(office: Office, phone: str, deal: str, listing: Node | None, when: date
 def unit_taken(g: Graph, ref: str | None, when: datetime, minutes: int, ignore: str | None = None) -> bool:
     """Two brokers can't show one property to two clients at once."""
     return bool(ref) and any(v.id != ignore and v.props.get("listing") == ref and abs((datetime.fromisoformat(v.props["at"]) - when).total_seconds()) < minutes * 60
-                             for v in g.of("viewing", status="booked"))
+                             for v in g.of("viewing", status={"booked", "requested"}))
 
 
 def add_by_hand(office: Office, *, by: str, broker: str, phone: str, name_: str | None, kind_id: str, ref: str | None,
@@ -888,7 +1023,8 @@ def add_by_hand(office: Office, *, by: str, broker: str, phone: str, name_: str 
 def bare_time(low: str) -> str | None:
     """A time with no day ("make it 11", "at 4pm"): just the time, or None. A count ("2 bed") is not one."""
     m = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", low) or re.search(
-        r"\b(?:at|to|make it|change it|shift it|switch it|bump it)\s+(\d{1,2})(?::(\d{2}))?()\b(?!\s*(?:bed|br|bhk|room|million|m\b|k\b|sq|%|aed|year|min))", low)
+        r"\b(?:at|to|make it|change it|shift it|switch it|bump it|make the (?:call|viewing|visit|meeting)|move the (?:call|viewing|visit|meeting) to)\s+(\d{1,2})(?::(\d{2}))?()\b(?!\s*(?:bed|br|bhk|room|million|m\b|k\b|sq|%|aed|year|min))", low) \
+        or re.search(r"\b(\d{1,2})(?::(\d{2}))?()\s+instead\b", low)
     return f"{m.group(1)}{':' + m.group(2) if m.group(2) else ''}{m.group(3) or ''}" if m else None
 
 
@@ -1060,7 +1196,11 @@ def answer_rules(office: Office, phone: str, deal: str, text: str, now: datetime
     if answering:
         return "Thank you, noted.", [], [Action("record_fact", "Qualification answer")], None
     if re.search(NOT_MINE, low):
-        return f"That's one for {broker} personally, who will reply to you here.", [], [Action("assign", "Hand to broker")], "a question for a person"
+        topic = next((t for rx, t in ((r"visa|residency", "visas and residency"), (r"tax", "tax"), (r"legal|lawyer|inherit", "legal matters"),
+                                      (r"negotiat|discount|price", "the price"), (r"cash|crypto|bitcoin|usdt|funds|wealth|offshore|third party", "payments"))
+                      if re.search(rx, low)), "this")
+        return (f"Good question. {broker} answers questions about {topic} personally, so I've asked them to reply to you here shortly.",
+                [], [Action("assign", "Hand to broker")], "a question for a person")
     if asks_returns(low):
         return (f"I can't promise returns or yields. {broker} can share recent sales and rental data for the area and will reply here.",
                 [], [Action("assign", "Hand to broker")], "asked about returns")
@@ -1069,7 +1209,7 @@ def answer_rules(office: Office, phone: str, deal: str, text: str, now: datetime
         return f"Thank you, noted. {broker} will go through the payment details with you personally.", list(heard), [Action("record_fact", "Noted")], None
     if re.search(HANDOVER, low):
         return f"Of course. I'm passing you to {broker}, who will reply here shortly.", [], [Action("assign", "Hand to broker")], "asked for a person"
-    if re.search(PRICE, low) and not re.search(SEARCH + r"|\d", low):
+    if re.search(PRICE, low) and (not re.search(SEARCH + r"|\d", low) or _listing_named(g, text, None)):
         listing = _listing_named(g, text, chat)
         if listing:
             return f"{_listing_line(listing)}. Would you like to see it? Tell me a day and time.", [listing.id], [Action("reply", "Price")], None
@@ -1081,14 +1221,32 @@ def answer_rules(office: Office, phone: str, deal: str, text: str, now: datetime
     if re.search(BOOK, low) or slots.parse(text, now):
         listing = _listing_named(g, text, chat)
         if not listing:
-            shown = [g.nodes[r] for r in g.nodes[f"deal:{deal}"].props.get("recommended", []) if r in g.nodes]
-            pool = shown or recommend(g, deal, n) or nearest(g, deal, n)[0] or advertisable(g)[:n]  # what they've seen, or what fits; never just any
-            opts = "; ".join(_listing_line(x) for x in pool)
-            return f"Happy to arrange a viewing. Which property would you like to see? {opts}", [x.id for x in pool], [Action("reply", "Ask which listing")], None
-        reply, refs = book(office, phone, deal, listing, slots.parse(text, now), now, cause, dry)
+            reply, ids = which_listing(g, deal, n, slots.parse(text, now) or slots.parse_day(text, now), bool(slots.parse(text, now)))
+            return reply, ids, [Action("reply", "Ask which listing")], None
+        reply, refs = book(office, phone, deal, listing, slots.parse(text, now), now, cause, dry,
+                           after=None if slots.parse(text, now) else slots.parse_day(text, now))  # "Saturday": that day's times
         kind = "book_viewing" if any(r.startswith("V") for r in refs) else "reply"
         return reply, refs, [Action(kind, reply)], None
     from diwan import knowledge
+    # a question about one listing ("is there parking at Marina Crest?"): from its own features, or honestly to the broker
+    several = [n_ for n_ in advertisable(g) if n_.props["ref"].lower() in low]
+    about = (_listing_named(g, text, None) if re.search(QUESTION, low) and not re.search(BOOK + "|" + PRICE + r"|\b(see|view|visit|show)\b", low)
+             and len(several) < 2 else None)
+    if about is not None:
+        title = about.props["title"]
+        asked = [w for w in re.findall(r"[a-z]{4,}", low) if w not in KNOWN_WORDS and w not in title.lower()]
+        hit = next((f for f in about.props.get("features") or [] if any(w.rstrip("s") in f.lower() for w in asked)), None)
+        if hit:
+            return f"Yes: {title} has {hit}. Would you like to see it?", [about.id], [Action("reply", "From the listing")], None
+        office.log.append("qualify.open", actor=RANIA, agent=RANIA, deal=deal, caused_by=cause, content={"question": text[:300]})
+        return (f"Good question. I'll check that for {title} with {broker} and come back to you here.", [about.id],
+                [Action("reply", "Checking with the broker")], None)
+    # several listings in one go: one at a time, starting with the one they pick (also decided before any model, below)
+    if len(several) >= 2 and re.search(r"\b(see|view|visit|viewing|viewings|show)\b", low):
+        day = slots.parse_day(text, now)
+        refs_ = ", ".join(n_.props["ref"] for n_ in several[:-1]) + f" and {several[-1].props['ref']}"
+        return (f"Happy to show you {refs_}{' on ' + slots.say_day(day) if day else ''}. Which would you like to see first, and at what time? "
+                "I'll line the others up after it.", [n_.id for n_ in several], [Action("reply", "Several viewings")], None)
     # an area named in a question about something else ("the chiller fees at Marina Crest?") is not a property search
     area = bool(knowledge.areas_in(g, text)) and not re.search(QUESTION, low)
     low_s = re.sub(FINANCE_ASK, " ", low)  # "do you have mortgage options?" is a finance question, not a search
@@ -1110,13 +1268,15 @@ def answer_rules(office: Office, phone: str, deal: str, text: str, now: datetime
                     [], [Action("assign", "Brief the broker")], "no listing fits the brief")
         lines = "\n".join(f"• {_listing_line(n)}" for n in found)
         return f"Here's what fits:\n{lines}\nWould you like to see one? Tell me a day and time.", [n.id for n in found], [Action("reply", "Listings")], None
-    words = set(re.findall(r"[a-z]{4,}", low)) - {"what", "your", "have", "does", "about", "with", "there", "hello", "thanks", "please", "could",
-                                                   "would", "want", "need", "know", "tell", "this", "that", "just", "still", "much", "they", "them"}
+    words = set(re.findall(r"[a-z]{4,}", low)) - KNOWN_WORDS - {w for n_ in g.of("listing") for w in re.findall(r"[a-z]{4,}", f"{n_.props.get('community') or ''} {n_.label}".lower())}
     best = next(iter(customer_knowledge(g, text, k=1)), None)
     if best and words & set(re.findall(r"[a-z]{4,}", f"{best['title']} {best['text']}".lower())):
         return best["text"], [best["id"]], [Action("reply", best["title"])], None
     if not chat or len(chat.props["messages"]) <= 1:
         known = g.nodes[f"deal:{deal}"].props.get("qtype")  # "I'm looking to buy": the form's next question follows, not this one
+        if re.search(r"[\u0600-\u06ff]", text):
+            return (f"مرحباً{' ' + fn if fn else ''}، معك رانيا من {COMPANY}." + ("" if known else " هل تبحث عن شراء أو إيجار أو بيع عقار؟"),
+                    [], [Action("reply", "Greet and ask the brief")], None)
         return (f"{hi}, I'm Rania from {COMPANY}." + ("" if known else " Are you looking to buy, rent, or sell a property?"),
                 [], [Action("reply", "Greet and ask the brief")], None)
     if re.search(r"\b(hi|hello|salam|marhaba|hey|thanks|thank you)\b|السلام|مرحبا|شكرا", low):
@@ -1245,6 +1405,10 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
     c = get(RANIA)
     rs = recommend_settings(g)
     dp0 = g.nodes[f"deal:{deal}"].props
+    # their answer to "do you mean A or B?": what they first asked for, on the day they chose (docs/dates-spec.md)
+    asked = next((m for m in reversed(chat.props["messages"]) if m["type"] == "sent"), None)
+    if asked and asked.get("which_day") and (chosen := slots.answer_day(text, asked["which_day"]["options"], now)):
+        text = slots.with_day(asked["which_day"]["text"], chosen)
     # the front door, decided in code: not ready yet (nurtured, not chased), back and ready, or asking for a call
     from diwan import leads
     from diwan.agents import nudge
@@ -1282,6 +1446,10 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
     elif (front is None and chat.props["mode"] == "ai" and not dp0.get("qtype") and not dp0.get("hot") and re.search(sales.NOT_LEAD, low0)
           and len([m for m in chat.props["messages"] if m["type"] == "received"]) <= 2):
         front = "not_lead"
+    elif front is None and chat.props["mode"] == "ai" and re.search(COMPLAINT, low0):
+        front = "complaint"  # an apology, and a person replies; the owner hears now
+    elif front is None and chat.props["mode"] == "ai" and re.search(WRONG_NUMBER, low0):
+        front = "wrong_number"  # a kind goodbye, and nothing more is sent
     appt = upcoming(g, phone, now, text)
     when_ = slots.parse(text, now)
     day_ = None if when_ else slots.parse_day(text, now)  # "Saturday morning": a day, no hour
@@ -1290,20 +1458,62 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
     time_check = bool(appt and len(low0.split()) <= 6 and bare_time(low0) and not re.search(MOVE, low0)
                       and (re.search(r"\b(then|ok|okay|so|right|yes|yeah|sure|fine|perfect|confirmed|correct)\b|\?", low0)))  # "at 10 then"
     if front is None and chat.props["mode"] == "ai" and appt and (re.search(CANCEL, low0) or re.search(ASKS_WHEN, low0) or time_check or (re.search(MOVE, low0) and (
-            when_ or day_ or re.search(r"\b(viewing|visit|appointment|meeting|time|day)\b", low0) or bare_time(low0)))):
+            when_ or day_ or re.search(r"\b(viewing|visit|appointment|meeting|call|time|day)\b", low0) or bare_time(low0)))):
         front = "appt"  # they change or cancel what is booked
+    elif front is None and chat.props["mode"] == "ai" and appt and re.search(COMPANION, low0):
+        front = "companion"  # "my wife will come too": welcome, and the time again
     elif front is None and chat.props["mode"] == "ai" and appointment_kind(g, text):
         front = "meet"  # a video call or an office meeting
-    if front is None and re.search(CALL_ME, low0):
+    if front is None and chat.props["mode"] == "ai" and re.search(NO_CALL, low0):
+        front = "no_calls"  # "please don't call me, message only": switched on, and the broker replies here
+    elif front is None and re.search(CALL_ME, low0):
         front = "call"
     # they already chose a property and now say when: it is booked, or that day's free times are offered
     hot_listing = (dp0.get("hot") or {}).get("listing")
     if (front is None and chat.props["mode"] == "ai" and hot_listing in g.nodes and not appt and (when_ or day_) and not re.search(NOT_FREE, low0)):
         front = "visit"
+    named_l = _listing_named(g, text, chat) if front == "visit" else None  # "can I see JVC-88 instead?": the one they name now
+    # they want a viewing on a day but haven't chosen a property: the day is kept for when they do
+    prev_sent = next((m for m in reversed(chat.props["messages"]) if m["type"] == "sent"), None)
+    kept_day = (prev_sent or {}).get("view_day")
+    if kept_day and front is None and not hot_listing and not when_ and bare_time(low0) and not _listing_named(g, text, None):
+        when_ = slots.parse(f"{slots.say_day(datetime.fromisoformat(kept_day['at']))} at {bare_time(low0)}", now)  # "11am" on the day they gave
+        front = "which_listing" if when_ else front
+    view_day = ((when_ or day_) if (front is None or front == "which_listing") and chat.props["mode"] == "ai" and not appt and not hot_listing
+                and (re.search(r"\b(see|view|visit|viewing|viewings|show me|tour)\b", low0) or kept_day) and not _listing_named(g, text, chat) else None)
+    # a viewing waiting for the owner: "any news?" is answered honestly (docs/viewing-access-spec.md)
+    from diwan import viewings
+    owner_wait = viewings.waiting(g, phone) if chat.props["mode"] == "ai" else None
+    if front is None and owner_wait and not when_ and not day_ and (re.search(ASKS_WHEN, low0) or re.search(
+            r"\b(any news|news|update|heard back|owner|landlord|tenant|confirmed|confirm it)\b", low0)):
+        front = "owner_wait"
+    # words that could mean two days ("next Tuesday", "Wednesday 10 Nov" when the 10th is a Tuesday): she asks, never guesses
+    ask_day = slots.which_day(text, now) if chat.props["mode"] == "ai" and (when_ or day_) else None
+    if ask_day and (front in ("appt", "meet", "call", "visit") or (front is None and (re.search(BOOK, low0) or when_))):
+        front = "which_day"
     received = [m for m in chat.props["messages"] if m["type"] == "received"]
     if (front is None and chat.props["mode"] == "ai" and len(received) <= 1 and not dp0.get("qtype") and re.fullmatch(HELLO, low0)
             and greeting(g, bool(re.search(r"[\u0600-\u06ff]", text)), None)):
         front = "greet"  # only hello: the owner's own first message
+    last_rania = next((m for m in reversed(chat.props["messages"]) if m["type"] == "sent"), None)
+    if (front is None and chat.props["mode"] == "ai" and len(received) > 1 and re.fullmatch(ACK, low0)
+            and not (last_rania and last_rania["text"].rstrip().endswith("?"))):
+        front = "ack"  # "thanks", "ok great": a warm word and what happens next, nothing asked
+    if front == "ack" and last_rania and last_rania["text"] == "🙂":  # thanked, smiled, thanked again: nothing more to say
+        return {"mode": "ai", "reply": None, "refs": [], "facts": heard["facts"], "handover": None, "by": "rules", "usage": {}, "held": None,
+                "prompt": None, "qualify": __import__("diwan.qualify", fromlist=["state"]).state(office.graph(), deal)}
+    # photos, a floor plan, where the office is: sent when we have them, otherwise the broker is asked and the client told so
+    asks_for = ("photos" if re.search(r"\b(photos?|pictures?|pics|images?)\b|صور", low0) else
+                "plan" if re.search(r"\b(floor ?plans?|layouts?)\b|مخطط", low0) else
+                "where" if re.search(r"\bwhere (is|are) (your|the) office\b|\b(office|your) (address|location)\b|\bwhere are you (located|based)\b", low0) else None)
+    if front is None and chat.props["mode"] == "ai" and asks_for:
+        front = "asks_for"
+    if (front is None and chat.props["mode"] == "ai" and len([n_ for n_ in advertisable(g) if n_.props["ref"].lower() in low0]) >= 2
+            and re.search(r"\b(see|view|visit|viewing|viewings|show)\b", low0)):
+        front = "several"  # never "yes, all three on Saturday": some wait for an owner
+    if front == "no_calls" and len(low0.split()) > 12:  # said along with other things: switched on, and the rest is answered
+        leads.set_no_calls(office, phone, on=True, by=RANIA, quote=text)
+        front = None
     from diwan import knowledge
     if (front is None and chat.props["mode"] == "ai" and dp0.get("qualify_status") == "qualified" and not dp0.get("hot")
             and re.search(r"\b(options?|listings?|anything (else|new|available|similar|cheaper|bigger)|available|show me|send me|what (do you|have you) got)\b", re.sub(FINANCE_ASK, " ", low0))
@@ -1322,7 +1532,9 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
     call_same = bool(cur_card and cur_card.props.get("due") and datetime.fromisoformat(cur_card.props["due"]) == call_at) and on_calendar
     call_ok = bool(call_at) and bool(w := slots.window(g, dp0["broker"], call_at.date())) and w[0] <= call_at.hour * 60 + call_at.minute < w[1]
     asking = asks_listings(g, text)
-    listings_ok = front not in ("quiet", "nurture") and (
+    from diwan import qualify
+    seeking = dp0.get("qtype") or next((t for t, rx in qualify.DETECT if re.search(rx, low0)), None)
+    listings_ok = front not in ("quiet", "nurture") and seeking not in ("seller", "landlord") and (
         rs["when"] == "as_soon_as_fit" or (rs["when"] == "after_qualified" and (dp0.get("qualify_status") == "qualified" or asking)))
     sources = prompt_sources(g, deal, chat, text, listings=listings_ok, n=rs["how_many"], now=now)
     known = [k for k in sources if k.startswith("F")]
@@ -1378,8 +1590,10 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
     # (or said with another answer: "1.4 million, cash" while the form still needs it, and nothing else about money in it)
     FIN_WORD = r"\b(cash|mortgage|finance|financing|loan)\b|كاش|تمويل"
     needs_fin = "finance" in (q_before.get("missing") or []) or "finance" in {a["key"] for a in q_before["answers"]}
-    answering = (len(text) < 80 and not text.strip().endswith("?") and bool(re.search(FIN_WORD, text.lower()))
-                 and (dprops.get("qualify_asked") == "finance" or (needs_fin and not re.search(NOT_MINE, re.sub(FIN_WORD, " ", text.lower())))))
+    answering = (len(text) < 300 and not text.strip().endswith("?") and bool(re.search(FIN_WORD, text.lower()))
+                 and (dprops.get("qualify_asked") == "finance" or (needs_fin and not re.search(NOT_MINE, re.sub(FIN_WORD, " ", text.lower())))
+                      or (dprops.get("qualify_status") != "qualified" and (len(text.split()) <= 3 or scribe.amounts(text)
+                          or re.search(r"\b\d\s*-?\s*(bed|br)|\b(buy|rent|apartment|villa|flat|townhouse)\b", text.lower())))))  # answers
     fixed = not answering and bool(re.search(NOT_MINE, text.lower()) or asks_returns(text.lower()))
     # the customer picks one of the recommended properties (or asks to see it): a hot lead, decided in code
     hot = None
@@ -1391,8 +1605,8 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
         if pick and ("pick" in rs["hot_on"] or (view and "viewing" in rs["hot_on"])):
             hot = (pick, "asked to view it" if view else "picked it")
     # a call request, "only looking", or a nurtured client saying nothing new: one plain reply, no model, no question
-    fixed = fixed and front not in ("fraud", "not_lead")
-    front_done = not fixed and (front in ("call", "nurture", "stop", "appt", "meet", "options", "visit", "greet", "fraud", "not_lead", "still")
+    fixed = fixed and front not in ("fraud", "not_lead", "complaint", "wrong_number")
+    front_done = not fixed and (front in ("call", "nurture", "stop", "appt", "meet", "options", "visit", "greet", "fraud", "not_lead", "still", "which_day", "owner_wait", "no_calls", "ack", "asks_for", "complaint", "wrong_number", "companion", "which_listing", "several")
                                 or (front == "quiet" and not re.search(QUESTION, low0)))
     if front_done:
         refs = []
@@ -1403,7 +1617,7 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
             reply, refs = book(office, phone, deal, g.nodes.get(lid) if lid else None, slots.parse(text, now), now, got["id"], dry,
                                kind=appointment_kind(g, text))
         elif front == "visit":
-            reply, refs = book(office, phone, deal, g.nodes[hot_listing], when_, now, got["id"], dry, after=day_)
+            reply, refs = book(office, phone, deal, named_l or g.nodes[hot_listing], when_, now, got["id"], dry, after=day_)
         elif front == "greet":
             reply = greeting(g, arabic, fn)
         elif front == "fraud":
@@ -1411,10 +1625,57 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
                      f"Thank you. We never change payment details by message, so {broker_name} will call you on your number on file to confirm.")
         elif front == "not_lead":
             reply = sales.settings(g)["not_lead_reply"]
+        elif front == "several":
+            reply, refs, _, _ = answer_rules(office, phone, deal, text, now, got["id"], heard["facts"], dry, listings=True, n=rs["how_many"])
+        elif front == "which_listing":
+            reply, refs = which_listing(g, deal, rs["how_many"], when_, True)
+        elif front == "complaint":
+            owner = leads.owner_id()
+            reply = (f"نأسف جداً لسماع ذلك. أبلغت {name(owner)} فوراً وسيرد عليك هنا شخصياً." if arabic else
+                     f"I'm really sorry to hear that{', ' + fn if fn else ''}. I've passed this to {name(owner)} straight away, and they'll reply to you here personally.")
+        elif front == "wrong_number":
+            reply = "لا مشكلة أبداً، يومك سعيد!" if arabic else "No problem at all, have a good day!"
+        elif front == "companion":
+            at_ = slots.say(datetime.fromisoformat(appt.props["at"]))
+            ids = (appt.props.get("where") or "property") == "property" and any("photo id" in i["text"].lower() for i in customer_knowledge(g, "viewing photo id lobby", k=6))
+            reply = (f"بالتأكيد، أهلاً وسهلاً بهم. نراك {at_}." if arabic else
+                     f"Of course, they're very welcome{', ' + fn if fn else ''}. See you {at_}." + (" Please each bring a photo ID for the building lobby." if ids else ""))
+            refs = [appt.id]
+        elif front == "asks_for":
+            reply, refs = asked_for(office, phone, deal, asks_for, text, chat, broker_name, arabic, got["id"], now)
+        elif front == "no_calls":
+            leads.set_no_calls(office, phone, on=True, by=RANIA, quote=text)
+            reply = (f"بالتأكيد. لن نتصل بك، وسيرد عليك {broker_name} هنا في المحادثة." if arabic else
+                     f"Of course{', ' + fn if fn else ''}. No calls: {broker_name} will reply to you here in the chat.")
+        elif front == "ack" and last_rania and last_rania["text"].startswith(("You're welcome", "العفو")):
+            reply = "🙂"
+        elif front == "ack":
+            nxt = upcoming(g, phone, now)
+            if nxt is not None and (nxt.props.get("where") or "property") == "phone":
+                then = f"{name(nxt.props['broker'])} will call you {slots.say(datetime.fromisoformat(nxt.props['at']))}."
+            elif nxt is not None:
+                then = f"See you {slots.say(datetime.fromisoformat(nxt.props['at']))}."
+            elif viewings.waiting(g, phone) is not None:
+                then = "I'll message you as soon as the owner replies."
+            elif (cc := leads.open_card(g, phone)) and cc.props["kind"] == "call" and not leads.no_calls(g, deal):
+                then = f"{broker_name} will call you shortly."
+            else:
+                then = "I'm here whenever you need me."
+            reply = f"العفو! {then}" if arabic else f"You're welcome{', ' + fn if fn else ''}! {then}"
+        elif front == "owner_wait":
+            lst = g.nodes.get(f"listing:{owner_wait.props.get('listing')}")
+            reply = (f"I'm still waiting for the owner to confirm {slots.say(datetime.fromisoformat(owner_wait.props['at']))}"
+                     f"{' for ' + lst.props['title'] if lst else ''}. I'll message you here as soon as they reply.")
+            refs = [owner_wait.id]
+        elif front == "which_day":
+            a, b = (slots.say_day(d) for d in ask_day)
+            reply = f"للتأكد فقط: هل تقصد {a} أم {b}؟" if arabic else f"Just to be sure: do you mean {a} or {b}?"
         elif front == "still":
             there = _listing_named(g, text, chat)
             if there and there.status == "available":
                 refs = [there.id]
+                if not dp0.get("qtype"):  # the listing already says buy or rent, the area, the type and the bedrooms
+                    leads.from_listing(office, deal, there, text, cause=got["id"])
                 reply = (f"Yes, {there.props['title']} ({there.props['ref']}) is still available. Is it to live in, or to invest?" if not arabic else
                          f"نعم، {there.props['title']} ({there.props['ref']}) ما زال متاحاً. هل هو للسكن أو للاستثمار؟")
                 office.log.append("qualify.asked", actor=RANIA, agent=RANIA, deal=deal, caused_by=got["id"], content={"field": "purpose"})
@@ -1439,11 +1700,20 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
                                "stop": "Asked us to stop: no more follow-ups", "appt": "Changed their appointment",
                                "options": "Asked for options: from their answers", "visit": "Said when to come",
                                "greet": "The owner's first message", "meet": "Asked for a meeting", "fraud": "Payment details: a person confirms",
-                               "not_lead": "Not a lead: pointed elsewhere", "still": "Is it still available?"}[front])], "rules"
+                               "not_lead": "Not a lead: pointed elsewhere", "still": "Is it still available?",
+                               "which_day": "Asked which day they mean", "owner_wait": "Still waiting for the owner",
+                               "no_calls": "Asked not to be called", "ack": "Thanked: what happens next",
+                               "asks_for": "Asked for photos, a plan or where we are", "complaint": "A complaint: a person replies",
+                               "wrong_number": "Wrong number", "companion": "Someone comes along", "which_listing": "Which one to see",
+                               "several": "Several to see: one at a time"}[front])], "rules"
     elif hot:
         pick = hot[0]
+        kept = next((m["view_day"] for m in reversed(chat.props["messages"]) if m["type"] == "sent" and m.get("view_day")), None)
+        kept_at = datetime.fromisoformat(kept["at"]) if kept and datetime.fromisoformat(kept["at"]) > now else None
         if when_ or day_:  # they gave a time too: book it; a day alone: that day's free times
             reply, refs = book(office, phone, deal, pick, when_, now, got["id"], dry, after=day_)
+        elif kept_at:  # the day they asked for before choosing: booked then, or that day's free times
+            reply, refs = book(office, phone, deal, pick, kept_at if kept["timed"] else None, now, got["id"], dry, after=None if kept["timed"] else kept_at)
         else:
             broker_id = g.nodes[f"deal:{deal}"].props["broker"]
             free = ", ".join(slots.say(t) for t in slots.free(office.graph(), broker_id, now, 2))
@@ -1475,7 +1745,9 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
             reason = "asked for a person" if re.search(HANDOVER, text.lower()) else "Rania handed over: the sources did not cover it"
             actions = [Action("assign", "Hand to broker")]
         elif out["book_listing"] and f"listing:{out['book_listing']}" in g.nodes:
-            reply, refs = book(office, phone, deal, g.nodes[f"listing:{out['book_listing']}"], slots.parse(out["book_when"] or "", now), now, got["id"], dry)
+            bw = out["book_when"] or ""
+            reply, refs = book(office, phone, deal, g.nodes[f"listing:{out['book_listing']}"], slots.parse(bw, now), now, got["id"], dry,
+                               after=None if slots.parse(bw, now) else slots.parse_day(bw, now))  # "Saturday": that day's times, not from now
             actions = [Action("book_viewing", reply)]
         by = "model"
     else:
@@ -1522,13 +1794,14 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
                                    "answers": {a["key"]: a["value"] for a in q["answers"]}})
         _route(office, deal, phone, got["id"], now)  # the lead's deal kind decides its broker
         broker_name = name(office.graph().nodes[f"deal:{deal}"].props["broker"])
-        recs = recommend(office.graph(), deal, rs["how_many"]) if rs["when"] != "never" else []
+        own_home = q.get("type") in ("seller", "landlord")  # their own property: no homes to buy or rent are offered
+        recs = recommend(office.graph(), deal, rs["how_many"]) if rs["when"] != "never" and not own_home else []
         near, differs = ([], "") if recs or rs["when"] == "never" else nearest(office.graph(), deal, rs["how_many"])
         if talking and recs:
             reply, refs = recommendation_text(g, deal, recs, arabic, first_name(chat.label)), [n_.id for n_ in recs]
             actions = [Action("reply", f"Qualified: {len(recs)} recommendations")]
             office.log.append("lead.recommended", actor=RANIA, agent=RANIA, deal=deal, caused_by=got["id"], content={"refs": refs, "chat": phone})
-        elif talking and rs["when"] != "never":
+        elif talking and rs["when"] != "never" and not own_home:
             # nothing fits exactly: say so plainly, show the closest with how they differ, never push; the broker has the lead
             reply = no_exact_match(office.graph(), deal, near, differs, arabic, first_name(chat.label), broker_name)
             refs = [n_.id for n_ in near]
@@ -1548,17 +1821,24 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
         newly_stuck = [k for k in q.get("stuck", []) if k not in stuck_before]
         if any(a.kind == "book_viewing" for a in actions):
             pass  # a booking confirmation stands on its own: no question tacked on
-        elif by == "rules" and q["verdict"] == "DISCOVERY" and "?" not in reply:  # type not known yet: ask it
+        elif by == "rules" and q["verdict"] == "DISCOVERY" and "?" not in reply and "؟" not in reply:  # type not known yet: ask it
             reply = f"{reply} {'هل تبحث عن شراء أو إيجار أو بيع أو تأجير عقار؟' if arabic else 'Are you looking to buy, rent, sell or let out a property?'}"
         elif newly_stuck:  # not sure twice about a "must answer" question: she stops asking, the broker calls to help
             reply, actions = qualify.stuck_reply(arabic, broker_name, leads.no_calls(g, deal)), [Action("reply", "Not sure twice: the broker helps")]
         elif by == "rules" and nxt and q.get("retry") == nxt["key"]:
             reply = qualify.again(nxt, arabic)
-        elif nxt and "?" not in reply:  # what they said was answered, and a required question is still open: it gets asked
+        elif nxt and "?" not in reply and "؟" not in reply:  # what they said was answered, and a required question is still open: it gets asked
             reply = f"{reply} {nxt['question_ar' if arabic and nxt.get('question_ar') else 'question_en']}"
         asked = (q_before.get("next") or {}).get("key") if (q_before.get("next") or {}).get("key") in q["missing"] else (nxt or {}).get("key")
         if asked and asked != g.nodes[f"deal:{deal}"].props.get("qualify_asked"):
             office.log.append("qualify.asked", actor=RANIA, agent=RANIA, deal=deal, caused_by=got["id"], content={"field": asked})
+    if by == "rules" and reply and chat.props["mode"] == "ai":
+        reply = polish(office.graph(), deal, chat, reply, q_before, q, arabic, text)
+    elif reply and chat.props["mode"] == "ai":  # the model's words: not the type question twice running
+        last_sent = next((m["text"] for m in reversed(chat.props["messages"]) if m["type"] == "sent"), "")
+        if re.search(r"buy, rent|شراء أو إيجار", last_sent):
+            trimmed = re.sub(r"\s*[^.!?؟]*(buy, rent|شراء أو إيجار)[^.!?؟]*[?؟]", "", reply).strip()
+            reply = trimmed or reply
     if re.search(sales.IBAN, reply):
         reason, held = "reply held bank details", reply
         reply = f"I've asked {name(g.nodes[f'deal:{deal}'].props['broker'])} to reply to you here personally."
@@ -1584,7 +1864,11 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
         else:
             leads.raise_card(office, phone, reason="Rania's reply waits for your review", text=text, cause=got["id"], now=now)
         return {"mode": "review", "suggestion": reply, "refs": refs, "facts": heard["facts"], "by": by, "autonomy": lvl, "usage": usage, "held": held, "prompt": prompt, "qualify": q}
-    sent = _send(office, phone, deal, reply, refs, cause=got["id"])
+    if view_day and reply and view_day.strftime("%A") not in reply:  # the day they want is heard, even before a property is chosen
+        reply = f"Noted: {slots.say_day(view_day)} for the viewing. {reply}"
+    sent = _send(office, phone, deal, reply, refs, cause=got["id"],  # a "which day?" remembers what they asked, for their answer
+                 extra={"which_day": {"text": text, "options": [d.isoformat() for d in ask_day]}} if front == "which_day"
+                 else {"view_day": {"at": view_day.isoformat(), "timed": bool(when_)}} if view_day else None)
     shown_now = [r for r in refs if r.startswith("listing:")]
     if re.search(r"^1\. ", reply, re.M) and shown_now and "listing:" in shown_now[0]:
         photo_cards(office, phone, deal, [office.graph().nodes[r] for r in shown_now if r in office.graph().nodes], cause=sent["id"])
@@ -1607,6 +1891,13 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
         nudge.stop(office, phone, deal, text, got["id"])
     elif front_done and front == "fraud":
         sales.fraud_guard(office, phone, deal, text, got["id"])
+    elif front_done and front == "complaint":
+        leads.notify(office, leads.owner_id(), f"Complaint from {chat.label}: \u201c{text[:200]}\u201d. They were told you'll reply personally.",
+                     chat=phone, kind="now", cause=got["id"])
+        hand_over(office, phone, reason="A complaint: reply personally", cause=got["id"], text=text, now=now)
+    elif front_done and front == "wrong_number":
+        nudge.stop(office, phone, deal, text, got["id"])
+        office.log.append("stage.changed", actor=RANIA, agent=RANIA, deal=deal, caused_by=got["id"], content={"stage": "Lost", "auto": True, "reason": "Wrong number"})
     elif front_done and front == "not_lead":
         office.log.append("stage.changed", actor=RANIA, agent=RANIA, deal=deal, caused_by=got["id"], content={"stage": "Lost", "auto": True, "reason": "Not a lead"})
     elif hot:

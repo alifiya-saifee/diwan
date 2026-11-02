@@ -64,10 +64,10 @@ with sync_playwright() as p:
     check(2, "Omar marks Tuesday 15:00-17:00 busy (Dentist): it shows on his grid at once",
           blk.count() == 1 and not pg.locator("dialog#dlg[open]").count(), shot("02-busy"))
 
-    r = customer("971506670001", "Hi, can I see MC-1204 on Tuesday at 4pm?", "Sara Khan")
+    r = customer("971506670001", f"Hi, can I see MC-1204 on Tuesday {TUE.day} {TUE:%b} at 4pm?", "Sara Khan")
     check(3, "A client asks for Tuesday 4pm: Rania doesn't book the busy time and offers others",
           "isn't available" in r and "Booked" not in r, shot("03-rania"), r[:160])
-    r2 = customer("971506670001", "OK, Tuesday at 5pm then", "Sara Khan")
+    r2 = customer("971506670001", f"OK, Tuesday {TUE.day} {TUE:%b} at 5pm then", "Sara Khan")
     check(4, "Tuesday 5pm, just after the busy time, is booked", r2.startswith("Booked"), shot("04-booked"), r2[:120])
 
     cal("omar")
@@ -83,7 +83,7 @@ with sync_playwright() as p:
     pg.fill("#ffirst", THU.isoformat()); pg.fill("#flast", THU.isoformat()); pg.fill("#freason", "Annual leave")
     pg.click("#fsave")
     pg.wait_for_timeout(700)
-    r3 = api.post(f"{BASE}/api/chats/incoming", data={"phone": "971506670002", "text": "Can I see MC-1204 on Thursday at 11am?", "name": "Ali Noor"})
+    r3 = api.post(f"{BASE}/api/chats/incoming", data={"phone": "971506670002", "text": f"Can I see MC-1204 on Thursday {THU.day} {THU:%b} at 11am?", "name": "Ali Noor"})
     reply = next((m["text"] for m in api.get(f"{BASE}/api/chats/971506670002").json()["messages"] if m["type"] == "sent"), "")
     check(6, "A day off on Thursday shows on the grid and in Omar's load, and Rania books nobody that day",
           pg.locator(".ev.blk", has_text="Day off").count() == 1 and "off Thu" in pg.locator("#load").inner_text()
@@ -108,7 +108,7 @@ with sync_playwright() as p:
     pg.wait_for_timeout(900)
     lead = pg.locator("body").inner_text()
     r5 = customer("971506670003", "When is my viewing?", "Huda Saleh")
-    r4 = customer("971506670003", "Can we move the viewing to 12pm on Wednesday?", "Huda Saleh")
+    r4 = customer("971506670003", f"Can we move the viewing to 12pm on Wednesday {WED.day} {WED:%b}?", "Huda Saleh")
     check(9, "The hand-added client is a lead in the Inbox at Viewing booked; Rania tells them when it is and moves it",
           "Huda Saleh" in lead and "Viewing booked" in lead and r5.startswith("Your site visit to Unit 1204") and "11:00 AM" in r5 and "is now" in r4,
           shot("09-inbox"), f"{r5[:90]} / {r4[:80]}")

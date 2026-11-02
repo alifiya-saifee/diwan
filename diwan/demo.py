@@ -11,6 +11,7 @@ def company(office: Office) -> None:
     """What a brokerage tells the office once: listings (sample permit numbers) and the few facts customers ask about."""
     office.add_listing(ref="MC-1204", title="Unit 1204, Marina Crest", community="Dubai Marina", type="apartment", beds=2,
                        price_aed=2_600_000, permit="SAMPLE-71204", features=["sea view", "balcony", "2 parking"], agent="omar")
+    office.log.append("listing.access", actor="layla", content={"ref": "MC-1204", "mode": "instant", "by": "layla"})  # vacant, keys at the office
     office.add_listing(ref="JVC-88", title="Villa 88", community="Jumeirah Village Circle", type="villa", beds=4,
                        price_aed=1_900_000, permit="SAMPLE-60088", features=["garden", "maid's room"], agent="omar")
     office.add_listing(ref="BB-305", title="Apartment 305, Bay Square", community="Business Bay", type="apartment", beds=1,

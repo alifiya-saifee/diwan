@@ -46,7 +46,7 @@ The first four are the owner's answers. The rest were built the recommended way,
 | D16 | Which brokers see which chats? | Own leads and the Pool. Rashid and the owner see all. **The owner's decision.** | Done |
 | D14 | The call timer | 10 minutes (a setting), then the next free broker, then the Pool at 60. **The owner's decision.** | Done |
 | Form | The longer qualifying form | Every question the spec lists counts, and "not sure" is accepted. **The owner's decision.** | Done |
-| D11 | Checks before a viewing | Instant booking stays. Form B stays at conversion. **The owner's decision.** | Done |
+| D11 | Checks before a viewing | By listing (2 Nov, replaces "instant booking stays"): vacant with keys books at once; lived in or tenanted waits for the owner's yes, with a tenant's notice; off-plan at the developer's gallery in its hours. Form B stays at conversion. `docs/viewing-access-spec.md`. **The owner's decision.** | Done |
 | D13 | Who is the Sales lead? | Rashid, a person, with his own PA. | Product owner |
 | D15 | Heat score or the owner's triggers? | Both: the score shows on every lead, and makes it hot only if the owner ticks it. | Product owner |
 | D17 | After "stop", if the client writes again | Rania stays silent; a card goes to a person, who may reply. | Product owner |

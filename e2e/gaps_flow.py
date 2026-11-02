@@ -91,7 +91,8 @@ with sync_playwright() as p:
     pg.goto(f"{BASE}/web/calendar.html?as=layla&start={week}")
     pg.wait_for_timeout(700)
     blocks = pg.locator(".ev:not(.blk)").all_inner_texts()  # cancelled ones are hidden unless the filter asks
-    bell = [n["text"] for n in api.get(f"{BASE}/api/notices/omar").json()["items"]]
+    broker = next(c["broker"] for c in api.get(f"{BASE}/api/chats?view=all&person=layla").json()["rows"] if c["phone"] == C)  # leads are shared out
+    bell = [n["text"] for n in api.get(f"{BASE}/api/notices/{broker}").json()["items"]]
     check(3, "Cancelling in the chat: confirmed, gone from the calendar, the broker told",
           "cancelled" in r and not left and not any("Ali Noor" in x for x in blocks) and any("cancelled" in t for t in bell), shot("03-cancelled"), r)
 

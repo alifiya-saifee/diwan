@@ -193,7 +193,10 @@ def sweep(office: Office, now: datetime | None = None) -> list[str]:
     for c in office.graph().of("attention", status="open"):
         p, g = c.props, office.graph()
         label = g.nodes[f"chat:{p['chat']}"].label
-        if not p.get("pooled") and now >= _at(p.get("raised") or c.at) + timedelta(minutes=pool_minutes(g)):
+        start = _at(p.get("raised") or c.at)
+        if not p.get("escalated") and _at(p["due"]) > start + timedelta(minutes=due_minutes(p["kind"], g)):
+            start = _at(p["due"])  # due later than usual from the start (a date the broker set, an owner to ask): the hour counts from then
+        if not p.get("pooled") and now >= start + timedelta(minutes=pool_minutes(g)):
             ev = office.log.append("lead.pooled", actor="rania", agent="rania", deal=c.deal, key=f"pool:{c.id}",
                                    content={"id": c.id, "chat": p["chat"], "from": p["who"]})
             for b in brokers():
@@ -210,17 +213,63 @@ def sweep(office: Office, now: datetime | None = None) -> list[str]:
             for boss in {owner_id(), manager} - {None, p["who"]}:
                 notify(office, boss, f"{name(p['who'])} is late on {label}: {p['reason']}.", chat=p["chat"], kind="overdue", cause=ev["id"])
             out.append(f"overdue {c.id}")
-            if p["kind"] == "call" and not p.get("set_by") and not p.get("pooled") and (next_up := next_free(g, p["who"], now)):  # the client was promised a call
-                office.log.append("attention.moved", actor="sales", agent="sales", deal=c.deal, caused_by=ev["id"], key=f"moved:{c.id}:{p.get('escalated', 0)}",
-                                  content={"id": c.id, "chat": p["chat"], "from": p["who"], "to": next_up, "due": (now + timedelta(minutes=due_minutes("call", g))).isoformat()})
-                assign(office, c.deal, next_up, by="sales", why=f"{name(p['who'])} had not called in time", cause=ev["id"], chat=p["chat"], now=now)
-                out.append(f"moved {c.id} to {next_up}")
+            if moved := move_call(office, c, now, ev["id"], manager):
+                out.append(moved)
+        elif p.get("overdue") and (moved := move_call(office, c, now, None, manager)):
+            out.append(moved)  # nobody was on shift when it went overdue: it moves once someone is
     return out
 
 
-def next_free(g: Graph, late: str, now: datetime) -> str | None:
-    """The broker on shift with the fewest leads today, not the one who is late. None when nobody else is on shift."""
-    free = [b for b in brokers() if b != late and on_shift(g, b, now) and licence_ok(g, b, now)]
+MAX_HOPS = 2  # a call the client was promised moves at most twice, then the Sales lead has it
+
+
+def move_call(office: Office, c, now: datetime, cause: int | None, manager: str | None) -> str | None:
+    """A promised call nobody made in time (loop guard L1): the next free broker who hasn't missed it, at most twice, then
+    the Sales lead; outside working hours it waits for someone on shift. The client is told who will call now."""
+    p, g = c.props, office.graph()
+    if p["kind"] != "call" or p.get("set_by") or p.get("pooled") or p.get("to_lead"):
+        return None
+    missed = set(p.get("missed") or []) | {p["who"]}
+    if p.get("escalated", 0) >= MAX_HOPS:
+        if not manager or manager == p["who"]:
+            return None
+        to, lead = manager, True
+    else:
+        to, lead = next_free(g, missed, now), False
+        if not to:
+            return None
+    key = f"moved:{c.id}:{p.get('escalated', 0)}"
+    ev = office.log.append("attention.moved", actor="sales", agent="sales", deal=c.deal, caused_by=cause, key=key,
+                           content={"id": c.id, "chat": p["chat"], "from": p["who"], "to": to, "lead": lead,
+                                    "due": (now + timedelta(minutes=due_minutes("call", g))).isoformat()})
+    if ev.get("duplicate"):
+        return None
+    label = g.nodes[f"chat:{p['chat']}"].label
+    if lead:
+        notify(office, to, f"{label} was promised a call and {len(missed)} brokers missed it ({', '.join(name(b) for b in sorted(missed))}). "
+                           "Please call, or give it to someone.", chat=p["chat"], kind="call", cause=ev["id"])
+    else:
+        assign(office, c.deal, to, by="sales", why=f"{name(p['who'])} had not called in time", cause=ev["id"], chat=p["chat"], now=now)
+    _tell_new_caller(office, p["chat"], to, g, now, ev["id"])
+    return f"moved {c.id} to {to}"
+
+
+def _tell_new_caller(office: Office, chat: str, to: str, g: Graph, now: datetime, cause: int) -> None:
+    """Rania promised a name: the client hears the new one (inside their 24 hours; after it the card is the broker's)."""
+    from diwan import inbox
+    from diwan.agents import reception
+    ch = g.nodes[f"chat:{chat}"]
+    if chat.startswith("ig:") or not inbox.conversation(g, ch, now)["window_open"]:
+        return
+    first = reception.first_name(ch.label)
+    reception._send(office, chat, ch.deal, f"Sorry for the wait{', ' + first if first else ''}. {name(to)} will call you instead, "
+                    f"in the next {due_minutes('call', g)} minutes.", [], cause=cause)
+
+
+def next_free(g: Graph, late, now: datetime) -> str | None:
+    """The broker on shift with the fewest leads today, never one who has already missed it. None when nobody else is on shift."""
+    late = {late} if isinstance(late, str) else set(late)
+    free = [b for b in brokers() if b not in late and on_shift(g, b, now) and licence_ok(g, b, now)]
     return min(free, key=lambda b: (load_today(g, b, now), brokers().index(b))) if free else None
 
 

@@ -47,6 +47,8 @@
   .card .price { white-space: nowrap; }
   .pin.rent { background: #5ccfb5; }
   @media (max-width: 600px) { .bar > input, .bar > select { flex: 1 1 45%; width: auto !important; } .seg { margin-left: 0 !important; } }
+  #access [hidden] { display: none; }
+  #access .row button.on { background: var(--gold); color: var(--bg); }
 </style>
 </head>
 <body>
@@ -243,6 +245,7 @@ async function detail(r) {
       h("div", { class: "muted" }, `${l.agent_name || "The listing's agent"} has a task to update the portals. Rania already uses what is set here.`)),
     !l.advertised && h("p", { class: "small", style: "color:var(--bad)" }, l.permit ? "Not advertised: the listing is not available." : "Not advertised: no permit number. Rania and the studio never offer it until a permit is added."),
     h("div", { class: "small muted" }, it.used.week ? `cited in ${it.used.week} replies this week` : "cited in 0 replies this week"),
+    h("div", { id: "access", style: "margin-top:12px" }),
     it.status !== "retired" && h("div", { style: "margin-top:12px" }, h("h2", {}, can ? "Change the price" : "Propose a new price"),
       h("div", { class: "row" }, price), h("div", { class: "row", style: "margin-top:6px" }, why,
         h("button", { class: "primary", id: "pricego", onclick: async () => {
@@ -265,6 +268,38 @@ async function detail(r) {
     h("h2", { style: "margin-top:16px" }, "Price changes waiting"), h("div", { id: "props", class: "list" }));
   $("props").replaceChildren(...(data.proposals.length ? data.proposals.map(proposal) : [h("div", { class: "small muted" }, "No price changes waiting.")]));
   if ($("minimap")) miniMap($("minimap"), l);
+  accessPanel(l.ref);
+}
+
+// How a listing is viewed (docs/viewing-access-spec.md): at once, after asking the owner or tenant, or at the developer's gallery
+const WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+async function accessPanel(ref) {
+  const box = $("access"); if (!box) return;
+  let a;
+  try { a = await api(`/api/listings/${encodeURIComponent(ref)}/access?person=${encodeURIComponent(by())}`); } catch { return; }
+  const said = { instant: "Booked at once: vacant, keys with us.", ask: `Rania checks with the ${a.who || "owner"} before confirming${a.notice_hours ? `, with ${a.notice_hours} hours' notice` : ""}.`,
+                 developer: `Shown at ${a.place}, ${a.open}–${a.close}, ${(a.days || []).map((d) => WEEK[d]).join(" ")}.` }[a.mode];
+  const head = [h("h2", {}, "How it's viewed"), h("div", { class: "small" }, h("strong", {}, a.label), a.default ? " (not set yet: the safe choice)" : "", " · ", said)];
+  if (!a.can) { box.replaceChildren(...head, h("div", { class: "small muted" }, "The listing's broker, the Sales manager or the owner changes this.")); return; }
+  const mode = h("select", { id: "amode" }, ...Object.entries(a.modes).map(([k, v]) => h("option", { value: k, selected: k === a.mode }, v)));
+  const who = h("select", { id: "awho" }, h("option", { value: "owner", selected: a.who !== "tenant" }, "The owner lives there"), h("option", { value: "tenant", selected: a.who === "tenant" }, "A tenant lives there"));
+  const notice = h("input", { id: "anotice", type: "number", min: 0, max: 168, value: a.notice_hours ?? 0, style: "width:70px" });
+  const place = h("input", { id: "aplace", value: a.place || "", placeholder: "Gallery address" });
+  const open = h("input", { id: "aopen", type: "time", value: a.open || "10:00" }), close = h("input", { id: "aclose", type: "time", value: a.close || "19:00" });
+  const days = new Set(a.days || [0, 1, 2, 3, 4, 5]);
+  const dayBtns = h("div", { class: "row" }, ...WEEK.map((w, i) => { const b = h("button", { class: days.has(i) ? "on" : "", onclick: () => { days.has(i) ? days.delete(i) : days.add(i); b.classList.toggle("on"); } }, w); return b; }));
+  const askRow = h("div", { class: "row", style: "margin-top:6px" }, who, h("span", { class: "small" }, "Notice (hours)"), notice);
+  const devRow = h("div", { style: "margin-top:6px" }, place, h("div", { class: "row", style: "margin-top:6px" }, open, close), dayBtns);
+  const show = () => { askRow.hidden = mode.value !== "ask"; devRow.hidden = mode.value !== "developer"; };
+  mode.onchange = show; show();
+  box.replaceChildren(...head, h("div", { class: "row", style: "margin-top:6px" }, mode), askRow, devRow,
+    h("button", { class: "primary", id: "asave", style: "margin-top:6px", onclick: async () => {
+      try {
+        await post(`/api/listings/${encodeURIComponent(ref)}/access`, { by: by(), mode: mode.value, who: who.value, notice_hours: +notice.value,
+          place: place.value, open: open.value, close: close.value, days: [...days].sort() });
+        toast("Saved: Rania uses it from the next message"); accessPanel(ref);
+      } catch (e) { toast(e.message); }
+    } }, "Save"));
 }
 
 function proposal(p) {

@@ -43,7 +43,13 @@ def unsure(text) -> bool:
 
 NEGATED = r"\b(not|don'?t|doesn'?t|no|never|isn'?t|won'?t|without|rather than|instead of)\b[^.,;!?]*$"
 SAID_AS = {"now": r"asap|as soon as possible|soon|immediately|right away|straight away|urgent(ly)?|this month",
-           "later": r"next year|no rush|not in a hurry|in a year"}  # common ways of saying an option, used when the form has it
+           "later": r"next year|no rush|not in a hurry|in a year",
+           "apartment": r"flat|flats|apt|شقة|شقه", "villa": r"villas|فيلا|فله|فيلة", "townhouse": r"town house|townhouses|تاون هاوس",
+           "tenanted": r"tenant|tenants|rented( out)?|leased|let out|مؤجر|مستأجر", "vacant": r"empty|unoccupied|شاغر|فاضي",
+           "owner-occupied": r"i live (in )?(it|there)|we live (in )?(it|there)|lived in|living in it|my home|أسكن فيه|أسكنه",
+           "cash": r"كاش|نقدا|نقداً", "mortgage": r"تمويل|loan|home loan|finance",
+           "1-3 months": r"(within|in|next|over the next) (a |1 |2 |3 |one |two |three |a few |few |couple of |the next few )?months?|next month|in a month",
+           "3-6 months": r"(within|in) (4|5|6|four|five|six) months|(within|in) six months|half a year|(later )?this year|by (the )?end of (the )?year"}  # common ways of saying an option, used when the form has it
 
 
 def option_said(option: str, low: str) -> bool:
@@ -317,6 +323,22 @@ def not_theirs(said: str, quote: str, kind: str, has_value: bool) -> bool:
     return bool((kind == "money" and re.search(HEARSAY, s, re.I)) or (has_value and re.search(MAYBE, s, re.I)))
 
 
+AREAS_AR = {"دبي مارينا": "Dubai Marina", "مارينا": "Dubai Marina", "جي في سي": "JVC", "قرية جميرا": "JVC", "الخليج التجاري": "Business Bay",
+            "بزنس باي": "Business Bay", "داون تاون": "Downtown Dubai", "وسط دبي": "Downtown Dubai", "نخلة جميرا": "Palm Jumeirah",
+            "دبي هيلز": "Dubai Hills", "المرابع العربية": "Arabian Ranches", "جي ال تي": "JLT", "البرشاء": "Al Barsha"}
+
+
+def _for_another(low: str, key: str) -> bool:
+    """Words that answer a different question than the one asked, so they are not taken for it."""
+    other = {"cheques": r"\bcheques?\b|\bchecks?\b", "bedrooms": r"\b\d\s*-?\s*(bed|br|bedroom)", "budget": r"\b(million|aed|dirham|\d+\s*k)\b",
+             "mortgage": r"\bmortgage\b", "deed": r"\btitle deed\b|\bdeed\b", "yesno": r"^\W*(yes|no|yeah|nope)\b"}
+    if key == "unit":
+        return not re.search(r"\d|tower|building|residence|apartment|villa|unit|block|\bno\.?", low)
+    if key == "title_deed":
+        return bool(re.search(other["mortgage"], low)) or (bool(re.search(other["yesno"], low)) and not re.search(r"\bname\b", low))
+    return any(re.search(rx, low) for n, rx in other.items() if n not in ("yesno", "deed"))
+
+
 def read_rules(g: Graph, f: dict, qtype: str | None, text: str, last_asked: str | None) -> tuple[str | None, list[dict]]:
     """Plain rules, for when no model answers: the type from its words, and answers that are unmistakable."""
     from diwan.agents.scribe import amounts
@@ -338,18 +360,27 @@ def read_rules(g: Graph, f: dict, qtype: str | None, text: str, last_asked: str 
         elif kind == "number" and k == "bedrooms":
             if m := re.search(r"\b(\d|one|two|three|four|five|six)\s*-?\s*(bed|br|bedroom)", low):
                 v = int(m.group(1)) if m.group(1).isdigit() else ["one", "two", "three", "four", "five", "six"].index(m.group(1)) + 1
-            elif "studio" in low:
+            elif "studio" in low or "ستوديو" in low:
                 v = 0
+            elif m := re.search(r"غرفة واحدة|غرفتين|غرفتان|(ثلاث|اربع|أربع|خمس) غرف", text):
+                v = {"غرفة واحدة": 1, "غرفتين": 2, "غرفتان": 2}.get(m.group(0)) or {"ثلاث": 3, "اربع": 4, "أربع": 4, "خمس": 5}[m.group(1)]
         elif kind == "area":
             said = [a for a in _areas(g) if a.lower() in low or a.lower().replace("dubai ", "") in low]
             real = [a for a in said if a.lower() != "the villa" or last_asked == k]  # "see the villa in JVC" names JVC
-            v = max(real, key=len) if real else None
+            v = (max(real, key=len) if real else None) \
+                or next((en for ar, en in AREAS_AR.items() if ar in text), None)
         elif kind == "choice":
             words = re.sub(r"\bready\s+(by|in|for|before|around|next|this|within)\b", " ", low)  # "ready by summer" is when, not what
             v = next((o for o in x["options"] if option_said(o, words)), None)
         elif kind == "yesno" and last_asked == k and not vague:
             v = "Yes" if re.search(r"\b(yes|yeah|yep|sure|already|نعم|ايوه)\b", low) else "No" if re.search(r"\b(no|not yet|nope|لا)\b", low) else None
+        elif kind == "yesno" and k == "mortgage_outstanding" and re.search(r"\b(no mortgage|mortgage[- ]free|fully paid|paid off)\b", low):
+            v = "No"  # said plainly, whichever question was asked
+        elif kind == "text" and k == "title_deed" and re.search(r"\b(my name|in my name|i have the (title )?deed|it'?s mine|myself|i own it)\b", low):
+            v = "In their own name"
         elif kind in ("text", "date", "number") and last_asked == k and not vague and len(text) < 160 and not text.strip().endswith("?"):
+            if _for_another(low, k):  # "4 cheques" while asked when they move in: not a date
+                continue
             if kind == "date" and not re.search(r"\d|now|asap|soon|next|this|week|month|year|summer|winter|spring|autumn|ramadan|eid|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|"
                                                 r"شهر|أسبوع|الآن|قريب", low):
                 continue

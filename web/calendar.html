@@ -75,6 +75,7 @@
   .ev span { display: block; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ev.short { flex-direction: row; align-items: center; gap: 6px; padding-top: 0; padding-bottom: 0; }
   .ev.short b { flex: 0 1 auto; } .ev.short span { flex: 1 1 0; min-width: 0; }  /* one line: "10:30 Ali Rahman  🎥 Video call" */
+  .ev.requested { border-style: dashed; opacity: .85; } .box[hidden] { display: none; }
   .ev.done, .ev.no_show, .ev.cancelled { opacity: .55; } .ev.no_show b, .ev.cancelled b { text-decoration: line-through; }
   .ev.sel, .ev:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
   .ev.blk { background: repeating-linear-gradient(135deg, rgba(160,168,186,.16) 0 5px, rgba(160,168,186,.07) 5px 10px); border-style: dashed; border-color: rgba(255,255,255,.14); z-index: 1; }
@@ -229,7 +230,7 @@
   <label class="chk"><input type="checkbox" id="rmorning"> Each broker gets the day's list every working morning</label>
   <h3>Video calls</h3>
   <label>Links made with</label>
-  <select id="vprov"><option value="">None: the broker sends a link</option><option value="zoom">Zoom</option><option value="google_meet">Google Meet</option></select>
+  <select id="vprov"><option value="">None: the broker sends a link</option><option value="zoom">Zoom</option></select>
   <div class="small muted" id="vstate" style="margin-top:6px"></div>
   <label class="chk"><input type="checkbox" id="vauto"> Create the link when Rania confirms a call (it goes in her confirmation and the reminders)</label>
   <div class="small muted" style="margin-top:4px">Off: brokers make it with "Create link" on the appointment.</div>
@@ -524,6 +525,22 @@ function renderSide() {
 const TOLD = { sent: "the client was told on WhatsApp", template: "the client was told with an approved template (over 24 hours since they wrote)", card: "it's over 24 hours since the client's last message, so you have a card to tell them",
                no_chat: "there is no chat to tell them in", window_closed: "the link goes in their reminders (it's over 24 hours since their last message)" };
 
+// A viewing held while the broker checks with the owner or tenant (docs/viewing-access-spec.md): their answer goes to the client
+function ownerBox(a) {
+  const say = async (said, times = []) => {
+    try { const r = await post(`/api/appointments/${a.id}/owner`, { by: me, said, times }); toast(r.told === "sent" ? "Done: the client is told" : "Done: call the client, their 24 hours are over"); load(); }
+    catch (e) { $("oerr").textContent = e.message; } };
+  const ins = [0, 1, 2].map((i) => h("input", { type: "datetime-local", "aria-label": `Other time ${i + 1}` }));
+  const other = h("div", { class: "box", hidden: true }, h("b", { class: "small" }, "Times the owner can do (one to three)"), ...ins,
+    h("div", { class: "row", style: "gap:6px;justify-content:flex-end" }, h("button", { class: "primary", onclick: () => say("other", ins.map((x) => x.value).filter(Boolean).map((v) => `${v}:00+04:00`)) }, "Offer these to the client")));
+  return h("div", { class: "box owner" }, h("b", {}, "Waiting for the owner: check this time with them"),
+    h("div", { class: "err", id: "oerr" }),
+    h("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin-top:6px" },
+      h("button", { class: "primary", onclick: () => say("yes") }, "✓ Owner said yes"),
+      h("button", { onclick: () => { other.hidden = !other.hidden; } }, "Other times…"),
+      h("button", { onclick: () => confirm("Tell the client it can't be shown then?") && say("no") }, "Not possible")), other);
+}
+
 function apptPanel(a) {
   const s = local(a.at), past = new Date(a.at) < new Date(), can = me === a.broker || C.owner, live = a.status === "booked";
   const mark = (what) => async () => {
@@ -554,7 +571,7 @@ function apptPanel(a) {
       h("span", {}, "Where"), h("span", {}, C.where[a.where] + (a.listing ? ` · ${a.listing}` : "")),
       a.where === "video" ? h("span", {}, "Link") : null,
       a.where === "video" ? h("span", {}, link.url ? h("a", { href: link.url, target: "_blank", rel: "noopener" }, link.url) : "Not made yet") : null,
-      h("span", {}, "Status"), h("span", {}, { booked: "Booked", done: "Done", no_show: "No-show", cancelled: "Cancelled" }[a.status] || a.status),
+      h("span", {}, "Status"), h("span", {}, { booked: "Booked", done: "Done", no_show: "No-show", cancelled: "Cancelled", requested: "Waiting for the owner", offered: "Owner offered other times" }[a.status] || a.status),
       h("span", {}, "Booked by"), h("span", {}, a.by_hand ? `${bname(a.by_hand)}, by hand` : "Rania, in the chat"),
       a.moved_from ? h("span", {}, "Moved") : null, a.moved_from ? h("span", {}, `from ${fmtDay(dayOf(a.moved_from))} ${hhmm(local(a.moved_from))}`) : null,
       h("span", {}, "Reminders"), h("span", {}, a.reminded.length ? a.reminded.join(", ") + " before" : "none sent yet")),
@@ -569,6 +586,7 @@ function apptPanel(a) {
       a.deal && live && can && a.where !== "phone" ? h("a", { class: "btn", href: `meeting.html?deal=${encodeURIComponent(a.deal)}&title=${encodeURIComponent(a.kind)}` }, "🎙 Record the visit") : null),
     live && can && !past ? h("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin-top:8px" },
       h("button", { onclick: showMove }, "Move"), h("button", { onclick: showCancel }, "Cancel")) : null,
+    a.status === "requested" && can ? ownerBox(a) : null,
     box,
     live && can ? h("div", {},
       h("label", { style: "margin-top:12px" }, "How did it go? (optional, for the summary and the follow-up)"),

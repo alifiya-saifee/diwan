@@ -70,7 +70,9 @@ with sync_playwright() as p:
     B = "971507770002"
     customer(B, "Hi", "Mona Saleh")
     r = customer(B, f"Can I see MC-1204 on {DAY} at 10am?", "Mona Saleh")
-    check(5, "Rania never books a viewing over that call: she offers other times", "10:00 AM" not in r.split("I can book")[0] and not r.startswith("Booked: Unit 1204, Marina Crest (MC-1204) with Omar, " + DAY + " " ), shot("05-no-clash"), r[:150])
+    # leads are shared out, so Mona may get another broker; what must never happen is Omar booked twice at 10:00
+    booked = r.split("I can book")[0]
+    check(5, "Rania never books Omar's viewing over his call: another broker or other times", not ("with Omar" in booked and "10:00 AM" in booked), shot("05-no-clash"), r[:150])
 
     r = customer(A, "sorry, make it 11 instead", "Ali Rahman")
     pg.goto(f"{BASE}/web/calendar.html?as=layla&start={WEEK}&view=week")

@@ -123,8 +123,9 @@ with sync_playwright() as p:
     C = "971504440003"
     customer(C, "Hi", name="Mina Saad")
     r = customer(C, "Can I see MC-1204 on Tuesday at 2pm?", name="Mina Saad")
-    check(9, "Omar's day off (set on Settings) is never offered", TUE.weekday() not in omar_days and "isn't available" in r
-          and TUE.strftime("%A") not in r.split("on ", 1)[-1], shot("09-day-off"), r)
+    # leads are shared out: Mina may get a broker who works that day; Omar is never booked on his day off
+    check(9, "Omar's day off (set on Settings) is never offered", TUE.weekday() not in omar_days
+          and not ("with Omar" in r and TUE.strftime("%A") in r), shot("09-day-off"), r)
 
     # kinds: the owner adds one
     cal()
@@ -142,16 +143,16 @@ with sync_playwright() as p:
           any(k["name"] == "Handover" and k["minutes"] == 45 and k["where"] == "office" for k in kinds), shot("10-kinds"))
 
     # reminders (the clock moved with the sandbox-only sweep)
-    v = next(x for x in api.get(f"{BASE}/api/calendar?person=layla&start={WEEK}").json()["appointments"] if x["kind"] == "Site visit")
+    v = next(x for x in api.get(f"{BASE}/api/calendar?person=layla&start={WEEK}").json()["appointments"] if x["kind"] == "Site visit" and x["customer"] == "Sara Khan")
     at = datetime.fromisoformat(v["at"])
     api.post(f"{BASE}/api/nudges/run", data={"at": (at - timedelta(hours=23)).isoformat()})
     api.post(f"{BASE}/api/nudges/run", data={"at": (at - timedelta(hours=1, minutes=50)).isoformat()})
-    msgs = [m for m in api.get(f"{BASE}/api/chats/{A}").json()["messages"] if m.get("reminder")]
+    msgs = [m for m in api.get(f"{BASE}/api/chats/{A}").json()["messages"] if m.get("reminder") and "video call" not in m["text"]]  # not her video call's
     pg.goto(f"{BASE}/web/inbox.html?chat={A}&as=layla")
     pg.wait_for_timeout(700)
     check(11, "The client gets two reminders, the day before and two hours before (as the approved template: their window is shut)",
           [m["reminder"] for m in msgs] == ["24h", "2h"] and all(m["template"] == "viewing_reminder" for m in msgs), shot("11-reminders"),
-          msgs[0]["text"] if msgs else "")
+          f'{[(m["reminder"], m.get("template")) for m in msgs]} · {msgs[0]["text"] if msgs else ""}')
 
     pg.set_viewport_size({"width": 390, "height": 844})
     cal()

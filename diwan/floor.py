@@ -69,13 +69,14 @@ _r("folder", ("ops",), "deal.ready_for_transfer")
 _r("folder", ("records",), "case.closed case.lost transfer.completed")
 _r("folder", ("self",), "stage.changed transfer.booked")
 _r("phone", ("sales",), "attention.raised attention.moved attention.cleared lead.no_calls")
-_r("phone", ("self",), "appointment.booked appointment.moved appointment.cancelled appointment.done appointment.noshow")
+_r("phone", ("self",), "appointment.booked appointment.moved appointment.cancelled appointment.done appointment.noshow "
+                         "appointment.requested appointment.confirmed appointment.offered")
 _r("stuck", ("self",), "attention.overdue agent.failed email.failed")
 _r("task", ("self",), "agent.pack agent.started agent.refused content.idea content.briefed content.scripted content.ready content.made "
                       "post.paused post.withdrawn campaign.started campaign.ended mchat.analysed")
 _r("note", ("self",), "meeting.started meeting.ended consent.given pocket.started pocket.ended")
 
-QUIET |= set("""agent.added agent.paused agent.removed agent.resumed autonomy.changed board.pinned board.unpinned calendar.blocked
+QUIET |= set("""listing.access agent.added agent.paused agent.removed agent.resumed autonomy.changed board.pinned board.unpinned calendar.blocked
 calendar.morning calendar.unblocked chat.merged client.queued appointment.link_removed followup.dismissed item.edited item.reconfirmed
 item.restored item.retired lead.sweep lesson.added lesson.removed listing.added listings.synced lobby.seen mchat.said mchat.upload
 notify.digest notify.read notify.sent nova.watched photo.read playbook.removed pocket.line product.saved qualify.asked qualify.form

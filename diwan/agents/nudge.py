@@ -169,6 +169,10 @@ def why_not(g: Graph, chat, now: datetime) -> str | None:
         return "waiting for our reply"
     if any(v.props.get("chat") == chat.props["phone"] and _at(v.props["at"]) > now for v in g.of("viewing", status="booked")):
         return "a viewing is coming up"
+    if any(v.props.get("chat") == chat.props["phone"] for v in g.of("viewing", status={"requested", "offered"})):
+        return "a viewing is waiting for the owner"
+    if any(t.deal == chat.deal and t.props.get("fraud") for t in g.of("task")):
+        return "a message about payment details: a person handles it"
     if any(a.props["chat"] == chat.props["phone"] for a in g.of("attention", status="open")) and not after_visit(g, chat):
         return "the broker has it (an open card)"
     return None
@@ -228,16 +232,35 @@ def text_for(g: Graph, deal: str, chat, arabic: bool, visit=None, n: int = 1) ->
         return texts[min(n, len(texts)) - 1].format(hi=f"مرحباً{' ' + first if first else ''}" if arabic else hi, what=what), [lst.id] if lst else []
     sent = set(d.get("recommended") or [])
     if sent and not (d.get("hot") or {}).get("listing"):
-        new = [n for n in reception.recommend(g, deal, 5) if n.id not in sent]
+        shown = sent | {r for m in chat.props["messages"] if m["type"] == "sent" for r in m.get("refs", [])}  # never one they've had
+        new = [n for n in reception.recommend(g, deal, 5) if n.id not in shown]
         if new:
+            first_rec = min((m["event"] for m in chat.props["messages"] if m["type"] == "sent" and set(m.get("refs", [])) & sent), default=None)
+            fresh = first_rec is not None and (new[0].event or 0) > first_rec  # listed after the first options went out
             if arabic:
-                return f"مرحباً{' ' + first if first else ''}، وصلنا عقار جديد يناسب ما ذكرته: {reception._listing_line(new[0])}. هل تود معاينته؟", [new[0].id]
-            return f"{hi}, a new one came in that fits what you told me: {reception._listing_line(new[0])}. Would you like to see it?", [new[0].id]
+                lead = "وصلنا عقار جديد يناسب ما ذكرته" if fresh else "وجدت عقاراً آخر يناسب ما ذكرته"
+                return f"مرحباً{' ' + first if first else ''}، {lead}: {reception._listing_line(new[0])}. هل تود معاينته؟", [new[0].id]
+            lead = "a new one came in that fits what you told me" if fresh else "here's another one that fits what you told me"
+            return f"{hi}, {lead}: {reception._listing_line(new[0])}. Would you like to see it?", [new[0].id]
         if arabic:
             return f"مرحباً{' ' + first if first else ''}، هل أعجبك أحد الخيارات التي أرسلتها؟ إذا لم يناسبك أي منها، أخبرني ماذا أغير وسأبحث مجدداً.", []
         which = "the option" if len(sent) == 1 else f"any of the {len(sent)} options"
         return f"{hi}, did {which} I sent catch your eye? If not, tell me what to change and I'll look again.", []
+    # they cancelled their viewing and said nothing since: another time, or something else
+    gone = sorted((v for v in g.of("viewing", status="cancelled") if v.props.get("chat") == chat.props["phone"] and v.props.get("listing")),
+                  key=lambda v: v.props["at"])
+    if gone and not any(v.props.get("chat") == chat.props["phone"] for v in g.of("viewing", status="booked")):
+        lst = g.nodes.get(f"listing:{gone[-1].props['listing']}")
+        what = lst.props["title"] if lst else gone[-1].props["listing"]
+        if arabic:
+            return f"مرحباً{' ' + first if first else ''}، هل تود موعداً آخر لمعاينة {what}، أم أبحث لك عن شيء آخر؟", [lst.id] if lst else []
+        return f"{hi}, would you like another time to see {what}, or shall I look for something else?", [lst.id] if lst else []
     q = qualify.state(g, deal)
+    if q["verdict"] != "DISCOVERY" and q.get("type") in ("seller", "landlord") and q["verdict"] != "ASK_QUESTION":
+        broker = name(d["broker"])  # their own home: its next step, never "options"
+        if arabic:
+            return f"مرحباً{' ' + first if first else ''}، {broker} يجهز الخطوة التالية لعقارك. هل تود إضافة أي شيء؟", []
+        return f"{hi}, {broker} is preparing the next step for your property. Is there anything you'd like to add?", []
     if q["verdict"] == "DISCOVERY":
         if arabic:
             return f"مرحباً{' ' + first if first else ''}، هل تبحث عن شراء أو إيجار أو بيع؟ أنا هنا متى ما كنت جاهز.", []

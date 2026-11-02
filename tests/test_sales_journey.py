@@ -21,6 +21,8 @@ def office():
     o = Office(EventLog())
     demo.company(o)
     leads.sync_listings(o, (Path(demo.__file__).parent / "demo_feed.xml").read_bytes(), by="demo-feed")  # with its photos
+    for li in o.graph().of("listing"):  # vacant, keys at the office: these book at once (docs/viewing-access-spec.md)
+        o.log.append("listing.access", actor="layla", content={"ref": li.props["ref"], "mode": "instant", "by": "layla"})
     return o
 
 

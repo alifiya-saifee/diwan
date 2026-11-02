@@ -197,7 +197,7 @@
     <button class="bell" id="bell" title="Notices" aria-label="Notices">🔔<span class="n" id="belln" hidden></span></button>
     <a class="btn" href="calendar.html">📅 Calendar</a><button id="phonebtn">📱 Sandbox phone</button>
     <button id="morebtn" aria-haspopup="true">More ▾</button>
-    <div class="more" id="more" hidden><a href="qualify.html">Qualification and follow-ups</a><a href="test.html">🧪 Test Rania</a><a href="settings.html">Settings and connections</a></div></div>
+    <div class="more" id="more" hidden><a href="qualify.html">Qualification and follow-ups</a><a href="test.html" class="owner-only">🧪 Test Rania</a><a href="settings.html" class="owner-only">Settings and connections</a></div></div>
   <div class="cols" id="cols">
     <section class="col l">
       <div class="lhead">
@@ -218,10 +218,12 @@
   <div class="row" style="margin-top:8px"><input id="ptext" placeholder="Type as the customer…"><button class="primary" id="psend">Send</button></div>
 </div></div>
 <script type="module">
-import { h, api, post, follow, header, toast, NAMES } from "./app.js";
+import { h, api, post, follow, header, toast, NAMES, SESSION } from "./app.js";
 header("inbox.html");
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
+let PEOPLE = {};
+const isOwner = () => (SESSION.auth ? SESSION.role : PEOPLE[ME]?.role) === "Owner";
 let ME = params.get("as") || (() => { try { return localStorage.getItem("diwan.inbox.as"); } catch { return null; } })() || "omar";
 let view = "all", stage = null, current = params.get("chat"), data = { rows: [], counts: {}, stages: [] }, detail = null, integ = null, team = [];
 const PORTAL = { propertyfinder: "Property Finder", bayut: "Bayut", dubizzle: "Dubizzle", instagram: "Instagram" };
@@ -373,6 +375,7 @@ function attentionBanner(d) {
   const set = /^Follow up /.test(a.reason);  // one the broker set for a day, not something the client asked for
   const why = h("span", { class: "why" }, set ? "⏰ " : a.kind === "call" ? "📞 Wants a call: " : "Needs a reply: ", a.reason, ` · ${NAMES[a.who] || a.who}${a.moved_from ? ` (moved from ${NAMES[a.moved_from] || a.moved_from})` : ""} · due ${due} (${left(a)})`,
     a.kind === "call" ? h("span", { style: "display:block;margin-top:4px" }, ...(a.last || []).map((m) => h("span", { class: "small muted", style: "display:block" }, `${m.who === "client" ? "Client" : m.who === "rania" ? "Rania" : NAMES[m.who] || m.who}: ${m.text}`))) : null);
+  if (d.owner_wait && !a.pooled) return ownerBanner(d, why);
   if (a.pooled) return h("div", { class: "banner att late" }, why,
     h("button", { class: "primary", onclick: async () => { try { await post(`/api/chats/${d.phone}/claim?by=${ME}`); toast("Claimed: it's yours"); } catch (e) { toast(e.message); } load(); } }, "Claim this lead"));
   return h("div", { class: `banner att ${a.overdue ? "late" : ""}` }, why,
@@ -383,6 +386,36 @@ function attentionBanner(d) {
     if (k === "not_needed") { note = prompt("Why is it not needed?") || ""; if (!note.trim()) return; }
     try { await post(`/api/attention/${a.id}/clear`, { action: k, by: ME, note }); } catch (e) { toast(e.message); }
     load(); } }, l)));
+}
+
+// "Converted…" (here or from the Sales room): straight to Convert in the profile, not a hint to go and find it
+function openConvert(tries = 15) {
+  $("cols").classList.add("prof-open");
+  const b = [...document.querySelectorAll(".qa button")].find((x) => /Convert/.test(x.textContent));
+  if (!b && tries) return setTimeout(() => openConvert(tries - 1), 200);  // the profile is still loading
+  if (b && !b.disabled) b.click(); else toast("Only the lead's broker, the Sales manager or the owner converts it");
+}
+
+// A viewing held while the broker checks with the owner or tenant: their answer, and the client is told (docs/viewing-access-spec.md)
+function ownerBanner(d, why) {
+  const w = d.owner_wait, a = d.attention;
+  const say = async (said, times = []) => {
+    try { const r = await post(`/api/appointments/${w.id}/owner`, { by: ME, said, times }); toast(r.told === "sent" ? "Done: the client is told" : "Done: call the client, their 24 hours are over"); }
+    catch (e) { toast(e.message); }
+    load();
+  };
+  const form = h("div", { class: "actform", hidden: true, style: "margin-top:6px" });
+  const other = () => {
+    const ins = [0, 1, 2].map((i) => h("input", { type: "datetime-local", class: "otime", "aria-label": `Time ${i + 1}` }));
+    form.replaceChildren(h("div", { class: "small" }, `Times the ${w.who} can do (one to three):`), h("div", { class: "row" }, ...ins),
+      h("div", { class: "btns" }, h("button", { onclick: () => { form.hidden = true; } }, "Cancel"),
+        h("button", { class: "primary", onclick: () => say("other", ins.map((x) => x.value).filter(Boolean).map((v) => `${v}:00+04:00`)) }, "Offer these")));
+    form.hidden = false;
+  };
+  return h("div", { class: `banner att owner ${a.overdue ? "late" : ""}` }, why,
+    h("button", { class: "primary", onclick: () => say("yes") }, `✓ ${w.who === "tenant" ? "Tenant" : "Owner"} said yes`),
+    h("button", { onclick: other }, "Other times…"),
+    h("button", { onclick: () => confirm("Tell the client it can't be shown then?") && say("no") }, "Not possible"), form);
 }
 
 // After a call the broker says what came of it: nothing is left without a next step.
@@ -396,7 +429,7 @@ function outcomeBanner(d) {
   const later = () => { const day = h("input", { type: "date", value: new Date(Date.now() + 864e5 + 144e5).toISOString().slice(0, 10) }), t = h("input", { type: "time", value: "10:00" });
     box.replaceChildren(day, " ", t, " ", h("button", { class: "primary", onclick: () => say("follow_up", { at: `${day.value}T${t.value}:00+04:00` }) }, "Save")); };
   return h("div", { class: "banner warn" }, h("span", { class: "why" }, "What came of the call? "),
-    h("button", { onclick: () => { $("cols").classList.add("prof-open"); toast("Use Convert in the profile"); } }, "Converted…"), h("button", { onclick: later }, "Follow up on…"),
+    h("button", { onclick: openConvert }, "Converted…"), h("button", { onclick: later }, "Follow up on…"),
     h("button", { onclick: lost }, "Not interested…"), h("button", { onclick: () => say("no_response") }, "No response"), box);
 }
 
@@ -654,15 +687,20 @@ function actPanel(d) {
     h("select", { id: "pto" }, ...team.filter((t) => t.id !== d.broker).map((t) => h("option", { value: t.id }, `${t.name}${t.on_shift ? "" : " (off)"}`))),
     h("div", { class: "btns" }, h("button", { onclick: hide }, "Cancel"),
       h("button", { class: "primary", onclick: () => go(`/api/chats/${d.phone}/assign`, { to: $("pto").value }, () => `Transferred to ${NAMES[$("pto").value] || $("pto").value}`) }, "Transfer"))) }, "⇄ Transfer"));
-  if (!desk.agreed && !desk.pending && desk.property?.needed) qa.append(h("button", { disabled: !can || closed, title: "The Deal desk asks which property it is, then the agreed price",  // docs/deal-desk.md item 17
+  const hint = desk.property?.needed ? d.listing_hint : null;  // the listing they chose or saw: offered, so nobody asks again
+  if (!desk.agreed && !desk.pending && desk.property?.needed && !hint) qa.append(h("button", { disabled: !can || closed, title: "The Deal desk asks which property it is, then the agreed price",  // docs/deal-desk.md item 17
     onclick: () => { location.href = `/web/deal.html?deal=${encodeURIComponent(d.deal)}&as=${encodeURIComponent(ME)}&convert=1`; } }, "✓ Convert"));
   else if (!desk.agreed && !desk.pending) qa.append(h("button", { disabled: !can || closed, onclick: () => show(
+    hint ? h("div", { class: "small", id: "phint" }, "Property: ", h("b", {}, `${hint.title} (${hint.ref})`), ", the one they chose. ",
+      h("a", { href: `/web/deal.html?deal=${encodeURIComponent(d.deal)}&as=${encodeURIComponent(ME)}&convert=1` }, "Another property…")) : null,
     h("label", { for: "pamount" }, `Agreed price (AED)${desk.listing_aed ? ` · listed at ${desk.listing_aed.toLocaleString("en")}` : ""}`),
     h("input", { id: "pamount", type: "number", min: 1, step: 1000, value: desk.listing_aed || "" }),
     h("div", { class: "small muted" }, `Converting moves the deal to ${desk.converted_at || "its converted stage"} and starts the paperwork. Further below the listing than the owner's limit, it waits for the owner.`),
     h("div", { class: "btns" }, h("button", { onclick: hide }, "Cancel"),
-      h("button", { class: "primary", onclick: () => go(`/api/desk/deals/${encodeURIComponent(d.deal)}/convert`, { amount: $("pamount").value },
-        (r) => r.waiting ? `Waiting for ${r.waiting} to approve the price` : "Converted") }, "Convert"))) }, "✓ Convert"));
+      h("button", { class: "primary", onclick: async () => {
+        if (hint) { try { await post(`/api/desk/deals/${encodeURIComponent(d.deal)}/property`, { by: ME, property: { source: "listing", ref: hint.ref } }); } catch (e) { toast(e.message); return; } }
+        go(`/api/desk/deals/${encodeURIComponent(d.deal)}/convert`, { amount: $("pamount").value }, (r) => r.waiting ? `Waiting for ${r.waiting} to approve the price` : "Converted");
+      } }, "Convert"))) }, "✓ Convert"));
   const tomorrow = new Date(Date.now() + 864e5 + 4 * 36e5).toISOString().slice(0, 10);
   qa.append(h("button", { disabled: !can, onclick: () => show(h("label", {}, "Follow up on"),
     h("div", { class: "two" }, h("input", { id: "pfday", type: "date", value: tomorrow, "aria-label": "Day" }), h("input", { id: "pftime", type: "time", value: "10:00", step: 900, "aria-label": "Time" })),
@@ -722,7 +760,7 @@ function renderProfile() {
     d.cards.length || d.tasks.length ? h("div", { class: "sec" }, h("h2", {}, "Open work"),
       ...d.cards.map((c) => h("div", { class: "fact" }, h("span", { class: "chip warn" }, c.who), " ", c.text)),
       ...d.tasks.map((t) => h("div", { class: "fact" }, h("span", { class: "chip" }, t.who), " ", t.text))) : null,
-    h("div", { class: "sec row" }, h("a", { class: "btn", href: "graph.html" }, "Memory graph"), h("a", { class: "btn", href: "office3d.html" }, "Ask Nova")));
+    isOwner() ? h("div", { class: "sec row" }, h("a", { class: "btn", href: "graph.html" }, "Memory graph"), h("a", { class: "btn", href: "office3d.html" }, "Ask Nova")) : null);
 }
 
 $("phonebtn").onclick = () => $("phone").hidden = !$("phone").hidden;
@@ -742,8 +780,13 @@ $("ptext").onkeydown = (e) => { if (e.key === "Enter") psend(); };
 let qt; $("q").oninput = () => { clearTimeout(qt); qt = setTimeout(load, 200); };
 
 team = await api("/api/team");
-$("me").replaceChildren(...[...team.map((t) => [t.id, `${t.name} · broker`]), ["layla", "Layla · owner"]].map(([id, l]) => h("option", { value: id, selected: id === ME }, `Viewing as ${l}`)));
-$("me").onchange = (e) => { ME = e.target.value; try { localStorage.setItem("diwan.inbox.as", ME); } catch {} view = "attention"; load(); loadNotices(); };
+PEOPLE = await api("/api/people").catch(() => ({}));
+const leaders = Object.entries(PEOPLE).filter(([, p]) => ["Owner", "Sales manager"].includes(p.role));  // who else reads the Inbox
+$("me").replaceChildren(...[...team.map((t) => [t.id, `${t.name} · broker`]), ...leaders.map(([id, p]) => [id, `${p.name} · ${p.role.toLowerCase()}`])]
+  .map(([id, l]) => h("option", { value: id, selected: id === ME }, `Viewing as ${l}`)));
+const ownerOnly = () => { for (const a of document.querySelectorAll(".owner-only")) a.hidden = !isOwner(); };  // pages only the owner opens
+$("me").onchange = (e) => { ME = e.target.value; try { localStorage.setItem("diwan.inbox.as", ME); } catch {} view = "attention"; ownerOnly(); load(); loadNotices(); };
+ownerOnly();
 loadNotices();
 integ = await api("/api/line");
 const p = integ.provider;
@@ -760,7 +803,7 @@ $("line").replaceChildren(
     h("span", { class: `dot ${connected ? "on" : pname ? "warn" : ""}` }),
     connected ? `WhatsApp via ${pname}` : pname ? `WhatsApp: ${pname} not connected · sandbox only` : "WhatsApp: no line yet · sandbox only"));
 if (connected) $("phonehint").textContent = "WhatsApp is connected: real messages arrive too. This sandbox still works for testing.";
-load();
+load().then(() => { if (params.get("convert")) openConvert(); });  // from the Sales room's "Converted…"
 follow((evs) => {
   if (evs.some((e) => /^(chat\.|fact\.|appointment\.|stage\.|task\.|lead\.|attention\.)/.test(e.type))) load();
   if (evs.some((e) => e.type.startsWith("notify."))) { loadNotices(); ping(evs); }

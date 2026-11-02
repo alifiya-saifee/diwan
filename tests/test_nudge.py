@@ -170,7 +170,8 @@ def test_no_follow_up_while_the_broker_has_an_open_card(office):
 
 def test_no_follow_up_before_a_booked_viewing(office):
     say(office, "Hi")
-    say(office, "Can I see MC-1204 next Saturday at 4pm?")
+    say(office, "Can I see MC-1204 next Saturday at 4pm?")  # "next Saturday" could be two: she asks (docs/dates-spec.md)
+    say(office, "The first one")
     g = office.graph()
     assert g.of("viewing", status="booked")
     assert nudge.state(g, g.nodes[f"chat:{PH}"], datetime.now(DUBAI))["why_not"] == "a viewing is coming up"

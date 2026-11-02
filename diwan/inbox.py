@@ -34,7 +34,7 @@ SAMPLE_TEMPLATES = [
     {"name": "appointment_changed", "status": "SAMPLE", "language": "en", "category": "UTILITY", "params": 3,
      "body": "Hi {{1}}, your {{2}} has been moved to {{3}}. Reply here if that doesn't suit you."},
     {"name": "appointment_cancelled", "status": "SAMPLE", "language": "en", "category": "UTILITY", "params": 3,
-     "body": "Hi {{1}}, your {{2}} on {{3}} has been cancelled. Reply here if you'd like another time."},
+     "body": "Hi {{1}}, your {{2}} on {{3}} has been cancelled. Reply here if you'd like another time."},
     {"name": "after_viewing", "status": "SAMPLE", "language": "en", "category": "UTILITY", "params": 1,
      "body": "Hi {{1}}, thank you for coming to the viewing. How did you find it? Reply here and I'll take it from there."},
 ]
@@ -201,6 +201,8 @@ def detail(office: Office, phone: str, now: datetime | None = None) -> dict:
         "quiet": _quiet(g, c, now) if deal and f"deal:{deal}" in g.nodes else None,
         "visit": g.nodes[f"deal:{deal}"].props.get("visit") if deal and f"deal:{deal}" in g.nodes else None,
         "calls": _calls(g, c),
+        "owner_wait": _owner_wait(g, c),
+        "listing_hint": _listing_hint(g, deal),
         "needs_outcome": _needs_outcome(g, c),
         "outcome": g.nodes[f"deal:{deal}"].props.get("outcome") if deal and f"deal:{deal}" in g.nodes else None,
     }
@@ -209,6 +211,35 @@ def detail(office: Office, phone: str, now: datetime | None = None) -> dict:
 def _needs_outcome(g: Graph, chat) -> dict | None:
     from diwan import sales
     return sales.needs_outcome(g, chat)
+
+
+def _listing_hint(g: Graph, deal: str | None) -> dict | None:
+    """Our listing this client chose or went to see: Convert offers it, so the broker isn't asked which property again."""
+    if not deal or f"deal:{deal}" not in g.nodes:
+        return None
+    # what they did themselves comes first: the one they went to see, then the one they named, then the one they picked
+    seen = sorted((v for v in g.of("viewing") if v.deal == deal and v.status in ("booked", "done") and v.props.get("listing")), key=lambda v: v.props["at"])
+    lid = f"listing:{seen[-1].props['listing']}" if seen else None
+    if not lid:  # the listing they last asked about by name ("is MC-1204 still available?")
+        from diwan.agents import reception
+        ch = next((c for c in g.of("chat") if c.deal == deal), None)
+        asked = next((n for m in reversed(ch.props["messages"] if ch else []) if m["type"] == "received"
+                      for n in [reception._listing_named(g, m["text"], None)] if n is not None), None)  # named by them, not "it"
+        lid = asked.id if asked is not None else None
+    lid = lid or (g.nodes[f"deal:{deal}"].props.get("hot") or {}).get("listing")
+    n = g.nodes.get(lid) if lid else None
+    return {"ref": n.props["ref"], "title": n.props["title"]} if n is not None and n.status == "available" else None
+
+
+def _owner_wait(g: Graph, chat) -> dict | None:
+    """A viewing held for this client while the broker checks with the owner or tenant (docs/viewing-access-spec.md)."""
+    from diwan import viewings
+    v = viewings.waiting(g, chat.props["phone"])
+    if not v:
+        return None
+    lst = g.nodes.get(f"listing:{v.props.get('listing')}")
+    return {"id": v.id, "at": v.props["at"], "listing": v.props.get("listing"), "title": lst.props["title"] if lst else v.props.get("listing"),
+            "who": viewings.access(g, lst)["who"] if lst else "owner"}
 
 
 def _calls(g: Graph, chat) -> list[dict]:
