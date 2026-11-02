@@ -8,6 +8,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from held import confirm  # noqa: E402
 from diwan.agents import nudge  # noqa: E402
 from diwan.slots import DUBAI  # noqa: E402
 
@@ -100,6 +102,7 @@ with sync_playwright() as p:
     D = "971505550004"
     customer(D, "Hi", name="Mona Saleh")
     customer(D, "Can I see MC-1204 on Tuesday at 11am?", name="Mona Saleh")
+    confirm(api, BASE, D)  # the broker confirms it (the owner's rule)
     run(TUE.replace(hour=9, minute=5))
     pg.goto(f"{BASE}/web/inbox.html?as=omar")
     pg.wait_for_timeout(700)
@@ -117,6 +120,7 @@ with sync_playwright() as p:
     day = "tomorrow" if (tomorrow - NOW).days < 2 and tomorrow.date() == (NOW + timedelta(days=1)).date() else tomorrow.strftime("%A")
     customer(E, "Hi", name="Omar Faris")
     r = customer(E, f"Can I see MC-1204 {day} at 4pm?", name="Omar Faris")
+    confirm(api, BASE, E)
     at = tomorrow.replace(hour=16, minute=0, second=0, microsecond=0)
     run(at - timedelta(hours=23))
     msgs = [m for m in api.get(f"{BASE}/api/chats/{E}").json()["messages"] if m.get("reminder")]

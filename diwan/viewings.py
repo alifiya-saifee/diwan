@@ -3,6 +3,7 @@ agreeing; a vacant unit with keys at the office books at once; an off-plan unit 
 its hours. Rania holds the time asked for and the broker answers for the owner; the client is told either way."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 
 from diwan import slots
@@ -99,8 +100,10 @@ def waiting(g: Graph, chat: str):
     return next((v for v in g.of("viewing", status="requested") if v.props.get("chat") == chat), None)
 
 
-def request(office: Office, phone: str, deal: str, listing: Node, when: datetime, k: dict, now: datetime, cause: int) -> tuple[str, list[str]]:
-    """Hold the time on the broker's calendar and ask them to check with the owner; the client is told honestly."""
+def request(office: Office, phone: str, deal: str, listing: Node, when: datetime, k: dict, now: datetime, cause: int,
+            broker_confirms: bool = False) -> tuple[str, list[str]]:
+    """Hold the time on the broker's calendar until they confirm it with the client (the owner's rule), or check it with
+    the owner when someone lives there; the client is told honestly (docs/agent-confirms-spec.md)."""
     from diwan import leads
     from diwan.agents import reception
     g = office.graph()
@@ -108,9 +111,21 @@ def request(office: Office, phone: str, deal: str, listing: Node, when: datetime
     chat = g.nodes[f"chat:{phone}"]
     vid = f"V{len(g.of('viewing')) + 1}"
     a = access(g, listing)
+    title = f"{listing.props['title']} ({listing.props['ref']})"
     ev = office.log.append("appointment.requested", actor=reception.RANIA, agent=reception.RANIA, deal=deal, caused_by=cause,
                            content={"id": vid, "listing": listing.props["ref"], "broker": broker, "at": when.isoformat(), "customer": chat.label,
-                                    "chat": phone, "kind": k["id"], "kind_name": k["name"], "minutes": k["minutes"], "where": k["where"]})
+                                    "chat": phone, "kind": k["id"], "kind_name": k["name"], "minutes": k["minutes"], "where": k["where"],
+                                    "confirm": "broker" if broker_confirms else a["who"]})
+    if broker_confirms:
+        office.log.append("viewing.requested", actor=reception.RANIA, agent=reception.RANIA, deal=deal, caused_by=ev["id"],
+                          content={"chat": phone, "listing": listing.props["ref"], "at": when.isoformat(), "id": vid})
+        lives = f" Someone lives there: check with the {a['who']} too." if a["mode"] == "ask" else ""
+        leads.raise_card(office, phone, kind="reply", to=broker, cause=ev["id"], now=now, replace=True,
+                         reason=f"Viewing request: {title}, {slots.say(when)}. Talk to the client, confirm the place, then book.{lives}")
+        if re.search(r"[\u0600-\u06ff]", next((m["text"] for m in reversed(chat.props["messages"]) if m["type"] == "received"), "")):
+            return f"شكراً، سجلت رغبتك في رؤية {title} {slots.say(when)}. سيتحدث معك {name(broker)} ليؤكد العقار والموعد.", [listing.id, vid]
+        return (f"Thanks, I've noted you'd like to see {title}, {slots.say(when)}. {name(broker)} will talk to you and confirm the "
+                f"place and the time."), [listing.id, vid]
     due = now + timedelta(minutes=settings(g)["owner_minutes"])
     leads.raise_card(office, phone, kind="reply", to=broker, cause=ev["id"], now=now, replace=True, due=due,
                      reason=f"Check with the {a['who']}: {chat.label} wants to view {listing.props['ref']} {slots.say(when)}")
@@ -119,9 +134,22 @@ def request(office: Office, phone: str, deal: str, listing: Node, when: datetime
             f"and confirm here as soon as they reply."), [listing.id, vid]
 
 
+def by_broker(v: Node) -> bool:
+    """Held for the broker to confirm with the client (the owner's rule), not for an owner or tenant to agree."""
+    return v.props.get("confirm") == "broker"
+
+
+def held_line(g: Graph, v: Node, it: bool = False) -> str:
+    """What the client hears about a held viewing: who confirms it, and when they asked for (`it`: the time was just said)."""
+    at = "it" if it else slots.say(datetime.fromisoformat(v.props["at"]))
+    if by_broker(v):
+        return f"{name(v.props['broker'])} will confirm {at} with you"
+    return f"I'm waiting for the {v.props.get('confirm') or 'owner'} to confirm {at}"
+
+
 def answer(office: Office, vid: str, *, by: str, said: str, times: list[str] | None = None, now: datetime | None = None) -> dict:
     """The broker's answer for the owner: yes (booked), other times (offered to the client), or not possible."""
-    from diwan import leads
+    from diwan import inbox, leads
     from diwan.agents import reception
     now = now or datetime.now(slots.DUBAI)
     g = office.graph()
@@ -139,12 +167,16 @@ def answer(office: Office, vid: str, *, by: str, said: str, times: list[str] | N
     chat = g.nodes.get(f"chat:{p['chat']}")
     first = reception.first_name(chat.label) if chat else None
     hi, who = f"Hi {first}, " if first else "", viewings_who(g, listing)
+    broker_ = by_broker(v)
+    who_ = name(p["broker"]) if broker_ else f"the {who}"
     if said == "yes":
         if when <= now:
             raise ValueError("That time has passed: offer other times instead")
         ev = office.log.append("appointment.confirmed", actor=by, deal=v.deal, content={"id": vid, "by": by})
         office.add_task(v.deal, reception.RANIA, f"Viewing of {p['listing']} with {p.get('customer')}, {slots.say(when)}", needs_person=p["broker"], by=by, caused_by=ev["id"])
-        text = f"Good news{', ' + first if first else ''}: the {who} confirmed. Booked: {what} with {name(p['broker'])}, {slots.say(when)}."
+        inbox.auto_stage(office, v.deal, cause=ev["id"])
+        text = (f"Good news{', ' + first if first else ''}: " + ("it's confirmed. " if broker_ else f"the {who} confirmed. ")
+                + f"Booked: {what} with {name(p['broker'])}, {slots.say(when)}{place(g, listing)}.")
     elif said == "other":
         got = []
         for t in times or []:
@@ -158,10 +190,11 @@ def answer(office: Office, vid: str, *, by: str, said: str, times: list[str] | N
             raise ValueError("Give one to three times the owner can do")
         got.sort()
         ev = office.log.append("appointment.offered", actor=by, deal=v.deal, content={"id": vid, "times": [t.isoformat() for t in got], "by": by})
-        text = (f"{hi}the {who} can't do {slots.say(when)}, but {', '.join(slots.say(t) for t in got[:-1])}{' or ' if len(got) > 1 else ''}"
-                f"{slots.say(got[-1])} works for them. Which suits you?")
+        text = (f"{hi}{who_} can't do {slots.say(when)}, but {', '.join(slots.say(t) for t in got[:-1])}{' or ' if len(got) > 1 else ''}"
+                f"{slots.say(got[-1])} works{'' if broker_ else ' for them'}. Which suits you?")
     elif said == "no":
-        ev = office.log.append("appointment.cancelled", actor=by, deal=v.deal, content={"id": vid, "by": "owner", "reason": "The owner can't host it then"})
+        ev = office.log.append("appointment.cancelled", actor=by, deal=v.deal, content={"id": vid, "by": "broker" if broker_ else "owner",
+                               "reason": "Not available to view then" if broker_ else "The owner can't host it then"})
         text = f"{hi}I'm sorry, {what} can't be shown {slots.say(when)}. {name(p['broker'])} will suggest other options for you here."
     else:
         raise ValueError("Answer yes, other times, or not possible")
@@ -170,8 +203,14 @@ def answer(office: Office, vid: str, *, by: str, said: str, times: list[str] | N
     return {"id": vid, "told": tell(office, p["chat"], text, vid, by, ev["id"], now), "text": text}
 
 
+def place(g: Graph, listing: Node | None) -> str:
+    """Where to meet, when it isn't the home itself: the developer's gallery for off-plan."""
+    a = access(g, listing) if listing else {}
+    return f" at {a['place']}" if a.get("mode") == "developer" else ""
+
+
 def viewings_who(g: Graph, listing: Node | None) -> str:
-    return access(g, listing)["who"] if listing else "owner"
+    return access(g, listing).get("who", "owner") if listing else "owner"
 
 
 def tell(office: Office, phone: str, msg: str, vid: str, by: str, cause: int, now: datetime) -> str:

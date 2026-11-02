@@ -7,7 +7,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from diwan import slots  # noqa: E402
+from held import confirm  # noqa: E402
 from diwan.slots import DUBAI  # noqa: E402
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8093"
@@ -59,9 +61,11 @@ with sync_playwright() as p:
           shot("01-asked"), r)
 
     r = customer(S, "The second one", "Sara Khan")
+    held = r.startswith("Thanks, I've noted you'd like to see Unit 1204") and slots.say_day(A2) in r
+    r2 = confirm(api, BASE, S, pg)  # the broker confirms it in the Inbox
     v = booked("Sara Khan")
-    check(2, "'The second one' books the viewing on that day at the time she first asked",
-          r.startswith("Booked: Unit 1204") and v and v[0]["at"][:16] == f"{A2.isoformat()}T16:00", shot("02-booked-second"), r[:120])
+    check(2, "'The second one' asks for that day at the time she first asked; once the broker confirms, it's booked then",
+          held and r2.startswith("Good news, Sara: it's confirmed. Booked: Unit 1204") and v and v[0]["at"][:16] == f"{A2.isoformat()}T16:00", shot("02-booked-second"), r[:120])
 
     pg.goto(f"{BASE}/web/calendar.html?as=layla&start={A2.isoformat()}")
     pg.wait_for_timeout(800)
@@ -71,6 +75,7 @@ with sync_playwright() as p:
     customer(B, "Hi", "Ali Noor")
     written = f"{LATER.day} {LATER:%b}"
     r = customer(B, f"Can I see MC-1204 on {written} at 11am?", "Ali Noor")
+    confirm(api, BASE, B)
     v = booked("Ali Noor")
     check(4, f"A written date ('{written}') books that date, not the nearest weekday",
           slots.say_day(LATER) in r and v and v[0]["at"][:10] == LATER.isoformat(), shot("04-written-date"), r[:120])

@@ -1,6 +1,7 @@
 """Every kind of client conversation through Rania, read like a client would (the 2 Nov audit, kept). Each chat is checked
 for a message sent twice, a question asked twice running, broken text and an unexpected hand-over, and the cases that
-went wrong once have their expected outcome. Print every transcript to read them by eye:
+went wrong once have their expected outcome. Each runs twice: as the app runs by default (the broker confirms a viewing,
+docs/agent-confirms-spec.md) and with "Rania books" on. Print every transcript to read them by eye:
 DIWAN_OFFLINE=1 DIWAN_TAPE=off .venv/bin/python tests/test_conversations.py transcripts.txt"""
 import re
 import sys
@@ -59,6 +60,7 @@ SCENARIOS = {
     "wife comes too": ["Hi", "Can I see MC-1204 on Tuesday at 4pm?", "My wife will come too, is that ok?"],
     "three flats": ["Hi", "Can I see MC-1204, BB-305 and JVC-88 on Saturday?"],
     "hello again": ["Hi", "I want to buy", "Hello"],
+    "asked after a request": ["Hi", "Can I see MC-1204 on Tuesday at 4pm?", "I want to buy", "Dubai Marina"],
 }
 HANDOVER = {"visa", "complaint"}  # a person answers these, by design
 BAD = re.compile(r"\bNone\b|\{|\}|\bnan\b|\[\]|  |\bnull\b|undefined|just to check: just to check", re.I)
@@ -71,8 +73,10 @@ def office():
     return o
 
 
-def play(name, msgs):
-    """The conversation, then a day or two of quiet (follow-ups and reminders); the office and the chat."""
+def play(name, msgs, confirms=False):
+    """The conversation, then a day or two of quiet (follow-ups and reminders); the office and the chat. `confirms`: the
+    broker confirms each viewing (the app's default) instead of Rania booking it."""
+    reception.agent_confirms = lambda g: confirms
     o, ph, t, handed = office(), f"97150{abs(hash(name)) % 10**7:07d}", MON, []
     for m in msgs:
         t += timedelta(minutes=2)
@@ -84,6 +88,12 @@ def play(name, msgs):
             r = reception.message(o, ph, m, name_="Sara Khan", now=t)
         if r.get("mode") == "human" and r.get("suggestion"):
             handed.append(m)
+    for _ in range(6):  # each follow-up at its due time, as the app's sweep (every tick) sends it
+        due = nudge.state(o.graph(), o.graph().nodes[f"chat:{ph}"], t)["next"]
+        if not due or datetime.fromisoformat(due) > MON + timedelta(days=3):
+            break
+        t = max(t, datetime.fromisoformat(due))
+        nudge.sweep(o, t)
     for at in (MON + timedelta(days=1, hours=1), MON + timedelta(days=3)):
         nudge.sweep(o, at)
         reminders.sweep(o, at)
@@ -102,14 +112,20 @@ def problems(name, chat, handed):
     return out
 
 
+@pytest.fixture(autouse=True)
+def _mode_back(monkeypatch):
+    monkeypatch.setattr(reception, "agent_confirms", reception.agent_confirms)  # play() switches it: put back after each test
+
+
+@pytest.mark.parametrize("confirms", [True, False], ids=["broker-confirms", "rania-books"])
 @pytest.mark.parametrize("name", list(SCENARIOS))
-def test_no_repeats_no_broken_text_no_surprise_handover(name):
-    _, chat, handed = play(name, SCENARIOS[name])
+def test_no_repeats_no_broken_text_no_surprise_handover(name, confirms):
+    _, chat, handed = play(name, SCENARIOS[name], confirms)
     assert problems(name, chat, handed) == []
 
 
-def said(name):
-    o, chat, _ = play(name, SCENARIOS[name])
+def said(name, confirms=False):
+    o, chat, _ = play(name, SCENARIOS[name], confirms)
     return o, [m["text"] for m in chat.props["messages"] if m["type"] == "sent"], chat
 
 
@@ -164,7 +180,7 @@ def test_several_listings_and_a_bare_time_are_heard():
     _, sent, _ = said("three flats")
     assert sent[1].startswith("Happy to show you MC-1204") and "Saturday 7 Nov" in sent[1]
     _, sent, _ = said("still available")
-    assert any("Which one would you like to see on Saturday 7 Nov, 11:00 AM" in s for s in sent)
+    assert any(s.startswith("Got it, Saturday 7 Nov, 11:00 AM. Which one would you like to see: ") for s in sent)
 
 
 def test_after_fraud_or_a_cancelled_viewing_the_follow_up_fits():
@@ -179,14 +195,89 @@ def test_arabic_is_answered_in_arabic_once():
     assert sent[0].count("؟") == 1 and "دبي مارينا" not in sent[2]
 
 
+# The app's default: the broker confirms each viewing; Rania holds the time and answers from it (docs/agent-confirms-spec.md)
+def test_held_for_the_broker_the_client_is_told_and_nothing_is_booked():
+    o, sent, chat = said("thanks after booking", True)
+    v = next(v for v in o.graph().of("viewing") if v.props.get("chat") == chat.props["phone"])
+    assert v.status == "requested" and v.props["confirm"] == "broker"
+    assert sent[1].startswith("Thanks, I've noted you'd like to see Unit 1204") and "buy or to rent" not in sent[1]
+    assert sent[2] == "You're welcome, Sara! Omar will confirm Tuesday 3 Nov, 4:00 PM with you." and sent[3] == "🙂"
+    assert not any(s.startswith("Hi Sara, a reminder") for s in sent)  # nothing is reminded before it is booked
+
+
+def test_a_held_viewing_moves_and_cancels():
+    o, sent, chat = said("reschedule and cancel", True)
+    assert sent[2] == "Done: I've asked for Wednesday 4 Nov, 5:00 PM instead. Omar will confirm it with you."
+    assert sent[3].startswith("No problem, I've cancelled your request to see Unit 1204")
+    assert not o.graph().of("viewing", chat.deal, "requested") and not o.graph().of("attention", chat.deal, "open")
+
+
+def test_a_held_viewing_answers_news_a_companion_and_what_time():
+    _, sent, _ = said("lived-in home", True)
+    assert sent[2].startswith("Omar is checking Villa 88") and "Tuesday 3 Nov, 4:00 PM" in sent[2]
+    _, sent, _ = said("wife comes too", True)
+    assert sent[2].startswith("Of course, they're very welcome, Sara. See you Tuesday 3 Nov, 4:00 PM, once Omar confirms it.")
+    _, sent, _ = said("next tuesday", True)
+    assert sent[3] == "You asked to see Unit 1204, Marina Crest (MC-1204) on Tuesday 10 Nov, 4:00 PM. Omar will confirm it with you."
+
+
+def test_the_broker_confirms_and_the_client_hears_booked():
+    from diwan import viewings
+    o, _, chat = said("written date", True)
+    v = next(v for v in o.graph().of("viewing", status="requested") if v.props.get("chat") == chat.props["phone"])
+    from diwan import inbox
+    assert inbox.detail(o, chat.props["phone"], MON + timedelta(minutes=30))["owner_wait"]["confirm"] == "broker"  # the Inbox shows it
+    r = viewings.answer(o, v.id, by=v.props["broker"], said="yes", now=MON + timedelta(minutes=30))
+    assert r["text"].startswith("Good news, Sara: it's confirmed. Booked: Unit 1204") and o.graph().nodes[v.id].status == "booked"
+    assert o.graph().nodes[f"deal:{chat.deal}"].props.get("stage") == "Viewing booked"
+
+
+def test_on_the_calendar_the_held_viewing_becomes_the_booking():
+    o, _, chat = said("written date", True)
+    v = next(v for v in o.graph().of("viewing", status="requested") if v.props.get("chat") == chat.props["phone"])
+    p = v.props
+    r = reception.add_by_hand(o, by=p["broker"], broker=p["broker"], phone=p["chat"], name_=None, kind_id=p["kind"], ref=p["listing"],
+                              when=datetime.fromisoformat(p["at"]) + timedelta(hours=1), now=MON + timedelta(minutes=30), confirmed=True)
+    mine = [x for x in o.graph().of("viewing") if x.props.get("chat") == chat.props["phone"]]
+    assert r["id"] == v.id and len(mine) == 1 and mine[0].status == "booked" and mine[0].props["at"].startswith("2026-11-12T12:00")
+
+
+
+def test_a_confirmed_viewing_moved_by_the_client_waits_for_the_broker_again():
+    from diwan import viewings
+    reception.agent_confirms = lambda g: True
+    o, ph = office(), "971500000777"
+    for t, m in ((MON, "Hi"), (MON + timedelta(minutes=2), "Can I see MC-1204 on Tuesday at 4pm?")):
+        reception.message(o, ph, m, name_="Sara Khan", now=t)
+    v = next(v for v in o.graph().of("viewing") if v.props.get("chat") == ph)
+    viewings.answer(o, v.id, by=v.props["broker"], said="yes", now=MON + timedelta(minutes=5))
+    r = reception.message(o, ph, "Can we move it to Wednesday at 5pm?", name_="Sara Khan", now=MON + timedelta(minutes=9))
+    v = o.graph().nodes[v.id]
+    assert r["reply"] == "Done: I've asked for Wednesday 4 Nov, 5:00 PM instead. Omar will confirm it with you."
+    assert v.status == "requested" and v.props["at"].startswith("2026-11-04T17:00")
+
+
+def test_a_question_never_put_to_them_isnt_counted_as_not_sure():
+    for confirms in (True, False):
+        _, sent, _ = said("asked after a request", confirms)
+        assert "rough idea" not in sent[-1] and not sent[-1].startswith("No problem"), sent[-1]
+
+
+def test_a_follow_up_picks_up_the_question_left_open():
+    for name, want in (("three flats", "Hi Sara, no rush: which would you like to see first, and at what time?"),
+                       ("question mid-qualifying", "Hi Sara, no rush: how many bedrooms?")):  # never a listing "that fits" before it can
+        for confirms in (True, False):
+            _, _, chat = said(name, confirms)
+            assert [m["text"] for m in chat.props["messages"] if m.get("nudge")][:1] == [want], (name, confirms)
+
 if __name__ == "__main__":
     lines = []
-    for n, msgs in SCENARIOS.items():
-        _, ch, handed = play(n, msgs)
+    for n, msgs in [(f"{n} [{m}]", (msgs, m == "broker confirms")) for n, msgs in SCENARIOS.items() for m in ("broker confirms", "rania books")]:
+        _, ch, handed = play(n, *msgs)
         lines.append(f"\n=== {n} ({ch.props['mode']})")
         for m in ch.props["messages"]:
             if m["type"] in ("received", "sent"):
                 lines.append(f"  {'client' if m['type'] == 'received' else 'RANIA ' if m['by'] == 'rania' else m['by'][:6]}: {m['text']}")
-        for p in problems(n, ch, handed):
+        for p in problems(n.split(" [")[0], ch, handed):
             lines.append(f"  !! {p}")
     Path(sys.argv[1] if len(sys.argv) > 1 else "transcripts.txt").write_text("\n".join(lines))

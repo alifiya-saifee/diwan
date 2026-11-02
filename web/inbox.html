@@ -407,13 +407,14 @@ function ownerBanner(d, why) {
   const form = h("div", { class: "actform", hidden: true, style: "margin-top:6px" });
   const other = () => {
     const ins = [0, 1, 2].map((i) => h("input", { type: "datetime-local", class: "otime", "aria-label": `Time ${i + 1}` }));
-    form.replaceChildren(h("div", { class: "small" }, `Times the ${w.who} can do (one to three):`), h("div", { class: "row" }, ...ins),
+    form.replaceChildren(h("div", { class: "small" }, w.confirm === "broker" ? "Times that work (one to three):" : `Times the ${w.who} can do (one to three):`), h("div", { class: "row" }, ...ins),
       h("div", { class: "btns" }, h("button", { onclick: () => { form.hidden = true; } }, "Cancel"),
         h("button", { class: "primary", onclick: () => say("other", ins.map((x) => x.value).filter(Boolean).map((v) => `${v}:00+04:00`)) }, "Offer these")));
     form.hidden = false;
   };
   return h("div", { class: `banner att owner ${a.overdue ? "late" : ""}` }, why,
-    h("button", { class: "primary", onclick: () => say("yes") }, `✓ ${w.who === "tenant" ? "Tenant" : "Owner"} said yes`),
+    h("button", { class: "primary", onclick: () => say("yes") }, w.confirm === "broker" ? "✓ Confirmed: book it" : `✓ ${w.who === "tenant" ? "Tenant" : "Owner"} said yes`),
+    w.confirm === "broker" ? h("a", { class: "btn", href: `calendar.html?book=${encodeURIComponent(d.phone)}&as=${encodeURIComponent(ME)}&ref=${encodeURIComponent(w.listing)}&at=${encodeURIComponent(w.at)}` }, "📅 Confirm and book the viewing") : null,
     h("button", { onclick: other }, "Other times…"),
     h("button", { onclick: () => confirm("Tell the client it can't be shown then?") && say("no") }, "Not possible"), form);
 }

@@ -451,7 +451,7 @@ def week(g: Graph, start, *, person: str, broker: str | None = None, now: dateti
             k = kind(g, p.get("kind"))
             appts.append({"id": v.id, "broker": p["broker"], "at": at.isoformat(), "minutes": int(p.get("minutes") or k["minutes"]),
                           "kind": p.get("kind_name") or k["name"], "where": p.get("where") or k["where"], "customer": p.get("customer"),
-                          "listing": p.get("listing"), "chat": p.get("chat"), "status": v.status, "moved_from": p.get("moved_from"),
+                          "listing": p.get("listing"), "chat": p.get("chat"), "status": v.status, "confirm": p.get("confirm"), "moved_from": p.get("moved_from"),
                           "reminded": [r for r in p.get("reminded") or []], "deal": v.deal, "by_hand": p.get("by_hand"), "link": p.get("link"), "phone": p.get("chat"),
                           "visit": (g.nodes[f"deal:{v.deal}"].props.get("visit") or {}) if v.deal and (g.nodes.get(f"deal:{v.deal}").props.get("visit") or {}).get("appointment") == v.id else None})
     lo = datetime(days[0].year, days[0].month, days[0].day, tzinfo=DUBAI)

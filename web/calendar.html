@@ -531,12 +531,13 @@ function ownerBox(a) {
     try { const r = await post(`/api/appointments/${a.id}/owner`, { by: me, said, times }); toast(r.told === "sent" ? "Done: the client is told" : "Done: call the client, their 24 hours are over"); load(); }
     catch (e) { $("oerr").textContent = e.message; } };
   const ins = [0, 1, 2].map((i) => h("input", { type: "datetime-local", "aria-label": `Other time ${i + 1}` }));
-  const other = h("div", { class: "box", hidden: true }, h("b", { class: "small" }, "Times the owner can do (one to three)"), ...ins,
+  const other = h("div", { class: "box", hidden: true }, h("b", { class: "small" }, a.confirm === "broker" ? "Times that work (one to three)" : "Times the owner can do (one to three)"), ...ins,
     h("div", { class: "row", style: "gap:6px;justify-content:flex-end" }, h("button", { class: "primary", onclick: () => say("other", ins.map((x) => x.value).filter(Boolean).map((v) => `${v}:00+04:00`)) }, "Offer these to the client")));
-  return h("div", { class: "box owner" }, h("b", {}, "Waiting for the owner: check this time with them"),
+  const mine = a.confirm === "broker";  // the owner's rule: the broker talks to the client and confirms the place first
+  return h("div", { class: "box owner" }, h("b", {}, mine ? "Viewing request: talk to the client, confirm the place, then book" : "Waiting for the owner: check this time with them"),
     h("div", { class: "err", id: "oerr" }),
     h("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin-top:6px" },
-      h("button", { class: "primary", onclick: () => say("yes") }, "✓ Owner said yes"),
+      h("button", { class: "primary", onclick: () => say("yes") }, mine ? "✓ Confirmed: book it" : "✓ Owner said yes"),
       h("button", { onclick: () => { other.hidden = !other.hidden; } }, "Other times…"),
       h("button", { onclick: () => confirm("Tell the client it can't be shown then?") && say("no") }, "Not possible")), other);
 }
@@ -571,7 +572,7 @@ function apptPanel(a) {
       h("span", {}, "Where"), h("span", {}, C.where[a.where] + (a.listing ? ` · ${a.listing}` : "")),
       a.where === "video" ? h("span", {}, "Link") : null,
       a.where === "video" ? h("span", {}, link.url ? h("a", { href: link.url, target: "_blank", rel: "noopener" }, link.url) : "Not made yet") : null,
-      h("span", {}, "Status"), h("span", {}, { booked: "Booked", done: "Done", no_show: "No-show", cancelled: "Cancelled", requested: "Waiting for the owner", offered: "Owner offered other times" }[a.status] || a.status),
+      h("span", {}, "Status"), h("span", {}, { booked: "Booked", done: "Done", no_show: "No-show", cancelled: "Cancelled", requested: a.confirm === "broker" ? "Waiting for the broker to confirm" : "Waiting for the owner", offered: "Owner offered other times" }[a.status] || a.status),
       h("span", {}, "Booked by"), h("span", {}, a.by_hand ? `${bname(a.by_hand)}, by hand` : "Rania, in the chat"),
       a.moved_from ? h("span", {}, "Moved") : null, a.moved_from ? h("span", {}, `from ${fmtDay(dayOf(a.moved_from))} ${hhmm(local(a.moved_from))}`) : null,
       h("span", {}, "Reminders"), h("span", {}, a.reminded.length ? a.reminded.join(", ") + " before" : "none sent yet")),

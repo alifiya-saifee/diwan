@@ -42,9 +42,9 @@ def test_rania_notes_a_viewing_and_books_nothing(office):
     lead(office)
     d, n = deal(office), listing(office)
     text, refs = reception.book(office, PH, d, n, next_week(), datetime.now(DUBAI), 1, False)
-    assert "will talk to you" in text and "Booked" not in text and refs == [n.id]
+    assert "will talk to you" in text and "Booked" not in text and refs[0] == n.id
     g = office.graph()
-    assert not g.of("viewing", d) and (g.nodes[f"deal:{d}"].props.get("stage") or "New") != "Viewing booked"
+    assert not g.of("viewing", d, "booked") and (g.nodes[f"deal:{d}"].props.get("stage") or "New") != "Viewing booked"
     assert [c for c in g.of("attention", status="open") if "Viewing request" in c.props["reason"]]
 
 

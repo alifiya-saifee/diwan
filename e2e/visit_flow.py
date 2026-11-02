@@ -8,6 +8,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from held import confirm  # noqa: E402
 from diwan.slots import DUBAI  # noqa: E402
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8052"
@@ -80,6 +82,7 @@ with sync_playwright() as p:
     A = "971506660001"
     customer(A, "Hi", "Sara Khan")
     customer(A, "Can I see MC-1204 on Tuesday at 4pm?", "Sara Khan")
+    confirm(api, BASE, A)  # the broker confirms it (the owner's rule)
     pg.goto(f"{BASE}/web/calendar.html?as={broker_of(A)}&start={WEEK}")
     pg.wait_for_timeout(700)
     pg.locator(".ev:not(.blk)", has_text="Sara Khan").first.click()
@@ -109,6 +112,7 @@ with sync_playwright() as p:
     B = "971506660002"
     customer(B, "Hi", "Ali Noor")
     customer(B, "Can I see MC-1204 on Tuesday at 11am?", "Ali Noor")
+    confirm(api, BASE, B)
     record(B, "Ali Noor", [("customer", "Honestly it's not for us, too far from the school.")])
     pg.goto(f"{BASE}/web/inbox.html?chat={B}&as={broker_of(B)}")
     pg.wait_for_timeout(900)

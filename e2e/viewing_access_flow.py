@@ -7,7 +7,10 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from diwan import slots  # noqa: E402
+from diwan.people import name  # noqa: E402
+from held import confirm  # noqa: E402
 from diwan.slots import DUBAI  # noqa: E402
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8093"
@@ -61,33 +64,36 @@ with sync_playwright() as p:
     check(1, "A listing nobody set says it asks the owner first, and its broker can change it",
           "Ask the owner first" in box and "not set yet" in box and pg.locator("#asave").count() == 1, shot("01-listing"), box.replace("\n", " ")[:120])
 
-    # 2. a client asks to view it: Rania says she'll check with the owner; the time is held
+    # 2. a client asks to view it: the time is held for the broker, who checks with the owner too (the owner's rule)
     A = "971509880001"
     customer(A, "Hi", "Sara Khan")
     r = customer(A, f"Can I see JVC-88 on {SAID} at 4pm?", "Sara Khan")
     ab = broker_of(A)
     pg.goto(f"{BASE}/web/inbox.html?chat={A}&as={ab}")
     pg.wait_for_selector(".banner.owner")
-    check(2, "Rania says she'll check with the owner and confirm; the broker's card has the three answers",
-          "I'll check" in r and "with the owner" in r and pg.locator(".banner.owner button", has_text="Owner said yes").count() == 1, shot("02-asked"), r[:120])
+    banner = pg.locator(".banner.owner").inner_text()
+    check(2, "The time is held for the broker: the client is told the broker confirms; the card says to check with the owner too, with the three answers",
+          "will talk to you and confirm the place and the time" in r and "check with the owner too" in banner
+          and pg.locator(".banner.owner button", has_text="Confirmed: book it").count() == 1, shot("02-asked"), r[:120])
 
     pg.goto(f"{BASE}/web/calendar.html?as={ab}&start={DAY.isoformat()}")
     pg.wait_for_timeout(800)
     pg.locator(".ev.requested", has_text="Sara Khan").first.click()
     det = pg.locator("#detail").inner_text()
-    check(3, "The calendar holds the time as waiting for the owner, with the same answers", "Waiting for the owner" in det and "Owner said yes" in det, shot("03-calendar-held"))
+    check(3, "The calendar holds the time as waiting for the broker, with the same answers",
+          "Waiting for the broker to confirm" in det and "Confirmed: book it" in det, shot("03-calendar-held"), det.replace("\n", " ")[:120])
 
     r = customer(A, "Any news from the owner?", "Sara Khan")
-    check(4, "'Any news?' is answered honestly", r.startswith("I'm still waiting for the owner to confirm"), shot("04-news"), r[:100])
+    check(4, "'Any news?' is answered honestly", r.startswith(f"{name(ab)} is checking Villa 88"), shot("04-news"), r[:100])
 
     # 3. the broker says yes on the card: the client is told
     pg.goto(f"{BASE}/web/inbox.html?chat={A}&as={ab}")
     pg.wait_for_selector(".banner.owner")
-    pg.locator(".banner.owner button", has_text="Owner said yes").click()
+    pg.locator(".banner.owner button", has_text="Confirmed: book it").click()
     pg.wait_for_timeout(900)
     msg = last(A)
-    check(5, "Owner said yes: the client gets the confirmed time, and the card is gone",
-          msg.startswith("Good news, Sara: the owner confirmed. Booked:") and pg.locator(".banner.owner").count() == 0, shot("05-yes"), msg[:110])
+    check(5, "Confirmed: the client gets the booked time, and the card is gone",
+          msg.startswith("Good news, Sara: it's confirmed. Booked:") and pg.locator(".banner.owner").count() == 0, shot("05-yes"), msg[:110])
 
     # 4. another client: the owner offers other times from the calendar, and the one picked books at once
     B = "971509880002"
@@ -103,9 +109,9 @@ with sync_playwright() as p:
     pg.wait_for_timeout(900)
     msg = last(B)
     nxt = DAY + timedelta(days=1)
-    check(6, "Other times: the client is offered the owner's time", "the owner can't do" in msg and slots.say_day(nxt) in msg, shot("06-offered"), msg[:120])
+    check(6, "Other times: the client is offered the time that works", f"{name(bb)} can't do" in msg and slots.say_day(nxt) in msg, shot("06-offered"), msg[:120])
     r = customer(B, f"{nxt.day} {nxt:%b} at 11am works", "Ali Noor")
-    check(7, "The time they pick books at once: the owner already agreed", r.startswith("Booked:") and "The owner is expecting you" in r, shot("07-picked"), r[:120])
+    check(7, "The time they pick books at once: the broker already agreed it", r.startswith("Booked:") and "expecting you" not in r, shot("07-picked"), r[:120])
 
     # 5. off-plan shown at the developer's gallery, in its hours
     catalog("BB-305", "layla")
@@ -123,9 +129,10 @@ with sync_playwright() as p:
     customer(C, "Hi", "Mona Saleh")
     r = customer(C, f"Can I see BB-305 on {SAID} at 11am?", "Mona Saleh")
     r2 = customer(C, f"OK, {SAT.day} {SAT:%b} at 11am then", "Mona Saleh")
-    check(8, "The gallery's hours decide: a weekday is refused with weekend times, and the weekend books at the gallery",
+    r3 = confirm(api, BASE, C)
+    check(8, "The gallery's hours decide: a weekday is refused with weekend times; the weekend is held, and once confirmed it's at the gallery",
           "Developer's gallery" in box and r.startswith("That time isn't available") and slots.say_day(SAT).split()[0] in r
-          and r2.startswith("Booked:") and "at the Bay Square sales gallery" in r2, shot("08-gallery"), r2[:120])
+          and r2.startswith("Thanks, I've noted") and r3.startswith("Good news") and "at the Bay Square sales gallery" in r3, shot("08-gallery"), f"{r2[:60]} | {r3[:120]}")
 
     pg.set_viewport_size({"width": 390, "height": 844})
     pg.goto(f"{BASE}/web/inbox.html?chat={B}&as={bb}")

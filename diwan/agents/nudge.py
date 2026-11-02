@@ -230,8 +230,13 @@ def text_for(g: Graph, deal: str, chat, arabic: bool, visit=None, n: int = 1) ->
         what = lst.props["title"] if lst else ("العقار" if arabic else "the property")
         texts = VISIT_TEXT_AR if arabic else VISIT_TEXT
         return texts[min(n, len(texts)) - 1].format(hi=f"مرحباً{' ' + first if first else ''}" if arabic else hi, what=what), [lst.id] if lst else []
+    # she asked which home to see (and when) and they went quiet: that question, kindly, never a new topic
+    mine = next((m for m in reversed(chat.props["messages"]) if m["type"] == "sent" and not m.get("nudge")), None)
+    which = next((q.strip() for q in re.findall(r"[^.!?\n]*\?", mine["text"]) if re.match(r"\s*which (one |of these )?would you like to see", q, re.I)), None) if mine else None
+    if which and not arabic:
+        return f"{hi}, no rush: {which[0].lower() + which[1:]}", []
     sent = set(d.get("recommended") or [])
-    if sent and not (d.get("hot") or {}).get("listing"):
+    if sent and not (d.get("hot") or {}).get("listing") and d.get("qualify_status") == "qualified":  # "fits what you told me" only once it does
         shown = sent | {r for m in chat.props["messages"] if m["type"] == "sent" for r in m.get("refs", [])}  # never one they've had
         new = [n for n in reception.recommend(g, deal, 5) if n.id not in shown]
         if new:

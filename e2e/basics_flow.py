@@ -9,7 +9,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from diwan.slots import DUBAI  # noqa: E402
+from held import confirm  # noqa: E402
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8052"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "e2e/shots") / "basics"
@@ -53,6 +55,8 @@ with sync_playwright() as p:
     S, A, V = "971506680001", "971506680002", "971506680003"
     customer(S, f"Can I see MC-1204 on Tuesday {TUE.day} {TUE:%b} at 4pm?", "Sara Khan")
     customer(A, f"Can I see MC-1204 on Wednesday {WED.day} {WED:%b} at 11am?", "Ali Noor")
+    for who in (S, A):  # their brokers confirm the viewings (the owner's rule)
+        assert confirm(api, BASE, who).startswith("Good news"), who
     r = customer(V, f"Could we do a video call on Tuesday {TUE.day} {TUE:%b} at 11am?", "Vera Lopez")
     assert r.startswith("Booked"), r
 

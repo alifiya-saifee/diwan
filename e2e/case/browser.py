@@ -27,7 +27,7 @@ class Run:
         (self.out / "shots").mkdir(parents=True, exist_ok=True)
         self.results = open(self.out / "results.jsonl", "a", encoding="utf8")
         self.pw = sync_playwright().start()
-        self.b = self.pw.chromium.launch(channel="msedge", headless=False, slow_mo=slow, args=["--window-position=0,0", "--window-size=1500,950"] + [a for a in os.environ.get("CASE_ARGS", "").split("|") if a])
+        self.b = self.pw.chromium.launch(channel=os.environ.get("CASE_CHANNEL", "msedge"), headless=False, slow_mo=slow, args=["--window-position=0,0", "--window-size=1500,950"] + [a for a in os.environ.get("CASE_ARGS", "").split("|") if a])
         self.people, self.errors, self.good, self.bad = {}, [], 0, 0
         self.pg, self.step_text, self.n, self.skip_ms = None, "", 0, 0
         self.answers = []

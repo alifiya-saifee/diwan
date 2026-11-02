@@ -2018,7 +2018,9 @@ def listing_access(ref: str, person: str):
     lst = g().nodes.get(f"listing:{ref.upper()}")
     if not lst:
         raise HTTPException(404, "No such listing")
-    return viewings.access(g(), lst) | {"can": viewings.may_change(g(), lst, person), "modes": viewings.MODES}
+    from diwan.agents import reception
+    return viewings.access(g(), lst) | {"can": viewings.may_change(g(), lst, person), "modes": viewings.MODES,
+                                        "broker_confirms": reception.agent_confirms(g())}  # the owner's rule: the broker confirms each viewing
 
 
 @app.post("/api/listings/{ref}/access")

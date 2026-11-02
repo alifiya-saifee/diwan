@@ -277,8 +277,11 @@ async function accessPanel(ref) {
   const box = $("access"); if (!box) return;
   let a;
   try { a = await api(`/api/listings/${encodeURIComponent(ref)}/access?person=${encodeURIComponent(by())}`); } catch { return; }
-  const said = { instant: "Booked at once: vacant, keys with us.", ask: `Rania checks with the ${a.who || "owner"} before confirming${a.notice_hours ? `, with ${a.notice_hours} hours' notice` : ""}.`,
-                 developer: `Shown at ${a.place}, ${a.open}–${a.close}, ${(a.days || []).map((d) => WEEK[d]).join(" ")}.` }[a.mode];
+  const said = a.broker_confirms  // the owner's rule: the broker talks to the client and confirms each viewing
+    ? { instant: "Vacant, keys with us: the broker confirms the time with the client.", ask: `The broker checks with the ${a.who || "owner"} and confirms with the client${a.notice_hours ? `, with ${a.notice_hours} hours' notice` : ""}.`,
+        developer: `Shown at ${a.place}, ${a.open}–${a.close}, ${(a.days || []).map((d) => WEEK[d]).join(" ")}; the broker confirms the time.` }[a.mode]
+    : { instant: "Booked at once: vacant, keys with us.", ask: `Rania checks with the ${a.who || "owner"} before confirming${a.notice_hours ? `, with ${a.notice_hours} hours' notice` : ""}.`,
+        developer: `Shown at ${a.place}, ${a.open}–${a.close}, ${(a.days || []).map((d) => WEEK[d]).join(" ")}.` }[a.mode];
   const head = [h("h2", {}, "How it's viewed"), h("div", { class: "small" }, h("strong", {}, a.label), a.default ? " (not set yet: the safe choice)" : "", " · ", said)];
   if (!a.can) { box.replaceChildren(...head, h("div", { class: "small muted" }, "The listing's broker, the Sales manager or the owner changes this.")); return; }
   const mode = h("select", { id: "amode" }, ...Object.entries(a.modes).map(([k, v]) => h("option", { value: k, selected: k === a.mode }, v)));

@@ -8,7 +8,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from diwan.slots import DUBAI  # noqa: E402
+from held import confirm  # noqa: E402
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8052"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "e2e/shots") / "own_time"
@@ -68,7 +70,9 @@ with sync_playwright() as p:
     check(3, "A client asks for Tuesday 4pm: Rania doesn't book the busy time and offers others",
           "isn't available" in r and "Booked" not in r, shot("03-rania"), r[:160])
     r2 = customer("971506670001", f"OK, Tuesday {TUE.day} {TUE:%b} at 5pm then", "Sara Khan")
-    check(4, "Tuesday 5pm, just after the busy time, is booked", r2.startswith("Booked"), shot("04-booked"), r2[:120])
+    r2b = confirm(api, BASE, "971506670001")  # the broker confirms it (the owner's rule)
+    check(4, "Tuesday 5pm, just after the busy time, is held, and booked once the broker confirms", r2.startswith("Thanks, I've noted")
+          and "5:00 PM" in r2 and r2b.startswith("Good news, Sara: it's confirmed. Booked"), shot("04-booked"), r2b[:120])
 
     cal("omar")
     form("busy")
@@ -93,6 +97,7 @@ with sync_playwright() as p:
     pg.fill("#fphone", "971506670003"); pg.fill("#fname", "Huda Saleh")
     pg.select_option("#fkindsel", "viewing"); pg.fill("#fprop", "MC-1204")
     pg.fill("#fdate", TUE.isoformat()); pg.fill("#ftime", "16:00")
+    pg.check("#fconfirm")  # "I've talked to the client and the place is available"
     pg.click("#fsave")
     pg.wait_for_timeout(500)
     err = pg.locator("#ferr").inner_text()
@@ -109,8 +114,9 @@ with sync_playwright() as p:
     lead = pg.locator("body").inner_text()
     r5 = customer("971506670003", "When is my viewing?", "Huda Saleh")
     r4 = customer("971506670003", f"Can we move the viewing to 12pm on Wednesday {WED.day} {WED:%b}?", "Huda Saleh")
-    check(9, "The hand-added client is a lead in the Inbox at Viewing booked; Rania tells them when it is and moves it",
-          "Huda Saleh" in lead and "Viewing booked" in lead and r5.startswith("Your site visit to Unit 1204") and "11:00 AM" in r5 and "is now" in r4,
+    check(9, "The hand-added client is a lead in the Inbox at Viewing booked; Rania tells them when it is, and a move waits for Omar",
+          "Huda Saleh" in lead and "Viewing booked" in lead and r5.startswith("Your site visit to Unit 1204") and "11:00 AM" in r5
+          and r4.startswith("Done: I've asked for") and "Omar will confirm it" in r4,
           shot("09-inbox"), f"{r5[:90]} / {r4[:80]}")
 
     cal("omar")

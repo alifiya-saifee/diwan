@@ -239,7 +239,7 @@ def _owner_wait(g: Graph, chat) -> dict | None:
         return None
     lst = g.nodes.get(f"listing:{v.props.get('listing')}")
     return {"id": v.id, "at": v.props["at"], "listing": v.props.get("listing"), "title": lst.props["title"] if lst else v.props.get("listing"),
-            "who": viewings.access(g, lst)["who"] if lst else "owner"}
+            "who": viewings.viewings_who(g, lst), "confirm": v.props.get("confirm")}
 
 
 def _calls(g: Graph, chat) -> list[dict]:

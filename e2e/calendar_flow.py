@@ -7,7 +7,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from diwan.slots import DUBAI  # noqa: E402
+from held import confirm  # noqa: E402
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8052"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "e2e/shots") / "calendar"
@@ -63,7 +65,10 @@ with sync_playwright() as p:
     A = "971504440001"
     customer(A, "Hi")
     r = customer(A, "Can I see MC-1204 on Tuesday at 4pm?")
-    check(1, "The client books a site visit in the chat", r.startswith("Booked: Unit 1204") and "Tuesday" in r, shot("01-booked"), r)
+    ok = r.startswith("Thanks, I've noted you'd like to see Unit 1204") and "Tuesday" in r and "will talk to you" in r
+    r = confirm(api, BASE, A, pg)  # the broker confirms it in the Inbox (the owner's rule)
+    check(1, "The client asks for a site visit; Rania holds it, the broker confirms it in the Inbox and the client hears it's booked",
+          ok and r.startswith("Good news, Sara: it's confirmed. Booked: Unit 1204") and "Tuesday" in r, shot("01-booked"), r)
 
     pg.goto(f"{BASE}/web/inbox.html?as=layla")
     pg.wait_for_timeout(500)
@@ -85,9 +90,13 @@ with sync_playwright() as p:
 
     r = customer(A, "Can we move the viewing to Thursday at 5pm instead?")
     view = [v for v in api.get(f"{BASE}/api/calendar?person=layla&start={WEEK}").json()["appointments"] if v["kind"] == "Site visit"]
-    bell = [n["text"] for n in api.get(f"{BASE}/api/notices/omar").json()["items"]]
-    check(5, "Moving it in the chat moves it on the calendar and tells the broker",
-          r.startswith("Done:") and view and view[0]["at"][11:16] == "17:00" and any("moved" in t for t in bell), shot("05-moved"), r)
+    card = (api.get(f"{BASE}/api/chats/{A}").json().get("attention") or {}).get("reason", "")
+    held = bool(view) and view[0]["status"] == "requested"
+    r2 = confirm(api, BASE, A)
+    view = [v for v in api.get(f"{BASE}/api/calendar?person=layla&start={WEEK}").json()["appointments"] if v["kind"] == "Site visit"]
+    check(5, "Moving it in the chat asks for the new time: the broker is asked to confirm it, then it's booked at 17:00",
+          r.startswith("Done: I've asked for") and held and "moved by the client" in card and r2.startswith("Good news")
+          and view and view[0]["at"][11:16] == "17:00" and view[0]["status"] == "booked", shot("05-moved"), f"{r} | {card[:80]}")
 
     cal(who="hamza")
     hz = blocks()

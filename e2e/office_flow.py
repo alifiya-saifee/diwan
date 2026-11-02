@@ -48,7 +48,8 @@ with sync_playwright() as p:
     sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
     from diwan import slots as _slots
     want = _slots.say(_slots.parse("Saturday at 4pm", _dt.now(_slots.DUBAI)))  # the next Saturday, whatever today is
-    assert ("Booked" in reply and want in reply) or ("isn't available" in reply and "Saturday" in reply), f"wrong time: {reply}"
+    held = "I've noted you'd like to see" in reply and "will talk to you and confirm" in reply  # the broker confirms it (the owner's rule)
+    assert ((held or "Booked" in reply) and want in reply) or ("isn't available" in reply and "Saturday" in reply), f"wrong time: {reply}"
     pg.screenshot(path=str(SHOTS / "o1-rania.png"))
     pg.locator(".chead .switch").click()
     expect(pg.locator(".chead .switch")).to_contain_text("has it")
