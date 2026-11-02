@@ -299,6 +299,24 @@ def _areas(g: Graph) -> list[str]:
     return sorted(known, key=len, reverse=True)
 
 
+MAYBE = r"\b(maybe|perhaps|possibly|might|could (?:maybe |possibly |probably )?(?:go|stretch|do|push)|i guess|not sure|(?:don'?t|do not) know|thinking (?:of|about))\b|ربما|يمكن|ممكن"
+HEARSAY = (r"\b(?:neighbou?r|friend|brother|sister|cousin|colleague|boss|father|dad|mother|mum|mom|uncle|aunt|son|daughter|wife|husband)\b[^.?!\n]*\b(?:bought|paid|sold|spent|got)\b"
+           r"|\b(?:he|she|they|someone|somebody|a friend)\s+(?:bought|paid|sold|spent|got)\b|جاري|صديقي|أخوي")
+
+
+def _sentence(said: str, quote: str) -> str:
+    from diwan.pack import norm
+    return next((s for s in re.split(r"(?<=[.!?\n])\s+", said) if norm(quote) in norm(s)), said)
+
+
+def not_theirs(said: str, quote: str, kind: str, has_value: bool) -> bool:
+    """A price someone else paid is never the client's budget. "Maybe we could go to 6 million" doesn't replace what they told us (as a first answer, a rough one is an answer)."""
+    if kind not in ("money", "number"):
+        return False
+    s = _sentence(said, quote)
+    return bool((kind == "money" and re.search(HEARSAY, s, re.I)) or (has_value and re.search(MAYBE, s, re.I)))
+
+
 def read_rules(g: Graph, f: dict, qtype: str | None, text: str, last_asked: str | None) -> tuple[str | None, list[dict]]:
     """Plain rules, for when no model answers: the type from its words, and answers that are unmistakable."""
     from diwan.agents.scribe import amounts
@@ -314,7 +332,7 @@ def read_rules(g: Graph, f: dict, qtype: str | None, text: str, last_asked: str 
         v = None
         vague = last_asked == k and unsure(text)
         if kind == "money":
-            nums = [a for a in amounts(text) if a >= 1000]
+            nums = [a for a in amounts(re.sub(r"\bnot\s+[\d.,]+\s*(?:m|mn|k|million|thousand)?\b", " ", text, flags=re.I)) if a >= 1000]  # "4 million, not 3"
             if nums and (re.search(r"budget|price|rent|million|\bk\b|aed|dirham|\d", low)):
                 v = max(nums)
         elif kind == "number" and k == "bedrooms":
@@ -323,7 +341,9 @@ def read_rules(g: Graph, f: dict, qtype: str | None, text: str, last_asked: str 
             elif "studio" in low:
                 v = 0
         elif kind == "area":
-            v = next((a for a in _areas(g) if a.lower() in low or a.lower().replace("dubai ", "") in low), None)
+            said = [a for a in _areas(g) if a.lower() in low or a.lower().replace("dubai ", "") in low]
+            real = [a for a in said if a.lower() != "the villa" or last_asked == k]  # "see the villa in JVC" names JVC
+            v = max(real, key=len) if real else None
         elif kind == "choice":
             words = re.sub(r"\bready\s+(by|in|for|before|around|next|this|within)\b", " ", low)  # "ready by summer" is when, not what
             v = next((o for o in x["options"] if option_said(o, words)), None)
@@ -360,7 +380,12 @@ def record(office: Office, deal: str, *, qtype: str | None, type_quote: str | No
         if not a.get("quote") or norm(a["quote"]) not in norm(said):
             continue  # a quote the customer did not write is never kept
         old = d.get("answers", {}).get(k)
+        if not_theirs(said, a["quote"], keys[k]["kind"], bool(old and not old.get("unsure"))):
+            continue
         if a.get("unsure") or unsure(a["value"]):
+            from diwan.agents.scribe import amounts
+            if keys[k]["kind"] != "money" and re.search(r"million|k|aed|dirham", _sentence(said, a["quote"]), re.I) and amounts(_sentence(said, a["quote"])):  # "maybe 6 million, I don't know" is unsure of the money, not of what she just asked
+                continue
             # "not sure" only answers the question she just asked, never replaces a real answer, and counts once a message
             if k != d.get("qualify_asked") or (old and not old.get("unsure")) or (old and old.get("cause") == cause):
                 continue

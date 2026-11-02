@@ -159,10 +159,31 @@ def link(g: Graph, deal: str, fact: dict, turn: str) -> tuple[list[str], list[No
 
 # ---------- one turn ----------
 
+CLIENT_WORDS = r"\b(?:i|we)(?:'m|'d| am| would)?(?: now| still| really| just)? (?:want|need|like|prefer|looking|can afford)\b|\bmy budget\b"
+
+
+def role_of(roles: dict[str, str], label: str, text: str) -> str:
+    """Live transcription says A and B, and who spoke first proves nothing: a client's own words give them away, otherwise the broker is taken to open. The broker can swap them on the screen."""
+    if label not in roles:
+        taken = set(roles.values())
+        roles[label] = "customer" if "broker" in taken else "broker" if "customer" in taken else "customer" if re.search(CLIENT_WORDS, text, re.I) else "broker"
+    return roles[label]
+
+
 def turn(office: Office, mid: str, label: str, text: str, *, turn_id: str | None = None, tape_root=None) -> dict:
     """A finished spoken turn in a meeting."""
+    from diwan import inbox, qualify
     ev = office.utterance(mid, label, text, turn=turn_id)
-    return hear(office, office.meeting(mid)["deal"], ev["content"]["speaker"], text, ev["id"], tape_root=tape_root)
+    deal = office.meeting(mid)["deal"]
+    if label in ("broker", "speaker_0"):  # kept in the meeting, but the broker's words aren't what the client said
+        return {"facts": [], "dropped": [], "by": "broker"}
+    out = hear(office, deal, ev["content"]["speaker"], text, ev["id"], tape_root=tape_root)
+    g = office.graph()
+    _, answers = qualify.read_rules(g, qualify.form(g), g.nodes[f"deal:{deal}"].props.get("qtype"), text, None)
+    if answers:  # what they said at the table updates the form, the same as on WhatsApp
+        qualify.record(office, deal, qtype=None, type_quote=None, answers=answers, said=text, by="scribe", cause=ev["id"])
+        inbox.auto_stage(office, deal, ev["id"])
+    return out
 
 
 def hear(office: Office, deal: str, speaker: str, text: str, cause: int, *, tape_root=None) -> dict:

@@ -254,3 +254,25 @@ def test_nothing_fits_goes_to_the_broker_and_a_viewing_request_is_hot_too(office
     g = office.graph()
     deal = g.nodes[f"chat:{ph2}"].deal
     assert g.nodes[f"deal:{deal}"].props["hot"]["why"] == "asked to view it" and g.of("viewing", status="booked")
+
+
+def test_a_maybe_or_someone_elses_price_doesnt_change_the_budget():
+    said = "Maybe we could go up to 6 million, I don't know"
+    assert qualify.not_theirs(said, "6 million", "money", True)
+    assert not qualify.not_theirs("Maybe 2 million", "2 million", "money", False)  # a rough first answer is an answer
+    assert qualify.not_theirs("My neighbour bought his flat for 9 million", "9 million", "money", False)
+    assert not qualify.not_theirs("My budget is now 3 million", "3 million", "money", True)
+    assert not qualify.not_theirs("Sorry, I meant 4 million, not 3", "4 million", "money", True)
+    assert not qualify.not_theirs("I think the area is nice. My budget is 3 million.", "3 million", "money", True)
+    assert qualify.not_theirs("Dina's neighbour paid 9 million for his flat", "9 million", "money", False)
+
+
+def test_who_is_who_in_a_live_recording():
+    from diwan.agents import scribe
+    roles = {}
+    assert scribe.role_of(roles, "A", "Good afternoon, thanks for coming") == "broker"
+    assert scribe.role_of(roles, "B", "Thank you, I now want three bedrooms") == "customer"
+    assert scribe.role_of(roles, "A", "I need to check that") == "broker"
+    roles = {}
+    assert scribe.role_of(roles, "A", "I now want three bedrooms") == "customer"  # the client spoke first
+    assert scribe.role_of(roles, "B", "Good afternoon") == "broker"

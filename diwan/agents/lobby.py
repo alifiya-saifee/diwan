@@ -15,7 +15,7 @@ from diwan.agents.charters import get
 from diwan.graph import Graph
 from diwan.office import Office
 from diwan.pack import Action, Pack
-from diwan.people import name, pid
+from diwan.people import PEOPLE, name, pid
 
 # who a department's work goes to when no one is named
 TEAM_PERSON = {"comp": "priya", "fin": "ahmed", "ops": "joseph", "sales": "omar", "records": "layla"}
@@ -123,7 +123,7 @@ def follow_up(office: Office, text: str, person: str, session: str, now: datetim
     if YES.match(text) and len(text.split()) <= 5:  # a yes is a short answer, not a sentence that starts with one
         DRAFTS.pop(session)
         lid = post(office, card)
-        chase = "I'll chase it before it's due" if card["due"] else "I'll keep an eye on it"
+        chase = "I'll chase it before it's due" if card["due"] else "I'll remind them tomorrow if it's still open"
         return {"kind": "done", "text": f"Sent. It's on the requests board as {lid}; the {get(card['team']).name} has it and {chase}.", "card": lid}
     return None
 
@@ -147,6 +147,8 @@ def post(office: Office, card: dict) -> str:
 def done(office: Office, lid: str, *, by: str, note: str = "") -> dict:
     g = office.graph()
     card = g.nodes[lid]
+    if by not in (card.props.get("to"), card.props.get("by")) and PEOPLE.get(by, {}).get("role") != "Owner":
+        raise PermissionError("Only the person it's for, whoever asked, or the owner marks this done.")
     ev = office.log.append("lobby.done", actor=by, agent="nova", key=f"lobby-done:{lid}", content={"id": lid, "note": note})
     if (t := g.nodes.get(card.props.get("task"))) and t.status == "queued":
         office.finish_task(t.id, f"{name(by)} marked {lid} done", caused_by=ev["id"])
@@ -162,6 +164,9 @@ def chase(office: Office, now: datetime) -> list[str]:
     out = []
     for c in office.graph().of("lobby", status={"open", "seen", "late"}):
         if not c.props.get("due"):
+            if not c.props.get("reminded") and now >= datetime.fromisoformat(c.at) + timedelta(days=1):
+                office.log.append("lobby.reminded", actor="nova", agent="nova", key=f"lobby-remind:{c.id}", content={"id": c.id, "note": "Still open after a day"})
+                out.append(f"reminded {c.id}")
             continue
         due = datetime.fromisoformat(c.props["due"])
         if c.status != "late" and now >= due:

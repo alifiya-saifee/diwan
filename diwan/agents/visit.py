@@ -95,7 +95,7 @@ def latest(g, deal: str | None) -> dict | None:
 def from_meeting(office: Office, mid: str, *, cause: int | None = None) -> dict | None:
     """A recorded visit ended: summarize the client's own turns (not the broker's)."""
     m = office.meeting(mid)
-    said = "\n".join(t["text"] for t in m["turns"] if t.get("label") == "customer")
+    said = "\n".join(t["text"] for t in m["turns"] if t.get("label") in ("customer", "speaker_1"))
     g = office.graph()
     appt = next((v.id for v in sorted(g.of("viewing"), key=lambda v: v.props["at"], reverse=True) if v.deal == m["deal"]), None)
     return summarize(office, m["deal"], said=said, source="recording", meeting=mid, appointment=appt, cause=cause)

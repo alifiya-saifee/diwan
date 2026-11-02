@@ -95,10 +95,8 @@ class Office:
             self._replace(deal, olds, fid, ev["id"])
         else:
             self._contradictions(deal, fid, ev["id"])
-        compliance.screen_parties(self, deal, ev["id"])
-        compliance.cash_rules(self, deal, ev["id"])
-        compliance.ask_funding(self, deal, ev["id"])
-        finance.payment_rules(self, deal, ev["id"])
+        if compliance.started(self.graph(), deal):
+            compliance.begin(self, deal, ev["id"])
         return fid
 
     def _replace(self, deal: str, olds: list[str], new: str, cause: int) -> None:
@@ -126,10 +124,10 @@ class Office:
         g = self.graph()
         new = g.nodes[fid]
         field = CONFLICTS.get(new.props["kind"])
-        if not field:
+        if not field or new.props.get(field) is None:  # "Cash" and "Budget is 5 million" say different things, they don't disagree
             return
         for old in g.facts(deal, new.props["kind"]):
-            if old.id != fid and old.props.get(field) != new.props.get(field):
+            if old.id != fid and old.props.get(field) is not None and old.props.get(field) != new.props.get(field):
                 broker = g.nodes[f"deal:{deal}"].props["broker"]
                 self.log.append("decision.needed", actor="scribe", agent="scribe", deal=deal, caused_by=cause,
                                 content={"who": broker, "refs": [old.id, fid], "options": [f"{fid} replaces {old.id}", f"{old.id} stands", "Ask the customer"],
