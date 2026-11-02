@@ -340,6 +340,8 @@ def _form_as(body: bytes, boundary: bytes, person: str) -> bytes:
 
 
 chat_guard = None  # set by the app: may this person open this conversation? (a broker: their own leads and the Pool)
+deal_guard = None  # set by the app: may this person open this deal? (a broker: their own)
+file_guard = None  # set by the app: may this person open this client's ID, signature or signed form?
 
 
 class Gate:
@@ -368,6 +370,10 @@ class Gate:
             return await self._refuse(scope, receive, send, 403, "That belongs to another department", page and f"/web/{home(person)}")
         if (m := re.match(r"/api/chats/([^/]+)", path)) and chat_guard and not chat_guard(person, m.group(1)):
             return await self._refuse(scope, receive, send, 403, "That lead belongs to another broker", None)
+        if (m := re.match(r"/api/desk/deals/([^/]+)", path)) and deal_guard and not deal_guard(person, m.group(1)):
+            return await self._refuse(scope, receive, send, 403, "That deal belongs to another broker", None)
+        if path.startswith("/media/") and path.rsplit("/", 1)[-1].startswith(SENSITIVE_MEDIA) and file_guard and not file_guard(person, path.rsplit("/", 1)[-1]):
+            return await self._refuse(scope, receive, send, 403, "That document belongs to another broker's client", None)
         token = USER.set(person)
         try:
             if is_owner(person):

@@ -42,7 +42,8 @@ TYPES = {
     # the Lobby room (the spec's Room 9), not the requests board below, which kept the old "lobby." names
     "thread.posted", "playbook.added", "playbook.removed", "experiment.proposed", "experiment.refused", "experiment.approved", "experiment.switched", "experiment.reported", "experiment.ended",
     "lobby.posted", "lobby.seen", "lobby.reminded", "lobby.late", "lobby.done", "lobby.cancelled",
-    "chat.received", "chat.sent", "chat.suggested", "chat.handover", "appointment.booked", "appointment.cancelled",
+    "chat.received", "chat.sent", "chat.suggested", "chat.handover", "appointment.booked", "appointment.cancelled", "viewing.requested",
+    "offer.made", "offer.accepted", "offer.declined",
     # the lead desk: who owns a lead, what needs a person by when, the Pool, and notices to people
     "lead.assigned", "lead.pooled", "lead.claimed", "attention.raised", "attention.overdue", "attention.cleared",
     "notify.sent", "notify.read", "listings.synced", "listings.found", "topic.saved", "competitors.refreshed",

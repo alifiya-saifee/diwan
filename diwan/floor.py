@@ -30,7 +30,7 @@ TICK = .2
 # Who takes each event. "self": it stays in the room that made it. "out": it leaves the office by the door. "in": it comes
 # in by the door to the room that handles it. An empty tuple would be an event nobody takes, which is what the Stuck pile is for.
 ROUTES: dict[str, tuple[str, tuple[str, ...]]] = {}
-QUIET: set[str] = set()  # deliberately not animated: settings, reads and bookkeeping with no work to show
+QUIET: set[str] = {"viewing.requested", "offer.made", "offer.accepted", "offer.declined"}  # deliberately not animated: settings, reads and bookkeeping with no work to show
 
 
 def _r(card: str, to: tuple[str, ...], types: str) -> None:

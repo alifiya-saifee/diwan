@@ -23,6 +23,12 @@ TITLES = {"A": "Form A: agreement between the seller and the broker", "B": "Form
 FORM_OF = {v: k for k, v in TITLES.items()}  # a draft's kind says which form it is
 
 
+def real_pdf(data: bytes) -> None:
+    """A signed contract is a contract: an empty or broken file isn't filed as one."""
+    if not data.startswith(b"%PDF") or b"%%EOF" not in data[-2048:]:
+        raise ValueError("That isn't a readable PDF, so it wasn't filed. Upload the signed copy as a PDF.")
+
+
 def signed_file(deal: str, form: str, did: str) -> str:
     return f"deal-{deal}-form-{form}-{did}-signed.pdf"
 
@@ -283,6 +289,7 @@ def render(g: Graph, did: str, signatures: list[dict] | None = None) -> bytes:
 def formf_signed_copy(office: Office, did: str, by: str, data: bytes, *, media, today: date) -> str:
     """Form F signed on paper instead of online: the same gate, and a person says they checked every signature."""
     from diwan.agents import compliance, operations
+    real_pdf(data)
     g = office.graph()
     d = g.nodes.get(did)
     if not d or d.type != "draft" or d.props.get("kind") != "Form F":
@@ -307,6 +314,7 @@ def formf_signed_copy(office: Office, did: str, by: str, data: bytes, *, media, 
 def signed(office: Office, tid: str, by: str, data: bytes, filename: str, *, media, today: date) -> str:
     """The broker uploads the signed copy and says they checked every signature line (a PDF can't show that by itself);
     Records files it against the deal and the form's terms are fixed."""
+    real_pdf(data)
     g = office.graph()
     t = g.nodes.get(tid)
     if not t or t.type != "task" or t.props.get("step") != "sign":

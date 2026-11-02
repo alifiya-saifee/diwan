@@ -6,6 +6,7 @@ office, agents and charters the tests exercise.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import contextlib
 from datetime import datetime
@@ -696,6 +697,9 @@ def people():
 @app.post("/api/demo/reset")
 def reset(correction: bool = False):
     """A fresh demo office. With a saved log, the old file is kept as a dated backup (logs are never rewritten)."""
+    from diwan import qualify
+    if (who := access.USER.get()) and who not in qualify.owner_ids():
+        raise HTTPException(403, "Only the owner resets the office")
     path = env("DIWAN_DB", ":memory:")
     old = S.office.log
     with old.lock:  # a page reading the log in another thread must not have the file closed and renamed under it
@@ -910,7 +914,10 @@ class DoneIn(BaseModel):
 @app.post("/api/lobby/{lid}/done")
 def lobby_done(lid: str, body: DoneIn):
     from diwan.agents import lobby
-    return lobby.done(S.office, lid, by=body.by, note=body.note)
+    try:
+        return lobby.done(S.office, lid, by=body.by, note=body.note)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
 
 
 @app.post("/api/lobby/{lid}/seen")
@@ -990,10 +997,13 @@ async def audio(ws: WebSocket, mid: str):
         while (c := await q.get()) is not None:
             yield c
 
+    roles: dict[str, str] = {}
+
     def on_turn(t: dict):
         if "final" in t:
-            res = scribe.turn(S.office, mid, t["speaker"], t["final"], turn_id=t.get("turn"))
-            loop.create_task(ws.send_json({"final": t["final"], "speaker": t["speaker"], "facts": res["facts"]}))
+            who = scribe.role_of(roles, t["speaker"], t["final"])
+            res = scribe.turn(S.office, mid, who, t["final"], turn_id=t.get("turn"))
+            loop.create_task(ws.send_json({"final": t["final"], "speaker": "Client" if who == "customer" else "Broker", "facts": res["facts"]}))
         else:
             loop.create_task(ws.send_json(t))
 
@@ -1003,6 +1013,8 @@ async def audio(ws: WebSocket, mid: str):
             msg = await ws.receive()
             if msg.get("bytes"):
                 await q.put(msg["bytes"])
+            elif msg.get("text") == "swap":
+                roles.update({k: "broker" if v == "customer" else "customer" for k, v in roles.items()})
             elif msg.get("type") == "websocket.disconnect" or msg.get("text") == "end":
                 break
     finally:
@@ -1937,6 +1949,7 @@ class HandIn(BaseModel):
     kind: str
     listing: str | None = None
     at: str
+    confirmed: bool = False  # the broker has talked to the client and the place is available
 
 
 @app.post("/api/appointments")
@@ -1944,7 +1957,7 @@ def appointment_add(body: HandIn):
     """An appointment the broker agreed with the client on the phone: the same checks and reminders as Rania's."""
     try:
         return reception.add_by_hand(S.office, by=body.by, broker=body.broker, phone=body.phone, name_=body.name, kind_id=body.kind,
-                                     ref=body.listing, when=_when(body.at, "time"), now=datetime.now(slots.DUBAI))
+                                     ref=body.listing, when=_when(body.at, "time"), now=datetime.now(slots.DUBAI), confirmed=body.confirmed)
     except PermissionError as e:
         raise HTTPException(403, str(e)) from None
     except ValueError as e:
@@ -2365,6 +2378,24 @@ async def no_store(request: Request, call_next):
 
 app.add_middleware(access.Gate)  # last added runs first: nothing reaches the app without passing it
 access.chat_guard = lambda person, phone: f"chat:{phone}" not in g().nodes or sales.may_see(g(), phone, person)
+
+
+def _broker_keeps_to_their_own(person: str, deal: str) -> bool:
+    return f"deal:{deal}" not in g().nodes or PEOPLE.get(person, {}).get("role") != "Broker" or frontdesk.sees_deal(g(), deal, person)
+
+
+def _file_guard(person: str, filename: str) -> bool:
+    """A broker sees the IDs, signatures and signed forms of their own clients only. A file no deal claims is nobody's to open."""
+    if PEOPLE.get(person, {}).get("role") != "Broker":
+        return True
+    for e in S.office.log.list():
+        if e.get("deal") and filename in json.dumps(e["content"], ensure_ascii=False):
+            return _broker_keeps_to_their_own(person, e["deal"])
+    return False
+
+
+access.deal_guard = _broker_keeps_to_their_own
+access.file_guard = _file_guard
 
 
 @app.get("/favicon.ico", include_in_schema=False)
