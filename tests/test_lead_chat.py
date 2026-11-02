@@ -45,11 +45,11 @@ def test_it_answers_from_the_studio_and_keeps_the_conversation(office, monkeypat
 
 def test_a_change_waits_for_a_yes(office, monkeypatch):
     model(monkeypatch, [{"reply": "Shall I plan the next 7 days?", "action": "plan_week"}, {"reply": "Done.", "action": "confirm"}])
-    rhythm.save(office, {"rhythm": "weekly"}, by="maya")
+    rhythm.save(office, {"rhythm": "weekly", "posts_per_week": "7"}, by="maya")
     r = lead_chat.say(office, "S2", "Plan next week", by="maya")
     assert r["pending"] == {"action": "plan_week"} and not rhythm.plans(office)  # nothing done yet
     r = lead_chat.say(office, "S2", "yes", by="maya")
-    assert len(rhythm.plans(office)[-1]["days"]) == 7 and r["reply"].startswith("Done. Planned:")
+    assert len(rhythm.plans(office)[-1]["days"]) == 7 and r["reply"].startswith("Planned:")
     assert lead_chat.pending(office, "S2") is None
 
 
@@ -107,3 +107,41 @@ def test_talking_says_so_when_the_listening_drops(monkeypatch):
         with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
     assert closed.value.code == 4002 and "Press Talk" in closed.value.reason
+
+
+def _office():
+    from diwan import brand, business, demo
+    from diwan.events import EventLog
+    from diwan.office import Office
+    o = Office(EventLog())
+    demo.seed(o)
+    business.save(o, {"industry": "Real estate brokerage", "country": "AE", "posted_before": "no"}, by="maya")
+    brand.save(o, {"name": "Diwan Realty", "positioning": "A Dubai brokerage.", "cta": "Guiding you home"}, by="maya")
+    return o
+
+
+def test_the_lead_knows_the_next_post_prices_and_what_each_post_brought():
+    from diwan.agents import lead_chat
+    o = _office()
+    text = lead_chat.context(o, "s", None)
+    assert "The next post is JOB-introduce" in text and "AED 2,600,000" in text and "JOB-why-us" in text
+    o.log.append("lead.attributed", actor="mkt", deal="D9", content={"ref": "MC-1204", "via": "code word"})
+    assert "Traced to Unit 1204, Marina Crest: 1 leads" in lead_chat.context(o, "s", None)
+
+
+def test_a_yes_reports_what_really_happened_not_what_the_model_said(monkeypatch):
+    from diwan.agents import lead_chat, rhythm
+    o = _office()
+    rhythm.save(o, {"posts_per_week": "3"}, by="maya")
+    o.log.append("mchat.said", actor="mkt", agent="mkt", content={"session": "s", "who": "lead", "text": "Shall I?", "action": "plan_week", "pending": {"action": "plan_week"}})
+    monkeypatch.setattr(lead_chat, "_model_turn", lambda *a, **k: {"reply": "Locked K4, K10 and K19.", "action": "confirm"})
+    r = lead_chat.say(o, "s", "yes", by="maya")
+    assert "K4" not in r["reply"] and r["reply"].startswith("Planned:") and "Meet Diwan Realty" in r["reply"]
+    assert len(rhythm.current(o)["days"]) >= 3
+
+
+def test_the_lead_can_run_a_post_about_the_brand():
+    from diwan.agents import lead_chat
+    o = _office()
+    assert "Started a run for JOB-introduce" in lead_chat._do(o, {"action": "run_listing", "ref": "JOB-introduce"}, "maya")
+    assert "can't find" in lead_chat._do(o, {"action": "run_listing", "ref": "NOPE"}, "maya")

@@ -5,10 +5,17 @@ from diwan.office import Office
 
 
 def lines(office: Office) -> list[str]:
-    from diwan.agents import marketing
+    from diwan.agents import journey, marketing, reader, rhythm
     out = []
     try:
         out += [f"Marketing waiting for a person: {p['text']}" for p in marketing.waiting(office)[:8]]
+        nxt = journey.report(office)["next"]
+        out += [f"Marketing's next post: {nxt['title']} ({nxt['label']}): {nxt['why']}."] if nxt else ["Marketing's next post: nothing first in line, the plan decides."]
+        days = [d for d in (rhythm.current(office) or {}).get("days", []) if d.get("ref")][:10]
+        out += ["Marketing's plan: " + "; ".join(f"{d['date']} {journey.title_of(office, d['ref'])}" for d in days)] if days else ["Marketing's plan: nothing planned yet."]
+        for a in reader.patterns(office)["accounts"]:
+            out += [f"Our competitor research, @{a['account']}: {f['finding']}" for f in a["patterns"]]
+        out += [f"Marketing stopped: {s['title']}: {s['why']}" for s in marketing.plan_view(office)["stopped"][:5]]
         v = marketing.overview(office)
         out.append("Marketing pieces by stage: " + ", ".join(f"{s['label']} {s['n']}" for s in v["stages"] if s["n"]))
         g = office.graph()

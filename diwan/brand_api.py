@@ -230,7 +230,8 @@ class ChatIn(BaseModel):
 async def chat_say(body: ChatIn):
     from diwan.agents import lead_chat
     try:
-        return await asyncio.to_thread(lead_chat.say, _office(), body.session, body.text, by=body.by, ref=body.ref)
+        from diwan import access
+        return await asyncio.to_thread(lead_chat.say, _office(), body.session, body.text, by=access.USER.get() or body.by, ref=body.ref)
     except ValueError as e:
         return {"reply": str(e), "action": "none"}
     except Exception as e:  # noqa: BLE001  the model failed: say so, keep the conversation
