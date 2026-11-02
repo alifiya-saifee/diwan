@@ -528,3 +528,35 @@ def test_a_stopped_moment_does_not_come_back_as_news(office):
     assert ref in {m["ref"] for m in journey.moments(office)}
     marketing.withdraw(office, ref, "not this")
     assert ref not in {m["ref"] for m in journey.moments(office)}
+
+
+def test_a_stop_clears_the_film_task_and_a_failed_review_question_even_from_before(office):
+    from diwan import marketing_view
+    asyncio.run(studio.run(office, "MC-1204", pause=0))
+    studio.approve_script_now(office, "MC-1204", choice=studio.script_options(office, studio.script_request(office, "MC-1204").props["text"])[0]["id"])
+    office.log.append("decision.needed", actor="mkt", agent="mkt", content={"who": "layla", "refs": ["MC-1204"], "options": ["Stop this reel"], "question": "The script for MC-1204 failed review 3 times"})
+    office.log.append("post.withdrawn", actor="mkt", agent="mkt", content={"ref": "MC-1204", "why": "an old stop, before anything was cleared"})
+    marketing.watch(office)
+    assert not [t for t in office.graph().of("task", status="queued") if t.props.get("agent") == "mshoot" and "MC-1204" in t.props["action"]]
+    assert not [n for n in office.graph().of("decision", status="open") if "MC-1204" in (n.props.get("refs") or [])]
+    assert any("Marketing stopped" in x for x in marketing_view.lines(office))
+
+
+def test_nova_can_see_the_next_post_the_plan_and_the_research(office):
+    from diwan import marketing_view
+    week(office)
+    text = "\n".join(marketing_view.lines(office))
+    assert "Marketing's next post: Meet Diwan Realty" in text and "Marketing's plan: " in text
+
+
+def test_a_card_already_replaced_can_not_be_answered(office, monkeypatch):
+    from fastapi.testclient import TestClient
+    from diwan import app as appmod
+    with TestClient(appmod.app) as c:
+        monkeypatch.setattr(appmod.S, "office", office)
+        asyncio.run(studio.run(office, "MC-1204", pause=0))
+        n = studio.script_request(office, "MC-1204")
+        first = studio.script_options(office, n.props["text"])[0]
+        office.log.append("decision.made", actor="mcopy", agent="mcopy", content={"card": n.id, "answer": "replaced by a newer draft"})
+        r = c.post(f"/api/requests/{n.id}/decide", json={"decision": "approve", "choice": first["id"], "by": "maya"}).json()
+        assert r["ok"] is False and "newest" in r["needs"][0] and not studio.approved_script(office, "MC-1204")

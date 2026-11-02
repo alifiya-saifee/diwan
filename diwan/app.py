@@ -528,6 +528,8 @@ async def decide(rid: str, body: DecideIn):
     n = g().nodes.get(rid)
     if not n or n.type != "request":
         raise HTTPException(404, "no such request")
+    if n.status != "open":  # a card already answered or replaced: the page was showing an old one
+        return {"ok": False, "needs": ["this card was already answered or replaced: look at the newest one"]}
     role = {"use_script": "script", "approve_brief": "script", "publish": "publish"}.get(n.props.get("kind"))
     who = approvers.get(S.office)[role] if role else None
     if who and body.by != who and not access.is_owner(body.by):  # the person named in Setup, or the owner

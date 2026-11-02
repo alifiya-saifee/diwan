@@ -124,6 +124,9 @@ def _close_cards(office: Office, ref: str, why: str) -> None:
     for n in office.graph().of("request", status="open"):
         if n.props.get("kind") in ("publish", "use_script", "approve_brief") and ref in n.props.get("text", ""):
             office.log.append("decision.made", actor="mkt", agent="mkt", content={"card": n.id, "answer": f"closed: {why}"})
+    for n in office.graph().of("decision", status="open"):  # the question raised when its checks failed three times
+        if ref in (n.props.get("refs") or []):
+            office.log.append("decision.made", actor="mkt", agent="mkt", content={"card": n.id, "answer": f"closed: {why}"})
 
 
 def _take_down(office: Office, ref: str, why: str) -> None:
@@ -151,15 +154,21 @@ def withdraw(office: Office, ref: str, why: str, *, archived: bool = False) -> N
     _mark(office, "post.withdrawn", ref, why=why, archived=archived)
     if archived:
         return
-    for t in office.graph().of("task", status="queued"):  # nobody films a post that was stopped
-        if t.props.get("agent") == "mshoot" and ref in t.props.get("action", ""):
-            office.log.append("task.withdrawn", actor="mkt", agent="mkt", content={"id": t.id, "reason": why})
+    _clear(office, ref, why)
     rhythm.take_off(office, ref, by="mkt")
     from diwan import leads
     leads.notify(office, person(office), f"{ref} is withdrawn: {why}", kind="info")
     if p.get("stage") == "live" or p.get("was") == "live":
         _take_down(office, ref, why)
     studio._pack(office, "mpub", f"{ref} withdrawn: {why}", kind=None)
+
+
+def _clear(office: Office, ref: str, why: str) -> None:
+    """Nobody films, or answers for, a post that was stopped."""
+    for t in office.graph().of("task", status="queued"):
+        if t.props.get("agent") == "mshoot" and ref in t.props.get("action", ""):
+            office.log.append("task.withdrawn", actor="mkt", agent="mkt", content={"id": t.id, "reason": why})
+    _close_cards(office, ref, why)
 
 
 def _resume(office: Office, ref: str, p: dict) -> None:
@@ -185,6 +194,8 @@ def watch(office: Office, now: datetime | None = None) -> list[str]:
     today = _today(office, now)
     days = int(rhythm.settings(office)["archive_days"])
     for ref, p in pieces(office).items():
+        if p["stage"] == "withdrawn":
+            _clear(office, ref, p.get("why") or "it was stopped")  # also what a post stopped before this was built left behind
         if p["stage"] in FINAL or p["stage"] in ("idea", "briefed"):
             continue
         state, why = check(office, ref, now)

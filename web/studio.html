@@ -507,6 +507,7 @@ function tabs(navId, attr, panelPrefix, initial, onShow) {
   show(buttons.some((b) => b.dataset[attr] === initial) ? initial : buttons[0].dataset[attr]);
   return show;
 }
+addEventListener("hashchange", () => { const n = location.hash.slice(1); if ($(`tab-${n}`)) showTab(n); });
 const showTab = tabs("tabs", "tab", "tab-", location.hash.slice(1), (n) => { history.replaceState(null, "", `#${n}`); if (n === "results") loadResults(); if (n === "plan") loadPlan(); });
 tabs("subtabs", "sub", "sub-", "overview");
 const days = (from, to) => Math.max(0, Math.round((new Date((to || new Date().toISOString().slice(0, 10)) + "T12:00:00Z") - new Date(from + "T12:00:00Z")) / 864e5));
@@ -595,7 +596,7 @@ function renderRun(quiet) {
     data.made.slides ? h("div", { class: "item" }, h("b", {}, `The post: ${data.made.slides.images.length} image${data.made.slides.images.length === 1 ? "" : "s"}`),
       data.made.slides.people ? h("p", { class: "note" }, `${data.made.slides.people} show people: check they agreed before publishing.`) : "",
       h("div", { class: "slideshow" }, ...data.made.slides.images.map((x) => h("img", { src: x.served, alt: x.text })))) : "",
-    data.script_approved && !data.made.slides ? h("div", { class: "item" }, h("b", {}, "Production: "), "the broker has the film list. Or make the video without filming, one of two ways:",
+    data.script_approved && !data.made.slides && !data.approvals.some((r) => r.kind === "use_script") ? h("div", { class: "item" }, h("b", {}, "Production: "), "the broker has the film list. Or make the video without filming, one of two ways:",
       h("div", { class: "two" },
         h("div", { class: "way" }, h("b", {}, "Free video"), h("p", { class: "note" }, `The computer's voice (${data.free_video.voice}) reads the script over the listing's photos with a slow zoom, the price card and an end card. No avatar, no cost. ${data.free_video.photos} photo${data.free_video.photos === 1 ? "" : "s"} ready.`),
           h("div", { class: "row" }, h("input", { type: "file", id: "photos", accept: "image/*", multiple: true, "aria-label": "Add photos of the listing" }), h("button", { onclick: addPhotos }, "Add photos")),
