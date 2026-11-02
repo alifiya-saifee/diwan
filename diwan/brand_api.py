@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 
 from fastapi import APIRouter, File, Form, UploadFile, WebSocket
 from pydantic import BaseModel
@@ -429,11 +430,11 @@ class PlanIn(BaseModel):
 
 
 @router.post("/api/marketing/plan")
-def make_marketing_plan(body: PlanIn):
-    """Plan the days ahead. Nothing is written until a day comes or a person presses Write it now."""
+async def make_marketing_plan(body: PlanIn):
+    """Plan the days ahead. Today's day, if the plan has one, is written straight away; each later day on its morning."""
     from datetime import datetime, timezone
     from diwan import business
-    from diwan.agents import rhythm
+    from diwan.agents import rhythm, studio
     if not 1 <= body.days <= 31:
         return {"ok": False, "error": "Plan 1 to 31 days."}
     if body.per_week:
@@ -441,8 +442,12 @@ def make_marketing_plan(body: PlanIn):
             rhythm.save(_office(), {"posts_per_week": body.per_week}, by=body.by)
         except rhythm.Invalid as e:
             return {"ok": False, "error": str(e)}
-    rhythm.make_plan(_office(), business.local(datetime.now(timezone.utc), _office()).date(), auto=False, by=body.by, days_ahead=body.days, think=True)
-    return {"ok": True}
+    await asyncio.to_thread(rhythm.make_plan, _office(), business.local(datetime.now(timezone.utc), _office()).date(), auto=False, by=body.by,
+                            days_ahead=body.days, think=True)
+    today = rhythm.due(_office(), any_hour=True)
+    if today:
+        asyncio.create_task(studio.run(_office(), today))
+    return {"ok": True, "writing_today": today}
 
 
 class DayIn(BaseModel):
@@ -597,6 +602,37 @@ class UnscheduleIn(BaseModel):
     by: str = "maya"
 
 
+class RescheduleIn(BaseModel):
+    ref: str
+    at: str
+    by: str = "maya"
+
+
+@router.post("/api/studio/reschedule")
+def reschedule_post(body: RescheduleIn):
+    """An approved post goes out at another time."""
+    from diwan.agents import studio
+    return studio.reschedule(_office(), body.ref, body.at, by=body.by)
+
+
+class MoveDayIn(BaseModel):
+    day: str
+    to: str
+    by: str = "maya"
+
+
+@router.post("/api/marketing/plan/reschedule")
+def reschedule_day(body: MoveDayIn):
+    """A planned post moves to another date."""
+    from diwan.agents import approvers, rhythm
+    if not _may_plan(body.by):
+        return {"ok": False, "error": f"This waits for {approvers.label(_office(), 'script')}."}
+    try:
+        return {"ok": True, "plan": rhythm.reschedule(_office(), body.day, body.to, by=body.by)}
+    except rhythm.Invalid as e:
+        return {"ok": False, "error": str(e)}
+
+
 @router.post("/api/studio/unschedule")
 def unschedule(body: UnscheduleIn):
     """Stop an approved post before its time. It goes back to waiting for a yes: cancelling the time is not stopping the post."""
@@ -637,3 +673,107 @@ def topic_use(body: TopicUseIn):
         return {"ok": False, "error": f"No topic {body.ref}."}
     topics.exclude(_office(), body.ref, by=body.by, on=not body.use)
     return {"ok": True}
+
+
+class OccasionIn(BaseModel):
+    key: str
+    on: str | None = None
+    by: str = "maya"
+
+
+@router.post("/api/occasions/prepare")
+async def occasion_prepare(body: OccasionIn):
+    """One yes on an occasion from the calendar: a greeting post is written now and goes out on the day."""
+    from diwan import occasions
+    from diwan.agents import studio
+    try:
+        ref = occasions.prepare(_office(), body.key, by=body.by, on=body.on)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    asyncio.create_task(studio.run(_office(), ref))
+    return {"ok": True, "ref": ref}
+
+
+@router.get("/api/occasions")
+def occasions_list():
+    """The business's occasions (researched for its country, with a person's changes), what the research dropped and why, and its sources."""
+    from diwan import occasions
+    r = occasions.researched(_office()) or {}
+    return {"rows": occasions.all_(_office()), "researched": r.get("day"), "country": r.get("country"), "dropped": r.get("dropped", []),
+            "sources": r.get("sources", []), "due": occasions.research_due(_office())}
+
+
+@router.post("/api/occasions/research")
+async def occasions_research(by: str = "maya"):
+    """Find this business's occasions for the next year now (one web search)."""
+    from diwan import occasions
+    r = await asyncio.to_thread(occasions.research, _office(), by=by)
+    return {"ok": "needs" not in r, **({"needs": r["needs"]} if "needs" in r else {"found": len(r["rows"]), "dropped": r["dropped"]})}
+
+
+class OccasionRow(BaseModel):
+    title: str
+    on: str
+    greeting: str
+    greeting_local: str = ""
+    tags: list[str] = []
+    about: str = ""
+    sombre: bool = False
+    key: str | None = None
+    by: str = "maya"
+
+
+@router.post("/api/occasions/save")
+def occasions_save(body: OccasionRow):
+    """A person adds or corrects an occasion: their word wins over the research."""
+    from diwan import occasions
+    try:
+        return {"ok": True, "row": occasions.save(_office(), body.model_dump(exclude={"key", "by"}), by=body.by, key=body.key)}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/api/occasions/remove")
+def occasions_remove(body: OccasionIn):
+    """Not an occasion this business marks."""
+    from diwan import occasions
+    occasions.remove(_office(), body.key, by=body.by)
+    return {"ok": True}
+
+
+@router.post("/api/occasions/skip")
+def occasion_skip(body: OccasionIn):
+    """Not this year."""
+    from diwan import occasions
+    occasions.skip(_office(), body.key, by=body.by)
+    return {"ok": True}
+
+
+@router.post("/api/brand/logo")
+async def brand_logo(file: UploadFile = File(...), by: str = Form("maya")):
+    """The company's logo, a PNG (a clear background is best) or JPEG: it goes on every picture, cover and end card."""
+    from PIL import Image
+    from diwan.providers import meta
+    data = await file.read()
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except Exception:  # noqa: BLE001
+        return {"ok": False, "error": "That file is not a picture. Upload the logo as a PNG or JPEG."}
+    if min(img.size) < 120:
+        return {"ok": False, "error": f"The logo is too small ({img.size[0]}x{img.size[1]}): use one at least 300 pixels wide."}
+    meta.MEDIA.mkdir(exist_ok=True)
+    path = meta.MEDIA / "brand-logo.png"
+    img.convert("RGBA").save(path, "PNG")
+    _office().log.append("setting.changed", actor=by, content={"person": "brand_logo", "key": "logo", "value": str(path)})
+    from diwan.agents import studio
+    studio.keep(_office(), "brand", "logo", {"file": f"/media/{path.name}"})  # a copy in Supabase Storage, when a bucket is set
+    return {"ok": True, "served": f"/media/{path.name}"}
+
+
+@router.get("/api/brand/logo")
+def brand_logo_get():
+    from pathlib import Path
+    from diwan import brand
+    p = brand.logo(_office())
+    return {"served": f"/media/{Path(p).name}" if p else None}

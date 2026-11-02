@@ -59,6 +59,12 @@ JOBS = {  # job: label, what the post must do, how it closes; the brand's own jo
                             "ask-them": "Ask followers what they want to see"}},
     "educate": {"label": "Teach something", "brief": "Teach one useful thing to a viewer who will not buy today. Do not sell in this post."},
     "offer": {"label": "Offer something", "brief": "Now show what we offer, with its real facts."},
+    "greeting": {"label": "Greet", "brief": "This is a greeting for an occasion, not an advert. Greet warmly in the brand's voice, use the occasion's own "
+                 "greeting, say one true thing about what the day means (only from the facts given) and wish the viewer well. Never sell: no price, no "
+                 "listing, no offer, no 'message us', no code word. Keep it short.",
+                 "close": "Close with a warm wish from the team, signed with the company's name.",
+                 "angles": {"warm-wish": "A warm wish from the team, in a few words", "what-it-means": "What the day means, then the wish",
+                            "from-our-team": "The team greets the viewer, then what the day means"}},
     "moment": {"label": "Something new", "brief": "This is about something that just happened. Say what it means for the viewer, using only the facts given. Stay calm and useful.",
                "angles": {"what-happened": "Say plainly what happened", "what-it-means": "Open on what it means for the viewer, then what happened",
                           "what-to-do": "What the viewer can do now, only from the facts given"}},
@@ -99,7 +105,7 @@ def item(office: Office, ref: str) -> dict | None:
     job = ref[4:] if ref.startswith("JOB-") else ""
     j = JOBS.get(job)
     name = brand.profile(office)["name"]["value"].strip()
-    if not j or "angles" not in j or job == "moment" or not name:
+    if not j or "angles" not in j or job in ("moment", "greeting") or not name:
         return None
     facts = _facts(office, job)
     if not facts:
@@ -113,7 +119,7 @@ def items(office: Office) -> dict[str, dict]:
 
 
 def job_of(lst: dict) -> str:
-    return lst.get("job") or ("moment" if lst.get("moment") else "educate" if lst.get("item") == "topic" else "offer")
+    return lst.get("job") or ("greeting" if lst.get("greeting") else "moment" if lst.get("moment") else "educate" if lst.get("item") == "topic" else "offer")
 
 
 def pick_angles(job: str, n: int, avoid: set[str]) -> list[dict]:
@@ -204,7 +210,8 @@ def moments(office: Office) -> list[dict]:
     from diwan.agents import rhythm
     today = _today(office)
     done = {u["ref"] for u in rhythm.used(office)} | rhythm.stopped_lately(office, today)  # stopped means no: it does not come back as news
-    out = [{"job": "moment", "ref": t["ref"], "title": t["title"], "type": "topic", "why": f"you added this moment; it holds until {t['until']}"}
+    out = [{"job": "greeting" if t.get("greeting") else "moment", "ref": t["ref"], "title": t["title"], "type": "topic",
+            "why": (f"{t['title']} is on {__import__('diwan.occasions', fromlist=['when']).when(t['on'])}: written now, it goes out on the day" if t.get("greeting") else f"you added this moment; it holds until {t['until']}")}
            for t in topics.items(office).values() if t.get("moment") and t["ref"] not in done]
     seen = _confirmed_on(office)
     for n in _cards(office, "project"):
@@ -298,9 +305,10 @@ def report(office: Office) -> dict:
     if first:
         first["state"] = "waiting"
     from diwan.agents import eventpost
-    return {"stage": st, "label": STAGES[st], "why": why, "shape": eventpost.suggest(office, nxt[0]["ref"]) if nxt and nxt[0]["job"] == "moment" and nxt[0]["ref"].startswith("T-") else None, "posts": a["posts"], "waiting": a["waiting"], "ask": st == "unknown",
+    return {"stage": st, "label": STAGES[st], "why": why, "shape": eventpost.suggest(office, nxt[0]["ref"]) if nxt and nxt[0]["job"] in ("moment", "greeting") and nxt[0]["ref"].startswith("T-") else None, "posts": a["posts"], "waiting": a["waiting"], "ask": st == "unknown",
             "next": [x | {"label": JOBS[x["job"]]["label"], "title": x.get("title") or title_of(office, x["ref"])} for x in nxt][0] if nxt else None,
-            "moments": moments(office), "steps": steps if st == "introduce" else [], "skipped": skipped if st == "introduce" else []}
+            "moments": moments(office), "steps": steps if st == "introduce" else [], "skipped": skipped if st == "introduce" else [],
+            "coming": __import__("diwan.occasions", fromlist=["upcoming"]).upcoming(office, _today(office))}
 
 
 def brief(office: Office, lst: dict) -> str:

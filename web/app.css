@@ -42,7 +42,8 @@ header.top {
 .brand svg { width: 26px; height: 26px; }
 .brand .word { font-family: var(--display); font-size: 25px; letter-spacing: .3px; line-height: 1; }
 .brand .tag { white-space: nowrap; font-size: 11px; color: var(--muted); letter-spacing: .4px; border-left: 1px solid var(--line-2); padding-left: 10px; margin-left: 2px; }
-header.top nav { display: flex; gap: 2px; flex-wrap: nowrap; }
+header.top nav { display: flex; gap: 2px; flex-wrap: nowrap; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }  /* more rooms than fit: the menu scrolls, the page does not */
+header.top nav a { white-space: nowrap; }
 header.top nav a { color: var(--muted); padding: 7px 12px; border-radius: 9px; font-weight: 500; font-size: 13px; transition: .15s; }
 header.top nav a:hover { color: var(--ink); background: var(--chip); }
 header.top nav a.on { color: var(--bg); background: var(--gold); }

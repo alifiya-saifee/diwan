@@ -186,3 +186,16 @@ def parse_comments(body: dict) -> list[dict]:
             out.append({"comment_id": v.get("id"), "username": frm.get("username"), "user_id": frm.get("id"),
                         "text": v.get("text", ""), "media_id": (v.get("media") or {}).get("id")})
     return out
+
+
+def online_followers() -> dict[int, int]:
+    """When our followers are on Instagram: {hour of the day (Pacific time, as Instagram reports it): followers online},
+    from the account's online_followers insight (lifetime, the last days Instagram keeps). {} when Instagram gives none."""
+    data = _get(f"{env('IG_USER_ID')}/insights", {"metric": "online_followers", "period": "lifetime"}).get("data", [])
+    out: dict[int, int] = {}
+    for row in data:
+        for v in row.get("values") or []:
+            for hour, n in (v.get("value") or {}).items():
+                if str(hour).isdigit():
+                    out[int(hour)] = out.get(int(hour), 0) + int(n or 0)
+    return out

@@ -481,9 +481,10 @@ def run(office: Office, url: str, *, by: str) -> dict:
                     cache[u] = t
     items = [read_page(cache[u], u) for u in f["pages"] if cache.get(u)]
     items = [p for p in items if _looks_like_one(p) or p.get("title")]
-    model = fill(office, items)
     g = office.graph()
     existing = [n.props | {"ref": n.props.get("ref") or n.id.split(":", 1)[1]} for n in g.of("listing")]
+    known_pages = {x["page"].rstrip("/") for x in existing if x.get("page")}
+    model = fill(office, [p for p in items if p["url"].rstrip("/") not in known_pages])  # a page already in Diwan needs no model
     taken = {x["ref"] for x in existing}
     added, same, differs, skipped, shared = [], [], [], [], []
     for p in items:

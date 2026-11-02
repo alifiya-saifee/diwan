@@ -22,7 +22,7 @@ from diwan.office import Office
 
 DEFAULTS = {"auto": "off", "at": "09:00", "rhythm": "daily", "repeat_angle_days": "3", "repeat_listing_days": "7", "compare_months": "12",
             "refresh": "off", "refresh_at": "07:00", "topic_share": "50", "repeat_topic_days": "14",
-            "auto_post": "off", "approve_brief": "on", "archive_days": "90", "ad_budget": "0", "cpl_limit": "0", "plan_ahead": "off", "posts_per_week": "0"}
+            "auto_post": "off", "approve_brief": "on", "archive_days": "90", "ad_budget": "0", "cpl_limit": "0", "plan_ahead": "off", "posts_per_week": "0", "post_days": ""}
 STOPPED_DAYS = 30
 AHEAD_DAYS, TOP_UP_DAYS = 7, 3  # planning by itself covers a week, renewed when 3 days are left: fewer model calls
 EVERY = {"daily": 1, "every 2 days": 2, "weekly": 7}
@@ -30,7 +30,7 @@ LABELS = {"auto": "Automatic", "at": "Start at", "rhythm": "Rhythm", "repeat_ang
           "repeat_listing_days": "Don't repeat a listing within (days)", "compare_months": "Compare posts from the last (months)",
           "refresh": "Refresh competitor posts every day", "refresh_at": "Refresh at",
           "topic_share": "Informational videos, as a share of all (%)", "repeat_topic_days": "Don't repeat a topic within (days)",
-          "plan_ahead": "Plan the next week by itself", "posts_per_week": "Posts a week", "auto_post": "Post by itself at the approved time", "approve_brief": "An automatic run waits for a yes on the brief",
+          "plan_ahead": "Plan the next week by itself", "posts_per_week": "Posts a week", "post_days": "Post on these days", "auto_post": "Post by itself at the approved time", "approve_brief": "An automatic run waits for a yes on the brief",
           "archive_days": "Archive live posts after (days)", "ad_budget": "Ad budget a month (AED)", "cpl_limit": "Limit per qualified lead (AED)"}
 
 
@@ -70,6 +70,11 @@ def save(office: Office, values: dict, *, by: str) -> list[str]:
             raise Invalid(f"{LABELS[k]} is a whole number.")
         if k == "posts_per_week" and not (v.isdigit() and 0 <= int(v) <= 7):
             raise Invalid("Posts a week is a whole number from 1 to 7.")
+        if k == "post_days":
+            got = [x.strip()[:3].title() for x in re.split(r"[,\s]+", v) if x.strip()]
+            if any(x not in WEEKDAYS for x in got):
+                raise Invalid(f"Days are some of: {', '.join(WEEKDAYS)}.")
+            v = ",".join(x for x in WEEKDAYS if x in got)  # in week order, each once
         if k == "compare_months" and not (v.isdigit() and 1 <= int(v) <= 60):
             raise Invalid("Months are a whole number from 1 to 60.")
         if v != cur[k]:
@@ -213,8 +218,14 @@ def _pick_topic(office: Office, day: date, taken: dict[str, date]) -> tuple[str 
     return t["ref"], why + (f". It is working for @{hit(t)[0]} right now" if hit(t) else "")
 
 
-def posting_day(i: int, per_week: int) -> bool:
-    """Whether the i-th day from today gets a post: spread through the week, starting today. 0 means nobody has said, so every day."""
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def posting_day(i: int, per_week: int, day: date | None = None, days: str = "") -> bool:
+    """Whether the i-th day from today gets a post. The days the person chose (Setup → Rhythm) decide when they are set;
+    otherwise the posts a week are spread through the week, starting today. 0 means nobody has said, so every day."""
+    if days and day:
+        return WEEKDAYS[day.weekday()] in days.split(",")
     return not per_week or i * per_week % 7 < per_week
 
 
@@ -245,7 +256,7 @@ def make_plan(office: Office, today: date, *, auto: bool, by: str = "mkt", days_
             days.append(keep[d.isoformat()])
             types.append(keep[d.isoformat()].get("type") or "listing")
             continue
-        if not posting_day(i, per_week):
+        if not posting_day(i, per_week, d, settings(office)["post_days"]):
             continue
         slot = first.pop(0) if first else None
         if slot:
@@ -458,20 +469,66 @@ def move(office: Office, day: str, step: int, *, by: str) -> dict:
     return content
 
 
-def due(office: Office, now: datetime | None = None) -> str | None:
-    """Called every minute. At the hour, on a day the rhythm runs, plan if needed and return the listing to run today
-    (once); otherwise None."""
+def reschedule(office: Office, day: str, to: str, *, by: str, today: date | None = None) -> dict:
+    """Move a planned day's post to another date: onto an empty day, or swapping with the post already there. Only days
+    not started yet, never into the past. A greeting stays on its own day: it would greet on the wrong one."""
+    p = current(office)
+    if not p:
+        raise Invalid("There is no plan to change.")
+    try:
+        new = date.fromisoformat(to)
+    except ValueError:
+        raise Invalid("The new date is like 2026-11-12.") from None
+    if new < (today or business.local(datetime.now(timezone.utc), office).date()):
+        raise Invalid("That date has passed.")
+    ds = [dict(d) for d in p["days"]]
+    i = next((k for k, d in enumerate(ds) if d["date"] == day and d.get("ref")), None)
+    if i is None:
+        raise Invalid("Nothing is planned on that day.")
+    if {day, to} & started(office):
+        raise Invalid("A day whose scripts are written can't move.")
+    from diwan.agents import studio
+    try:
+        if studio._listing(office, ds[i]["ref"]).get("greeting"):
+            raise Invalid("A greeting goes out on its own day: change the occasion's date in Setup → Our occasions instead.")
+    except KeyError:
+        pass
+    keys = ("ref", "type", "why", "job", "format", "borrows", "status")
+    j = next((k for k, d in enumerate(ds) if d["date"] == to), None)
+    if j is None:  # an empty day: the post moves there and its old day is left free
+        ds.append({"date": to, **{k: ds[i][k] for k in keys if k in ds[i]}})
+        ds[i] = {"date": day}
+    else:
+        a, b = {k: ds[i].get(k) for k in keys}, {k: ds[j].get(k) for k in keys}
+        ds[i] = {"date": day, **{k: v for k, v in b.items() if v is not None}}
+        ds[j] = {"date": to, **{k: v for k, v in a.items() if v is not None}}
+    ds.sort(key=lambda d: d["date"])
+    content = {**{k: p[k] for k in ("rhythm", "auto")}, "days": ds, "removed": p.get("removed") or [], "moved_by": by, "chosen_by": p.get("chosen_by", "rules")}
+    office.log.append("plan.made", actor=by, agent="plan", content=content)
+    return content
+
+
+def due(office: Office, now: datetime | None = None, *, any_hour: bool = False) -> str | None:
+    """Called every minute. At the hour, the subject to write today (once), or None.
+
+    A plan a person made is kept: its day is written at the start hour even with Automatic off, so the person finds the
+    day's three scripts waiting (writing costs little; nothing is filmed or posted without a yes). Automatic on also lets
+    it make the plan by itself. `any_hour`: write today's day now (a plan was just made after the start hour)."""
     s = settings(office)
-    if s["auto"] != "on":
-        return None
     now = now or datetime.now(timezone.utc)
     local = business.local(now, office)
-    if local.strftime("%H:%M") < s["at"]:
+    if local.strftime("%H:%M") < s["at"] and not any_hour:
         return None
     today = local.date()
     if today.isoformat() in started(office):
         return None
     p = current(office, today)
+    if s["auto"] != "on":
+        slot = next((d for d in (p or {}).get("days", []) if d["date"] == today.isoformat() and d.get("ref")), None)
+        if not slot or slot.get("status") in ("rejected", "removed"):
+            return None
+        office.log.append("plan.started", actor="mkt", agent="mkt", content={"date": today.isoformat(), "ref": slot["ref"], "auto": False, "by_plan": True})
+        return slot["ref"]
     if s["posts_per_week"] != "0" and p and not any(d["date"] == today.isoformat() for d in p["days"]):
         return None  # the plan runs on and today is not one of its days
     if not p or not any(d["date"] == today.isoformat() for d in p["days"]):

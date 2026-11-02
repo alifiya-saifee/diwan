@@ -77,12 +77,20 @@ def test_a_post_on_the_plan_goes_out_on_its_day_not_tomorrow(office):
     assert studio.planned_at(office, "JVC-88", slot["at"]) == slot["at"]
 
 
-def test_a_time_comes_from_our_own_best_hour_once_there_are_five_posts(office):
-    assert datetime.fromisoformat(studio.schedule(office, None)["at"]).hour == 19
-    for i in range(5):
+def test_the_posting_hour_comes_from_the_best_source_and_says_which(office, monkeypatch):
+    from diwan.providers import instagram
+    monkeypatch.setattr(instagram, "ready", lambda: True)
+    monkeypatch.setattr(instagram, "online_followers", lambda: {})
+    s = studio.schedule(office, None)
+    assert datetime.fromisoformat(s["at"]).hour == 19 and "default" in s["why"]  # nothing to go on: said so
+    monkeypatch.setattr(instagram, "online_followers", lambda: {h: (900 if h == 8 else 100) for h in range(24)})  # 08:00 Pacific
+    s = studio.schedule(office, None)
+    assert datetime.fromisoformat(s["at"]).hour in (19, 20) and "Instagram" in s["why"]  # 08:00 in Los Angeles is 19:00 or 20:00 in Dubai (summer or winter time)
+    for i in range(8):
         hour = 9 if i < 3 else 20
         office.log.append("post.seen", actor="mrival", content={"id": f"own{i}", "source": "own", "at": f"2026-10-{10 + i}T{hour - 4:02d}:00:00+0000", "likes": 500 if hour == 9 else 5, "comments": 0, "engagement": 500 if hour == 9 else 5})
-    assert datetime.fromisoformat(studio.schedule(office, None)["at"]).hour == 9
+    s = studio.schedule(office, None)
+    assert datetime.fromisoformat(s["at"]).hour == 9 and "our posts" in s["why"]  # our own results beat everything else
 
 
 def test_research_runs_once_a_day_by_itself(office):
@@ -157,3 +165,58 @@ def test_a_post_about_the_company_must_name_it(office):
     good = bad | {"lines_en": ["At Diwan Realty we help buyers.", *bad["lines_en"][1:]]}
     assert "script-names-us" in [f["check"] for f in qa.review(office, "script", "JOB-introduce", bad, cause=None, attempt=1)]
     assert "script-names-us" not in [f["check"] for f in qa.review(office, "script", "JOB-introduce", good, cause=None, attempt=1)]
+
+
+def test_a_planned_day_is_written_that_morning_even_with_automatic_off(office):
+    """The manager made a plan: today's scripts should be waiting, not only when Automatic is on."""
+    from datetime import datetime, timezone
+    from diwan.agents import rhythm
+    rhythm.save(office, {"auto": "off", "at": "09:00", "posts_per_week": "7"}, by="maya")
+    today = datetime(2026, 11, 2, 10, 0, tzinfo=timezone.utc)  # 14:00 in Dubai, after the start hour
+    assert rhythm.due(office, today) is None  # no plan: nothing is made up by itself while Automatic is off
+    plan = rhythm.make_plan(office, today.date(), auto=False, by="maya", days_ahead=7)
+    first = next(d for d in plan["days"] if d["date"] == "2026-11-02" and d.get("ref"))
+    assert rhythm.due(office, today) == first["ref"]
+    assert rhythm.due(office, today) is None  # once a day
+
+
+def test_posts_go_only_on_the_days_the_person_chose(office):
+    rhythm.save(office, {"post_days": "sun, tue thu"}, by="maya")
+    assert rhythm.settings(office)["post_days"] == "Tue,Thu,Sun"
+    plan = rhythm.make_plan(office, date(2026, 11, 2), auto=False, days_ahead=14)
+    days = {date.fromisoformat(d["date"]).strftime("%a") for d in plan["days"] if d.get("ref")}
+    assert days and days <= {"Tue", "Thu", "Sun"}
+    with pytest.raises(rhythm.Invalid):
+        rhythm.save(office, {"post_days": "Funday"}, by="maya")
+
+
+def test_a_competitor_taken_off_setup_leaves_the_research_board(office):
+    for acc in ("rival", "robots"):
+        office.log.append("board.pinned", actor="mrival", content={"id": f"pin-{acc}", "kind": "outlier", "account": acc, "title": f"{acc} best post"})
+    office.log.append("board.pinned", actor="mtrend", content={"id": "pin-trend", "kind": "trend", "account": "trend", "title": "Eid greetings"})
+    office.log.append("setting.changed", actor="maya", content={"person": "studio", "key": "competitors", "value": "rival"})
+    assert {c["id"] for c in studio.board(office)} == {"pin-rival", "pin-trend"}
+
+
+def test_a_planned_post_moves_to_another_day_or_swaps_with_the_one_there(office):
+    rhythm.save(office, {"posts_per_week": "3"}, by="maya")
+    plan = rhythm.make_plan(office, date(2026, 11, 2), auto=False, days_ahead=7)
+    full = [d for d in plan["days"] if d.get("ref")]
+    a, b = full[0], full[1]
+    p = rhythm.reschedule(office, a["date"], b["date"], by="maya", today=date(2026, 11, 2))  # onto a planned day: they swap
+    on = {d["date"]: d.get("ref") for d in p["days"]}
+    assert on[a["date"]] == b["ref"] and on[b["date"]] == a["ref"]
+    free = next(d for d in (date(2026, 11, 2) + timedelta(days=i) for i in range(7, 14)))
+    p = rhythm.reschedule(office, a["date"], free.isoformat(), by="maya", today=date(2026, 11, 2))  # onto an empty day: it moves
+    on = {d["date"]: d.get("ref") for d in p["days"]}
+    assert on[free.isoformat()] == b["ref"] and not on[a["date"]]
+    with pytest.raises(rhythm.Invalid, match="passed"):
+        rhythm.reschedule(office, free.isoformat(), "2026-10-01", by="maya", today=date(2026, 11, 2))
+
+
+def test_an_approved_post_goes_out_at_the_new_time_and_never_in_the_past(office):
+    office.log.append("content.made", actor="mpub", content={"id": "S1", "kind": "scheduled", "ref": "MC-1204", "at": "2099-01-01T19:30:00+04:00", "approved_by": "layla"})
+    assert not studio.reschedule(office, "MC-1204", "2020-01-01T10:00", by="maya")["ok"]
+    r = studio.reschedule(office, "MC-1204", "2099-01-03T09:00", by="maya")
+    assert r["ok"] and studio.scheduled(office)["MC-1204"]["at"].startswith("2099-01-03T09:00") and studio.scheduled(office)["MC-1204"]["approved_by"] == "layla"
+    assert not studio.reschedule(office, "NOT-WAITING", "2099-01-03T09:00", by="maya")["ok"]

@@ -268,7 +268,13 @@ def code_for(office: Office, ref: str) -> str:
     lst = _subject(office, ref) or {"title": ref}
     from diwan import brand
     skip = GENERIC | {w.lower() for w in re.findall(r"[A-Za-z]+", brand.profile(office)["name"]["value"])}
-    word = next((w for w in re.findall(r"[A-Za-z]{4,}", lst["title"]) if w.lower() not in skip), "HELLO").upper()
+    # the most distinctive word: the one used least across all our subjects' names and places ("Brand New" is on many listings, "Dahlias" on one)
+    words = lambda x: re.findall(r"[A-Za-z]{4,}", f"{x.get('community') or ''} {x.get('title') or ''}")  # noqa: E731
+    from diwan import topics
+    every = [n.props for n in office.graph().of("listing")] + list(topics.items(office).values())
+    seen = Counter(w.lower() for r in every for w in set(words(r)))
+    mine = [w for w in words(lst) if w.lower() not in skip]
+    word = (min(mine, key=lambda w: (seen[w.lower()], mine.index(w))) if mine else "HELLO").upper()
     taken = set(have.values())
     code, n = word, 1
     while code in taken:
@@ -445,12 +451,12 @@ def plan_view(office: Office) -> dict:
             continue
         ref, piece = d.get("ref"), have.get(d.get("ref")) or {}
         state = "written" if d["date"] in begun else d.get("status") or "pending"
-        days.append({"date": d["date"], "ref": ref, "title": (_subject(office, ref) or {}).get("title") or ref or "", "why": d.get("why", ""), "format": format_of(office, ref),
+        days.append({"date": d["date"], "ref": ref, "title": (_subject(office, ref) or {}).get("title") or ref or "", "why": d.get("why", ""), "borrows": d.get("borrows", ""), "format": format_of(office, ref),
                      "job": journey.JOBS[d["job"]]["label"] if d.get("job") in journey.JOBS else ("Teach something" if d.get("type") == "topic" else "Offer something"),
                      "state": state, "stage": LABELS.get(piece.get("stage"), "") if d["date"] in begun else ""})
     from diwan.agents import planner
     based = planner.evidence(office, [d["ref"] for d in days if d["ref"]])
-    days = [d | {"evidence": based.get(d["ref"], "")} for d in days]
+    days = [d | {"evidence": "; ".join(x for x in (d.pop("borrows", ""), based.get(d["ref"], "")) if x)} for d in days]  # what the day builds on, then the facts behind it
     going = [{"ref": r, "title": (_subject(office, r) or {}).get("title") or r, "at": s["at"]} for r, s in studio.scheduled(office).items()]
     removed = [{"date": r["date"], "title": (_subject(office, r["ref"]) or {}).get("title") or r["ref"]} for r in (p or {}).get("removed") or []]
     stopped = [{"ref": r, "title": x.get("title") or r, "why": x.get("why", "")} for r, x in have.items() if x["stage"] == "withdrawn"]

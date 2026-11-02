@@ -62,16 +62,21 @@ def _send(path: str, body: dict, timeout: float) -> httpx.Response:
         raise MetaError(f"Muse did not answer in time or the line dropped ({type(e).__name__})") from None
 
 
-def search(prompt: str, *, country: str = "", timeout: float = 120, agent: str = "mtrend") -> dict:
+def search(prompt: str, *, country: str = "", timeout: float = 120, agent: str = "mtrend", max_searches: int | None = None) -> dict:
     """{text (the final answer only), sources[{title,url,snippet}], cited[{title,url}], queries} from Muse Spark with web search.
-    Paid: the tokens plus a fee per search, written to the ledger and stopped at the budget."""
+    Paid: the tokens plus a fee per search, written to the ledger and stopped at the budget. The number of searches is capped
+    in the request (DIWAN_MAX_SEARCHES, 3): a prompt's "use at most two searches" alone was ignored, up to 26 searches a call."""
     from diwan import costs
     _guard("web search", agent)
-    body = {"model": env("META_MODEL_SPARK", "muse-spark-1.3"), "input": prompt, "include": ["web_search_call.results"],
+    cap = max_searches or int(env("DIWAN_MAX_SEARCHES", "3"))
+    body = {"model": env("META_MODEL_SPARK", "muse-spark-1.3"), "input": prompt, "include": ["web_search_call.results"], "max_tool_calls": cap,
             "tools": [{"type": "web_search", "search_context_size": env("DIWAN_SEARCH_CONTEXT", "low"),
                        **({"user_location": {"type": "approximate", "country": country}} if country else {})}]}
     t0 = time.monotonic()
     r = _send("/responses", body, timeout)
+    if r.status_code == 400 and "max_tool_calls" in r.text:  # an endpoint without the cap: ask again without it
+        body.pop("max_tool_calls")
+        r = _send("/responses", body, timeout)
     if r.status_code != 200:
         raise MetaError(f"web search returned {r.status_code}: {r.text[:200]}")
     text, sources, cited, queries = [], [], [], []

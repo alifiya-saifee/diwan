@@ -146,7 +146,7 @@ def test_each_post_gets_its_own_code_word_in_the_caption(office):
     assert text["code"] == "MARINA" and "Say MARINA." in text["text"]
     assert marketing.code_for(office, "MC-1204") == "MARINA"
     office.log.append("listing.added", actor="layla", content={"ref": "MG-2", "title": "Unit 7, Marina Heights", "community": "Dubai Marina", "type": "apartment", "beds": 1, "price_aed": 900000, "permit": "P", "status": "available", "features": []})
-    assert marketing.code_for(office, "MG-2") == "MARINA2"
+    assert marketing.code_for(office, "MG-2") == "HEIGHTS"  # its most distinctive word, not "Marina" again with a number
 
 
 def test_a_lead_that_says_the_code_is_traced_to_the_post(office):
@@ -560,3 +560,50 @@ def test_a_card_already_replaced_can_not_be_answered(office, monkeypatch):
         office.log.append("decision.made", actor="mcopy", agent="mcopy", content={"card": n.id, "answer": "replaced by a newer draft"})
         r = c.post(f"/api/requests/{n.id}/decide", json={"decision": "approve", "choice": first["id"], "by": "maya"}).json()
         assert r["ok"] is False and "newest" in r["needs"][0] and not studio.approved_script(office, "MC-1204")
+
+
+def test_an_occasion_is_offered_ahead_greets_on_its_day_and_sells_nothing(office):
+    from datetime import date, datetime
+    from diwan import occasions
+    from diwan.agents import qa, studio, journey
+    for r in ({"title": "UAE National Day", "on": "2026-12-02", "greeting": "Happy UAE National Day", "tags": ["#UAENationalDay"], "about": "On 2 December the UAE celebrates the union."},
+              {"title": "Eid al Adha", "on": "2027-05-16", "greeting": "Eid Mubarak"}, {"title": "Commemoration Day", "on": "2026-11-30", "greeting": "We remember", "sombre": True}):
+        occasions.save(office, r, by="maya")  # test data: a business's calendar comes from research or from the person
+    coming = occasions.upcoming(office, date(2026, 11, 2))
+    keys = [o["key"] for o in coming]
+    assert "uae-national-day-2026" in keys and "eid-al-adha-2027" not in keys  # 30 days ahead, not months
+    ref = occasions.prepare(office, "uae-national-day-2026", by="maya")
+    lst = studio._listing(office, ref)
+    assert lst["greeting"] and lst["on"] == "2026-12-02" and journey.job_of(lst) == "greeting"
+    assert "uae-national-day-2026" not in [o["key"] for o in occasions.upcoming(office, date(2026, 11, 2))]  # offered once
+    selling = {"hook_en": "Happy UAE National Day", "lines_en": ["2 December celebrates the union.", "Ask about our villas from AED 2M.", "Message us today."]}
+    greeting = {"hook_en": "Happy UAE National Day", "lines_en": ["On 2 December the seven emirates became one.", "A day of pride for everyone here.", "From all of us at Diwan Realty."]}
+    check = next(c for c in qa.CHECKS["script"] if c.id == "script-greeting-sells-nothing")
+    assert not check.test(office, ref, selling)[0] and check.test(office, ref, greeting)[0]
+    cta = next(c for c in qa.CHECKS["script"] if c.id == "script-call-to-action")
+    assert cta.test(office, ref, greeting)[0]  # a greeting ends on a wish, not "message us"
+    text = studio.post_text(office, ref, greeting | {"hook_ar": ""}, None)
+    assert "Say " not in text["text"] and "#UAENationalDay" in text["text"] and not text["code"]
+    occasions.skip(office, "commemoration-day-2026", by="maya")
+    assert "commemoration-day-2026" not in [o["key"] for o in occasions.upcoming(office, date(2026, 11, 2))]
+
+
+def test_a_code_word_is_never_a_word_every_listing_has(office):
+    for i, c in enumerate(("Yas Acres", "Saadiyat", "The Dahlias, Yas Acres")):
+        office.log.append("listing.added", actor="layla", content={"ref": f"BN-{i}", "title": f"Brand New | Corner 4BR | {c}", "community": c, "type": "villa", "beds": 4,
+                                                                   "price_aed": 8000000, "permit": "P", "status": "available", "features": []})
+    assert marketing.code_for(office, "BN-2") == "DAHLIAS"
+
+
+def test_the_written_caption_is_held_to_the_listing(office, monkeypatch):
+    from diwan.agents import runner
+    from diwan.providers.chat import Reply
+    said = iter([{"text": "Sea views from AED 2,450,000.\n\n#Marina"},  # an amount the listing doesn't have: not used
+                 {"text": "Wake up to the Marina.\n\nA balcony over the water.\n\n#DiwanRealty #ThisHashtagIsFarTooLongToEverBeSearched"}])
+    monkeypatch.setattr(runner, "has_model", lambda *a, **k: True)
+    monkeypatch.setattr(runner, "call", lambda *a, **k: Reply(next(said), {}))
+    lst, sc = studio._listing(office, "MC-1204"), {"hook_en": "Wake up to the Marina.", "lines_en": ["A balcony over the water."]}
+    permit = f"\nPermit {lst['permit']}"
+    assert studio._caption(office, "MC-1204", sc, lst, "GATE", permit, [], None) is None
+    t = studio._caption(office, "MC-1204", sc, lst, "GATE", permit, [], None)
+    assert "Say GATE." in t and "TooLong" not in t and "#DiwanRealty" in t and str(lst["permit"]) in t  # the code word and permit kept, the long tag dropped

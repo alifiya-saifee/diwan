@@ -53,7 +53,7 @@ LANES = {"listing": r"\b(bed|br|apartment|villa|unit|for sale|listing|aed|price|
          "behind the scenes": r"\b(team|office|day in|behind|bts|broker life)\b",
          "client story": r"\b(client|keys|handover|testimonial|happy|story|bought)\b"}
 BANNED = r"\b(guaranteed?|risk.?free|assured returns?|best investment|will (double|rise|go up)|100% (safe|return)|free (golden )?visa|visa included|get (a|your) (golden )?visa)\b"
-LIMITS = {"Instagram": 2200, "TikTok": 2200, "YouTube Shorts": 100, "Property Finder": 500}
+LIMITS = {"Instagram": 2200, "Facebook": 5000, "LinkedIn": 3000, "TikTok": 2200, "YouTube Shorts": 100, "Property Finder": 500}  # platforms.RULES holds the rest
 
 
 # ---------- what the studio has already seen and made (all from the log) ----------
@@ -99,7 +99,10 @@ def board(office: Office) -> list[dict]:
             cards[e["content"]["id"]] = e["content"]
         elif e["type"] == "board.unpinned":
             cards[e["content"]["id"]] = None
-    return [c for c in cards.values() if c]
+    saved = {a.lower() for a in competitors(office.graph())}
+    keep = saved | {p["account"].lower().lstrip("@") for p in posts(office, "own")}
+    # a winning post from an account that is no longer a competitor (one taken off in Setup) says nothing about this business now
+    return [c for c in cards.values() if c and not (saved and c.get("kind") == "outlier" and (c.get("account") or "").lower().lstrip("@") not in keep)]
 
 
 def ad_library_url(account: str, country: str = "") -> str:
@@ -212,7 +215,37 @@ def _made(office: Office, agent: str, kind: str, ref: str, data: dict, cause: in
     n = 1 + sum(1 for e in office.log.list() if e["type"] == "content.made")
     c = {"id": f"C{n}", "kind": kind, "ref": ref, "by": agent, **data}
     office.log.append("content.made", actor=agent, agent=agent, caused_by=cause, content=c)
+    if kind in MEDIA_KINDS:
+        keep(office, ref, c["id"], c)
     return c
+
+
+MEDIA_KINDS = {"slides", "cut", "cover", "footage", "free video"}  # what Marketing makes that is a file
+UPLOADS: list[threading.Thread] = []  # copies being saved to Supabase Storage: a test waits for them
+
+
+def keep(office: Office, ref: str, of: str, data) -> None:
+    """A copy of each media file in Supabase Storage, in the background (a slow upload never holds up the post), when
+    SUPABASE_BUCKET is set. The log says what was kept and where; a failure is said, never silent."""
+    from diwan.providers import storage
+    if not storage.ready():
+        return
+    files = storage.files_in(data)
+    if not files:
+        return
+
+    def go():
+        kept = []
+        for f in files:
+            try:
+                kept.append({"name": storage.put(f, f"marketing/{f.name}"), "file": f.name})
+            except (storage.StorageError, httpx.HTTPError, OSError) as e:
+                office.log.append("step.blocked", actor="mpub", agent="mpub", content={"step": "save to Supabase Storage", "needs": f"{f.name}: {str(e)[:200]}"})
+        if kept:
+            office.log.append("content.made", actor="mpub", agent="mpub", content={"id": f"S-{of}", "kind": "stored", "ref": ref, "of": of, "bucket": storage.env("SUPABASE_BUCKET"), "files": kept})
+    t = threading.Thread(target=go, daemon=True)
+    UPLOADS.append(t)
+    t.start()
 
 
 def _brief(office: Office, ref: str) -> str:
@@ -223,7 +256,66 @@ def _brief(office: Office, ref: str) -> str:
     if lst["item"] == "product":
         return products.record(lst)
     feats = "; ".join(lst.get("features") or []) or "none recorded"
-    return office.graph().record(f"listing:{ref}") + f" · features: {feats}"
+    more = [f.format(lst[k]) for k, f in MORE.items() if lst.get(k) not in (None, "", 0)]  # facts the record line leaves out
+    d = made(office, "listing details", ref) or {}
+    page = "; ".join(x["fact"] for x in d.get("features", []))
+    area = "; ".join(x["fact"] for x in d.get("area", []))
+    return (office.graph().record(f"listing:{ref}") + (" · " + " · ".join(more) if more else "") + f" · features: {feats}"
+            + (f" · from its own page: {page}" if page else "") + (f" · about the area (from the web, with sources): {area}" if area else ""))
+
+
+REWRITES = 2  # rewrites after the Director's score, each only kept when it scores higher
+MORE = {"size_sqft": "{:,} sq ft", "baths": "{} bathrooms", "completion": "completion: {}", "furnishing": "{}", "offering": "for {}"}
+DETAILS_SCHEMA = {"name": "details", "strict": True, "schema": {"type": "object", "additionalProperties": False, "required": ["features"], "properties": {
+    "features": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["fact", "quote"],
+                                            "properties": {"fact": {"type": "string"}, "quote": {"type": "string"}}}}}}}
+
+
+def _text_of(html: str) -> str:
+    html = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", html)
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).replace("&amp;", "&").replace("&nbsp;", " ").strip()
+
+
+def listing_details(office: Office, ref: str, cause: int | None = None) -> dict:
+    """More true things to say about a listing, once: features read from its own web page (each kept only if its quote is
+    on the page), and what the area offers from one web search (each kept only if its page is on a site the search opened)."""
+    if (done := made(office, "listing details", ref)):
+        return done
+    lst = _listing(office, ref)
+    out: dict = {"features": [], "area": [], "page": lst.get("page")}
+    if not meta.ready():
+        return out
+    if lst.get("page"):
+        try:
+            r = httpx.get(lst["page"], timeout=30, follow_redirects=True)
+            text = _text_of(r.text)[:12000] if r.status_code == 200 else ""
+        except httpx.HTTPError:
+            text = ""
+        if text:
+            try:
+                got = meta.look("You read a property listing's web page and list its concrete features a buyer cares about (rooms, sizes, finishes, views, "
+                                "outdoor space, parking, amenities, handover, payment plan). fact: the feature in a few plain words. quote: the exact words from the "
+                                "page it comes from, copied. At most 10. Nothing that is not on the page.", f"Listing: {lst['title']}\n\nPage text:\n{text}", [], DETAILS_SCHEMA, agent="mtrend")
+                flat = text.lower()
+                out["features"] = [{"fact": x["fact"][:90], "quote": x["quote"][:200]} for x in got.get("features") or []
+                                   if x.get("quote") and re.sub(r"\s+", " ", x["quote"].lower()).strip(" .") in flat][:10]
+            except (meta.MetaError, OSError, ValueError):
+                pass
+    if lst.get("community"):
+        try:
+            got = meta.search(f"Search the web, then list up to 6 facts a home buyer would want about living in {lst['community']}: what is nearby (schools, "
+                              "beaches, malls, golf, the airport) with travel times where a page gives them, and what the community is known for. Answer with JSON only: "
+                              "{\"facts\": [{\"fact\": \"one short sentence\", \"url\": \"the page it comes from\"}]}", agent="mtrend", max_searches=2)
+            from diwan.occasions import _site
+            from diwan.providers.chat import parse_json
+            opened = {_site(x.get("url") or "") for x in got.get("sources", []) + got.get("cited", [])} - {""}
+            facts = parse_json(got["text"]).get("facts") or []
+            out["area"] = [{"fact": f["fact"][:160], "url": f["url"]} for f in facts if isinstance(f, dict) and f.get("fact") and _site(f.get("url") or "") in opened][:6]
+        except (meta.MetaError, ValueError, AttributeError):
+            pass
+    m = _made(office, "mtrend", "listing details", ref, out, cause)
+    _pack(office, "mtrend", f"{lst['title']}: {len(out['features'])} features read from its page, {len(out['area'])} facts about the area found.", cause=cause)
+    return m
 
 
 def _listing(office: Office, ref: str) -> dict:
@@ -266,14 +358,19 @@ def _ffmpeg(*args: str) -> None:
         raise RuntimeError(r.stderr[-300:] or "ffmpeg failed")
 
 
+def _probe(path: Path, entry: str, select: tuple[str, ...] = ()) -> float | None:
+    """One number from ffprobe. Some builds print "1080," (a trailing comma) with csv=p=0, so the first number is read, not the whole line."""
+    r = subprocess.run(["ffprobe", "-v", "error", *select, "-show_entries", entry, "-of", "csv=p=0", str(path)], capture_output=True, text=True)
+    m = re.search(r"\d+(?:\.\d+)?", r.stdout)
+    return float(m.group(0)) if m else None
+
+
 def _width(path: Path) -> int:
-    return int(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width", "-of", "csv=p=0", str(path)],
-                              capture_output=True, text=True).stdout.strip() or 720)
+    return int(_probe(path, "stream=width", ("-select_streams", "v:0")) or 720)
 
 
 def _duration(path: Path) -> float:
-    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)], capture_output=True, text=True)
-    return float(r.stdout.strip() or 0)
+    return _probe(path, "format=duration") or 0.0
 
 
 def can_transcribe() -> bool:
@@ -781,6 +878,39 @@ def _amounts(text: str) -> set[int]:
     return {int(a) for m in MONEY.finditer(text) for a in scribe.amounts(m.group(0))}
 
 
+HOOKS_SCHEMA = {"name": "hooks", "strict": True, "schema": {"type": "object", "additionalProperties": False, "required": ["hooks"], "properties": {"hooks": {
+    "type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["en", "ar"], "properties": {"en": {"type": "string"}, "ar": {"type": "string"}}}}}}}
+
+
+def _best_hook(office: Office, c, data: dict, rec: str, what: str, arabic: bool, cause: int | None) -> dict | None:
+    """Two more openings for the script (a number, a question, a surprise), the Director picks the strongest of the three.
+    An opening with an amount not in the facts is never offered. None when nothing better could be chosen."""
+    from diwan.agents import director
+    try:
+        got = runner.call(c, "Write two other first lines for this short post, each under 12 words, each a different kind: one leads with a specific number or "
+                             "place, one asks the viewer a question about their own life, or one states a surprising true detail. Only facts from the record. "
+                             + ("ar is the Arabic of en." if arabic else "ar is empty."),
+                          runner.user_message("Two other openings.", {"record": rec, "script": {"hook": data["hook_en"], "lines": data["lines_en"]}}), schema=HOOKS_SCHEMA).data.get("hooks") or []
+    except Exception:  # noqa: BLE001  the first opening stands
+        return None
+    options = [{"en": data["hook_en"], "ar": data.get("hook_ar", "")}] + [h for h in got[:2] if h.get("en") and not (_amounts(h["en"]) - _amounts(rec)) - {0}]
+    if len(options) < 2:
+        return None
+    pick = director.best_hook(office, [o["en"] for o in options], data["lines_en"], what)
+    if pick is None or pick == 0:
+        return None
+    office.log.append("agent.started", actor="mscript", agent="mscript", caused_by=cause, content={"task": f"The Creative Director chose another opening: \"{options[pick]['en']}\""})
+    return data | {"hook_en": options[pick]["en"], "hook_ar": options[pick]["ar"] or data.get("hook_ar", ""), "hooks_tried": [o["en"] for o in options]}
+
+
+def winning_openings(office: Office, n: int = 5) -> list[str]:
+    """The first lines of competitors' best posts (the ones well above their own usual), strongest first."""
+    from diwan.agents import reader
+    best = sorted((p for ps in reader._saved_posts(office).values() for p in ps if is_outlier(p) and (p.get("caption") or "").strip()),
+                  key=lambda p: -(p.get("score") or 0))
+    return [re.split(r"[\n.!?]", p["caption"].strip())[0][:120] for p in best[:n]]
+
+
 def _template(lst: dict, angle: str, sign_off: str = "Message us to find out more.") -> dict:
     """A plain script for each angle, from the listing's own facts, for when no model is connected or it fails."""
     if lst["item"] == "topic":
@@ -830,6 +960,8 @@ def _topic_template(t: dict, angle: str, sign_off: str) -> dict:
     hooks = {"explainer": f"{short}, in plain words.", "myth-vs-fact": f"What people get wrong about {short.lower()}.", "question": f"Ever wondered about {short.lower()}?",
              "checklist": f"What to check about {short.lower()}.", "why-it-matters": f"Why {short.lower()} matters to you."}
     lines = [*[cap(f) for f in (t.get("features") or [])[:5]]]
+    if t.get("greeting"):  # a greeting opens on the wish and ends on it: no "ask us", no sign-off that sells
+        return {"hook_en": t.get("greet") or t["title"], "hook_ar": t.get("greet_ar") or "", "lines_en": lines or [f"{t.get('greet') or t['title']}."]}
     for pad in ("It is worth knowing before you decide.", "Ask us anything about it.", "We are happy to walk you through it."):
         if len(lines) >= 4:
             break
@@ -842,6 +974,9 @@ def _no_echo(data: dict) -> list[str]:
     plain = lambda t: re.sub(r"[^a-z0-9]", "", t.lower())  # noqa: E731
     seen, out = {plain(data["hook_en"])}, []
     for line in data["lines_en"]:
+        line = re.sub(r"\s*#\w+", "", line).strip()  # hashtags belong to the caption, never a spoken or on-screen line
+        if not line:
+            continue
         if plain(line) not in seen:
             seen.add(plain(line))
             out.append(line)
@@ -852,6 +987,7 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
            angle: str = "price-reveal", why: str = "", base: dict | None = None) -> dict:
     """One script on one angle. `base` is a draft to revise (a person's change request or a supervisor's return): the
     model changes what was asked and keeps the rest; without a model the change is applied to the template where it can be."""
+    from diwan import occasions
     from diwan.agents import eventpost, journey, strategy
     lst = _listing(office, ref)
     rec = _brief(office, ref)
@@ -864,8 +1000,10 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
     system = runner.instructions(c, office.log) + (f"\nWrite in the `script` format: about 30 seconds, 5 to 7 lines after the hook. The hook is not one of the lines: lines_en starts with what comes after it. Use only facts and amounts from "
                                                    f"the {lst['item']}, and build the lines from its features. The brand's voice decides the word choice, the sentence length and the attitude: "
                                                    f"playful means truly playful, formal means truly formal, so nobody could mistake this for another brand. Every line says something new; never repeat a "
-                                                   "line or the name. No placeholders or brackets: if a fact is missing, leave it out. The last "
-                                                   "line invites the viewer to get in touch, in the brand's own sign-off if it has one. "
+                                                   "line or the name. No placeholders or brackets: if a fact is missing, leave it out. Carry one idea from the angle through the whole script: each "
+                                                   "line builds on it with a new concrete detail, never a list of features read out. Say each fact as what the viewer gets from it, "
+                                                   "the way a person would say it out loud (a spec becomes a benefit: what it lets them do or stop worrying about), keeping the fact itself exact. The last line asks for one specific next step "
+                                                   "that fits this post (book a viewing, ask for the floor plan, the payment plan), in the brand's voice; never a vague 'find out more'. "
                                                    "Write how a person really talks to a friend: short, natural spoken sentences that a viewer would keep watching. One idea only, at most 60 spoken words in all, "
                                                    "about 25 seconds. No brochure words such as premier, solutions or seamless: say what the viewer gets. The first line stops the scroll "
                                                    "with a question or a surprising detail, about the viewer or the place, never about us. Never use a planning word such as an angle's name, "
@@ -880,14 +1018,17 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
     task = (f"Script for: {idea['pick']['title']}. Angle: {({**topics.ANGLES, **journey.ANGLES} if lst['item'] == 'topic' else {k: v[0] for k, v in strategy.ANGLES.items()}).get(angle, angle)}. Borrow the structure, never the words, of the hook card if given."
             + (" Some competitor posts below worked; borrow only why they worked (format, hook, who is on screen). Never use their words, "
                "numbers, awards, sales or partners, and claim nothing about us that the listing and the brand do not say." if built else "")
-            + journey.brief(office, lst) + eventpost.brief(sh)
+            + journey.brief(office, lst) + eventpost.brief(sh) + occasions.brief(office, lst)
             + (" The company facts below are confirmed: use one when it helps this post, and claim nothing about us beyond them." if facts else "")
             + (f"\n\nRevise this draft; change only what is asked, keep everything else:\n{json.dumps({k: base[k] for k in ('hook_en', 'hook_ar', 'lines_en')}, ensure_ascii=False)}" if base else "")
             + (f"\n\n{feedback}" if feedback else ""))
     from diwan.agents import style
     from diwan.agents import taste
     notes = "\n".join(x for x in (style.brief(office), taste.brief(office)) if x)
-    user = runner.user_message(task, {_key(office, ref): rec, "brand": brand.brief(office), **({"company": facts} if facts else {}), **({"hook": hook_card["hook"]} if hook_card else {}),
+    openings = winning_openings(office)
+    user = runner.user_message(task + (" The `openings` are how competitors' best posts began: borrow their shape (a number, a question, a surprise), never their words." if openings else ""),
+                               {_key(office, ref): rec, "brand": brand.brief(office), **({"company": facts} if facts else {}), **({"hook": hook_card["hook"]} if hook_card else {}),
+                                **({"openings": openings} if openings else {}),
                                       **{f"worked{i + 1}": b for i, b in enumerate(built)}, **({"style": notes} if notes else {})})
     data, by = None, "template"
     if runner.has_model(c, system, user, schema=schema):
@@ -907,8 +1048,35 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
         if base:
             data = {**{k: base[k] for k in ("hook_en", "hook_ar", "lines_en")}, "lines_ar": base.get("lines_ar", [])}
         data = _apply_rules(data, feedback or "", lst)
+    review = None
+    if by == "muse-spark":  # three openings for the same script; the Director keeps the one most likely to stop a scroll
+        data = _best_hook(office, c, data, rec, f"{idea['pick']['title']}. Facts: {rec[:1200]}", arabic, cause) or data
+    if by == "muse-spark":  # the quality gate: the Director scores it blind; under the bar it is rewritten with the reason, up to REWRITES times while it improves
+        from diwan.agents import director
+        what = f"{idea['pick']['title']} ({journey.job_of(lst) or lst['item']}). Facts: {rec[:1600]}"  # every fact the writer had, so nothing true is called invented
+        review = director.script(office, data, what)
+        first = review["score"] if review else None
+        for _ in range(REWRITES):
+            if not (review and review["score"] < director.PASS_SCORE and review.get("fix")):
+                break
+            office.log.append("agent.started", actor="mscript", agent="mscript", caused_by=cause,
+                              content={"task": f"The Creative Director gave the {angle} script {review['score']}/5: rewriting it ({review['fix'][:80]})"})
+            try:
+                again = runner.call(c, system, runner.user_message(task + f"\n\nThe Creative Director scored your draft {review['score']}/5: {review['why']} "
+                                                                    f"Rewrite it: {review['fix']}\nDraft: " + json.dumps({k: data[k] for k in ('hook_en', 'hook_ar', 'lines_en')}, ensure_ascii=False),
+                                                                    {_key(office, ref): rec, "brand": brand.brief(office), **({"openings": openings} if openings else {})}), schema=schema).data
+                again = again | {"lines_en": _no_echo(again)}
+                if (_amounts(" ".join([again["hook_en"], *again["lines_en"]])) - _amounts(rec)) - {0}:
+                    break
+                second = director.script(office, again, what)
+                if not second or second["score"] <= review["score"]:
+                    break  # no better: the better draft stands
+                data, review = again, second | {"rewritten_from": first}
+            except Exception as e:  # noqa: BLE001  the draft so far stands; the score says what it is
+                _blocked(office, "mscript", f"The rewrite after the Director's review failed, keeping the draft: {str(e)[:100]}", cause=cause)
+                break
     data = data | ({"shots": [], "slides": eventpost.slides(data, sh)} if pictures else {"shots": video_plan(data, lst)})
-    m = _made(office, "mscript", "script", ref, data | {"via": by, "angle": angle, "why": why, "idea": idea.get("id"), "cards": idea["pick"].get("cards", []),
+    m = _made(office, "mscript", "script", ref, data | {"via": by, **({"director": review} if review else {}), "angle": angle, "why": why, "idea": idea.get("id"), "cards": idea["pick"].get("cards", []),
                                                        "built_like": built, "listing_was": _facts(lst), "format": sh["format"] if pictures else topics.format_for(lst), "job": journey.job_of(lst), **({"revises": base["id"]} if base else {})}, cause)
     _pack(office, "mscript", f"{angle} script{' (revised from ' + base['id'] + ')' if base else ''}: \"{data['hook_en']}\" · {len(data['lines_en'])} lines ({by}).",
           cause=cause, usage={"provider": by})
@@ -1178,14 +1346,70 @@ def post_text(office: Office, ref: str, sc: dict, cause: int | None, feedback: s
     elif lst["item"] == "topic":  # the script's spoken lines, not the brand's description of itself
         facts = " ".join(x for x in sc["lines_en"][:3] if x != brand.cta(office))
     from diwan.agents import marketing
-    code = marketing.code_for(office, ref)  # how a lead is traced back to this post
-    base = f"{sc['hook_en']}\n\n{facts}{permit}\n\n{brand.cta(office)} Say {code}."
-    ar = f"\n\n{sc['hook_ar']}" if sc.get("hook_ar") else ""
-    tags = " " + " ".join(dict.fromkeys(brand.hashtags(office) + (["#" + re.sub(r"\W", "", lst["community"])] if lst.get("community") else [])))
+    if lst.get("greeting"):  # a greeting greets: no code word, no call to contact, the occasion's own tags and the brand's own one
+        name = brand.profile(office).get("name", {}).get("value") or ""
+        code = ""
+        lines = [x for x in sc["lines_en"] if x != brand.cta(office)]
+        sign = "" if any(name.lower() in x.lower() for x in lines[-1:]) or not name else f"\n\n{lst.get('greet') or ''} from all of us at {name}.".replace("\n\n from", "\n\nFrom")
+        base = f"{sc['hook_en']}\n\n" + "\n".join(lines) + sign
+        ar = f"\n\n{sc['hook_ar']}" if sc.get("hook_ar") else (f"\n\n{lst['greet_ar']}" if lst.get("greet_ar") else "")
+        own = [t for t in brand.hashtags(office) if name and re.sub(r"\W", "", name).lower() in t.lower()][:1]
+        tags = "\n\n" + " ".join(dict.fromkeys((lst.get("tags") or []) + own))
+    else:
+        code = marketing.code_for(office, ref)  # how a lead is traced back to this post
+        places = [x.strip() for x in (lst.get("community") or "").split(",") if x.strip()]
+        tags_ok = [t for t in brand.hashtags(office) + ["#" + re.sub(r"\W", "", x) for x in places[:2]] if len(t) <= MAX_TAG]
+        written = _caption(office, ref, sc, lst, code, permit, tags_ok, feedback)
+        if written:
+            m = _made(office, "mwriter", "post text", ref, {"text": written, "code": code, "by": "muse-spark"}, cause)
+            _pack(office, "mwriter", f"Post text written ({len(written)} characters), checked against the listing.", cause=cause,
+                  evidence=[Evidence(str(lst.get("permit") or lst["title"]), _key(office, ref))], sources={_key(office, ref): _brief(office, ref)})
+            return m
+        base = f"{sc['hook_en']}\n\n{facts}{permit}\n\n{brand.cta(office)} Say {code}."
+        ar = f"\n\n{sc['hook_ar']}" if sc.get("hook_ar") else ""
+        tags = "\n\n" + " ".join(dict.fromkeys(tags_ok))
     m = _made(office, "mwriter", "post text", ref, {"text": base + ar + tags.rstrip(), "code": code}, cause)
     _pack(office, "mwriter", f"Post text ready{' with permit ' + str(lst.get('permit')) if permit else ''} ({len(m['text'])} characters).", cause=cause,
           evidence=[Evidence(str(lst.get("permit") or lst["title"]), _key(office, ref))], sources={_key(office, ref): _brief(office, ref)})
     return m
+
+
+MAX_TAG = 25  # characters: a longer hashtag is never searched
+
+
+def _caption(office: Office, ref: str, sc: dict, lst: dict, code: str, permit: str, tags: list[str], feedback: str | None) -> str | None:
+    """The Content writer writes the Instagram caption from the script and the facts, in the brand's voice; the code holds it
+    to the facts (no amount the listing doesn't have), keeps the permit and the code word, and checks its hashtags. None
+    without a model, or when what came back doesn't hold up: then the plain caption is used."""
+    from diwan import platforms
+    c = get("mwriter")
+    name = brand.profile(office)["name"]["value"].strip()
+    system = runner.instructions(c, office.log, pack=False) + (
+        "\nWrite the Instagram caption for this post, in the `post` format: `text` is exactly what the public reads. "
+        f"{platforms.RULES['Instagram'][3]} The first line is the hook and makes someone stop; then the facts a buyer cares about, one short line each, "
+        "each said once; say the place once; name the company once; end with the call to contact and the code word line exactly as given. "
+        "Use only facts and amounts from the listing. Then 4 to 7 hashtags on the last line: from the brand's own and the place's, plus specific ones people "
+        f"search for this kind of home in this place, each under {MAX_TAG} characters, and never one that names a different city or area from the listing's.")
+    user = runner.user_message("Write the caption." + (f"\n\n{feedback}" if feedback else ""), {
+        "script": {"hook": sc.get("hook_en"), "lines": sc.get("lines_en")}, _key(office, ref): _brief(office, ref), "company": name, "brand": brand.brief(office),
+        "call_to_contact": f"{brand.cta(office)} Say {code}.", "hashtags_to_choose_from": tags, "permit_line": permit.strip()})
+    if not runner.has_model(c, system, user, schema=CAPTION_SCHEMA):
+        return None
+    try:
+        text = runner.call(c, system, user, schema=CAPTION_SCHEMA).data["text"].strip()
+    except Exception:  # noqa: BLE001  the plain caption stands
+        return None
+    if (_amounts(text) - _amounts(_brief(office, ref))) - {0}:
+        _blocked(office, "mwriter", "The written caption named an amount not on the listing; using the plain caption", cause=None)
+        return None
+    if f"Say {code}" not in text:
+        text = text.rstrip() + f"\n\n{brand.cta(office)} Say {code}."
+    if permit.strip() and str(lst.get("permit")) not in text:
+        text = text.rstrip() + permit
+    long = [t for t in re.findall(r"#\w+", text) if len(t) > MAX_TAG]
+    for t in long:
+        text = text.replace(t, "")
+    return re.sub(r"[ \t]+\n", "\n", re.sub(r"  +", " ", text)).strip()
 
 
 # ---------- publishing ----------
@@ -1208,6 +1432,11 @@ def cover(office: Office, ref: str, sc: dict, cause: int | None) -> dict | None:
         img = meta.MEDIA / f"cover-{ref}-{f['id']}-{k}.jpg"
         try:
             _ffmpeg("-ss", f"{sec}", "-i", str(src), "-i", str(hook), "-filter_complex", "[0:v][1:v]overlay=(W-w)/2:H*0.12", "-frames:v", "1", str(img))
+            from PIL import Image
+            from diwan.agents import eventpost
+            pic = Image.open(img).convert("RGBA")  # the company's mark on the cover too, where the grid shows it
+            eventpost._mark(pic, brand.profile(office)["name"]["value"].strip(), brand.logo(office), *brand.colours(office))
+            pic.convert("RGB").save(img, "JPEG", quality=90)
             options.append({"served": f"/media/{img.name}", "at": sec})
         except Exception as e:
             _blocked(office, "mthumb", f"ffmpeg could not make a cover at {sec}s: {str(e)[:160]}", cause=cause)
@@ -1237,19 +1466,47 @@ def permit_check(office: Office, ref: str, text: dict, cause: int | None, findin
     return not fails
 
 
-def schedule(office: Office, cause: int | None) -> dict:
+MIN_OWN_POSTS, MIN_AT_HOUR, MIN_RIVAL_WINS = 8, 2, 5  # below these a source says too little to pick an hour from
+
+
+def best_hour(office: Office) -> tuple[int, int, str]:
+    """(hour, minute, why) in the business's time: the first source that knows enough, said in the reason.
+    1. Our own posts: the hour our posts did best, once there are enough of them and at least two at that hour.
+    2. When our followers are on Instagram (its online_followers insight), at the busiest hour.
+    3. When competitors' winning posts went out: the most common hour among their winners.
+    4. Else the evening, labelled as a default."""
+    tz = business.tz_label(office)
     ours = [p for p in posts(office, "own") if p.get("at")]
-    if len(ours) >= 5:
-        by_hour: dict[int, list[int]] = {}
+    if len(ours) >= MIN_OWN_POSTS:
+        by: dict[int, list[int]] = {}
         for p in ours:
-            hr = business.local(datetime.fromisoformat(p["at"].replace("+0000", "+00:00")), office).hour
-            by_hour.setdefault(hr, []).append(p["engagement"])
-        hour = max(by_hour, key=lambda k: statistics.mean(by_hour[k]))
-        why = f"our posts at {hour}:00 {business.tz_label(office)} did best ({len(ours)} posts)"
-    else:
-        hour, why = 19, f"not enough history ({len(ours)} posts), so the evening default"
+            by.setdefault(business.local(datetime.fromisoformat(p["at"].replace("+0000", "+00:00")), office).hour, []).append(p.get("engagement") or 0)
+        ok = {h: v for h, v in by.items() if len(v) >= MIN_AT_HOUR}
+        if ok:
+            h = max(ok, key=lambda k: statistics.mean(ok[k]))
+            return h, 30 if h < 23 else 0, f"our posts at {h}:00 {tz} did best ({len(ok[h])} of our {len(ours)} posts went out then)"
+    try:
+        online = instagram.online_followers() if instagram.ready() else {}
+    except instagram.InstagramError:
+        online = {}
+    if online and sum(online.values()):
+        from zoneinfo import ZoneInfo
+        peak = max(online, key=online.get)
+        t = datetime.now(ZoneInfo("America/Los_Angeles")).replace(hour=peak, minute=0, second=0, microsecond=0)  # Instagram reports Pacific time
+        h = business.local(t.astimezone(timezone.utc), office).hour
+        return h, 0, f"most of our followers are on Instagram around {h}:00 {tz} (Instagram's own count)"
+    wins = [p for p in posts(office, "competitor") if p.get("at") and is_outlier(p)] if any(True for _ in competitors(office.graph())) else []
+    if len(wins) >= MIN_RIVAL_WINS:
+        hours = Counter(business.local(datetime.fromisoformat(p["at"].replace("+0000", "+00:00")), office).hour for p in wins)
+        h, n = hours.most_common(1)[0]
+        return h, 0, f"{n} of {len(wins)} competitor posts that beat their usual went out around {h}:00 {tz}, and we have too few posts of our own to tell"
+    return 19, 30, f"not enough to go on yet ({len(ours)} posts of ours, Instagram's follower hours not given), so the evening default"
+
+
+def schedule(office: Office, cause: int | None) -> dict:
+    hour, minute, why = best_hour(office)
     now = datetime.now(business.tz(office))
-    when = (now + timedelta(days=1)).replace(hour=hour, minute=30, second=0, microsecond=0)
+    when = (now + timedelta(days=1)).replace(hour=hour, minute=minute, second=0, microsecond=0)
     m = _made(office, "msched", "slot", "next", {"at": when.isoformat(), "why": why}, cause)
     _pack(office, "msched", f"Slot: {when.strftime('%A %I:%M %p').replace(' 0', ' ')}, because {why}.", cause=cause)
     return m
@@ -1268,12 +1525,13 @@ def planned_at(office: Office, ref: str, at: str) -> str:
 
 
 def cross(office: Office, ref: str, text: dict, cause: int | None) -> dict:
-    t = text["text"]
-    versions = {p: (t if len(t) <= n else t[:n - 1] + "…") for p, n in LIMITS.items() if p in (business.platforms(office) or LIMITS)}
-    if "YouTube Shorts" in versions:
-        versions["YouTube Shorts"] = t.split("\n")[0][:100]
-    m = _made(office, "mcross", "versions", ref, {"versions": versions}, cause)
-    _pack(office, "mcross", f"Versions for {', '.join(versions)}, each within its limit.", cause=cause)
+    from diwan import platforms
+    lst = _listing(office, ref)
+    full = platforms.versions(office, text["text"], what=f"{lst['title']} ({lst['item']})")
+    versions = {p: v["text"] for p, v in full.items()}
+    m = _made(office, "mcross", "versions", ref, {"versions": versions, "detail": full}, cause)
+    _pack(office, "mcross", f"Versions for {', '.join(versions)}, each written for its platform"
+          + (f"; {', '.join(p for p, v in full.items() if v['posts'] != 'by itself once approved')} are ready to copy" if len(full) > 1 else "") + ".", cause=cause)
     return m
 
 
@@ -1333,6 +1591,26 @@ def scheduled(office: Office) -> dict[str, dict]:
         elif e["type"] == "content.made" and c.get("kind") in ("published", "unscheduled"):
             out.pop(c.get("ref"), None)
     return out
+
+
+def reschedule(office: Office, ref: str, at: str, *, by: str) -> dict:
+    """An approved post goes out at another time instead: still ahead, and a greeting not before its own day."""
+    if ref not in scheduled(office):
+        return {"ok": False, "needs": ["an approved post waiting for its time"]}
+    try:
+        t = datetime.fromisoformat(at)
+    except ValueError:
+        return {"ok": False, "needs": ["a time like 2026-11-12T19:30"]}
+    t = t if t.tzinfo else t.replace(tzinfo=business.tz(office))
+    if t <= datetime.now(timezone.utc):
+        return {"ok": False, "needs": ["a time still ahead"]}
+    on = _listing(office, ref).get("on")
+    if on and _listing(office, ref).get("greeting") and business.local(t.astimezone(timezone.utc), office).date().isoformat() != on:
+        return {"ok": False, "needs": [f"a time on {on}: a greeting goes out on its own day"]}
+    _made(office, "mpub", "scheduled", ref, {"at": t.isoformat(), "approved_by": scheduled(office)[ref].get("approved_by"), "moved_by": by}, None)
+    when = t.strftime("%a %-d %b %I:%M %p").replace(" 0", " ")
+    _pack(office, "mpub", f"{ref} moved by {name(by)}: it goes out {when}.", kind=None)
+    return {"ok": True, "next": f"it goes out {when}"}
 
 
 def unschedule(office: Office, ref: str, *, by: str, why: str = "cancelled") -> None:
@@ -1442,6 +1720,17 @@ async def run(office: Office, ref: str, pause: float = .6, auto: bool = False) -
         from diwan.agents import eventpost
         await step(eventpost.read, office, ref, start)
         await step(eventpost.search, office, ref, start)
+    if lst["item"] == "listing":  # more true things to say: its own page and its area
+        await step(listing_details, office, ref, start)
+    if lst["item"] == "listing" and not footage(office, ref):  # its selling point, then the format that shows it: a photo, a carousel or a reel
+        from diwan.agents import eventpost
+        await step(eventpost.listing_look, office, ref, start)
+    if lst.get("occasion"):  # a greeting: what the competitors posted for it last year, and what made the best ones work
+        from diwan import occasions
+        s = await step(occasions.study, office, lst["occasion"], start)
+        _pack(office, "mtrend", f"Last year's {lst['title'].rsplit(' ', 1)[0]} posts by competitors: " + (
+            f"{len(s['posts'])} looked at (" + ", ".join(f"@{p['account']} {p['likes']} likes" for p in s["posts"]) + ")." if s.get("notes") else s.get("why") or "none found."),
+            cause=start)
     pins = board(office)
     _pack(office, "research", f"Board: {len(pins)} card{'s' if len(pins) != 1 else ''} pinned, each with its source." if pins else "Board empty: see what research is waiting for.",
           cause=start, kind="assign")
@@ -1586,7 +1875,7 @@ async def after_pictures(office: Office, ref: str, sc: dict, pause: float = .6) 
     from diwan.agents import eventpost
     step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
     start = _pack(office, "mkt", f"Script {sc['id']} for {ref} approved: making the images.", kind="assign")
-    pics = await step(reviewed, office, "slides", ref, lambda fb: eventpost.render(office, ref, sc, start), start); await asyncio.sleep(pause)
+    pics = await step(reviewed, office, "slides", ref, lambda fb: eventpost.render(office, ref, sc, start, fb), start); await asyncio.sleep(pause)
     if not pics:
         return
     text = await step(reviewed, office, "post text", ref, lambda fb: post_text(office, ref, sc, start, fb), start)
@@ -1609,9 +1898,23 @@ async def _to_approval(office: Office, ref: str, sc: dict, text: dict, start: in
     if not slot or datetime.fromisoformat(slot["at"]) <= datetime.now(timezone.utc):  # an old time is no use
         slot = await step(schedule, office, start)
     slot = slot | {"at": planned_at(office, ref, slot["at"])}
+    on = _listing(office, ref).get("on")
+    if on and on > slot["at"][:10]:  # an occasion goes out on its own day, at the slot's hour, never before
+        t = datetime.fromisoformat(slot["at"])
+        y, mo, d = map(int, on.split("-"))
+        slot = slot | {"at": t.replace(year=y, month=mo, day=d).isoformat(), "why": f"on {on}, the day itself, at the usual hour"}
     pics = made(office, "slides", ref) if sc.get("slides") else None
     if pics:
         note = f" · {pics['people']} of the images show people: check they agreed" if pics.get("people") else ""
+        if pics.get("review"):
+            rv = pics["review"]
+            note += f" · Creative Director {rv['score']}/5" + (f": {rv['advice']}" if rv.get("advice") else (f": {next(iter(rv['failed'].values()))}" if rv.get("failed") else ""))
+            if rv.get("against"):
+                note += f" · Against competitors: {rv['against']}"
+        if pics.get("change"):
+            ch = pics["change"]
+            note += (f" · Your change \"{ch['asked'][:80]}\": " + ("done" if ch.get("done") else "not fully done" if ch.get("done") is False else "made, not checked")
+                     + (f", {ch['how']}" if ch.get("how") and ch["how"] != "not checked" else "") + (f" (can't do: {ch['cannot']})" if ch.get("cannot") else ""))
         await step(ask_to_publish, office, ref, pics, text, slot, start, eventpost.FORMATS[sc["format"]].lower(), note)
     else:
         await step(ask_to_publish, office, ref, made(office, "cut", ref), text, slot, start, "reel", " · footage and music must be ours or licensed")
@@ -1619,6 +1922,8 @@ async def _to_approval(office: Office, ref: str, sc: dict, text: dict, start: in
 
 CAPTION = r"\b(caption|hashtags?|post text|description|sign.?off)\b"
 REFILM = r"\b(video|footage|film|refilm|retake|reshoot|re-?shoot|clip|lighting|sound|audio)\b"
+STORY = r"\b(hook|lines?|script|story|order|shorter|longer|different (first )?(photo|picture)|another (photo|picture)|swap)\b"
+LOOK = r"\b(festive|logo|arabic|background|colou?rs?|design|card|graphic|font|bigger|brighter|darker|no (property|listing|house|building|photo)|celebrat\w*|premium|luxur\w*)\b"
 CAPTION_SCHEMA = {"name": "post", "strict": True, "schema": {"type": "object", "additionalProperties": False, "required": ["text"], "properties": {"text": {"type": "string"}}}}
 
 
@@ -1627,6 +1932,8 @@ def change_goes_to(sc: dict | None, note: str) -> str:
     low = note.lower()
     if re.search(CAPTION, low):
         return "mwriter"
+    if sc and sc.get("slides"):  # the look goes to the designer, made again without the script going round; the story to the Script writer
+        return "mscript" if re.search(STORY, low) and not re.search(LOOK, low) else "mart"
     return "mshoot" if sc and not sc.get("slides") and re.search(REFILM, low) else "mscript"
 
 
@@ -1653,6 +1960,12 @@ async def change_post(office: Office, ref: str, note: str, pause: float = .6) ->
     if who == "mwriter":
         text = await step(reviewed, office, "post text", ref, lambda fb: rewrite_caption(office, ref, note, start, fb), start)
         if text:
+            await _to_approval(office, ref, sc, text, start)
+    elif who == "mart":
+        from diwan.agents import eventpost
+        pics = await step(eventpost.change, office, ref, sc, note, start)
+        text = made(office, "post text", ref)
+        if pics and text:
             await _to_approval(office, ref, sc, text, start)
     elif who == "mshoot":
         film = made(office, "film list", ref) or {}

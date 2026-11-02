@@ -158,6 +158,43 @@ def _local(src: str, folder: Path, i: int) -> Path | None:
     return out
 
 
+def _stems(text: str) -> set[str]:
+    return {w.rstrip("s") for w in re.findall(r"[a-z]{4,}", text.lower())}
+
+
+def _matcher(office: Office, ref: str, pics: list[str], folder: Path):
+    """Each line gets the photo whose description (read by the model, eventpost.read) best matches its words, a photo not
+    used yet first, in the listing look's order when none matches; photos read as weak are left out when there are enough
+    others. Without descriptions it is the photos in order."""
+    from diwan.agents import eventpost, studio
+    known = {p["path"]: p for p in eventpost.photos(office, ref)}
+    order = (studio.made(office, "listing look", ref) or {}).get("photos") or []
+    rows = []
+    for i, src in enumerate(pics):
+        path = _local(src, folder, i)
+        if not path:
+            continue
+        key = eventpost._copy(src, False) if src.startswith("http") else src
+        info = known.get(key or "", {})
+        rows.append({"path": path, "what": info.get("what", ""), "strength": info.get("strength", 3), "usable": info.get("usable", True),
+                     "rank": order.index(key) if key in order else len(order) + i})
+    good = [r for r in rows if r["usable"] and r["strength"] > 2]
+    rows = sorted(good if len(good) >= 3 else rows, key=lambda r: r["rank"])
+    used: list[Path] = []
+
+    def pick(line: str) -> Path:
+        want = _stems(line)
+        fresh = [r for r in rows if r["path"] not in used] or rows
+        best = max(fresh, key=lambda r: (len(want & _stems(r["what"])), -r["rank"]))
+        if not want & _stems(best["what"]):
+            best = fresh[0]  # nothing matches: the next in the look's order
+        used.append(best["path"])
+        if len(used) >= len(rows):
+            used.clear()
+        return best["path"]
+    return pick
+
+
 def _fit(path: Path) -> "Image.Image":
     from PIL import Image
     img = Image.open(path).convert("RGB")
@@ -177,18 +214,29 @@ def _font(size: int):
     return ImageFont.load_default()
 
 
-def _card(text: str, path: Path, back: Path | None = None) -> Path:
-    """A card over the property itself, blurred and darkened so the words stand out: the price, or the end of the reel."""
+def _card(text: str, path: Path, back: Path | None = None, logo: str | None = None, accent=(240, 220, 170)) -> Path:
+    """A card over the property itself, blurred and darkened so the words stand out: the price, or the end of the reel,
+    with the company's logo above the words when it has one."""
     from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
     img = ImageEnhance.Brightness(_fit(back).filter(ImageFilter.GaussianBlur(26))).enhance(.35) if back else Image.new("RGB", (W, H), (14, 18, 27))
     d = ImageDraw.Draw(img)
     parts = [x.strip() for x in text.split("·") if x.strip()] or [text]
     y = H // 2 - len(parts) * 80
+    if logo:
+        try:
+            mark = Image.open(logo).convert("RGBA")
+            mark.thumbnail((260, 260))
+            img = img.convert("RGBA")
+            img.alpha_composite(mark, ((W - mark.width) // 2, y - mark.height - 70))
+            img = img.convert("RGB")
+            d = ImageDraw.Draw(img)
+        except OSError:
+            pass
     for i, ln in enumerate(parts):
         font = _font(112 if i == 0 else 68)
         while d.textlength(ln, font=font) > W - 120 and font.size > 40:
             font = _font(font.size - 6)
-        d.text(((W - d.textlength(ln, font=font)) / 2, y), ln, font=font, fill=(240, 220, 170) if i == 0 else (255, 255, 255))
+        d.text(((W - d.textlength(ln, font=font)) / 2, y), ln, font=font, fill=accent if i == 0 else (255, 255, 255))
         y += font.size + 56
     img.save(path)
     return path
@@ -272,6 +320,7 @@ def make(office: Office, ref: str, *, by: str) -> dict:
     local = [p for i, s in enumerate(pics) if (p := _local(s, folder, i))]
     if not local:
         return {"ok": False, "needs": f"photos of {ref} that can be opened (none of the {len(pics)} links could be downloaded)"}
+    pick = _matcher(office, ref, pics, folder)
     from diwan import brand
     from diwan.agents import marketing
     shots, voices, said, at, k, m = [], [], [], 0.0, 0, 0
@@ -290,14 +339,16 @@ def make(office: Office, ref: str, *, by: str) -> dict:
         last = i == len(rows) - 1
         if "price card" in show or "end card" in show or last:
             name = brand.profile(office)["name"]["value"].strip()
-            text = f"{name} · Message us · Say {marketing.code_for(office, ref)}" if last else r.get("text") or words
-            card = _card(text, folder / f"card{i}.png", local[k % len(local)])
+            item = studio._listing(office, ref)
+            close = f"{item.get('greet') or 'With warm wishes'} · {name}" if item.get("greeting") else f"{name} · Message us · Say {marketing.code_for(office, ref)}"
+            text = close if last else r.get("text") or words
+            card = _card(text, folder / f"card{i}.png", pick(words), logo=brand.logo(office) if last else None, accent=brand.colours(office)[1])
             parts = [(card, dur)]
         else:
             n = max(1, round(dur / 2.6))
             parts = []
             for _ in range(n):
-                parts.append((local[k % len(local)], dur / n))
+                parts.append((pick(words), dur / n))
                 k += 1
         for still, secs in parts:
             clip = folder / f"shot{len(shots)}.mp4"

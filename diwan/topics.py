@@ -72,7 +72,9 @@ def items(office: Office, *, all_: bool = False) -> dict[str, dict]:
             if t.get("moment") and t.get("until", "") < today:
                 continue  # news goes out of date: a moment is not a topic for ever
             out[r] = {"ref": r, "title": t["title"], "what": t["what"], "features": _facts(t["what"]), "source": "typed", "kind": "topic", "from": "a topic typed in Setup",
-                      **({"moment": True, "until": t["until"], "from": "a moment a person typed", "format": t.get("format")} if t.get("moment") else {})}
+                      **({"moment": True, "until": t["until"], "from": "a moment a person typed", "format": t.get("format")} if t.get("moment") else {}),
+                      **({k: t[k] for k in ("greeting", "on", "tags", "greet", "greet_ar", "sombre", "occasion", "motif", "words") if t.get(k) is not None}
+                         | {"from": "an occasion from the calendar"} if t.get("greeting") else {})}
     skip = excluded(office)
     return {r: t | ({"excluded": True} if r in skip else {}) for r, t in out.items() if (t["features"] or t["what"]) and (all_ or r not in skip)}
 

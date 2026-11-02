@@ -180,7 +180,10 @@ export async function openChat(opts = {}) {
   root.hidden = false;
   if (!el("mc-msgs").children.length) {
     const r = await api(`/api/marketing/chat/${session}`);
-    for (const m of r.messages) add(m.who, m.text);
+    r.messages.forEach((m, i) => {  // a change still waiting for a yes keeps its buttons after a reload
+      const last = i === r.messages.length - 1 && m.who === "lead" && r.pending;
+      if (last) show({ reply: m.text, pending: r.pending }); else add(m.who, m.text);
+    });
     if (!r.messages.length) add("lead", "Hi, I'm the Marketing lead. Ask me about our posts, competitors or scripts, upload a reel or post you want me to read, or press Talk and just speak.");
   }
   el("mc-text").focus();

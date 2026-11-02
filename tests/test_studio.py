@@ -896,3 +896,113 @@ def test_a_card_can_be_left_out_of_the_topics_without_leaving_knowledge(office):
 def test_a_hook_repeated_as_the_first_line_is_taken_out_before_it_costs_a_rewrite():
     d = {"hook_en": "Want to wake up over the water?", "lines_en": ["Want to wake up over the water!", "Two bedrooms.", "Two bedrooms.", "Message us."]}
     assert studio._no_echo(d) == ["Two bedrooms.", "Message us."]
+
+
+def test_ffprobe_numbers_are_read_even_with_a_trailing_comma(monkeypatch):
+    """Some ffprobe builds print "1080," for csv=p=0; the caption step used to crash on it and editing hung."""
+    class R:
+        stdout = "1080,\n"
+    monkeypatch.setattr(studio.subprocess, "run", lambda *a, **k: R())
+    assert studio._width(Path("x.mp4")) == 1080 and studio._duration(Path("x.mp4")) == 1080.0
+    R.stdout = ""
+    assert studio._width(Path("x.mp4")) == 720 and studio._duration(Path("x.mp4")) == 0.0  # nothing printed: the old defaults
+
+
+def test_suggest_counts_each_handle_once_even_when_the_answer_repeats_it(office, monkeypatch):
+    set_business(office)
+    monkeypatch.setattr(meta, "ready", lambda: True)
+    monkeypatch.setattr(meta, "search", lambda q, **k: {"text": "@old.one is big. @old.one again. instagram.com/old.one @new.one", "cited": [], "sources": [], "queries": []})
+    monkeypatch.setattr(instagram, "ready", lambda: True)
+    monkeypatch.setattr(instagram, "competitor_posts", lambda u, limit=25: {"username": u, "name": u, "followers": 5, "media_count": 1, "avatar": None, "bio": "", "posts": []})
+    monkeypatch.setattr(reader, "fits", lambda o, acc: {"fits": True, "fit_why": ""})
+    monkeypatch.setattr(studio, "competitors", lambda g: ["old.one"])
+    s = analysis.suggest(office)["steps"]
+    assert (s["named"], s["already_saved"], s["checked"]) == (2, 1, 1)  # it used to say "named 2 → 3 already on your list"
+
+
+def test_web_search_is_capped_in_the_request(monkeypatch):
+    sent = {}
+    class R:
+        status_code = 200
+        text = ""
+        def json(self):
+            return {"output": [], "usage": {}}
+    monkeypatch.setattr(meta, "_guard", lambda *a: None)
+    monkeypatch.setattr(meta, "_send", lambda path, body, timeout: sent.update(body) or R())
+    meta.search("anything", agent="mtrend")
+    assert sent["max_tool_calls"] == 3  # the prompt's "at most two searches" alone was ignored: 19 and 26 searches in one call
+
+
+def test_the_director_scores_each_script_and_a_weak_one_is_rewritten_once(office, monkeypatch):
+    from diwan.agents import director
+    from diwan.agents import runner as rn
+    drafts = iter([{"hook_en": "Looking for a villa?", "hook_ar": "", "lines_en": ["A villa.", "It is new.", "Freehold.", "Big garden.", "Message us."], "lines_ar": [], "shots": []},
+                   {"hook_en": "AED 1.9M, garden on two sides", "hook_ar": "", "lines_en": ["Four bedrooms.", "A maid's room.", "Freehold.", "Ready now.", "Message us."], "lines_ar": [], "shots": []}])
+    monkeypatch.setattr(rn, "has_model", lambda *a, **k: True)
+    monkeypatch.setattr(rn, "call", lambda *a, **k: type("R", (), {"data": next(drafts)})())
+    scores = iter([{"score": 2, "why": "reads the title back", "fix": "open on the price and the garden"}, {"score": 4, "why": "specific hook", "fix": ""}])
+    monkeypatch.setattr(director, "script", lambda o, sc, what: next(scores))
+    monkeypatch.setattr(studio, "_best_hook", lambda *a, **k: None)  # the openings are tested on their own below
+    sc = studio.script(office, "JVC-88", {"pick": {"title": "Villa 88"}}, None, None, angle="walkthrough")
+    assert sc["hook_en"].startswith("AED 1.9M") and sc["director"]["score"] == 4 and sc["director"]["rewritten_from"] == 2
+
+
+def test_the_director_picks_the_strongest_of_three_openings_and_none_invents_a_price(office, monkeypatch):
+    from diwan.agents import director
+    from diwan.agents import runner as rn
+    monkeypatch.setattr(rn, "call", lambda *a, **k: type("R", (), {"data": {"hooks": [{"en": "Only AED 950,000 for this villa", "ar": ""}, {"en": "Where would your kids play?", "ar": ""}]}})())
+    seen = {}
+    monkeypatch.setattr(director, "best_hook", lambda o, hooks, lines, what: seen.update(hooks=hooks) or 1)
+    rec = studio._brief(office, "JVC-88")
+    out = studio._best_hook(office, None, {"hook_en": "A villa in JVC.", "hook_ar": "", "lines_en": ["Garden."]}, rec, "Villa 88", False, None)
+    assert seen["hooks"] == ["A villa in JVC.", "Where would your kids play?"]  # the made-up price never reached the Director
+    assert out["hook_en"] == "Where would your kids play?" and out["hooks_tried"] == seen["hooks"]
+
+
+def test_the_logo_and_brand_colours_go_on_every_picture(office, tmp_path):
+    from PIL import Image
+    from diwan import brand as br
+    from diwan.agents import eventpost
+    logo = tmp_path / "logo.png"
+    Image.new("RGBA", (400, 400), (227, 185, 92, 255)).save(logo)
+    office.log.append("setting.changed", actor="maya", content={"person": "brand_logo", "key": "logo", "value": str(logo)})
+    br.save(office, {"colours": "#102030, #E3B95C"}, by="maya")
+    assert br.logo(office) == str(logo) and br.colours(office) == ((16, 32, 48), (227, 185, 92))
+    img = eventpost._draw(Image.new("RGB", (1080, 1350), (200, 200, 200)), "A garden on two sides", "Diwan Realty", centre=False,
+                          logo=br.logo(office), colours=br.colours(office), arabic="حديقة")
+    px = img.getpixel((eventpost.SAFE + 20, eventpost.SAFE + 30))  # inside the logo, top-left in the safe area
+    assert px[0] > 200 and px[2] < 120  # the logo's gold, not the grey photo
+
+
+def test_each_platform_gets_its_own_version_within_its_rules(office, monkeypatch):
+    from diwan import platforms
+    from diwan.agents import runner as rn
+    monkeypatch.setattr(rn, "has_model", lambda *a, **k: False)  # the rules version
+    cap = ("A garden on two sides in Yas Acres\n\nFour bedrooms, a maid's room, ready now. AED 8,000,000.\n\nMessage us to find out more. Say ACRES.\n\n"
+           "#DiwanRealty #YasAcres #AbuDhabiHomes #VillaLife #UAEHomes #NewHome #Freehold #Garden #FamilyHome #Luxury")
+    v = platforms.versions(office, cap, platforms=["Instagram", "Facebook", "LinkedIn", "YouTube Shorts"])
+    assert set(v) == {"Instagram", "Facebook", "LinkedIn", "YouTube Shorts"}
+    for p, x in v.items():
+        assert not platforms.check(p, x["text"]), (p, platforms.check(p, x["text"]), x["text"])
+    assert len(v["YouTube Shorts"]["text"]) <= 100 and v["Instagram"]["posts"] == "by itself once approved" and v["LinkedIn"]["posts"] == "copy and post by hand"
+    assert len(platforms._tags(v["LinkedIn"]["text"])) <= 5 and v["LinkedIn"]["text"] != v["Instagram"]["text"]
+
+
+def test_made_media_is_kept_in_supabase_storage_when_a_bucket_is_set(office, monkeypatch, tmp_path):
+    import httpx
+    from diwan.providers import storage
+    monkeypatch.setattr(meta, "MEDIA", tmp_path)
+    (tmp_path / "post-X-1.jpg").write_bytes(b"jpg")
+    sent = []
+    monkeypatch.setattr(storage, "TRANSPORT", httpx.MockTransport(lambda r: sent.append((str(r.url), r.headers["x-upsert"], r.content)) or httpx.Response(200, json={"Key": "k"})))
+    studio._made(office, "mart", "slides", "X", {"images": [{"path": str(tmp_path / "post-X-1.jpg"), "served": "/media/post-X-1.jpg"}]}, None)
+    assert not sent  # no bucket set: nothing leaves this server
+    for k, v in (("SUPABASE_URL", "https://proj.supabase.co"), ("SUPABASE_SERVICE_KEY", "service"), ("SUPABASE_BUCKET", "diwan-media")):
+        monkeypatch.setenv(k, v)
+    studio._made(office, "mart", "slides", "X", {"images": [{"path": str(tmp_path / "post-X-1.jpg"), "served": "/media/post-X-1.jpg"}]}, None)
+    for t in studio.UPLOADS:
+        t.join(10)
+    assert sent == [("https://proj.supabase.co/storage/v1/object/diwan-media/marketing/post-X-1.jpg", "true", b"jpg")]
+    kept = studio.made(office, "stored", "X")
+    assert kept["files"] == [{"name": "marketing/post-X-1.jpg", "file": "post-X-1.jpg"}] and kept["bucket"] == "diwan-media"
+    assert studio._missing(office, "X") and any("PUBLIC_BASE_URL" in x for x in studio._missing(office, "X"))  # saving is not publishing

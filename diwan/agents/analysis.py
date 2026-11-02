@@ -190,8 +190,7 @@ def suggest(office: Office, *, exclude: tuple[str, ...] = (), round: int = 0) ->
     named = re.findall(r"instagram\.com/([A-Za-z0-9_.]{3,30})", r["text"]) + re.findall(r"@([A-Za-z0-9_.]{3,30})", r["text"])
     saved, seen, skipped = {n.lower() for n in studio.competitors(office.graph())}, [], {"saved": 0, "shown": 0}
     known = {x.lower() for x in exclude}
-    for h in named:
-        h = h.strip(".").lower()
+    for h in dict.fromkeys(x.strip(".").lower() for x in named):  # each handle once, however often the answer names it
         if h in SKIP or h in seen:
             continue
         if h in saved:

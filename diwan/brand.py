@@ -21,6 +21,7 @@ FIELDS = {  # key: (label, what to write, used as a list)
     "never_claim": ("Claims we never make", "Promises you never make, comma-separated", True),
     "cta": ("How we sign off", "The last line of every post", False),
     "hashtags": ("Our hashtags", "Your own hashtags, e.g. #YourBrand", True),
+    "colours": ("Our colours", "Two colours for posters, as hex: the dark one, then the accent, e.g. #0E121B, #E3B95C", True),
 }
 USED_BY = ["Idea generator", "Script writer", "Content writer", "Copywriter (review)"]
 
@@ -118,3 +119,22 @@ def draft(office: Office) -> dict:
         return {"needs": "A model (META_API_KEY), or this month's budget, to draft it. You can type the profile yourself."}
     data = runner.call(c, system, user, schema=DRAFT_SCHEMA).data
     return {"values": {k: (data.get(k) or "").strip() for k in FIELDS}, "sources": list(know) + list(posts), "by": "Brand brain (Muse Spark)"}
+
+
+def colours(office: Office) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """(dark, accent) for posters and cards, from Setup; the studio's own dark and gold until set."""
+    import re
+    got = re.findall(r"#?([0-9a-fA-F]{6})\b", profile(office)["colours"]["value"])
+    rgb = [tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) for h in got[:2]]
+    return (rgb[0] if rgb else (14, 18, 27)), (rgb[1] if len(rgb) > 1 else (240, 220, 170))
+
+
+def logo(office: Office) -> str | None:
+    """The path of the company's logo (Setup → Our brand), or None: it goes on every picture, cover and end card."""
+    from pathlib import Path
+    path = None
+    for e in office.log.list():
+        c = e["content"]
+        if e["type"] == "setting.changed" and c.get("person") == "brand_logo":
+            path = c.get("value") or None
+    return path if path and Path(path).exists() else None

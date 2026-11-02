@@ -49,6 +49,8 @@ def test_a_change_waits_for_a_yes(office, monkeypatch):
     r = lead_chat.say(office, "S2", "Plan next week", by="maya")
     assert r["pending"] == {"action": "plan_week"} and not rhythm.plans(office)  # nothing done yet
     r = lead_chat.say(office, "S2", "yes", by="maya")
+    for t in lead_chat.WRITING:
+        t.join(30)  # today's scripts are written in the background; let them finish before the next test
     assert len(rhythm.plans(office)[-1]["days"]) == 7 and r["reply"].startswith("Planned:")
     assert lead_chat.pending(office, "S2") is None
 
@@ -145,3 +147,22 @@ def test_the_lead_can_run_a_post_about_the_brand():
     o = _office()
     assert "Started a run for JOB-introduce" in lead_chat._do(o, {"action": "run_listing", "ref": "JOB-introduce"}, "maya")
     assert "can't find" in lead_chat._do(o, {"action": "run_listing", "ref": "NOPE"}, "maya")
+
+
+def test_replies_are_plain_text_without_markdown():
+    from diwan.agents import lead_chat
+    assert lead_chat.plain("**Today's post** is the *villa* reel.\n- Format: reel\n## Why\n`code`") == "Today's post is the villa reel.\nFormat: reel\nWhy\ncode"
+    assert lead_chat.plain("3 * 4 = 12, and 2*3") == "3 * 4 = 12, and 2*3"  # a star in arithmetic stays
+
+
+def test_the_lead_knows_todays_post_its_time_and_what_it_learned(office):
+    from diwan.agents import lead_chat
+    ctx = lead_chat.context(office, "s1", None)
+    assert "Today's post:" in ctx and "Posting hour:" in ctx and "Learned from" in ctx and "Scheduled to go out:" in ctx
+
+
+def test_a_yes_with_nothing_waiting_never_sounds_like_something_happened(office, monkeypatch):
+    from diwan.agents import lead_chat
+    monkeypatch.setattr(lead_chat, "_model_turn", lambda *a, **k: {"reply": "Thanks, I have noted your yes and started it.", "action": "confirm"})
+    r = lead_chat.say(office, "s-none", "Yes, go ahead.", by="maya")
+    assert r["reply"].startswith("There's nothing waiting") and "started" not in r["reply"]

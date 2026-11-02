@@ -16,6 +16,7 @@ import json
 import re
 import subprocess
 import threading
+from datetime import datetime
 from pathlib import Path
 
 from diwan import brand, business, topics
@@ -26,6 +27,7 @@ from diwan.providers import instagram, local_asr, meta
 
 ACTIONS = ["none", "search_posts", "read_our_ads", "ask_upload", "note_facts", "revise_script", "run_listing", "plan_week", "confirm", "cancel"]
 CHANGES = {"revise_script", "run_listing", "plan_week"}  # these wait for a yes
+WRITING: list[threading.Thread] = []  # today's scripts being written after a plan: a test waits for them
 ARGS = ["account", "since", "until", "script", "note", "ref", "kind", "whose", "likes", "comments"]
 SCHEMA = {"name": "lead", "strict": True, "schema": {"type": "object", "additionalProperties": False, "required": ["reply", "action", *ARGS],
           "properties": {"reply": {"type": "string"}, "action": {"type": "string", "enum": ACTIONS}, **{a: {"type": "string"} for a in ARGS}}}}
@@ -73,6 +75,21 @@ def pending(office: Office, session: str) -> dict | None:
 
 # ---------- what the lead knows ----------
 
+def _hour(office: Office) -> str:
+    """The hour a post goes out once approved, and where that hour comes from (studio.best_hour)."""
+    from diwan.agents import studio
+    h, m, why = studio.best_hour(office)
+    return f"{h}:{m:02d} {business.tz_label(office)} ({why})"
+
+
+MARK = re.compile(r"\*\*|__|(?<!\w)\*(?=\S)|(?<=\S)\*(?!\w)|^#{1,6}\s+|^\s*[-*•]\s+|`", re.M)
+
+
+def plain(text: str) -> str:
+    """The chat shows plain text (and it is read aloud): no markdown stars, hashes, bullets or backticks."""
+    return re.sub(r"[ \t]{2,}", " ", MARK.sub("", text or "")).strip()
+
+
 def context(office: Office, session: str, ref: str | None) -> str:
     """The studio's state in a few lines, for the model to answer from."""
     from diwan.agents import reader, rhythm, strategy, studio
@@ -82,6 +99,11 @@ def context(office: Office, session: str, ref: str | None) -> str:
     nxt = journey.report(office)["next"]
     if nxt:
         lines.append(f"The next post is {nxt['ref']} ({nxt['title']}), job \"{nxt['label']}\": {nxt['why']}. This comes before the plan's days.")
+    from diwan.agents import analysis as _an
+    for a in _an.report(office)["accounts"]:
+        k = a.get("kpis") or {}
+        lines.append(f"@{a['account']} on Instagram: {a.get('followers') if a.get('followers') is not None else 'unknown'} followers, {a.get('media_count') or '?'} posts in all"
+                     + (f", average {k.get('avg_likes')} likes and {k.get('avg_comments')} comments a post" if k.get("avg_likes") is not None else "") + ".")
     why = reader.patterns(office)
     for a in why["accounts"]:
         lines.append(f"@{a['account']}: {a['read']} of {a['posts']} posts read, {a['winners']} clearly above their usual."
@@ -96,8 +118,31 @@ def context(office: Office, session: str, ref: str | None) -> str:
     lines.append("Angles: " + "; ".join(f"{x['angle']} is {x['status']}" for x in strategy.report(office)["angles"]))
     own = studio.posts(office, "own")
     lines += [f"Our post on {(p.get('at') or '')[:10]}: {p.get('likes')} likes, {p.get('comments')} comments: \"{(p.get('caption') or '')[:70]}\"" for p in own[-5:]]
-    if (p := rhythm.current(office)):
-        lines.append("The plan: " + "; ".join(f"{d['date']} {d['ref']}" for d in p["days"] if d["date"] >= today))
+    from diwan.agents import marketing as _m, taste as _t, style as _s
+    pv = _m.plan_view(office)
+    hour = _hour(office)
+    today_post = next((d for d in pv["days"] if d["date"] == today and d.get("ref")), None)
+    lines.append(f"Today's post: {today_post['title']} ({today_post['ref']}), {today_post['format']}, {today_post['state']}; it would go out at {hour} "
+                 f"once approved. Why: {today_post['why']}" if today_post else "Today's post: nothing is planned for today.")
+    if pv["days"]:
+        lines.append("The plan (date, subject, format, state, why): " + "; ".join(f"{d['date']} {d['title']} ({d['ref']}), {d['format']}, {d['state']}"
+                                                                               + (f", why: {d['why'][:90]}" if d.get("why") else "") for d in pv["days"] if d.get("ref")))
+    lines.append("Scheduled to go out: " + ("; ".join(f"{x['title']} ({x['ref']}) at {x['at'][:16].replace('T', ' ')}" for x in pv["scheduled"]) or "nothing yet")
+                 + f". Posting hour: {hour}.")
+    if pv["live"]:
+        lines.append("Live now: " + "; ".join(f"{x['title']} since {x['since']}" for x in pv["live"]))
+    if pv["removed"] or pv["stopped"]:
+        lines.append("Came off: " + "; ".join([f"removed {x['date']} {x['title']}" for x in pv["removed"]] + [f"stopped {x['title']} ({x['why'][:80]})" for x in pv["stopped"]]))
+    from diwan import occasions as _oc
+    soon = _oc.upcoming(office, business.local(studio._now(), office).date(), within=60)
+    lines.append("Occasions coming up (a greeting post on the day, offered on the Run tab 30 days ahead): " + ("; ".join(
+        f"{o['title']} on {o['on']}{' (expected, moon-dependent)' if o['expected'] else ''}, in {o['days']} days, greeting \"{o['greeting']}\"" for o in soon) or "none in the next 60 days"))
+    lr = _t.learned(office)
+    lines.append(f"Learned from {lr['decisions']} decisions ({'early, a lean only' if lr['early'] else 'enough to steer'}): "
+                 + ("; ".join(f"{'more' if r['lean'] == 'more' else 'stopped' if r['strong'] else 'less'} of {r['what'].lower()} {r['value']}" for r in lr["rows"][:10]) or "nothing yet"))
+    notes = _s.notes(office) if hasattr(_s, "notes") else []
+    if notes:
+        lines.append("Style notes from the person's choices: " + "; ".join((n.get("text") if isinstance(n, dict) else str(n))[:90] for n in notes[:8]))
     v = marketing.overview(office)
     lines += [f"Traced to {r['title']}: {r['leads']} leads, {r['qualified']} qualified, {r['viewings']} viewings, {r['deals']} deals." for r in v["results"][:10]]
     lines.append("Posts by stage: " + (", ".join(f"{s['label']} {s['n']}" for s in v["stages"] if s["n"]) or "none yet"))
@@ -109,6 +154,9 @@ def context(office: Office, session: str, ref: str | None) -> str:
                 lines.append(f"Script {s['id']} for {s['ref']} ({s.get('angle')}), waiting to be picked: \"{s['hook_en']}\" / " + " / ".join(s["lines_en"]))
     from diwan.agents import rhythm as _r
     money = lambda x: f", {x.get('currency') or 'AED'} {(x.get('price_aed') or x.get('price')):,}" if isinstance(x.get("price_aed") or x.get("price"), (int, float)) else ""  # noqa: E731
+    made = {r for r, x in _m.pieces(office).items()}
+    bare = [x for x in _r.listings(office) if x["ref"] not in made]
+    lines.append(f"Listings with no post made yet: {len(bare)} of {len(_r.listings(office))}" + (": " + "; ".join(f"{x.get('title')} ({x['ref']})" for x in bare[:12]) if bare else "") + ".")
     lines.append("What we can post about (ref, title, price): " + "; ".join(f"{x['ref']} ({x.get('title')}{money(x)})" for x in _r.listings(office)))
     lines.append("Topics and posts about the brand we can post about: " + "; ".join(f"{r} ({t['title']})" for r, t in [*journey.items(office).items(), *topics.items(office).items()]))
     for u in uploads(office, session):
@@ -135,7 +183,17 @@ SYSTEM = (
     "choose none. Don't offer to run it again instead.\n"
     "Answer from the studio's data below and from what the person says; never invent a number, a post or a result. When it matters, make clear what is "
     "measured, what the person told you and what you don't know, in your own words: never open with a set phrase. Talk the way a colleague would: a few natural, "
-    "complete sentences (you may be read aloud), never a list of one-word fragments.\n"
+    "complete sentences (you may be read aloud), never a list of one-word fragments, and plain text only: no asterisks, hashes, bullets or bold.\n"
+    "You are also an experienced marketer. When the data is thin, still give your professional advice and draft what is asked (a caption, an idea for "
+    "Eid or National Day, what suits LinkedIn versus Instagram, a reel structure): say in a few words that it is general practice, not our measured "
+    "results, and keep every fact in it true to the data. Refusing to advise is a failure; inventing a number is a worse one.\n"
+    "Name things by their title (\"the Meet Diwan Realty post\", \"the Yas Acres villa\"), never by an internal id like JOB-introduce, K3 or T-…; a "
+    "listing's reference may follow its title.\n"
+    "If you say you will fetch, plan or run something, choose that action in the same turn: never promise to do it later. When you propose a change, "
+    "say exactly what will happen after the yes and show it: for a script change, the new hook or line you would write; for a post, its job, format, "
+    "opening and what it shows; for a plan, the days and subjects you expect. The person should be able to judge it before saying yes.\n"
+    "When an instruction pulls two ways (luxury but affordable, shorter but more detail), don't push it back: write the best balanced version, say in "
+    "one sentence how you read it, and offer the alternative.\n"
     "Choose one action:\n"
     "- search_posts: fetch an account's posts (account without @; since/until as YYYY-MM-DD, empty if not given)\n"
     "- read_our_ads: read our own ad account\n"
@@ -204,7 +262,12 @@ def _do(office: Office, p: dict, by: str) -> str:
         if rhythm.settings(office)["posts_per_week"] == "0":
             return "Nothing planned yet: say how many posts a week in Setup → Rhythm, or press Plan from today."
         plan = rhythm.make_plan(office, business.local(studio._now(), office).date(), auto=False, by=by, days_ahead=rhythm.AHEAD_DAYS, think=True)
-        return "Planned: " + "; ".join(f"{d['date']} {studio._listing(office, d['ref'])['title']}" for d in plan["days"] if d.get("ref"))
+        today = rhythm.due(office, any_hour=True)
+        if today:
+            WRITING.append(t := threading.Thread(target=lambda: asyncio.run(studio.run(office, today, pause=0)), daemon=True))
+            t.start()
+        return ("Planned: " + "; ".join(f"{d['date']} {studio._listing(office, d['ref'])['title']}" for d in plan["days"] if d.get("ref"))
+                + (f". Today's three scripts are being written now for {studio._listing(office, today)['title']}; they will wait on the Run tab." if today else ""))
     if p["action"] == "run_listing":
         ref = p.get("ref")
         try:
@@ -247,8 +310,11 @@ def say(office: Office, session: str, text: str, *, by: str, ref: str | None = N
         out["pending"] = {k: d.get(k, "") for k in ("script", "note", "ref") if d.get(k)} | {"action": act}
     elif act in ("confirm", "cancel") and (p := pending(office, session)):
         d["reply"] = _do(office, p, by) if act == "confirm" else "Left as it was."  # what really happened, never what the model expected
+    elif act in ("confirm", "cancel"):  # a yes or no with nothing waiting: say so, never let the model imply something happened
+        d["reply"] = "There's nothing waiting for a yes or no from you right now. Tell me what you'd like done and I'll set it up."
     elif act == "ask_upload":
         out["upload"] = True
+    d["reply"] = plain(d["reply"])
     office.log.append("mchat.said", actor="mkt", agent="mkt", content={"session": session, "who": "lead", "text": d["reply"], "action": act, **out})
     return {"reply": d["reply"], "action": act, **out}
 

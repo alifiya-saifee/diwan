@@ -74,5 +74,40 @@ informational video, spoken to camera), each from its own facts. It can read the
 properties, refresh competitor posts every day, and be talked to by text or voice. Everything starts in the Studio's Setup
 tab. A person approves every script and every post; nothing is published without that.
 
+### How a post is made
+
+1. **Plan.** Setup → Rhythm sets how many posts a week and on which days. The plan fills those days from the listings,
+   products, topics and occasions, and each day says what it builds on: a competitor pattern, a trend or one of our
+   results. Never more than two posts about the company in a row. Any day can be approved, changed, rescheduled or removed.
+2. **Occasions.** The calendar is researched for the business's own country with one web search, and every date is kept
+   only with its source (Setup → Our occasions, editable). An occasion is offered 30 days ahead. One yes writes a greeting
+   that goes out on the day itself and sells nothing.
+3. **Research.** The competitors' real posts are read through Instagram's business discovery. A winner is a post well
+   above that account's usual engagement, and Muse Spark says why each one won. For an occasion, last year's posts around
+   the same day are read and the best ones brief the card. For a listing, its own web page (features kept only with a
+   quote) and its area (facts kept only with a source) are read once.
+4. **Format.** A listing becomes a single photo, a carousel or a reel. The choice comes from its selling point, what its
+   photos show and which format wins among the competitors' posts. A greeting is a designed card unless the person
+   chooses their own photos.
+5. **Scripts.** Three scripts on different angles, in English and Arabic. Every amount must be on the listing. The
+   Creative Director scores each one blind and rewrites any below 4 out of 5, and picks the strongest of three openings.
+6. **Made and checked.** Pictures and cards carry the logo, the brand colours and Arabic set right to left. The free
+   video reads the script over the photo that shows each line. The caption is written in the brand's voice and checked
+   against the facts, the permit and the code word. Facebook, LinkedIn and YouTube versions are ready to copy, and
+   every file is also kept in Supabase Storage when a bucket is set.
+7. **Approval.** The post waits at the best hour, and the card says where that hour came from. A change asked on the
+   card goes to whoever can fix it and comes back checked, with before and after.
+
+| Job | Model |
+|---|---|
+| Reading competitor posts, the Marketing lead, ideas, scripts, captions, platform versions | Muse Spark |
+| Web search (trends, occasions, the area) | Muse Spark with web search, sources kept |
+| Looking at photos, pictures and frames (the Creative Director) | Muse Spark (vision) |
+| Greeting backgrounds and AI frames for topics | Muse Image |
+| Transcribing a competitor's winning video | Muse Voice Transcribe |
+| The free video's voice, captions and cut | The computer's own voice and ffmpeg (no model) |
+
+How it was tested, case by case with a blind judge, and what is still weak: [docs/marketing-real-user-test.md](docs/marketing-real-user-test.md).
+
 Agents never hold portal or bank credentials. A person approves, submits, pays and files.
 All people and deals in demos are fictional.

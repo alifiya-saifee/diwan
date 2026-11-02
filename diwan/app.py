@@ -106,6 +106,8 @@ async def morning_loop():
             asyncio.create_task(studio.run(S.office, ref, auto=not rhythm.approved(S.office, ref)))  # a day a person approved needs no second yes
         await asyncio.to_thread(guarded, "scheduled posts", studio.publish_due, S.office)  # approved posts go out at their time
         await asyncio.to_thread(__import__("diwan.agents.marketing", fromlist=["tick"]).tick, S.office)  # tracing, posts following the facts, the day's lists
+        if ticks % 60 == 0 and __import__("diwan.occasions", fromlist=["research_due"]).research_due(S.office):  # the business's occasions, researched for its country
+            asyncio.create_task(asyncio.to_thread(guarded, "occasions research", __import__("diwan.occasions", fromlist=["research"]).research, S.office))
         if rhythm.refresh_due(S.office):  # the daily refresh of competitor posts, when the Marketing manager turned it on
             asyncio.create_task(asyncio.to_thread(studio.refresh_competitors, S.office, by="mrival", auto=True))
         if env("LISTING_FEED_URL") and ticks % 30 == 0:
@@ -274,7 +276,7 @@ def studio_view(ref: str = "MC-1204"):
                        "started": sorted(rhythm.started(S.office)), "stages": marketing.stage_labels(S.office),
                        "evidence": planner.evidence(S.office, [d["ref"] for d in (rhythm.current(S.office) or {}).get("days", []) if d.get("ref")])},
             "footage": studio.footage(S.office, ref), "approvals": [{"id": n.id, "text": n.props["text"], "kind": n.props.get("kind"),
-                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises", "cards", "built_like", "own", "problems", "shots", "format", "slides")} | {"stale": studio.stale(S.office, x)}
+                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises", "cards", "built_like", "own", "problems", "shots", "format", "slides", "director")} | {"stale": studio.stale(S.office, x)}
                                        for x in studio.script_options(S.office, n.props["text"])] if n.props.get("kind") == "use_script" else []} for n in reqs],
             "strategy": strategy.report(S.office), "journey": journey.report(S.office), "costs": costs.summary(),
             "script_approved": bool(studio.approved_script(S.office, ref)), "heygen": heygen.ready(), "stopped": studio.stopped(S.office, ref),

@@ -11,8 +11,9 @@ import re
 from diwan.office import Office
 
 SCHEMA = {"name": "plan", "strict": True, "schema": {"type": "object", "additionalProperties": False, "required": ["days"], "properties": {"days": {"type": "array", "items": {
-    "type": "object", "additionalProperties": False, "required": ["date", "ref", "why"],
-    "properties": {"date": {"type": "string"}, "ref": {"type": "string"}, "why": {"type": "string"}}}}}}}
+    "type": "object", "additionalProperties": False, "required": ["date", "ref", "why", "borrows"],
+    "properties": {"date": {"type": "string"}, "ref": {"type": "string"}, "why": {"type": "string"}, "borrows": {"type": "string"}}}}}}}
+MAX_ABOUT_US_IN_A_ROW = 2  # posts about the company itself (who we are, why us, the team, proof) before the viewer gets something
 MAX_LISTINGS, TRIES = 12, 2
 NOTES = re.compile(r"\bK\d+\b|\bT-[A-Z0-9-]{3,}|\bJOB-|\bcard\b|\bslot\b|\bref\b", re.I)
 
@@ -72,7 +73,9 @@ def _context(office: Office) -> dict:
     return {"stage": journey.stage(office), "posts_so_far": a["posts"], "still_to_do_of_the_first_nine": journey._left(office)[0],
             "what_brought_leads": [{"title": r["title"], "leads": r["leads"], "deals": r["deals"]} for r in marketing.results(office)[:5]],
             "topics_winning_for_competitors": sorted(set(rhythm._market_words(office)))[:30], "what_winning_competitor_posts_show": reader.winning(office)["line"], "what_the_owner_has_told_us": style.brief(office), "learned_from_decisions_and_results": taste.brief(office),
-            "share_of_teaching_posts_percent": rhythm.settings(office)["topic_share"]}
+            "share_of_teaching_posts_percent": rhythm.settings(office)["topic_share"],
+            "what_is_working_for_competitors": [f"@{p['account']}: {p['finding']}" for a in reader.patterns(office).get("accounts", []) for p in a.get("patterns", [])][:8],
+            "trends_on_the_board": [c.get("title") for c in __import__("diwan.agents.studio", fromlist=["board"]).board(office) if c.get("kind") == "trend"][:10]}
 
 
 def choose(office: Office, days: list[dict], today: date, locked: set[str], rejected: set[str] = frozenset()) -> tuple[list[dict], str]:
@@ -96,7 +99,9 @@ def choose(office: Office, days: list[dict], today: date, locked: set[str], reje
     user = runner.user_message(
         "Choose what to post on each of these days, as the head of marketing would for this business right now. One post for each date, "
         "from the options only, by their key. Build a stranger's trust before selling, mix teaching and offers, vary the format through the week, put what works sooner, and prefer options with a higher fit, which is learned from this business's own decisions and leads, and "
-        "never use the same option twice. For each day give why in one plain sentence a business owner would say out loud, naming no codes.",
+        "never use the same option twice. Never more than two posts about the company itself in a row: most days give the viewer something (a listing, an area, a market fact, advice). "
+        "For each day give why in one plain sentence a business owner would say out loud, naming no codes, and borrows: the one thing from what_is_working_for_competitors, "
+        "trends_on_the_board or what_brought_leads that this day builds on, quoted short, or empty when none fits.",
         {"dates": [d["date"] for d in open_days], "already_on_the_plan": [{"date": d["date"], "title": pool.get(d.get("ref"), {}).get("title", "")} for d in days if d["date"] in locked | fixed],
          "options": pool, "the_account": _context(office)})
     if not runner.has_model(c, system, user, schema=SCHEMA):
@@ -121,7 +126,8 @@ def choose(office: Office, days: list[dict], today: date, locked: set[str], reje
         o = pool[p["ref"]]
         taken.add(p["ref"])
         kept += 1
-        out.append({"date": d["date"], "ref": p["ref"], "why": p["why"].strip(), "type": o["type"], "status": "pending", **({"job": o["job"]} if p["ref"].startswith("JOB-") else {})})
+        out.append({"date": d["date"], "ref": p["ref"], "why": p["why"].strip(), "type": o["type"], "status": "pending", **({"job": o["job"]} if p["ref"].startswith("JOB-") else {}),
+                    **({"borrows": p["borrows"].strip()[:160]} if (p.get("borrows") or "").strip() else {})})
     # a plain day that kept its place can now repeat a choice: nothing goes out twice, and no day is left blank
     seen, final = set(), []
     for d in out:
@@ -132,7 +138,24 @@ def choose(office: Office, days: list[dict], today: date, locked: set[str], reje
             d = {"date": d["date"], "ref": spare, "why": "Not posted yet", "type": pool[spare]["type"], "status": "pending", **({"job": pool[spare]["job"]} if spare.startswith("JOB-") else {})}
         seen.add(d.get("ref"))
         final.append(d)
+    final = _not_all_about_us(office, final, pool, locked | fixed, seen, rhythm)
     return final, "muse-spark" if kept else "rules"
+
+
+def _not_all_about_us(office: Office, days: list[dict], pool: dict, fixed: set[str], seen: set, rhythm) -> list[dict]:
+    """A third post about the company in a row gives way to one that gives the viewer something, when there is one."""
+    run, out = 0, []
+    for d in days:
+        about_us = (d.get("ref") or "").startswith("JOB-")
+        run = run + 1 if about_us else 0
+        if about_us and run > MAX_ABOUT_US_IN_A_ROW and d["date"] not in fixed:
+            spare = next((r for r in pool if not r.startswith("JOB-") and r not in seen and not _too_soon(office, r, pool, rhythm)), None)
+            if spare:
+                seen.add(spare)
+                d = {"date": d["date"], "ref": spare, "why": "Gives the viewer something after two posts about us", "type": pool[spare]["type"], "status": "pending"}
+                run = 0
+        out.append(d)
+    return out
 
 
 def _too_soon(office: Office, ref: str, pool: dict, rhythm) -> bool:

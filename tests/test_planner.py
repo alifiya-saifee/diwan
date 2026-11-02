@@ -236,3 +236,24 @@ def test_real_footage_beats_the_pattern(office, monkeypatch):
     monkeypatch.setattr(studio, "footage", lambda o, r: {"id": "F1"})
     t = a_topic(office)
     assert eventpost.shape(office, t | {"item": "topic"}) is None
+
+
+def test_never_more_than_two_posts_about_us_in_a_row_and_each_day_says_what_it_borrows(office, monkeypatch):
+    refs = list(planner.options(office, TODAY))
+    us = [r for r in refs if r.startswith("JOB-")]
+    if len(us) < 3:
+        pytest.skip("the demo has fewer than three posts about the company to choose from")
+    strategist(monkeypatch, lambda s: [{"date": (TODAY + timedelta(days=i)).isoformat(), "ref": us[i], "why": "People should know us first.",
+                                        "borrows": "@rival: 4 of their 4 best posts show text on images" if i == 0 else ""} for i in range(3)])
+    p = rhythm.make_plan(office, TODAY, auto=False, days_ahead=3, think=True)
+    run = [d["ref"].startswith("JOB-") for d in p["days"] if d.get("ref")]
+    assert run[:2] == [True, True] and run[2] is False  # the third gives the viewer something
+    assert p["days"][0].get("borrows", "").startswith("@rival")
+
+
+def test_a_third_post_about_us_gives_way_to_one_for_the_viewer(office):
+    pool = {r: {"type": t, "days_since": None} for r, t in (("JOB-a", "topic"), ("JOB-b", "topic"), ("JOB-c", "topic"), ("L-1", "listing"))}
+    days = [{"date": f"2026-11-0{i + 3}", "ref": r, "why": "x"} for i, r in enumerate(["JOB-a", "JOB-b", "JOB-c"])]
+    out = planner._not_all_about_us(office, days, pool, set(), {"JOB-a", "JOB-b", "JOB-c"}, rhythm)
+    assert [d["ref"] for d in out] == ["JOB-a", "JOB-b", "L-1"] and "two posts about us" in out[2]["why"]
+    assert [d["ref"] for d in planner._not_all_about_us(office, days, pool, {"2026-11-05"}, set(), rhythm)][2] == "JOB-c"  # a day a person fixed stays

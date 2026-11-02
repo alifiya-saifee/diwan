@@ -71,11 +71,18 @@ def _creative(o: Office, ref: str, it: dict) -> tuple[bool, str]:
     """Only pictures the AI made are judged here: a post's real photos are the post."""
     from diwan.agents import director
     if it.get("background") != "Muse Image":
-        return True, ""
-    seen = director.review(o, _listing(o, ref)["title"], " ".join(x["text"] for x in it["images"]), [x["path"] for x in it["images"]])
+        return True, ""  # real photos are scored on the slides record and shown to the approver, not redrawn
+    seen = it.get("review") and {"score": it["review"]["score"], "failed": it["review"]["failed"]} or \
+        director.review(o, _listing(o, ref)["title"], " ".join(x["text"] for x in it["images"]), [x["path"] for x in it["images"]])
     if not seen or not seen["failed"]:
         return True, ""
     return False, f"{seen['score']}/5: " + next(iter(seen["failed"].values()))[:120]
+
+
+def _lines_ok(office, ref: str, item: dict) -> bool:
+    """5 to 8 lines for a reel or a post; a greeting card says less, 2 to 6."""
+    lo, hi = (2, 6) if _listing(office, ref).get("greeting") else (5, 8)
+    return lo <= len(item["lines_en"]) <= hi
 
 
 def _script_text(item: dict) -> str:
@@ -139,8 +146,8 @@ CHECKS: dict[str, list[Check]] = {
         Check("script-plain", "No brochure language: it sounds like someone talking.", "mscript",
               lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(BROCHURE.search(_script_text(it))),
               "Say it in plain spoken words: what the person gets, not how good we are."),
-        Check("script-length", "5 to 8 lines, about 30 seconds.", "mscript",
-              lambda o, ref, it: (5 <= len(it["lines_en"]) <= 8, f"{len(it['lines_en'])} lines"), "Write 5 to 8 lines."),
+        Check("script-length", "5 to 8 lines, about 30 seconds (a greeting card: 2 to 6).", "mscript",
+              lambda o, ref, it: (_lines_ok(o, ref, it), f"{len(it['lines_en'])} lines"), "Write 5 to 8 lines (a greeting, 2 to 6)."),
         Check("script-real-amounts", "Every amount is on the listing.", "mscript",
               lambda o, ref, it: (lambda stray: (not stray, ", ".join(f"AED {a:,}" for a in stray)))(_money(_script_text(it)) - {_listing(o, ref)["price_aed"], 0} - (_money(_brief(o, ref)) if _listing(o, ref)["item"] == "topic" else set())),
               "Use only the listing's price; remove every other amount."),
@@ -164,8 +171,12 @@ CHECKS: dict[str, list[Check]] = {
         Check("script-names-us", "A post about the company says the company's name.", "mscript",
               lambda o, ref, it: (not ref.startswith("JOB-") or (lambda n: not n or n.lower() in _script_text(it).lower())(__import__("diwan.brand", fromlist=["profile"]).profile(o)["name"]["value"].split(" ")[0]), "the company's name is missing"),
               "Say the company's name once, naturally."),
-        Check("script-call-to-action", "The script ends by asking the viewer to get in touch.", "mscript",
-              lambda o, ref, it: (bool(re.search(r"\b(message|dm|call|whatsapp|book|contact|enquire|inquire|link in bio|get in touch|reach out|speak to|talk to|follow|ask us|tell us)\b", (it["lines_en"] or [""])[-1], re.I)),
+        Check("script-greeting-sells-nothing", "A greeting sells nothing: no price, offer, listing or call to contact.", "mscript",
+              lambda o, ref, it: (lambda m: (not m, m.group(0) if m else ""))(re.search(r"\b(aed|dirhams?|price|offer|discount|for sale|invest|book a viewing|message us|dm us|call us|listing)\b",
+                                                                                        _script_text(it), re.I)) if _listing(o, ref).get("greeting") else (True, ""),
+              "Take out the selling: a greeting only greets and wishes well, signed by the team."),
+        Check("script-call-to-action", "The script ends by asking the viewer to get in touch (a greeting ends on a wish instead).", "mscript",
+              lambda o, ref, it: (True, "") if _listing(o, ref).get("greeting") else (bool(re.search(r"\b(message|dm|call|whatsapp|book|contact|enquire|inquire|link in bio|get in touch|reach out|speak to|talk to|follow|ask us|tell us)\b", (it["lines_en"] or [""])[-1], re.I)),
                                   (it["lines_en"] or [""])[-1][:80]),
               "End with a line inviting the viewer to get in touch, in the brand's own sign-off."),
         Check("script-brand", "No word the brand never uses, no claim it never makes.", "mscript",
@@ -217,9 +228,10 @@ CHECKS: dict[str, list[Check]] = {
               lambda o, ref, it: (8 <= datetime.fromisoformat(it["at"]).astimezone(timezone(timedelta(hours=4))).hour <= 23, it["at"]), "Pick a waking hour."),
     ],
     "versions": [
-        Check("versions-limits", "Every platform version is within that platform's limit.", "mcross",
-              lambda o, ref, it: (lambda lim: (all(len(v) <= lim.get(p, 10**6) for p, v in it["versions"].items()), "over a limit"))(__import__("diwan.agents.studio", fromlist=["LIMITS"]).LIMITS),
-              "Cut each version to its platform's limit."),
+        Check("versions-limits", "Every platform version fits its platform: length, hashtags, no emoji on LinkedIn.", "mcross",
+              lambda o, ref, it: (lambda bad: (not bad, "; ".join(bad)[:200]))([f"{p}: {', '.join(x)}" for p, v in it["versions"].items()
+                                                                               if (x := __import__("diwan.platforms", fromlist=["check"]).check(p, v)) and p in __import__("diwan.platforms", fromlist=["RULES"]).RULES]),
+              "Fit each version to its platform's limit and hashtags."),
     ],
 }
 
