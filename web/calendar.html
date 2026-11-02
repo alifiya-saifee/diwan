@@ -565,6 +565,7 @@ function apptPanel(a) {
       a.chat ? h("a", { class: "btn", href: `inbox.html?chat=${a.chat}&as=${me}` }, "Open the chat") : null,
       a.where === "video" && !link.url && live && can && !past ? h("button", { onclick: async () => {
         try { const r = await post(`/api/appointments/${a.id}/link`, { by: me }); toast(`Link made: ${TOLD[r.told] || "sent"}`); load(); } catch (e) { toast(e.message); } } }, "🎥 Create link") : null,
+      a.deal ? h("a", { class: "btn", href: `deal.html?deal=${encodeURIComponent(a.deal)}` }, "Open the deal") : null,
       a.deal && live && can && a.where !== "phone" ? h("a", { class: "btn", href: `meeting.html?deal=${encodeURIComponent(a.deal)}&title=${encodeURIComponent(a.kind)}` }, "🎙 Record the visit") : null),
     live && can && !past ? h("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin-top:8px" },
       h("button", { onclick: showMove }, "Move"), h("button", { onclick: showCancel }, "Cancel")) : null,
@@ -620,6 +621,7 @@ function openForm(mode, pre = {}) {
         field("Client's name", h("input", { id: "fname", placeholder: "For a new client" }))),
       field("Kind", kindSel),
       field("Property", h("input", { id: "fprop", list: "listinglist", placeholder: "Listing ref, e.g. MC-1204", autocomplete: "off" })),
+      h("label", { id: "fconfirmbox", style: "display:flex;gap:8px;align-items:center;margin-top:6px" }, h("input", { type: "checkbox", id: "fconfirm", style: "width:auto" }), "I've talked to the client and the place is available"),
       h("div", { class: "two" }, field("Day", h("input", { id: "fdate", type: "date", value: date })), field("Time", h("input", { id: "ftime", type: "time", step: 900, value: pre.time || "10:00" })))];
   } else if (mode === "busy") {
     const e = pre.edit;
@@ -653,7 +655,7 @@ async function save(mode, edit) {
     let r;
     if (mode === "appt") {
       if (!v("fdate") || !v("ftime")) throw new Error("Pick a day and a time");
-      r = await post("/api/appointments", { by: me, broker, phone: v("fphone"), name: v("fname") || null, kind: v("fkindsel"), listing: v("fprop") || null, at: at(v("fdate"), v("ftime")) });
+      r = await post("/api/appointments", { by: me, broker, phone: v("fphone"), name: v("fname") || null, kind: v("fkindsel"), listing: v("fprop") || null, at: at(v("fdate"), v("ftime")), confirmed: !!$("fconfirm")?.checked });
     } else if (mode === "busy") {
       if (!v("fdate") || !v("ffrom") || !v("fto")) throw new Error("Pick a day and the times");
       r = await post(`/api/calendar/blocks${edit ? "/" + edit.id : ""}`, { by: me, broker, kind: "busy", start: at(v("fdate"), v("ffrom")), end: at(v("fdate"), v("fto")),
@@ -792,6 +794,8 @@ if (qs.get("book")) setTimeout(async () => {  // from a hot lead: the form opens
   await Promise.resolve(openForm("appt", { broker: who || (C?.owner ? null : me) }));
   const phone = document.querySelector("#fphone, input[name=phone]");
   if (phone) { phone.value = qs.get("book"); phone.dispatchEvent(new Event("input", { bubbles: true })); }
+  if (qs.get("ref") && $("fprop")) { const kind = C.kinds.find((k) => k.where === "property"); if (kind) { $("fkindsel").value = kind.id; $("fkindsel").dispatchEvent(new Event("change")); } $("fprop").value = qs.get("ref"); }
+  if (qs.get("at") && $("fdate")) { const t = new Date(qs.get("at")); const p = (n) => String(n).padStart(2, "0"); $("fdate").value = `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`; $("ftime").value = `${p(t.getHours())}:${p(t.getMinutes())}`; }
 }, 600);
 $("addBusy").onclick = () => openForm("busy", { broker: who || (C.owner ? null : me) });
 $("addOff").onclick = () => openForm("off", { broker: who || (C.owner ? null : me) });

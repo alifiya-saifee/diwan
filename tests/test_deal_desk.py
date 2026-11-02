@@ -109,7 +109,7 @@ def test_source_of_funds_lays_out_the_numbers_and_the_missing_proof(client):
     assert [n["what"] for n in f["numbers"]] == ["Price", "Deposit", "Paid by", "Stated income", "Price in years of stated income"]
     assert f["numbers"][2]["value"] == "Karim Haddad" and f["numbers"][4]["value"] == "4.8"
     assert [p["kind"] for p in f["proof"]] == ["bank statement", "salary certificate", "balance funding"] and f["missing"] == 3
-    pdf = {"file": ("s.pdf", b"%PDF-1.4 statement")}
+    pdf = {"file": ("s.pdf", b"%PDF-1.4 statement %%EOF")}
     assert client.post("/api/desk/deals/marina-1204/proof", data={"by": "omar", "kind": "bank statement"}, files=pdf).status_code == 403
     assert client.post("/api/desk/deals/marina-1204/proof", data={"by": "priya", "kind": "bank statement"}, files={"file": ("s.txt", b"")}).status_code == 400  # a file is required
     doc = client.post("/api/desk/deals/marina-1204/proof", data={"by": "priya", "kind": "bank statement"}, files=pdf).json()["document"]

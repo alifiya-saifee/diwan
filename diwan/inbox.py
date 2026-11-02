@@ -34,7 +34,9 @@ SAMPLE_TEMPLATES = [
     {"name": "appointment_changed", "status": "SAMPLE", "language": "en", "category": "UTILITY", "params": 3,
      "body": "Hi {{1}}, your {{2}} has been moved to {{3}}. Reply here if that doesn't suit you."},
     {"name": "appointment_cancelled", "status": "SAMPLE", "language": "en", "category": "UTILITY", "params": 3,
-     "body": "Hi {{1}}, your {{2}} on {{3}} has been cancelled. Reply here if you'd like another time."},
+     "body": "Hi {{1}}, your {{2}} on {{3}} has been cancelled. Reply here if you'd like another time."},
+    {"name": "after_viewing", "status": "SAMPLE", "language": "en", "category": "UTILITY", "params": 1,
+     "body": "Hi {{1}}, thank you for coming to the viewing. How did you find it? Reply here and I'll take it from there."},
 ]
 
 
@@ -179,7 +181,11 @@ def detail(office: Office, phone: str, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     base = conversation(g, c, now)
     deal = c.deal
+    from diwan import offers
+    asked = next((e["content"] for e in reversed(office.log.list()) if e["type"] == "viewing.requested" and e["content"].get("chat") == phone), None)
     return base | {
+        "offers": offers.rows(office.log, deal) if deal else [],
+        "viewing_request": asked if asked and not g.of("viewing", deal, "booked") else None,
         "messages": c.props["messages"],
         "facts": [{"id": f.id, "text": g.record(f.id).split(" · ", 1)[1], "kind": f.props["kind"]} for f in g.facts(deal)] if deal else [],
         "replaced": [{"id": f.id, "quote": f.props["quote"], "by": f.props.get("superseded_by")} for f in g.of("fact", deal, "superseded")] if deal else [],

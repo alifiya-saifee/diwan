@@ -8,7 +8,7 @@ draft. Nothing is sent by the drafter: the broker sends it from the Inbox, or as
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from diwan.office import Office
 from diwan.people import name
@@ -105,6 +105,11 @@ def draft(office: Office, deal: str, *, why: str, by: str = "follow", cause: int
         office.log.append("agent.failed", actor="follow", agent="follow", deal=deal, caused_by=cause, content={"error": str(e)[:300]})
     ev = office.log.append("followup.drafted", actor=by, agent="follow", deal=deal, caused_by=cause,
                            content={"text": text, "refs": refs, "why": why, "by_model": by_model})
+    if why.startswith("after the") and (chat := _chat(office.graph(), deal)):  # it's written: now someone has to send it, by a time
+        from diwan import leads, sales
+        now = datetime.now(timezone.utc)
+        leads.raise_card(office, chat.props["phone"], reason=f"Send the follow-up {why}", kind="reply", to=d["broker"], cause=ev["id"], now=now, replace=True,
+                         due=now + timedelta(hours=sales.settings(office.graph()).get("followup_hours", 2)))
     return {"id": ev["id"], "text": text, "refs": refs, "why": why, "by_model": by_model}
 
 

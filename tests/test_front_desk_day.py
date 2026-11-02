@@ -663,6 +663,13 @@ def test_hey_pocket_answers_from_what_was_said_in_the_meeting(office, monkeypatc
     assert "Omar will send the offer" in seen[0]
 
 
+@pytest.mark.parametrize("text", ["Did you know if you come to Dubai Science?", "So did you listen to them or did you open the door?"])
+def test_overheard_talk_on_the_open_mic_is_not_looked_up(office, monkeypatch, text):
+    muse(monkeypatch, "", command=None)
+    monkeypatch.setattr(frontdesk, "_search", lambda p: pytest.fail("she searched the web for something overheard"))
+    assert frontdesk.say(office, text, "layla", session="v1", now=NOON, voice=True)["kind"] == "silent"
+
+
 def test_a_plain_hour_keeps_the_hour_people_mean(office):
     assert "10:00 AM" in talk(office, "Remind me tomorrow at 10 to call the bank")["text"]
     assert "4:00 PM" in talk(office, "Remind me tomorrow at 4 to see the auditor")["text"]
@@ -800,7 +807,9 @@ def test_after_the_meeting_decisions_and_action_items_with_the_exact_words(offic
     assert [c for c in g.of("lobby") if c.props["to"] == "omar"]  # a task in the right room
     assert frontdesk.mode(g, "layla") == "normal"
     deal = g.nodes[f"chat:{PH}"].deal
-    assert g.nodes[f"deal:{deal}"].props["answers"]["bedrooms"]["value"] == 3  # what a client said goes on their file
+    assert g.nodes[f"deal:{deal}"].props["answers"].get("bedrooms", {}).get("value") != 3 and "Sara now wants 3 beds" in r["text"]  # nothing goes on a file without a yes
+    talk(office, "Yes")
+    assert office.graph().nodes[f"deal:{deal}"].props["answers"]["bedrooms"]["value"] == 3
 
 
 def test_a_brokers_pa_sees_only_their_own_clients(office):

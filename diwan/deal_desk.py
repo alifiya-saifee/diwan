@@ -4,13 +4,15 @@ answer a card, carry out an approval.
 """
 from __future__ import annotations
 
+import re
+
 from collections import defaultdict
 from datetime import date, timedelta
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from diwan import access, agency_forms, deal_gates, deal_property, desk_kpis, desk_rules, desk_stages, documents, invoices, roles, signing
+from diwan import access, agency_forms, deal_gates, deal_property, desk_kpis, desk_rules, desk_stages, documents, invoices, offers, roles, signing
 from diwan.agents import compliance, finance, operations, review
 from diwan.agents.charters import BY_ID
 from diwan.graph import KIND, OPEN, Graph, Node
@@ -54,6 +56,8 @@ def _card(g: Graph, n: Node) -> dict:
         can = "reviewed"
     elif n.status == "open" and n.type == "question":
         can = "answer"
+    elif n.status == "open" and n.type == "decision" and len(p.get("refs") or []) == 2 and p.get("options"):
+        can = "choose"  # two statements that can't both be true: the broker says which stands
     old = g.nodes.get((p.get("refs") or [None])[0]) if can == "reapprove" else None
     w = roles.current(g, n)
     return {"id": n.id, "type": n.type, "who": w, "who_name": name(w), "text": p["text"],
@@ -395,7 +399,8 @@ def deal(deal: str, request: Request):
                                      "schedule": dict(zip(("kind", "payee", "document"), finance.SCHEDULE[p["id"]])) if p["id"] in finance.SCHEDULE else None,
                                      "stages": desk_stages.view(g, deal), "agency": _agency_view(g, deal, _base(request)),
                                      "documents": _docs_view(g, deal, _base(request)), "compliance": _compliance_view(g, deal), "gates": deal_gates.view(g, deal),
-                                     "party_types": desk_rules.PARTY_TYPES, "doc_kinds": documents.KINDS})
+                                     "party_types": desk_rules.PARTY_TYPES, "doc_kinds": documents.KINDS,
+                                     "chat": next((c.props["phone"] for c in g.of("chat") if c.deal == deal), None), "offers": offers.rows(_office().log, deal)})
     except KeyError:
         raise HTTPException(404, f"There is no deal {deal!r}.") from None
 
@@ -414,6 +419,12 @@ def _for_viewer(g: Graph, v: dict) -> dict:
     if access.department(me) == access.FIN:
         v["documents"] = {"requests": [], "profile": {}}
     return v
+
+
+def _signed_f(deal: str, did: str) -> str | None:
+    from diwan.providers import meta
+    name_ = agency_forms.signed_file(deal, "F", did)
+    return f"/media/{name_}" if (meta.MEDIA / name_).exists() else None
 
 
 class Answer(BaseModel):
@@ -442,6 +453,16 @@ def answer(card: str, body: Answer):
         if c["can"] == "reapprove" and body.choice == "Cancel":
             review.cancel(o, n, pid(body.by))
             return {"ok": True}
+        if c["can"] == "choose" and body.choice in (n.props.get("options") or []):
+            first, second = n.props["refs"]
+            ev = o.log.append("decision.made", actor=pid(body.by), deal=n.deal, content={"card": card, "answer": body.choice, "note": body.note})
+            if m := re.match(r"(\w+) replaces (\w+)", body.choice):
+                o._replace(n.deal, [m[2]], m[1], ev["id"])
+            elif m := re.match(r"(\w+) stands", body.choice):
+                o._replace(n.deal, [second if m[1] == first else first], m[1], ev["id"])
+            else:
+                o.add_task(n.deal, "ops", f"Ask {o.graph().nodes[f'deal:{n.deal}'].props['customer']} which is right: {n.props['text'][:140]}", needs_person=n.props.get("who"), by=pid(body.by))
+            return {"ok": True}
         if n.type == "question" and body.choice == "Answered":
             if not body.note.strip():
                 raise ValueError("Write the answer.")
@@ -455,6 +476,44 @@ def answer(card: str, body: Answer):
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
     raise HTTPException(400, f"{card} can't be answered with {body.choice!r} here.")
+
+
+class OfferIn(BaseModel):
+    by: str
+    side: str = "client"
+    amount: float | None = None
+    note: str = ""
+
+
+@router.get("/api/desk/deals/{deal}/offers")
+def offer_list(deal: str):
+    return offers.rows(_office().log, deal)
+
+
+@router.post("/api/desk/deals/{deal}/offers")
+def offer_add(deal: str, body: OfferIn):
+    try:
+        return offers.make(_office(), deal, pid(body.by), body.side, body.amount, body.note)
+    except KeyError:
+        raise HTTPException(404, f"There is no deal {deal}.") from None
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@router.post("/api/desk/deals/{deal}/offers/{oid}/{what}")
+def offer_decide(deal: str, oid: str, what: str, body: OfferIn):
+    if what not in ("accept", "decline"):
+        raise HTTPException(404, "accept or decline")
+    try:
+        return offers.decide(_office(), deal, oid, pid(body.by), what == "accept")
+    except KeyError:
+        raise HTTPException(404, f"There is no offer {oid}.") from None
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
 
 
 class Run(BaseModel):
@@ -831,7 +890,7 @@ def _agency_view(g: Graph, deal: str, base: str) -> dict:
     return {"asking": ask.id if ask else None, "our_listing": li.props["ref"] if li else None, "needed": agency_forms.needed(g, deal),
             "forms": [f | {"links": _links(g, deal, f["draft"], base)} for f in agency_forms.forms(g, deal)],
             "sides": desk_rules.SIDES, "terms": desk_rules.terms(g, deal),
-            "formf": [{"draft": d.id, "version": d.props.get("version"), "links": _links(g, deal, d.id, base)}
+            "formf": [{"draft": d.id, "version": d.props.get("version"), "links": _links(g, deal, d.id, base), "signed": _signed_f(deal, d.id)}
                       for d in g.of("draft", deal) if d.props["kind"] == "Form F" and d.status != "sent_back"]}
 
 

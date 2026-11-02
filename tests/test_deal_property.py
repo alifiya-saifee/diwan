@@ -199,7 +199,7 @@ def test_a_form_f_plan_goes_back_with_a_changed_property(office, c):
 def test_a_signed_form_fixes_the_property(office, c, tmp_path):
     _convert(c, prop={"source": "listing", "ref": "JVC-88"})
     t = next(x for x in office.graph().of("task", "lead-1") if x.props.get("step") == "sign")
-    agency_forms.signed(office, t.id, "omar", b"%PDF-1.4", "s.pdf", media=tmp_path, today=date.today())
+    agency_forms.signed(office, t.id, "omar", b"%PDF-1.4 %%EOF", "s.pdf", media=tmp_path, today=date.today())
     r = c.post("/api/desk/deals/lead-1/property", json={"by": "omar", "property": {"source": "listing", "ref": "BB-305"}})
     assert r.status_code == 400 and "signed" in r.json()["detail"]
     assert deal_property.locked(office.graph(), "lead-1") and _status(office, "JVC-88") == "reserved"

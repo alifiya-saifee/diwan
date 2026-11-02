@@ -377,7 +377,7 @@ function attentionBanner(d) {
     h("button", { class: "primary", onclick: async () => { try { await post(`/api/chats/${d.phone}/claim?by=${ME}`); toast("Claimed: it's yours"); } catch (e) { toast(e.message); } load(); } }, "Claim this lead"));
   return h("div", { class: `banner att ${a.overdue ? "late" : ""}` }, why,
     a.kind === "call" && !d.phone.startsWith("ig:") && !d.no_calls ? h("a", { class: "btn primary", href: `tel:+${d.phone}` }, "📞 Call now") : null,
-    d.hot ? h("a", { class: "btn", href: `calendar.html?book=${encodeURIComponent(d.phone)}&as=${encodeURIComponent(ME)}` }, "📅 Book a viewing") : null,
+    d.hot || d.viewing_request ? h("a", { class: "btn", href: `calendar.html?book=${encodeURIComponent(d.phone)}&as=${encodeURIComponent(ME)}${d.viewing_request?.listing ? `&ref=${encodeURIComponent(d.viewing_request.listing)}` : ""}${d.viewing_request?.at ? `&at=${encodeURIComponent(d.viewing_request.at)}` : ""}` }, "📅 Confirm and book the viewing") : null,
     ...ACTS.map(([k, l]) => h("button", { onclick: async () => {
     let note = "";
     if (k === "not_needed") { note = prompt("Why is it not needed?") || ""; if (!note.trim()) return; }
@@ -474,6 +474,8 @@ function followPanel(d) {
     box,
     !d.window_open ? h("div", { class: "small", style: "color:var(--warn);margin-top:4px" }, "More than 24 hours since the customer's last message: send it as an approved template.") : null,
     h("div", { class: "row", style: "margin-top:6px;flex-wrap:wrap" },
+      !d.window_open ? h("button", { class: "primary", onclick: async () => {  // WhatsApp's 24 hours have passed: a template opens the door, and their reply opens this draft
+        try { await post(`/api/chats/${encodeURIComponent(d.phone)}/template`, { name: "after_viewing", params: [d.name.split(" ")[0]], by: ME }); toast("Sent. When they reply, this follow-up can go."); loadDetail(); } catch (e) { toast(e.message); } } }, "Send the after-viewing template") : null,
       h("button", { class: "primary", disabled: !d.window_open, onclick: async () => {
         try { await post(`/api/chats/${encodeURIComponent(d.phone)}/followup/send`, { by: ME, text: box.value }); toast("Follow-up sent"); loadDetail(); } catch (e) { toast(e.message); } } }, "Send on WhatsApp"),
       h("button", { onclick: async () => { await post(`/api/chats/${encodeURIComponent(d.phone)}/followup/dismiss`, { by: ME, text: "not needed" }); toast("Dismissed"); loadDetail(); } }, "Not needed")));
@@ -513,6 +515,21 @@ function visitPanel(v) {
     v.budget_quote ? h("div", { class: "fact small" }, "Budget", q(v.budget_quote)) : null,
     v.next_step ? h("div", { class: "fact small" }, "Next step: ", h("b", {}, v.next_step)) : null,
     h("div", { class: "small muted", style: "margin-top:4px" }, `From ${v.source === "recording" ? "the recorded visit" : "the broker's notes"}${v.by_model ? " · Muse Spark" : " · rules"}`));
+}
+
+// Offers and counter-offers, until one is accepted; converting is what agrees the price
+function offersPanel(d) {
+  if (!["Viewed", "Offer", "Reservation"].includes(d.stage) && !d.offers.length) return null;
+  const go = async (url, body) => { try { await post(url, { by: ME, ...body }); toast("Saved"); loadDetail(); } catch (e) { toast(e.message); } };
+  const base = `/api/desk/deals/${encodeURIComponent(d.deal)}/offers`;
+  const side = h("select", { "aria-label": "Whose offer" }, h("option", { value: "client" }, "Client offers"), h("option", { value: "seller" }, "Seller or landlord counters"));
+  const amount = h("input", { type: "number", min: 0, step: 1000, placeholder: "AED", "aria-label": "Offer amount (AED)" });
+  const won = d.offers.find((o) => o.status === "accepted");
+  return h("div", { class: "sec offersec" }, h("h2", {}, "Offers"),
+    ...d.offers.map((o) => h("div", { class: "fact" }, `${o.side_label}: AED ${o.amount.toLocaleString()} · ${o.status}${o.by_name ? ` · ${o.by_name}` : ""}`,
+      o.status === "open" ? h("span", {}, " ", h("button", { onclick: () => go(`${base}/${o.id}/accept`, {}) }, "Accept"), " ", h("button", { onclick: () => go(`${base}/${o.id}/decline`, {}) }, "Decline")) : null)),
+    won ? h("a", { class: "btn primary", href: `deal.html?deal=${encodeURIComponent(d.deal)}&convert=1&amount=${won.amount}` }, `Convert at AED ${won.amount.toLocaleString()}`)
+      : h("div", { class: "row", style: "gap:6px;margin-top:6px" }, side, amount, h("button", { onclick: () => go(base, { side: side.value, amount: amount.value }) }, "Save offer")));
 }
 
 // Follow-ups while the client is quiet: the owner's schedule, never daily, stopped by "stop"
@@ -685,6 +702,9 @@ function renderProfile() {
         d.heat ? h("span", { class: "tg", title: d.heat.parts.map((p) => `${p.ok ? "✓" : "✗"} ${p.name}`).join("\n") }, `heat ${d.heat.score}/${d.heat.of}`) : null,
         d.qualify?.nurture ? h("span", { class: "tg nur" }, "🌱 nurture") : null, PORTAL[d.source] ? h("span", { class: "tg" }, PORTAL[d.source]) : null)),
     actPanel(d),
+    h("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin:8px 0" },
+      h("a", { class: "btn", href: `deal.html?deal=${encodeURIComponent(d.deal)}` }, "Open the deal"),
+      h("a", { class: "btn", href: `meeting.html?deal=${encodeURIComponent(d.deal)}&title=Meeting` }, "🎙 Record a meeting")),
     h("div", { class: "kv" }, h("span", {}, "Deal"), h("span", {}, d.property || "—"),
       h("span", {}, "Broker"), h("span", {}, NAMES[d.broker] || d.broker || "—"), h("span", {}, "Replying"), h("span", {}, d.mode === "ai" ? "Rania (AI)" : NAMES[d.handled_by] || "A person")),
     h("div", { class: "pipe", title: d.stage }, d.stages.slice(0, 8).map((s, i) => h("i", { class: i <= idx ? "done" : "", title: s }))),
@@ -692,6 +712,7 @@ function renderProfile() {
     d.chips.length ? h("div", { class: "ichips", style: "margin-top:12px" }, d.chips.map((c) => h("span", { class: `ic ${c.kind}`, title: c.quote ? `Their words: "${c.quote}"` : "" }, c.label))) : null,
     d.qualify ? qualifyPanel(d.qualify) : null,
     visitPanel(d.visit),
+    offersPanel(d),
     followupsPanel(d),
     deckPanel(d),
     followPanel(d),

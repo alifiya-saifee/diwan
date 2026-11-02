@@ -752,6 +752,32 @@ def yours(k: dict, listing: Node | None) -> str:
     return f"your {k['name'].lower()}" + (f" about {listing.props['title']}" if listing else "")
 
 
+def agent_confirms(g: Graph) -> bool:
+    """The owner's rule: a person talks to the client and confirms the place before a viewing is on the calendar."""
+    from diwan import sales
+    return not sales.settings(g).get("rania_books")
+
+
+def _viewing_request(office: Office, phone: str, deal: str, listing: Node | None, when: datetime | None, now: datetime, cause: int, dry: bool, k: dict) -> tuple[str, list[str]]:
+    """What they'd like to see, and when, goes to their broker. Nothing is promised to the client but a call back."""
+    from diwan import leads
+    g = office.graph()
+    broker = g.nodes[f"deal:{deal}"].props["broker"]
+    said = [m["text"] for m in g.nodes[f"chat:{phone}"].props["messages"] if m["type"] == "received"]
+    arabic = bool(said and re.search(r"[؀-ۿ]", said[-1]))
+    refs = [listing.id] if listing else []
+    title = f"{listing.props['title']} ({listing.props['ref']})" if listing else ""
+    if not listing:
+        return ("أي عقار تود رؤيته؟" if arabic else "Happy to arrange that. Which property would you like to see?"), refs
+    at = slots.say(when) if when and when > now else ""
+    if not dry:
+        office.log.append("viewing.requested", actor=RANIA, agent=RANIA, deal=deal, caused_by=cause, content={"chat": phone, "listing": listing.props["ref"], "at": when.isoformat() if at else None})
+        leads.raise_card(office, phone, reason=f"Viewing request: {title}{', ' + at if at else ''}. Talk to the client, confirm the place, then book", to=broker, kind="reply", cause=cause, now=now, replace=True)
+    if arabic:
+        return f"شكراً، سجلت رغبتك في رؤية {title}{(' ' + at) if at else ''}. سيتحدث معك {name(broker)} ليؤكد العقار والموعد.", refs
+    return f"Thanks, I've noted you'd like to see {title}{', ' + at if at else ''}. {name(broker)} will talk to you and confirm the place and the time.", refs
+
+
 def book(office: Office, phone: str, deal: str, listing: Node | None, when: datetime | None, now: datetime, cause: int,
          dry: bool = False, kind: dict | None = None, after: datetime | None = None) -> tuple[str, list[str]]:
     """Book a free time for the kind of appointment asked for (the owner's list; a site visit when a property is named).
@@ -762,6 +788,8 @@ def book(office: Office, phone: str, deal: str, listing: Node | None, when: date
     from diwan import leads
     g = office.graph()
     k = kind or slots.kind(g, None)
+    if k["where"] == "property" and agent_confirms(g):
+        return _viewing_request(office, phone, deal, listing, when, now, cause, dry, k)
     broker = g.nodes[f"deal:{deal}"].props["broker"]
     agent = listing.props.get("agent") if listing else None
     who = g.nodes[f"chat:{phone}"].label
@@ -803,7 +831,7 @@ def unit_taken(g: Graph, ref: str | None, when: datetime, minutes: int, ignore: 
 
 
 def add_by_hand(office: Office, *, by: str, broker: str, phone: str, name_: str | None, kind_id: str, ref: str | None,
-                when: datetime, now: datetime) -> dict:
+                when: datetime, now: datetime, confirmed: bool = False) -> dict:
     """A broker adds an appointment they agreed with the client on the phone (docs/calendar-own-time-spec.md): the same
     free-time check as Rania's bookings, the same reminders, and Rania knows about it. Nothing is sent to the client now."""
     from diwan import inbox, leads
@@ -820,6 +848,8 @@ def add_by_hand(office: Office, *, by: str, broker: str, phone: str, name_: str 
         raise ValueError(f"No listing {ref}")
     if k["where"] == "property" and not listing:
         raise ValueError(f"{k['name']}: which property?")
+    if k["where"] == "property" and agent_confirms(g) and not confirmed:
+        raise ValueError("First confirm you've talked to the client and the place is available to view.")
     if when <= now:
         raise ValueError("That time has already passed")
     if not slots.is_open(g, broker, when, k["minutes"]) or (k["where"] == "property" and unit_taken(g, listing.props["ref"], when, k["minutes"])):
@@ -836,6 +866,8 @@ def add_by_hand(office: Office, *, by: str, broker: str, phone: str, name_: str 
         office.open_deal(deal, property=listing.label if listing else k["name"], customer=who, broker=broker, by=by)
         leads.assign(office, deal, broker, by=by, why="added by hand on the calendar", chat=phone, now=now)
         office.log.append("chat.handover", actor=by, deal=deal, content={"chat": phone, "name": who, "mode": "ai", "by": None})
+    if k["where"] == "property":
+        leads.replied(office, phone, by=by)  # the viewing they were waiting for is what this booking answers
     vid = f"V{len(office.graph().of('viewing')) + 1}"
     ev = office.log.append("appointment.booked", actor=by, deal=deal,
                            content={"id": vid, "listing": listing.props["ref"] if listing else None, "broker": broker, "at": when.isoformat(),
@@ -1522,7 +1554,7 @@ def message(office: Office, phone: str, text: str, *, name_: str | None = None, 
             reply, actions = qualify.stuck_reply(arabic, broker_name, leads.no_calls(g, deal)), [Action("reply", "Not sure twice: the broker helps")]
         elif by == "rules" and nxt and q.get("retry") == nxt["key"]:
             reply = qualify.again(nxt, arabic)
-        elif by == "rules" and nxt and "?" not in reply:  # the rules answered something else: add the next question
+        elif nxt and "?" not in reply:  # what they said was answered, and a required question is still open: it gets asked
             reply = f"{reply} {nxt['question_ar' if arabic and nxt.get('question_ar') else 'question_en']}"
         asked = (q_before.get("next") or {}).get("key") if (q_before.get("next") or {}).get("key") in q["missing"] else (nxt or {}).get("key")
         if asked and asked != g.nodes[f"deal:{deal}"].props.get("qualify_asked"):

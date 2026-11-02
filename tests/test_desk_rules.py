@@ -495,12 +495,12 @@ def test_form_f_waits_for_the_signatures_and_the_upload_files_them(office, monke
         operations.submitted(office, sub.id, "joseph", "DLD-9")
     signs = [t for t in office.graph().of("task", "marina-1204") if t.props.get("step") == "sign"]
     assert c.post(f"/api/desk/tasks/{signs[0].id}/signed", data={"by": "omar", "checked": "1"}, files={"file": ("a.txt", b"hello")}).status_code == 400
-    assert c.post(f"/api/desk/tasks/{signs[0].id}/signed", data={"by": "priya", "checked": "1"}, files={"file": ("a.pdf", b"%PDF-1.4 x")}).status_code == 403
+    assert c.post(f"/api/desk/tasks/{signs[0].id}/signed", data={"by": "priya", "checked": "1"}, files={"file": ("a.pdf", b"%PDF-1.4 x %%EOF")}).status_code == 403
     for t in signs:
-        assert c.post(f"/api/desk/tasks/{t.id}/signed", data={"by": "omar", "checked": "1"}, files={"file": ("signed.pdf", b"%PDF-1.4 signed")}).status_code == 200
+        assert c.post(f"/api/desk/tasks/{t.id}/signed", data={"by": "omar", "checked": "1"}, files={"file": ("signed.pdf", b"%PDF-1.4 signed %%EOF")}).status_code == 200
     g = office.graph()
     assert [d.props["kind"] for d in g.of("document") if d.deal == "marina-1204" and d.props["kind"].startswith("Form ")] == ["Form A", "Form B"]
-    assert (tmp_path / agency_forms.signed_file("marina-1204", "A", signs[0].props["draft"])).read_bytes() == b"%PDF-1.4 signed"
+    assert (tmp_path / agency_forms.signed_file("marina-1204", "A", signs[0].props["draft"])).read_bytes() == b"%PDF-1.4 signed %%EOF"
     with pytest.raises(ValueError, match="signed with these terms"):
         desk_rules.set_terms(office, "marina-1204", {"rate_pct": 1}, by="omar")
     with pytest.raises(ValueError, match="waits for Compliance"):
@@ -819,7 +819,7 @@ def test_form_f_is_signed_online_by_everyone_then_filed_and_its_step_ticks(offic
     _convert(office, c)
     c.post("/api/desk/deals/marina-1204/sides", json={"by": "omar", "sides": "both"})
     for f in agency_forms.forms(office.graph(), "marina-1204"):  # A and B signed on paper
-        c.post(f"/api/desk/tasks/{f['task']}/signed", data={"by": "omar", "checked": "1"}, files={"file": ("s.pdf", b"%PDF-1.4 signed")})
+        c.post(f"/api/desk/tasks/{f['task']}/signed", data={"by": "omar", "checked": "1"}, files={"file": ("s.pdf", b"%PDF-1.4 signed %%EOF")})
     operations.formf_plan(office, "marina-1204", office.add_task("marina-1204", "formf", "Prepare Form F"), "r1")
     sub = next(t for t in office.graph().of("task", "marina-1204") if t.props["agent"] == "formf" and t.props.get("draft"))
     did = sub.props["draft"]

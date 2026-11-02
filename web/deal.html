@@ -592,6 +592,8 @@ function cardEl(c) {
   } else if (c.can === "reviewed") {
     const note = h("input", { placeholder: "Note (optional)", "aria-label": "Note" });
     acts.append(note, h("button", { class: "primary", onclick: () => act(c.id, { choice: "Reviewed", note: note.value }) }, "Reviewed"));
+  } else if (c.can === "choose") {
+    c.options.forEach((o) => acts.append(h("button", { onclick: () => act(c.id, { choice: o }) }, o)));
   } else if (c.can === "answer") {
     const note = h("input", { placeholder: "Your answer", "aria-label": "Your answer" });
     acts.append(note, h("button", { class: "primary", onclick: () => act(c.id, { choice: "Answered", note: note.value }) }, "Answer"));
@@ -856,7 +858,7 @@ function stageBar(v) {
   const fmt = (n) => `AED ${Math.round(n).toLocaleString()}`;
   const delta = h("div", { class: "small", id: "delta", style: "flex-basis:100%" });
   let typedPrice = false;  // the listing's price fills the box until the person types their own
-  const amount = h("input", { type: "number", min: 0, step: 1000, value: s.listing_aed || v.summary.value || "", "aria-label": "Agreed price (AED)", style: "flex:1 1 200px",
+  const amount = h("input", { type: "number", min: 0, step: 1000, value: new URLSearchParams(location.search).get("amount") || s.listing_aed || v.summary.value || "", "aria-label": "Agreed price (AED)", style: "flex:1 1 200px",
     oninput: () => { typedPrice = true; paint(); } });
   const paint = () => {
     const a = Number(amount.value), L = propDraft?.deal === deal && propDraft.source === "listing" ? propDraft.listing?.price_aed : s.listing_aed;
@@ -1135,7 +1137,8 @@ function draftEl(d) {
   const ff = d.kind === "Form F" && d.status !== "sent_back" ? view.agency.formf.find((x) => x.draft === d.id) : null;
   const may = me() === view.broker || holds("transactions") || me() === OWNER;
   return h("div", { class: `card ${d.status === "sent_back" ? "open" : ""}`, ...(ff ? { id: "formf" } : {}) },
-    ff ? h("div", { class: "acts", style: "margin-top:0" }, h("a", { class: "btn", href: `/api/desk/forms/${d.id}.pdf`, target: "_blank" }, "Form F (PDF)")) : null,
+    ff ? h("div", { class: "acts", style: "margin-top:0" }, h("a", { class: "btn", href: `/api/desk/forms/${d.id}.pdf`, target: "_blank" }, "Form F (PDF)"),
+      ff.signed ? h("a", { class: "btn", href: ff.signed, target: "_blank" }, "The signed copy") : null) : null,
     ff ? (view.compliance.ok ? signLinks({ draft: d.id, links: ff.links }, may) : h("div", { class: "small muted", style: "margin-top:6px" }, "Form F's signatures wait for Compliance to clear this deal.")) : null,
     ff && view.compliance.ok && may && !view.gates.gates.find((x) => x.key === "paperwork").ok ? (() => { const file = h("input", { type: "file", accept: "application/pdf", "aria-label": "Form F signed on paper (PDF)" });
       return h("div", { class: "acts" }, file, h("button", { onclick: async () => { try { await upload(d.id, file.files[0], true); toast("Signed Form F filed with Records"); await open(deal); show(); } catch (e) { toast(e.message); } } }, "Upload the signed copy")); })() : null,

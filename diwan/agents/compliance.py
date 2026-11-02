@@ -26,6 +26,8 @@ RISKS = ("low", "medium", "high")
 
 def money_changed(office: Office, deal: str, olds: list[Node], new: Node, cause: int) -> None:
     """Raised before anything else happens to the replaced statements (rooms.md rule 8)."""
+    if not started(office.graph(), deal):
+        return
     if new.props["kind"] not in WATCHED and not any(o.props["kind"] in WATCHED for o in olds):
         return
     priced = new.props["kind"] == "deal_term"
@@ -66,6 +68,22 @@ def parties(g: Graph, deal: str) -> list[dict]:
         elif p["kind"] == "payer" and p.get("payer") and not _same(p["payer"], customer) and not payers_clash:
             add(p["payer"], f"who will pay for {customer}", f)
     return out
+
+
+def started(g: Graph, deal: str) -> bool:
+    """A lead is Sales' until the deal is agreed: no screening, funding questions or reports for someone who only asked about a flat."""
+    if f"deal:{deal}" not in g.nodes:
+        return False
+    return bool(g.settings.get(f"deal:{deal}", {}).get("agreed")) or not any(c.deal == deal for c in g.of("chat"))
+
+
+def begin(office: Office, deal: str, cause: int | None = None) -> None:
+    """The deal is agreed: everything said so far gets the checks it would have had."""
+    from diwan.agents import finance
+    screen_parties(office, deal, cause)
+    cash_rules(office, deal, cause)
+    ask_funding(office, deal, cause)
+    finance.payment_rules(office, deal, cause)
 
 
 def screen_parties(office: Office, deal: str, cause: int | None) -> None:

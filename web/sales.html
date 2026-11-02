@@ -94,7 +94,7 @@ function draw() {
     block("📞 Call now", d.call_now.length, d.call_now.map(callRow), "wide"),
     block("❗ Outcome needed", d.outcome.length, d.outcome.map(outcomeRow), "wide"),
     block("🔥 Hot leads", d.hot.length, d.hot.map((r) => lead(r, r.heat ? h("span", { class: "chip", title: r.heat.parts.map((p) => `${p.ok ? "✓" : "✗"} ${p.name}`).join("\n") }, `heat ${r.heat.score}/${r.heat.of}`) : null,
-      r.hot !== "yes" ? h("span", { class: "chip" }, r.hot) : null, h("a", { class: "btn", href: `calendar.html?book=${encodeURIComponent(r.chat)}&as=${encodeURIComponent(ME)}` }, "Book a viewing")))),
+      r.hot !== "yes" ? h("span", { class: "chip" }, r.hot) : null, h("a", { class: "btn", href: `calendar.html?book=${encodeURIComponent(r.chat)}&as=${encodeURIComponent(ME)}` }, "Book a viewing"), r.deal ? h("a", { class: "btn", href: `deal.html?deal=${encodeURIComponent(r.deal)}` }, "Open the deal") : null))),
     block("🆕 New leads", d.new.total, [
       channels.length ? h("div", { style: "padding:4px 0 6px" }, ...channels.map(([c, n]) => h("span", { class: "chip", style: "margin-right:6px" }, `${CHANNEL[c] || c} ${n}`))) : null,
       ...d.new.rows.map((r) => lead(r, h("span", { class: "chip" }, CHANNEL[r.source] || r.source)))].filter(Boolean)),

@@ -76,6 +76,9 @@ def move(office: Office, deal: str, stage: str, by: str, reason: str = "") -> No
         office.log.append("case.lost", actor=by, agent="ops", deal=deal, content={"reason": reason.strip()})
         deal_property.lost(office, deal, by)
         _money_on_lost(office, deal)
+        for n in office.graph().of("attention", status="open"):  # nobody is chased, or Pooled, over a lead that has closed
+            if n.deal == deal:
+                office.log.append("attention.cleared", actor=by, deal=deal, key=f"clear:{n.id}", content={"id": n.id, "chat": n.props["chat"], "action": "not_needed", "note": "The lead is closed"})
     elif returning:
         deal_property.reserve(office, deal, by)
     if stage != "Lost" and order.index(stage) >= order.index(conv):
@@ -190,7 +193,8 @@ def _record(office: Office, deal: str, by: str, amount: int, c: dict, *, approve
     if (office.graph().nodes[f"deal:{deal}"].props.get("stage") or "New") != conv:
         move(office, deal, conv, by, "converted" if _is_back(office.graph(), deal, conv) else "")
     deal_property.reserve(office, deal, by)
-    from diwan.agents import finance
+    from diwan.agents import compliance, finance
+    compliance.begin(office, deal)
     finance.expect_deposit(office, deal)
     g = office.graph()
     office.log.append("case.converted", actor=by, agent="ops", deal=deal, content={"amount": amount, "path": desk_rules.path_of(g, deal), "facts": [f.id for f in g.facts(deal)]})

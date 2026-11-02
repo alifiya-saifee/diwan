@@ -144,6 +144,8 @@ def mark_received(office: Office, tid: str, by: str, reference: str, *, today: d
         raise ValueError(f"{tid} is {t.status}.")
     if not reference.strip():
         raise ValueError("Give the bank or receipt reference you saw the money under.")
+    if any(c.deal == t.deal for c in g.of("chat")) and not compliance.state(g, t.deal)["ok"]:
+        raise ValueError("Compliance hasn't cleared this deal yet, so no deposit is taken.")
     e = expected(g, t, today)
     want = (e.get("amount_aed") or 0) - paid(t)
     try:

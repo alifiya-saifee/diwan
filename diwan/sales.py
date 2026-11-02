@@ -18,6 +18,7 @@ DEFAULTS = {
     "call_minutes": 10, "reply_minutes": 30, "pool_minutes": 60,  # "call me": the promise to the client, and the broker's limit
     "brief_days": [0, 1, 2, 3, 4, 5],  # Monday to Saturday (the owner, 31 Oct)
     "call_reminder_minutes": 15, "sweep_time": "08:30", "outcome_nudge_hours": 2, "licence_warn_days": 30, "match_days": 14,
+    "followup_hours": 2,  # after a viewing, how long the broker has to send the follow-up
     "heat": {"budget_fits": True, "timeline_days": 60, "finance_ready": True},
     "budget_floor": {"buyer": 200_000, "tenant": 10_000},  # below this Rania asks the client to confirm the figure
     "not_lead_reply": "Thanks for getting in touch. This line is for property enquiries, so I've let the team know and they'll "
@@ -52,7 +53,7 @@ def set_settings(office: Office, value: dict, *, by: str) -> dict:
     v = settings(office.graph()) | {k: value[k] for k in DEFAULTS if k in value}
     try:
         for k, lo, hi in (("call_minutes", 1, 240), ("reply_minutes", 1, 1440), ("pool_minutes", 5, 1440), ("call_reminder_minutes", 1, 120),
-                          ("outcome_nudge_hours", 1, 72), ("licence_warn_days", 1, 365), ("match_days", 1, 90)):
+                          ("outcome_nudge_hours", 1, 72), ("followup_hours", 1, 48), ("licence_warn_days", 1, 365), ("match_days", 1, 90)):
             v[k] = int(v[k])
             if not lo <= v[k] <= hi:
                 raise ValueError(f"{k.replace('_', ' ').capitalize()}: from {lo} to {hi}")

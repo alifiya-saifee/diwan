@@ -39,7 +39,7 @@ def to_form_f(office, c, cleared=True):
     _convert(office, c)
     c.post(f"/api/desk/deals/{M}/sides", json={"by": "omar", "sides": "both"})
     for f in agency_forms.forms(office.graph(), M):
-        c.post(f"/api/desk/tasks/{f['task']}/signed", data={"by": "omar", "checked": "1"}, files={"file": ("s.pdf", b"%PDF-1.4 signed")})
+        c.post(f"/api/desk/tasks/{f['task']}/signed", data={"by": "omar", "checked": "1"}, files={"file": ("s.pdf", b"%PDF-1.4 signed %%EOF")})
     c.post(f"/api/desk/deals/{M}/formf", json={"by": "joseph"})
     if cleared:
         clear_deal(office, M)
@@ -405,7 +405,7 @@ def test_form_f_waits_for_compliance_and_can_be_signed_on_paper(office, c, tmp_p
     sub = to_form_f(office, c, cleared=False)
     did = sub.props["draft"]
     assert "waits for Compliance" in c.post(f"/api/desk/forms/{did}/links", json={"by": "omar"}).json()["detail"]
-    pdf = {"file": ("f.pdf", b"%PDF-1.4 signed")}
+    pdf = {"file": ("f.pdf", b"%PDF-1.4 signed %%EOF")}
     assert c.post(f"/api/desk/forms/{did}/signed", data={"by": "omar", "checked": "1"}, files=pdf).status_code == 400
     clear_deal(office, M)
     assert c.post(f"/api/desk/forms/{did}/signed", data={"by": "omar"}, files=pdf).status_code == 400  # say you checked it

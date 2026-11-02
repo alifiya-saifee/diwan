@@ -20,6 +20,7 @@ def clean_env(monkeypatch, tmp_path):
         monkeypatch.setattr(p, "transport", None)
     monkeypatch.setenv("DIWAN_LOCAL_ASR", "0")  # tests never load the local Whisper model
     monkeypatch.setenv("DIWAN_REPLY_WAIT", "0")  # each message answered at once; tests/test_burst.py sets a wait
+    monkeypatch.setattr("diwan.agents.reception.agent_confirms", lambda g: False)  # the calendar's own tests book directly; tests/test_sales_flow.py has the owner's rule
 
 
 def fake(reply: dict, seen: list | None = None):
