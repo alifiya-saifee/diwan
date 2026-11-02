@@ -5,7 +5,7 @@ As of 2 Nov 2026. Covers the work done with Claude Code on this laptop: Sales, l
 **Where things stand**
 
 - The last full browser run was stopped on request, partway through the older flows. It passed 469 of 493 checks.
-- Everything since commit `a9c794f` is uncommitted and sits in the working folder, including most fixes from the browser test.
+- All of this work is on GitHub, on `main`.
 - The real office (8030) and test office (8031) still run code from before the latest fixes.
 - The fixes below are not all equally proven. Each one says how it was checked.
 
