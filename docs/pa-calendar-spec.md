@@ -46,4 +46,4 @@ Flights, hotels and travel bookings (the PA keeps saying it can't book them); Go
 - [x] In the browser like a user, on a scratch office (3 Nov): Layla asks what's on, blocks 3–5, books a meeting with Omar
       on Zoom (not-connected path); Omar gets the notice, sees it on his calendar page, books Karim a video call, moves the
       meeting (Layla is told) and cancels it.
-- [ ] With the office's own Zoom keys in `.env`: one real meeting made, moved and deleted.
+- [x] With the office's own Zoom keys in `.env`: one real meeting made, moved and deleted (3 Nov, through the PA; Zoom confirmed each step, and the meeting no longer exists).
