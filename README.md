@@ -107,4 +107,4 @@ Open http://localhost:8030. A demo office with fictional data is created on firs
 
 ## About
 
-Built from scratch for the Meta Global AI Developer Hackathon, 27 October – 4 November 2026. Full product documentation is in [PROJECT.md](PROJECT.md).
+Built from scratch for the Meta Global AI Developer Hackathon, 27 October – 4 November 2026. Full product documentation is in [PROJECT.md](PROJECT.md). Released under the [MIT License](LICENSE).
