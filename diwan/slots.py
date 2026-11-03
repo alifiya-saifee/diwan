@@ -159,26 +159,33 @@ def is_open(g: Graph, broker: str, t: datetime, minutes: int = 60, ignore: str |
     return not any(s < end and t < e for s, e, vid in booked(g, broker) if vid != ignore)
 
 
-def _may(by: str, broker: str) -> None:
+def keeps_calendar(person: str) -> bool:
     from diwan import leads, qualify
-    if broker not in leads.brokers() and not (broker == by and by in qualify.owner_ids()):  # the owner keeps time of their own too
+    return person in leads.brokers() or person in qualify.owner_ids()
+
+
+def _may(by: str, broker: str, invited: bool = False) -> None:
+    """`invited`: a meeting a colleague set up goes on this calendar too, though they don't own it."""
+    from diwan import leads, qualify
+    if broker not in leads.brokers() and not ((broker == by or invited) and broker in qualify.owner_ids()):  # the owner keeps time of their own too
         raise ValueError(f"{broker} is not a broker")
-    if by != broker and by not in qualify.owner_ids():
+    if by != broker and by not in qualify.owner_ids() and not invited:
         raise PermissionError("A broker changes only their own calendar; the owner changes anyone's")
 
 
 def block(office, *, by: str, broker: str, start: datetime, end: datetime, reason: str = "", repeat: str | None = None,
-          until: str | None = None, kind: str = "busy", bid: str | None = None, now: datetime | None = None) -> dict:
+          until: str | None = None, kind: str = "busy", bid: str | None = None, now: datetime | None = None, meeting: dict | None = None) -> dict:
     """Mark time the broker can't be booked: `kind` "busy" (a few hours, once or every week) or "off" (whole days).
-    Refused when it covers an appointment already booked, so the client is never left without their broker."""
+    Refused when it covers an appointment already booked, so the client is never left without their broker. `meeting`
+    {id, by, people, about, link}: one meeting between colleagues, kept as a block on each of their calendars."""
     from diwan.people import name
-    _may(by, broker)
+    _may(by, broker, invited=bool(meeting) and by in meeting.get("people", []))
     g = office.graph()
     now = now or datetime.now(DUBAI)
     if bid and (bid not in g.nodes or g.nodes[bid].type != "block" or g.nodes[bid].status != "active"):
         raise ValueError("No such busy time")
     if bid and g.nodes[bid].props["broker"] != broker:
-        _may(by, g.nodes[bid].props["broker"])
+        _may(by, g.nodes[bid].props["broker"], invited=bool(meeting) and by in meeting.get("people", []))
     if kind not in ("busy", "off") or repeat not in (None, "weekly"):
         raise ValueError("Unknown kind of busy time")
     if end <= start:
@@ -199,6 +206,8 @@ def block(office, *, by: str, broker: str, start: datetime, end: datetime, reaso
     bid = bid or f"B{len(g.of('block')) + 1}"
     content = {"id": bid, "broker": broker, "kind": kind, "start": start.astimezone(DUBAI).isoformat(), "end": end.astimezone(DUBAI).isoformat(),
                "reason": (reason or "").strip()[:120] or None, "repeat": repeat, "until": until}
+    if meeting:
+        content["meeting"] = meeting
     office.log.append("calendar.blocked", actor=by, content=content)
     return content
 
@@ -218,7 +227,7 @@ def unblock(office, bid: str, *, by: str) -> None:
     b = g.nodes.get(bid)
     if not b or b.type != "block" or b.status != "active":
         raise ValueError("No such busy time")
-    _may(by, b.props["broker"])
+    _may(by, b.props["broker"], invited=by in (b.props.get("meeting") or {}).get("people", []))
     office.log.append("calendar.unblocked", actor=by, content={"id": bid})
 
 

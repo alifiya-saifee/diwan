@@ -164,7 +164,7 @@ def test_a_brokers_pa_never_sees_another_brokers_clients(office, monkeypatch):
     mine = g.nodes[f"deal:{g.nodes[f'chat:{PH}'].deal}"].props["broker"]
     seen = []
     muse(monkeypatch, "Ok.", seen=seen)
-    frontdesk.say(office, "How is my week looking overall?", mine, session="o", now=NOON)
+    frontdesk.say(office, "What should I worry about with my leads?", mine, session="o", now=NOON)
     assert "Sara Khan" in seen[0] and "Ali Rahman" not in seen[0] and "Department " not in seen[0]
 
 
@@ -572,7 +572,7 @@ def test_a_whatsapp_never_carries_bank_or_compliance_words(office):
 
 def test_a_meeting_keeps_who_it_is_with_and_can_move_and_be_cancelled(office):
     r = talk(office, "Book a meeting with Priya tomorrow at 3pm about the audit", session="c1")
-    assert r["kind"] == "confirm" and "Meeting with Priya about the audit" in r["text"]
+    assert r["kind"] == "confirm" and "Meeting with Priya" in r["text"] and "about the audit" in r["text"]
     talk(office, "Yes", session="c1")
     assert "Meeting with Priya" in talk(office, "Move my meeting with Priya to 5pm", session="c1")["text"]
     talk(office, "Yes", session="c1")
@@ -591,7 +591,7 @@ def test_part_of_a_day_is_blocked_with_the_reason(office):
 def test_she_warns_of_a_double_booking(office):
     talk(office, "Block my 3pm tomorrow for the bank", session="c3")
     talk(office, "Yes", session="c3")
-    assert "You already have" in talk(office, "Book a meeting with Omar tomorrow at 3pm", session="c4")["text"]
+    assert talk(office, "Book a meeting with Omar tomorrow at 3pm", session="c4")["text"].startswith("You're busy then.")
 
 
 def test_she_can_read_the_calendar(office, monkeypatch):
@@ -599,7 +599,8 @@ def test_she_can_read_the_calendar(office, monkeypatch):
     talk(office, "Yes", session="c5")
     seen = []
     muse(monkeypatch, "You're busy then.", seen=seen)
-    frontdesk.say(office, "Am I free tomorrow afternoon around three?", "layla", session="c6", now=NOON)
+    assert "The bank" in frontdesk.say(office, "Am I free tomorrow afternoon around three?", "layla", session="c6", now=NOON)["text"]  # read by rules
+    frontdesk.say(office, "Should I move the bank thing, given tomorrow?", "layla", session="c6", now=NOON)
     assert "Their calendar:" in seen[0] and "The bank" in seen[0]
 
 

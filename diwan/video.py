@@ -97,3 +97,36 @@ def cancelled(office: Office, vid: str, *, by: str, cause: int | None = None) ->
             office.log.append("appointment.link", actor=by, deal=v.deal, caused_by=cause,
                               content={"id": vid, "provider": "zoom", "url": link.get("url"), "meeting_id": link["meeting_id"],
                                        "error": f"the meeting couldn't be deleted in Zoom: {str(e)[:200]}"})
+
+
+# A meeting between colleagues (docs/pa-calendar-spec.md): one meeting in the owner's service, its link on each of
+# their calendars. No appointment node, so these return what happened and the caller keeps it on the blocks.
+
+def meeting(g: Graph, topic: str, start: datetime, minutes: int) -> dict:
+    """{provider, url, meeting_id}, or {provider, error} when it couldn't be made: never an invented link."""
+    try:  # colleagues meet on Zoom once its keys are in, whatever the owner picked for clients
+        if not status()["zoom"]["ready"]:
+            raise RuntimeError("Zoom isn't connected")
+        m = zoom.create(topic, start, minutes)
+    except Exception as e:  # noqa: BLE001
+        return {"provider": "zoom", "error": str(e)[:300]}
+    return {"provider": "zoom", "url": m["url"], "meeting_id": m["id"]}
+
+
+def meeting_moved(link: dict | None, start: datetime, minutes: int) -> str | None:
+    """The error, if the new time didn't reach Zoom."""
+    if (link or {}).get("provider") == "zoom" and link.get("meeting_id"):
+        try:
+            zoom.move(link["meeting_id"], start, minutes)
+        except Exception as e:  # noqa: BLE001
+            return f"the new time didn't reach Zoom: {str(e)[:200]}"
+    return None
+
+
+def meeting_cancelled(link: dict | None) -> str | None:
+    if (link or {}).get("provider") == "zoom" and link.get("meeting_id"):
+        try:
+            zoom.delete(link["meeting_id"])
+        except Exception as e:  # noqa: BLE001
+            return f"the meeting couldn't be deleted in Zoom: {str(e)[:200]}"
+    return None

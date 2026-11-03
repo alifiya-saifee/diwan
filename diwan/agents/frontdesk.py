@@ -521,16 +521,61 @@ WHOLE = re.compile(r"\b(?:(?:whole|full|entire|all)(?: of)?(?: the)? day|day off
 OFF = re.compile(r"\bi(?:'?ll| will|'?m| am)?\s+(?:be\s+|going to be\s+)?(?:off(?! to\b)|away|on leave|out of (?:the )?office)\b", re.I)
 
 
+RANGE = re.compile(r"\b(from\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:-|–|to|until|till|til)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b"
+                   r"(?!\s*(?:bed|br|bhk|room|million|m\b|k\b|sq|%|aed|year|min|hours?|hrs?|people|of\b))", re.I)
+WITH = re.compile(r"\b(?:meeting|meet|call|catch[- ]?up|sync)\s+with\s+([A-Za-z]+)", re.I)
+ONLINE = re.compile(r"\b(?:zoom|online|video|virtual|remote(?:ly)?)\b", re.I)
+BOOK_CLIENT = re.compile(r"^\s*(?:please\s+)?book\s+(?!(?:a|an|me|my|the|some|time|us)\b)", re.I)
+
+
+def _range(text: str, now: datetime) -> tuple[datetime, datetime] | None:
+    """"Friday 3 to 5pm", "3-5pm", "from 3 until 5": the start and end. An hour with no am or pm is an office hour."""
+    from diwan import slots
+    m = RANGE.search(text)
+    day = slots._day(text.lower(), now.astimezone(DUBAI))
+    if not m or not day or not (m[1] or m[3] or m[4] or m[6] or m[7]):
+        return None
+
+    def clock(h: int, ampm: str) -> int:
+        if ampm == "pm" and h < 12:
+            return h + 12
+        if ampm == "am" and h == 12:
+            return 0
+        return h + 12 if not ampm and h < 9 else h
+    pa, pz = (m[4] or "").lower(), (m[7] or "").lower()
+    z = clock(int(m[5]), pz)
+    a = clock(int(m[2]), pa or pz)
+    if not pa and a >= z:  # "11 to 1pm": the morning
+        a = clock(int(m[2]), "")
+    if not (0 <= a < 24 and 0 < z <= 24) or z * 60 + int(m[6] or 0) <= a * 60 + int(m[3] or 0):
+        return None
+    at = datetime(day.year, day.month, day.day, a, int(m[3] or 0), tzinfo=DUBAI)
+    return at, datetime(day.year, day.month, day.day, tzinfo=DUBAI) + timedelta(hours=z, minutes=int(m[6] or 0))
+
+
+def _colleague(text: str, person: str) -> str | None:
+    """The member of staff a meeting is with, by their name."""
+    m = WITH.search(text)
+    who = pid(m[1]) if m else None
+    return who if who and who != person and who in PEOPLE else None
+
+
 def _block_asks(office: Office, text: str, person: str, session: str, now: datetime) -> dict | None:
     """"Block my 3 PM, I'm in a meeting": read back, then the time is kept clear on this person's own calendar."""
     from diwan import slots
     day = slots._day(text.lower(), now.astimezone(DUBAI))
     off = bool(OFF.search(text) and day)
     meeting = MEETING.search(text)
-    if not BLOCK.search(text) and not off and not meeting:
+    ranged = re.match(r"\W*(?:please\s+)?(?:block|hold)\b", text, re.I) and _range(text, now)  # "block Thursday from 10 until 11"
+    if not BLOCK.search(text) and not off and not meeting and not ranged:
         return None
-    if not (is_owner(person) or person in leads.brokers()):
+    other = _colleague(text, person) if meeting else None
+    if BOOK_CLIENT.match(text) and not other and not BLOCK.search(text) and not ranged:  # "book Karim an office meeting": the client's broker books it
+        return None
+    if not slots.keeps_calendar(person):
         return {"kind": "unknown", "text": "Only brokers and the owner keep a calendar here."}
+    if other:
+        return _meeting_asks(office, text, person, other, session, now)
     if off or WHOLE.search(text):
         if not day:
             PENDING[session] = {"asking": text}
@@ -538,6 +583,8 @@ def _block_asks(office: Office, text: str, person: str, session: str, now: datet
         PENDING[session] = {"dayoff": day.isoformat()}
         return {"kind": "confirm", "text": f"Block all of {day:%A %d %b} on your calendar as a day off?".replace(" 0", " "), "options": ["Yes", "Cancel"]}
     at, span = slots.parse(text, now), None
+    if r := _range(text, now):
+        at, span = r[0], r[1] - r[0]
     part = next((p for p in SPANS if re.search(rf"\b{p}\b", text, re.I)), None)
     if not at and day and part:
         at = datetime(day.year, day.month, day.day, SPANS[part][0], tzinfo=DUBAI)
@@ -554,6 +601,258 @@ def _block_asks(office: Office, text: str, person: str, session: str, now: datet
     PENDING[session] = {"block": {"start": at.isoformat(), "end": (at + span).isoformat(), "reason": why}}
     return {"kind": "confirm", "text": f"Block {slots.say(at)} to {(at + span).astimezone(DUBAI):%I:%M %p}".replace(" 0", " ") + f" on your calendar{(' for: ' + why) if why else ''}?{warn}",
             "options": ["Yes", "Cancel"]}
+
+
+def _length(text: str, default: int = 60) -> int:
+    """Minutes, from "for 2 hours" / "for 30 minutes" / "half an hour"."""
+    if re.search(r"\bhalf an? hour\b", text, re.I):
+        return 30
+    m = re.search(r"\bfor\s+(\d+(?:\.\d+)?|an?|one|two|three)\s*(hours?|hrs?|minutes?|mins?)\b", text, re.I)
+    if not m:
+        return default
+    n = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3}.get(m[1].lower()) or float(m[1])
+    return int(n if m[2].lower().startswith("m") else n * 60)
+
+
+def _clash(g: Graph, who: str, t: datetime, end: datetime, mid: str | None = None) -> str | None:
+    """What is on this person's calendar between t and end, other than meeting `mid`; "outside office hours"; or None."""
+    from diwan import slots
+    if not slots.keeps_calendar(who):
+        return None
+    local = t.astimezone(DUBAI)
+    w = slots.window(g, who, local.date())
+    a = local.hour * 60 + local.minute
+    if not w or a < w[0] or a + (end - t).seconds // 60 > w[1]:
+        return "outside office hours"
+    for b in slots.blocks(g, who):
+        if not (mid and (b.props.get("meeting") or {}).get("id") == mid) and slots.occurrences(b, t, end):
+            return b.label
+    return next((g.nodes[v].label for s, e, v in slots.booked(g, who) if s < end and t < e), None)
+
+
+def _both_free(g: Graph, people: list[str], want: datetime, now: datetime, minutes: int, n: int = 3) -> list[datetime]:
+    """The times nearest `want` when everyone is free."""
+    from diwan import slots
+    first = next((p for p in people if slots.keeps_calendar(p)), people[0])
+    span = timedelta(minutes=minutes)
+    ok = [t for t in slots.nearest(g, first, want, now, 40, minutes) if not any(_clash(g, p, t, t + span) for p in people)]
+    return sorted(sorted(ok, key=lambda t: (t.date() != want.date(), abs(t - want)))[:n])
+
+
+def _span_say(at: datetime, end: datetime) -> str:
+    from diwan import slots
+    return f"{slots.say(at)} to {end.astimezone(DUBAI):%I:%M %p}".replace(" 0", " ")
+
+
+def _meeting_asks(office: Office, text: str, person: str, other: str, session: str, now: datetime) -> dict:
+    """"Set up a meeting with Omar Thursday at 2 on Zoom": both calendars checked, read back, and on a yes it is on both."""
+    from diwan import slots
+    draft = {"with": other, "about": _about(text), "online": bool(ONLINE.search(text)), "minutes": _length(text)}
+    r = _range(text, now)
+    at = r[0] if r else slots.parse(text, now)
+    if r:
+        draft["minutes"] = int((r[1] - r[0]).total_seconds() // 60)
+    if not at:
+        PENDING[session] = {"meetwhen": draft | {"options": []}}
+        return {"kind": "question", "text": f"What day and time for the meeting with {name(other)}?"}
+    return _meeting_readback(office, draft, at, person, session, now)
+
+
+def _about(text: str) -> str:
+    m = re.search(r"\b(?:about|on|re|regarding|to discuss)\s+((?!monday|tuesday|wednesday|thursday|friday|saturday|sunday|zoom\b|video\b|\d).+?)"
+                  r"(?:\s+(?:on|over|by)\s+(?:zoom|video|a video call)|\s+online)?\W*$", text, re.I)
+    return m[1] if m else ""
+
+
+def _meeting_readback(office: Office, draft: dict, at: datetime, person: str, session: str, now: datetime) -> dict:
+    from diwan import video
+    g = office.graph()
+    other, span = draft["with"], timedelta(minutes=draft["minutes"])
+    if at <= now:
+        return {"kind": "unknown", "text": "That time has already passed."}
+    busy = [(p, c) for p in (person, other) if (c := _clash(g, p, at, at + span))]
+    if busy:
+        opts = _both_free(g, [person, other], at, now, draft["minutes"])
+        who = "You're" if busy[0][0] == person else f"{name(other)} is"
+        PENDING[session] = {"meetwhen": draft | {"options": [t.isoformat() for t in opts]}}
+        said = "outside office hours" if busy[0][1] == "outside office hours" else "busy then"
+        return {"kind": "question", "text": f"{who} {said}. " + (f"You're both free: {'; '.join(f'{i}. {_span_say(t, t + span)}' for i, t in enumerate(opts, 1))}. Which one?"
+                                                                    if opts else "I can't find a time you're both free in the next two weeks. Which time instead?"),
+                "options": [f"{i}" for i in range(1, len(opts) + 1)]}
+    from diwan import slots
+    about = f", about {draft['about']}" if draft["about"] else ""
+    if draft["online"]:
+        zoom = " One Zoom link goes on both." if video.status()["zoom"]["ready"] else " Zoom isn't connected, so there's no link."
+    else:
+        zoom = ""
+    told = (f" It goes on both your calendars and {name(other)} is told." if slots.keeps_calendar(other)
+            else f" {name(other)} doesn't keep a calendar here, so I can't see if they're free: it goes on yours and {name(other)} is told.")
+    PENDING[session] = {"meeting": draft | {"start": at.isoformat(), "end": (at + span).isoformat()}}
+    return {"kind": "confirm", "text": f"Meeting with {name(other)}, {_span_say(at, at + span)}{about}?{told}{zoom}", "options": ["Yes", "Cancel"]}
+
+
+def _meeting_title(draft: dict, for_whom: str, by: str, people: list[str]) -> str:
+    others = " and ".join(name(p) for p in people if p != for_whom)
+    return f"Meeting with {others}" + (f" about {draft['about']}" if draft.get("about") else "")
+
+
+def _make_meeting(office: Office, m: dict, person: str, now: datetime) -> dict:
+    from diwan import slots, video
+    g = office.graph()
+    start, end = datetime.fromisoformat(m["start"]), datetime.fromisoformat(m["end"])
+    people = [person, m["with"]]
+    if busy := [p for p in people if _clash(g, p, start, end)]:
+        return {"kind": "unknown", "text": f"{'You are' if busy[0] == person else name(busy[0]) + ' is'} no longer free then. Nothing was booked."}
+    mid = f"M{len({b.props['meeting']['id'] for b in g.of('block') if b.props.get('meeting')}) + 1}"
+    link = video.meeting(g, _meeting_title(m, "", person, people), start, int((end - start).total_seconds() // 60)) if m["online"] else None
+    meeting = {"id": mid, "by": person, "people": people, "about": m.get("about") or None, "link": link}
+    try:
+        for p in people:
+            if slots.keeps_calendar(p):
+                slots.block(office, by=person, broker=p, start=start, end=end, reason=_meeting_title(m, p, person, people), meeting=meeting, now=now)
+    except ValueError as e:
+        video.meeting_cancelled(link)
+        for b in office.graph().of("block", status="active"):
+            if (b.props.get("meeting") or {}).get("id") == mid:
+                slots.unblock(office, b.id, by=person)
+        return {"kind": "unknown", "text": f"I couldn't book it: {e}. Nothing was booked."}
+    url = (link or {}).get("url")
+    about = f" about {m['about']}" if m.get("about") else ""
+    leads.notify(office, m["with"], f"{name(person)} set up a meeting with you{about}, {_span_say(start, end)}." + (f" Zoom: {url}" if url else ""), kind="info")
+    where = "your calendar and " + name(m["with"]) + "'s" if slots.keeps_calendar(m["with"]) else "your calendar"
+    tail = f" Zoom link: {url}" if url else (f" No Zoom link: {link['error']}." if link else "")
+    return {"kind": "done", "text": f"Done. It's on {where}, and {name(m['with'])} has been told.{tail}"}
+
+
+def _meeting_blocks(g: Graph, mid: str) -> list:
+    return [b for b in g.of("block", status="active") if (b.props.get("meeting") or {}).get("id") == mid]
+
+
+def _change_meeting(office: Office, k: dict, person: str, now: datetime) -> dict:
+    """Move ("start" given) or cancel the meeting on everyone's calendar, its Zoom meeting with it, and tell the others."""
+    from diwan import slots, video
+    bs = _meeting_blocks(office.graph(), k["meeting"])
+    if not bs:
+        return {"kind": "unknown", "text": "That meeting is no longer on the calendar."}
+    meeting = dict(bs[0].props["meeting"])
+    others = [p for p in meeting["people"] if p != person]
+    if k.get("start"):
+        start, end = datetime.fromisoformat(k["start"]), datetime.fromisoformat(k["end"])
+        if busy := [p for p in meeting["people"] if _clash(office.graph(), p, start, end, k["meeting"])]:
+            return {"kind": "unknown", "text": f"{'You are' if busy[0] == person else name(busy[0]) + ' is'} not free then. Nothing was moved."}
+        err = video.meeting_moved(meeting.get("link"), start, int((end - start).total_seconds() // 60))
+        for b in bs:
+            slots.block(office, by=person, broker=b.props["broker"], start=start, end=end, reason=b.props.get("reason") or "", bid=b.id, meeting=meeting, now=now)
+        for p in others:
+            leads.notify(office, p, f"{name(person)} moved your meeting{' about ' + meeting['about'] if meeting.get('about') else ''} to {_span_say(start, end)}.", kind="info")
+        return {"kind": "done", "text": f"Done. Moved to {_span_say(start, end)} on every calendar, and {' and '.join(name(p) for p in others)} has been told." + (f" But {err}." if err else "")}
+    err = video.meeting_cancelled(meeting.get("link"))
+    when = _span_say(_at(bs[0].props["start"]), _at(bs[0].props["end"]))
+    for b in bs:
+        slots.unblock(office, b.id, by=person)
+    for p in others:
+        leads.notify(office, p, f"{name(person)} cancelled your meeting{' about ' + meeting['about'] if meeting.get('about') else ''}, {when}.", kind="info")
+    zoom = " The Zoom meeting is deleted." if (meeting.get("link") or {}).get("meeting_id") and not err else (f" But {err}." if err else "")
+    return {"kind": "done", "text": f"Done. It's off every calendar, and {' and '.join(name(p) for p in others)} has been told.{zoom}"}
+
+
+WHATS_ON = re.compile(r"^\W*(?:so\s+)?(?:what|whats|anything|show|read|tell|give|how|do i have|is there|any|list)\b", re.I)
+DAY_ASK = re.compile(r"^\W*(?:so\s+)?(?:what'?s on|what is on|anything on|is there anything on|do i have anything|what do i have|what have i got|"
+                     r"(?:what'?s|what is|how'?s|how is|what does|how does)\s+(?:my|[a-z]+'s)\s+(?:day|week))\b", re.I)
+CAL_WORDS = re.compile(r"\b(?:calendar|diary|schedule|agenda|appointments|meetings)\b", re.I)
+FREE = re.compile(r"\b(?:am i|are we|is\s+([a-z]+))\s+(?:free|available|busy)\b", re.I)
+
+
+def _whose(g: Graph, text: str, person: str) -> tuple[str | None, str | None]:
+    """Whose calendar they mean, and why they can't see it."""
+    from diwan import qualify, slots
+    named = [p for p in PEOPLE if p != person and re.search(rf"\b{re.escape(PEOPLE[p]['name'])}(?:'s)?\b", text, re.I)]
+    who = named[0] if named else person
+    if not slots.keeps_calendar(who):
+        return None, ("Only brokers and the owner keep a calendar here." if who == person else f"{name(who)} doesn't keep a calendar here.")
+    if who != person and not (person in qualify.owner_ids() or PEOPLE.get(person, {}).get("role") == "Sales manager"):
+        return who, "only"
+    return who, None
+
+
+def _rows(g: Graph, who: str, lo: datetime, hi: datetime) -> list[tuple]:
+    from diwan import slots
+    rows = []
+    for b in slots.blocks(g, who):
+        link = ((b.props.get("meeting") or {}).get("link") or {}).get("url")
+        for s, e in slots.occurrences(b, lo, hi):
+            rows.append((max(s, lo), min(e, hi), b.label + (f" (Zoom: {link})" if link else ""), b.props.get("kind") == "off"))
+    rows += [(s, e, f"{g.nodes[v].props.get('kind_name') or 'Site visit'} with {g.nodes[v].props.get('customer')}", False)
+             for s, e, v in slots.booked(g, who) if lo < e and s < hi]
+    return sorted(rows, key=lambda r: r[0])
+
+
+def _row_say(r: tuple) -> str:
+    s, e, what, off = r
+    return what if off else f"{s.astimezone(DUBAI):%I:%M %p}–{e.astimezone(DUBAI):%I:%M %p} {what}".lstrip("0").replace("–0", "–")
+
+
+def _calendar_asks(office: Office, text: str, person: str, now: datetime) -> dict | None:
+    """"What's on tomorrow?", "Am I free Friday at 4?": read from the calendar itself, never guessed."""
+    from diwan import slots
+    low, local = text.lower(), now.astimezone(DUBAI)
+    free = FREE.search(text)
+    week = re.search(r"\b(this|next) week\b", low)
+    day = slots._day(low, local) if not week else None
+    mine = re.search(r"\b(?:my|i|me)\b", low) or any(re.search(rf"\b{re.escape(p['name'].lower())}'s\b", low) for p in PEOPLE.values())
+    if not free and not (WHATS_ON.match(text) and CAL_WORDS.search(text) and mine) and not (DAY_ASK.match(text) and (day or week or re.search(r"\b(?:my|[a-z]+'s)\s+(?:day|week)\b", low))):
+        return None
+    g = office.graph()
+    if free and free[1] and free[1].lower() not in ("it", "that", "there", "this"):
+        text = f"{free[1]}'s {text}"
+    who, why = _whose(g, text, person)
+    if why and why != "only":
+        return {"kind": "answer", "text": why, "cites": []}
+    yours = who == person
+    if free:
+        at = slots.parse(text, now)
+        if not at:
+            if not day:
+                return {"kind": "question", "text": "Free when? Say a day and a time."}
+        else:
+            span = timedelta(minutes=_length(text))
+            c = _clash(g, who, at, at + span)
+            subj = "you're" if yours else f"{name(who)} is"
+            if not c:
+                return {"kind": "answer", "text": f"Yes, {subj} free {slots.say(at)}.", "cites": []}
+            if c == "outside office hours":
+                c = "that's outside office hours"
+            elif why == "only":  # a colleague's free or busy, never what it is
+                c = f"{subj} busy then"
+            else:
+                c = f"{'you have' if yours else name(who) + ' has'} {c} then"
+            near = _both_free(g, [who], at, now, int(span.total_seconds() // 60))
+            return {"kind": "answer", "text": f"No, {c}." + (f" Free nearby: {'; '.join(slots.say(t) for t in near)}." if near else ""), "cites": []}
+    if why == "only":
+        return {"kind": "answer", "text": "You can see only your own calendar. Ask whether they're free at a time instead.", "cites": []}
+    if week:
+        start = local.date() + timedelta(days=7 - local.weekday()) if week[1] == "next" else local.date()
+        days = [start + timedelta(days=i) for i in range(7 if week[1] == "next" else 7 - local.weekday())]
+    else:
+        days = [day or local.date()]
+    out = []
+    for d in days:
+        lo = max(datetime(d.year, d.month, d.day, tzinfo=DUBAI), now if d == local.date() else datetime(d.year, d.month, d.day, tzinfo=DUBAI))
+        rows = _rows(g, who, lo, datetime(d.year, d.month, d.day, tzinfo=DUBAI) + timedelta(days=1))
+        if rows or len(days) == 1:
+            out.append((d, rows))
+    whose = "your calendar" if yours else f"{name(who)}'s calendar"
+    label = lambda d: {local.date(): "Today, ", local.date() + timedelta(days=1): "Tomorrow, "}.get(d, "") + slots.say_day(d)  # noqa: E731
+    if len(days) == 1:
+        d, rows = out[0]
+        left = " left" if d == local.date() else ""
+        if not rows:
+            return {"kind": "answer", "text": f"Nothing{left} on {whose} {'today' if d == local.date() else 'tomorrow' if d == local.date() + timedelta(days=1) else 'on ' + slots.say_day(d)}.", "cites": []}
+        return {"kind": "answer", "text": f"{label(d)}, {whose}:\n" + "\n".join(f"• {_row_say(r)}" for r in rows), "cites": [],
+                "spoken": f"{label(d)}: " + "; ".join(_row_say(r) for r in rows) + "."}
+    if not out:
+        return {"kind": "answer", "text": f"Nothing on {whose} {week[0]}.", "cites": []}
+    return {"kind": "answer", "text": f"{whose[0].upper() + whose[1:]}, {week[0]}:\n" + "\n".join(f"{label(d)}: " + "; ".join(_row_say(r) for r in rows) for d, rows in out), "cites": []}
 
 
 def _block_why(text: str, meeting) -> str:
@@ -596,9 +895,17 @@ def _change_block(office: Office, text: str, person: str, session: str, now: dat
             at = start.replace(hour=hour, minute=int(c[2] or c[5] or 0))
         if not at:
             return {"kind": "question", "text": f"What time should I move {b.label} to?"}
+        if mt := b.props.get("meeting"):
+            others = " and ".join(name(p) for p in mt["people"] if p != person)
+            PENDING[session] = {"changemeeting": {"meeting": mt["id"], "start": at.isoformat(), "end": (at + (end - start)).isoformat()}}
+            return {"kind": "confirm", "text": f"Move {b.label} to {_span_say(at, at + (end - start))}? It moves on every calendar and {others} is told.", "options": ["Yes", "Cancel"]}
         PENDING[session] = {"moveblock": {"id": b.id, "start": at.isoformat(), "end": (at + (end - start)).isoformat(), "reason": b.props.get("reason") or ""}}
         return {"kind": "confirm", "text": f"Move {b.label} to {slots.say(at)}?", "options": ["Yes", "Cancel"]}
     if (m := DROP_BLOCK.match(text)) and (b := _find_block(g, person, m[1], now)):
+        if mt := b.props.get("meeting"):
+            others = " and ".join(name(p) for p in mt["people"] if p != person)
+            PENDING[session] = {"changemeeting": {"meeting": mt["id"]}}
+            return {"kind": "confirm", "text": f"Cancel {b.label}, {slots.say(_at(b.props['start']))}? It comes off every calendar and {others} is told.", "options": ["Yes", "Cancel"]}
         PENDING[session] = {"unblock": b.id}
         return {"kind": "confirm", "text": f"Take {b.label}, {slots.say(_at(b.props['start']))}, off your calendar?", "options": ["Yes", "Cancel"]}
     return None
@@ -685,6 +992,9 @@ def _broker_asks(office: Office, text: str, person: str, session: str, now: date
     from diwan import slots
     g = office.graph()
     low = text.lower().strip()
+    if (m := re.match(r"^\s*(?:please\s+)?book\s+(.+?)\s+(?:in\s+for\s+)?(?:a\s+|an\s+)?(" + "|".join(_kind_words(g)) + r")\b", low)) and \
+            _kind_said(g, m.group(2))["where"] != "property":
+        return _call_asks(office, g, m.group(1), _kind_said(g, m.group(2)), text, person, session, now)
     if m := re.match(r"^\s*(?:please\s+)?book\s+(.+?)\s+(?:a\s+)?(viewing|visit)\b", low):
         chat = _client(g, m.group(1), person) or _lead_named(g, m.group(1), person)[0]
         if not chat:
@@ -715,6 +1025,48 @@ def _broker_asks(office: Office, text: str, person: str, session: str, now: date
         visit.summarize(office, chat.deal, said=m.group(1), source="notes", by=person)
         return {"kind": "done", "text": f"Logged on {chat.label}'s lead."}
     return None
+
+
+KIND_WORDS = {"video": ("video call", "zoom call", "video meeting", "zoom"), "phone": ("phone call", "call"), "office": ("office meeting", "meeting at the office"),
+              "property": ("site visit", "viewing", "visit")}
+
+
+def _kind_words(g: Graph) -> list[str]:
+    from diwan import slots
+    words = {k["name"].lower() for k in slots.appointments(g)} | {w for k in slots.appointments(g) for w in KIND_WORDS.get(k["where"], ())}
+    return [re.escape(w) for w in sorted(words, key=len, reverse=True)]
+
+
+def _kind_said(g: Graph, said: str) -> dict:
+    from diwan import slots
+    ks = slots.appointments(g)
+    return next((k for k in ks if k["name"].lower() == said), None) or next(k for k in ks if said in KIND_WORDS.get(k["where"], ()))
+
+
+def _call_asks(office: Office, g: Graph, who: str, k: dict, text: str, person: str, session: str, now: datetime) -> dict:
+    """"Book Karim a video call Thursday at 3pm": with the client's broker, at a time they're free, read back first."""
+    from diwan import slots, video
+    chat = _client(g, who, person) or _lead_named(g, who, person)[0]
+    if not chat:
+        deal = next((d for d in g.deals() if who.lower() in d.props.get("customer", "").lower() and sees_deal(g, d.deal, person)), None)
+        if deal:
+            return {"kind": "unknown", "text": f"{deal.props['customer']} has no WhatsApp conversation with us, so the reminders and the link would have nowhere to go. Nothing was booked."}
+        return {"kind": "unknown", "text": f"I can't find one client called {who.title()} among your leads."}
+    when = slots.parse(text, now)
+    if not when:
+        return {"kind": "question", "text": f"What day and time for {chat.label}'s {k['name'].lower()}?"}
+    broker = g.nodes[f"deal:{chat.deal}"].props.get("broker") or person
+    if not slots.is_open(g, broker, when, k["minutes"]):
+        near = slots.nearest(g, broker, when, now, 3, k["minutes"])
+        return {"kind": "answer", "text": f"{'You aren' if broker == person else name(broker) + ' isn'}'t free {slots.say(when)}." +
+                (f" Free: {'; '.join(slots.say(t) for t in near)}." if near else ""), "cites": []}
+    link = ""
+    if k["where"] == "video":
+        sends = "you send" if broker == person else name(broker) + " sends"
+        link = (" The Zoom link goes with their reminders." if video.ready(g) else
+                f" {'Zoom isn' + chr(39) + 't connected' if video.settings(g)['provider'] == 'zoom' else 'No video service is picked in the calendar settings'}, so there's no link: {sends} one.")
+    PENDING[session] = {"call": {"phone": chat.props["phone"], "name": chat.label, "kind": k["id"], "at": when.isoformat(), "broker": broker}}
+    return {"kind": "confirm", "text": f"Book {chat.label} a {k['name'].lower()} with {'you' if broker == person else name(broker)}, {slots.say(when)}?{link}", "options": ["Yes", "Cancel"]}
 
 
 def _manager_asks(office: Office, text: str, person: str, session: str, now: datetime) -> dict | None:
@@ -771,9 +1123,36 @@ def _follow_up(office: Office, text: str, person: str, session: str, now: dateti
         if not asks and (slots._day(text.lower(), now.astimezone(DUBAI)) or re.search(r"\d|\b(whole|full|entire|all)\b", text.lower())):
             return _block_asks(office, f"{a} {text}", person, session, now)
         return None
+    if a := p.get("meetwhen"):  # "which time?": one of the times offered, or a new one
+        from diwan import slots
+        PENDING.pop(session)
+        opts = [datetime.fromisoformat(x) for x in a["options"]]
+        n = re.match(r"\W*(?:the\s+)?(1|2|3|first|second|third|one|two|three)\b", text.lower())
+        i = {"1": 0, "first": 0, "one": 0, "2": 1, "second": 1, "two": 1, "3": 2, "third": 2, "three": 2}.get(n[1]) if n else None
+        at = opts[i] if i is not None and i < len(opts) else slots.parse(text, now)
+        if not at and (c := re.search(CLOCK, text, re.I)) and opts:  # "the 5pm one"
+            hour = int(c[1] or c[4]) % 12 + (12 if (c[3] or "").lower() == "pm" or (not c[3] and int(c[1] or c[4]) < 9) else 0)
+            at = next((t for t in opts if t.astimezone(DUBAI).hour == hour), None)
+        return _meeting_readback(office, a, at, person, session, now) if at else None
     if not YES.match(text) or len(text.split()) > 5:  # a yes is a short answer, not a sentence that starts with one
         return None
     PENDING.pop(session)
+    if m := p.get("meeting"):
+        return _make_meeting(office, m, person, now)
+    if k := p.get("changemeeting"):
+        return _change_meeting(office, k, person, now)
+    if c := p.get("call"):
+        from diwan import video
+        try:
+            v = reception.add_by_hand(office, by=person, broker=c["broker"], phone=c["phone"], name_=c["name"], kind_id=c["kind"], ref=None,
+                                      when=datetime.fromisoformat(c["at"]), now=now, confirmed=True)
+        except (ValueError, PermissionError) as e:
+            return {"kind": "unknown", "text": f"I couldn't book it: {e}"}
+        text = f"Booked on {'your' if c['broker'] == person else name(c['broker']) + chr(39) + 's'} calendar. Reminders go to {c['name']} on the usual schedule."
+        if office.graph().nodes[v["id"]].props.get("where") == "video":
+            url = video.make(office, v["id"], by=person)
+            text += f" The Zoom link, in their reminders: {url}" if url else f" There's no link yet: it's on {'your' if c['broker'] == person else name(c['broker']) + chr(39) + 's'} cards to send one."
+        return {"kind": "done", "text": text}
     if p.get("errand"):
         return decide_errand(office, p["errand"], by=person, yes=True)
     if b := p.get("book"):
@@ -1100,7 +1479,7 @@ def handle(office: Office, text: str, person: str, session: str, now: datetime) 
         return a | {"text": f"{a['text']} {(kept or {}).get('text', '')}".strip()}
     if out := change_reminder(office, person, t, now) or add_reminder(office, person, t, now) or _note_asks(office, t, person):
         return out
-    if out := _change_block(office, t, person, session, now) or _block_asks(office, t, person, session, now):
+    if out := _change_block(office, t, person, session, now) or _block_asks(office, t, person, session, now) or _calendar_asks(office, t, person, now):
         return out
     if is_owner(person) and re.search(r"\b(chase|push|follow up with)\b.*\b(everyone|everybody|team|them|all|brokers|sales|agents|staff)\b", low):
         from diwan.agents import watch
