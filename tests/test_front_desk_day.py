@@ -386,7 +386,7 @@ def test_her_own_voice_cannot_send_an_email(office, mailbox):
 
 def test_she_asks_for_an_address_she_does_not_have_and_remembers_it(office, mailbox):
     assert talk(office, "Email Alif about the event", session="m4")["text"] == "What's Alif's email address?"
-    assert "To: alif@example.com" in talk(office, "It's alif at gmail dot com", session="m4")["text"]
+    assert "To: alif@example.com" in talk(office, "It's alif at example dot com", session="m4")["text"]
     talk(office, "Yes", session="m4")
     assert "To: alif@example.com" in talk(office, "Email Alif about the launch", session="m5")["text"]
 
