@@ -43,12 +43,17 @@ S = State()
 
 def fresh() -> Office:
     o = Office(EventLog(env("DIWAN_DB", ":memory:")))
-    if not o.log.list():
+    new = not o.log.list()
+    if new:
         demo.seed(o)
     demo.catalog(o)
     demo.kinds(o)
     demo.projects(o)
     compliance.catch_up(o)  # deals recorded before a Compliance rule existed get it now (adds only what is missing)
+    if new and env("DIWAN_DEMO_DAY") == "1":  # a public demo that starts fresh: a busy day, not an empty office
+        from diwan import demo_day
+        for miss in demo_day.run(o):
+            print("demo day:", miss, flush=True)
     return o
 
 
@@ -719,6 +724,10 @@ def reset(correction: bool = False):
     demo.projects(S.office)
     if correction:
         demo.correction(S.office)
+    elif env("DIWAN_DEMO_DAY") == "1":
+        from diwan import demo_day
+        for miss in demo_day.run(S.office):
+            print("demo day:", miss, flush=True)
     return {"events": len(S.office.log.list())}
 
 
