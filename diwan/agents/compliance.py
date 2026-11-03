@@ -429,6 +429,34 @@ def source_of_funds(g: Graph, deal: str, nodes: dict | None = None) -> dict:
     return {"numbers": numbers, "proof": proof, "missing": sum(1 for p in proof if not p["have"])}
 
 
+SOF_TASK = ("Does this customer's money story fit the deal? Say fit, gap or unknown, with the numbers and the customer's own words. "
+            "List the proof that would close the gap. Never call anyone or anything suspicious: that is the compliance officer's call.")
+DEVIL_TASK = ("Argue the opposite of the source-of-funds view below, from the same records only: the strongest counter-case, and the one "
+              "document that would settle it. Accuse no one.")
+
+
+def money_story(office: Office, deal: str, tid: str, req: str) -> str:
+    """The Source-of-funds analyst lays the money story out, then the Devil's advocate argues against it, each on the model its
+    charter names (Muse Spark Open). Both read only this deal's records; neither decides anything. Without a model, the numbers."""
+    from diwan.agents import runner
+    from diwan.providers.chat import ProviderError
+    g = office.graph()
+    sof = source_of_funds(g, deal)
+    sources = {f.id: g.record(f.id) for f in g.facts(deal)}
+    sources["numbers"] = "\n".join(f"{n['what']}: {n['value']}" + (f" ({n['fact']}: \"{n['quote']}\")" if n["quote"] else "") for n in sof["numbers"])
+    sources["proof"] = "\n".join(f"{'Have' if p['have'] else 'Missing'}: {p['text']}" for p in sof["proof"])
+    try:
+        view = runner.run(office.log, "sof", request=req, task=SOF_TASK, sources=sources, deal=deal, timeout=runner.LIVE).pack
+        against = runner.run(office.log, "devil", request=req, task=DEVIL_TASK, sources=sources | {"view": view.verdict}, deal=deal,
+                             timeout=runner.LIVE).pack
+    except (runner.NotSetUp, ProviderError, KeyError, TypeError):  # logged as agent.failed: the numbers still go to the officer
+        text = "; ".join(f"{n['what']} {n['value']}" for n in sof["numbers"]) + f". {sof['missing']} proof missing."
+        office.finish_task(tid, f"Numbers only (no model): {text}")
+        return f"No model answered, so here are the numbers: {text}"
+    office.finish_task(tid, f"Source of funds: {view.verdict} Against it: {against.verdict}")
+    return f"Source-of-funds analyst: {view.verdict}\n\nDevil's advocate: {against.verdict}"
+
+
 # ---------- cash ----------
 
 def cash_rules(office: Office, deal: str, cause: int | None) -> None:

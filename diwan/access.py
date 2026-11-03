@@ -2,7 +2,9 @@
 person sees only their department, and what they do is done as themselves, whatever a screen sends. The owner sees all.
 
 Anything not listed here is the owner's: a new route is closed until someone decides who it is for. Passwords live in
-their own small database next to the office's, never in the event log, as salted scrypt hashes.
+their own small database next to the office's, never in the event log, as salted scrypt hashes. With Supabase set up
+(SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_KEY) the logins live in Supabase Auth instead and people sign in with
+their email (diwan/providers/supabase_auth.py); sessions and everything below stay the same.
 
 DIWAN_AUTH=off turns the gate off, for tests and the browser checks in e2e/, which have their own scratch office.
 """
@@ -27,6 +29,7 @@ from pydantic import BaseModel
 from diwan import config
 from diwan.config import env
 from diwan.people import PEOPLE, name, pid
+from diwan.providers import supabase_auth as sb
 
 router = APIRouter()
 USER: ContextVar[str | None] = ContextVar("diwan_user", default=None)  # who this request is, None for the owner's own checks
@@ -158,17 +161,29 @@ def _hash(password: str, salt: bytes) -> bytes:
     return hashlib.scrypt(password.encode(), salt=salt, n=2 ** 14, r=8, p=1)
 
 
+def supabase() -> bool:
+    """Logins kept in Supabase Auth, when its three keys are set."""
+    return sb.available()
+
+
 def has_password(person: str) -> bool:
+    if supabase():
+        return person in sb.users()
     with _db() as c:
         return c.execute("select 1 from logins where person=?", (person,)).fetchone() is not None
 
 
-def set_password(person: str, password: str) -> None:
-    """A new password ends every session that person has."""
+def set_password(person: str, password: str, email: str | None = None) -> None:
+    """A new password ends every session that person has. With Supabase, a first login needs the email they sign in with."""
     if person not in PEOPLE:
         raise ValueError("No such person")
     if len(password) < MIN_PASSWORD:
         raise ValueError(f"A password needs at least {MIN_PASSWORD} characters")
+    if supabase():
+        sb.save(person, password, (email or "").strip().lower() or None)
+        with _db() as c:
+            c.execute("delete from sessions where person=?", (person,))
+        return
     salt = secrets.token_bytes(16)
     with _db() as c:
         c.execute("insert or replace into logins values (?,?,?,?)", (person, salt, _hash(password, salt), time.time()))
@@ -176,6 +191,8 @@ def set_password(person: str, password: str) -> None:
 
 
 def remove_login(person: str) -> None:
+    if supabase():
+        sb.remove(person)
     with _db() as c:
         c.execute("delete from logins where person=?", (person,))
         c.execute("delete from sessions where person=?", (person,))
@@ -186,6 +203,16 @@ def check_password(person: str, password: str) -> bool:
         row = c.execute("select salt, hash from logins where person=?", (person,)).fetchone()
     salt, want = row if row else (b"\0" * 16, b"")
     return hmac.compare_digest(_hash(password, salt), want) and bool(row)  # the same work whether or not they exist
+
+
+def who_signs_in(typed: str, password: str) -> str | None:
+    """The person these details belong to. With Supabase it is Supabase's record that says who, never what was typed."""
+    if not supabase():
+        person = pid(typed) or typed.strip().lower()
+        return person if check_password(person, password) else None
+    email = typed.strip().lower() if "@" in typed else (sb.users().get(pid(typed) or "") or {}).get("email")
+    person = sb.sign_in(email, password) if email else None
+    return person if person in PEOPLE else None
 
 
 def _key(token: str) -> str:
@@ -230,24 +257,34 @@ def describe(person: str | None) -> dict:
 
 
 class LoginIn(BaseModel):
-    person: str
+    person: str  # a name, or with Supabase the email
     password: str
 
 
 class SetupIn(BaseModel):
     password: str
+    email: str = ""
 
 
 class PasswordIn(BaseModel):
     person: str
     password: str = ""
+    email: str = ""
+
+
+def _unreachable() -> HTTPException:
+    return HTTPException(503, "The sign-in service can't be reached. Try again in a minute.")
 
 
 @router.get("/api/auth/me")
 def me(request: Request):
     if not enabled():
         return {"auth": False, "setup": False, **describe(owner_id())}
-    return {"auth": True, "setup": not has_password(owner_id()), **describe(session_person(request.cookies.get(COOKIE)))}
+    try:
+        setup = not has_password(owner_id())
+    except sb.SupabaseError:
+        setup = False
+    return {"auth": True, "setup": setup, "email": supabase(), **describe(session_person(request.cookies.get(COOKIE)))}
 
 
 @router.post("/api/auth/setup")
@@ -255,12 +292,18 @@ def setup(body: SetupIn, request: Request):
     """The owner's first password. Only on this machine: a public server is never open to whoever arrives first."""
     owner = owner_id()
     local = request.client and request.client.host in ("127.0.0.1", "::1") and not request.headers.get("x-forwarded-for")
-    if has_password(owner) or not local:
+    try:
+        done = has_password(owner)
+    except sb.SupabaseError:
+        raise _unreachable() from None
+    if done or not local:
         raise HTTPException(403, "The owner's password is set from this machine, once")
     try:
-        set_password(owner, body.password)
+        set_password(owner, body.password, body.email)
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
+    except sb.SupabaseError:
+        raise _unreachable() from None
     res = JSONResponse(describe(owner))
     _cookie(res, request, open_session(owner))
     return res
@@ -268,14 +311,18 @@ def setup(body: SetupIn, request: Request):
 
 @router.post("/api/auth/login")
 def login(body: LoginIn, request: Request):
-    person = pid(body.person) or body.person.strip().lower()
-    n, until = _fails.get(person, (0, 0.0))
+    tried = pid(body.person) or body.person.strip().lower()
+    n, until = _fails.get(tried, (0, 0.0))
     if n >= TRIES and time.time() < until:
         raise HTTPException(429, "Too many tries. Wait a few minutes.")
-    if not check_password(person, body.password):
-        _fails[person] = (n + 1 if time.time() >= until or n < TRIES else n, time.time() + LOCK_SECONDS)
-        raise HTTPException(401, "That name and password don't match")
-    _fails.pop(person, None)
+    try:
+        person = who_signs_in(body.person, body.password)
+    except sb.SupabaseError:
+        raise _unreachable() from None
+    if not person:
+        _fails[tried] = (n + 1 if time.time() >= until or n < TRIES else n, time.time() + LOCK_SECONDS)
+        raise HTTPException(401, "That email and password don't match" if supabase() else "That name and password don't match")
+    _fails.pop(tried, None)
     res = JSONResponse(describe(person))
     _cookie(res, request, open_session(person))
     return res
@@ -297,7 +344,13 @@ def _owner_only(request: Request) -> None:
 @router.get("/api/auth/people")
 def people(request: Request):
     _owner_only(request)
-    return [{"id": k, "name": p["name"], "role": p["role"], "department": department(k), "has_login": has_password(k)} for k, p in PEOPLE.items()]
+    try:
+        held = sb.users() if supabase() else None
+    except sb.SupabaseError:
+        raise _unreachable() from None
+    return [{"id": k, "name": p["name"], "role": p["role"], "department": department(k),
+             "has_login": k in held if held is not None else has_password(k), "email": (held or {}).get(k, {}).get("email")}
+            for k, p in PEOPLE.items()]
 
 
 @router.post("/api/auth/password")
@@ -310,12 +363,17 @@ def password(body: PasswordIn, request: Request):
     if not body.password:
         if is_owner(who):
             raise HTTPException(400, "The owner's login stays")
-        remove_login(who)
+        try:
+            remove_login(who)
+        except sb.SupabaseError:
+            raise _unreachable() from None
         return {"ok": True, "has_login": False}
     try:
-        set_password(who, body.password)
+        set_password(who, body.password, body.email)
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
+    except sb.SupabaseError:
+        raise _unreachable() from None
     return {"ok": True, "has_login": True}
 
 

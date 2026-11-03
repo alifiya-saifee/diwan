@@ -1,4 +1,5 @@
 """The gate: nobody in without signing in, each person only their department, and everyone acts as themselves."""
+import json
 import pytest
 from fastapi.testclient import TestClient
 
@@ -284,3 +285,143 @@ def test_more_than_expected_asks_first_and_saves_nothing(web, desk):
         finance.mark_received(desk, pay.id, "ahmed", "X", today=date.today(), amount=want + 1000)
     assert not desk.graph().nodes[pay.id].props.get("payments")
     assert finance.mark_received(desk, pay.id, "ahmed", "X", today=date.today(), amount=want + 1000, confirm=True)
+
+
+# logins kept in Supabase Auth (diwan/providers/supabase_auth.py), against a stand-in for its API
+
+class FakeSupabase:
+    """Supabase Auth's few endpoints the app uses, holding users in memory."""
+
+    def __init__(self):
+        self.users, self.down, self.n = {}, False, 0
+
+    def __call__(self, req):
+        import httpx
+        if self.down:
+            return httpx.Response(503, json={"msg": "down"})
+        path, body = req.url.path, json.loads(req.content or b"{}")
+        admin = req.headers.get("authorization") == "Bearer service-key"
+        if path.endswith("/token"):
+            u = next((u for u in self.users.values() if u["email"] == body.get("email")), None)
+            if not u or u["password"] != body.get("password") or req.headers.get("apikey") != "anon-key":
+                return httpx.Response(400, json={"error_description": "Invalid login credentials"})
+            return httpx.Response(200, json={"access_token": "t", "user": {k: v for k, v in u.items() if k != "password"}})
+        if not admin:
+            return httpx.Response(401, json={"msg": "not admin"})
+        if path.endswith("/admin/users") and req.method == "GET":
+            return httpx.Response(200, json={"users": [{k: v for k, v in u.items() if k != "password"} for u in self.users.values()]})
+        if path.endswith("/admin/users") and req.method == "POST":
+            if any(u["email"] == body["email"] for u in self.users.values()):
+                return httpx.Response(422, json={"msg": "A user with this email address has already been registered"})
+            self.n += 1
+            uid = f"u{self.n}"
+            self.users[uid] = {"id": uid, "email": body["email"], "password": body["password"], "app_metadata": body.get("app_metadata", {})}
+            return httpx.Response(200, json={"id": uid})
+        uid = path.rsplit("/", 1)[-1]
+        if uid not in self.users:
+            return httpx.Response(404, json={"msg": "User not found"})
+        if req.method == "PUT":
+            self.users[uid].update({k: v for k, v in body.items() if k in ("email", "password")})
+            return httpx.Response(200, json={"id": uid})
+        del self.users[uid]
+        return httpx.Response(200, json={})
+
+    def add(self, email, password, person=None):
+        self.n += 1
+        self.users[f"u{self.n}"] = {"id": f"u{self.n}", "email": email, "password": password, "app_metadata": {"person": person} if person else {}}
+
+
+@pytest.fixture
+def supa(monkeypatch):
+    import httpx
+    from diwan.providers import supabase_auth
+    fake = FakeSupabase()
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "service-key")
+    monkeypatch.setattr(supabase_auth, "TRANSPORT", httpx.MockTransport(fake))
+    supabase_auth._users.clear()
+    fake.add("layla@diwan.example", "the owner's password", "layla")
+    monkeypatch.setenv("DIWAN_AUTH", "on")
+    monkeypatch.setenv("DIWAN_DB", ":memory:")
+    access._fails.clear()
+    with TestClient(app, follow_redirects=False) as c:
+        yield c, fake
+
+
+def supa_in(c, who, password):
+    return c.post("/api/auth/login", json={"person": who, "password": password})
+
+
+def test_with_supabase_people_sign_in_by_email_and_still_see_only_their_department(supa):
+    c, fake = supa
+    assert c.get("/api/auth/me").json()["email"] is True
+    assert supa_in(c, "layla@diwan.example", "the owner's password").json()["person"] == "layla"
+    r = c.post("/api/auth/password", json={"person": "omar", "password": "omar's password", "email": "Omar@Diwan.example"})
+    assert r.json()["has_login"]
+    row = next(p for p in c.get("/api/auth/people").json() if p["id"] == "omar")
+    assert row["has_login"] and row["email"] == "omar@diwan.example"
+    c.post("/api/auth/logout")
+    assert supa_in(c, "omar@diwan.example", "omar's password").json()["person"] == "omar"
+    assert c.get("/api/chats").status_code == 200
+    assert c.get("/web/studio.html").status_code in (302, 303)  # Marketing's, not his
+    c.post("/api/auth/logout")
+    assert supa_in(c, "omar", "omar's password").json()["person"] == "omar"  # the name still finds his email
+
+
+def test_with_supabase_a_wrong_password_gets_nothing_and_many_lock_it(supa):
+    c, fake = supa
+    for _ in range(access.TRIES):
+        assert supa_in(c, "layla@diwan.example", "wrong password").status_code == 401
+    assert supa_in(c, "layla@diwan.example", "the owner's password").status_code == 429
+
+
+def test_with_supabase_a_first_login_needs_an_email(supa):
+    c, fake = supa
+    supa_in(c, "layla@diwan.example", "the owner's password")
+    r = c.post("/api/auth/password", json={"person": "hamza", "password": "a good password"})
+    assert r.status_code == 400 and "email" in r.json()["detail"]
+    assert c.post("/api/auth/password", json={"person": "hamza", "password": "short", "email": "h@diwan.example"}).status_code == 400
+
+
+def test_a_supabase_user_who_isnt_one_of_ours_gets_nothing(supa):
+    """Someone who signed themselves up, or set their own details, is not a Diwan person: Supabase's record says who."""
+    c, fake = supa
+    fake.add("stranger@example.com", "a good password")
+    assert supa_in(c, "stranger@example.com", "a good password").status_code == 401
+    fake.add("fake-owner@example.com", "a good password", "somebody")
+    assert supa_in(c, "fake-owner@example.com", "a good password").status_code == 401
+
+
+def test_with_supabase_removing_a_login_or_a_new_password_ends_them_at_once(supa):
+    c, fake = supa
+    supa_in(c, "layla@diwan.example", "the owner's password")
+    c.post("/api/auth/password", json={"person": "omar", "password": "omar's password", "email": "omar@diwan.example"})
+    c.post("/api/auth/logout")
+    supa_in(c, "omar@diwan.example", "omar's password")
+    assert c.get("/api/chats").status_code == 200
+    access.set_password("omar", "a newer password")
+    assert c.get("/api/chats").status_code == 401
+    supa_in(c, "omar@diwan.example", "a newer password")
+    access.remove_login("omar")
+    assert c.get("/api/chats").status_code == 401
+    assert supa_in(c, "omar@diwan.example", "a newer password").status_code == 401
+    assert not any(u["email"] == "omar@diwan.example" for u in fake.users.values())
+
+
+def test_with_supabase_no_password_is_kept_here(supa, tmp_path):
+    c, fake = supa
+    supa_in(c, "layla@diwan.example", "the owner's password")
+    c.post("/api/auth/password", json={"person": "omar", "password": "omar's password", "email": "omar@diwan.example"})
+    import sqlite3
+    with sqlite3.connect(tmp_path / "auth.db") as db:
+        assert db.execute("select count(*) from logins").fetchone()[0] == 0
+    assert b"omar's password" not in (tmp_path / "auth.db").read_bytes()
+
+
+def test_when_supabase_cant_be_reached_nobody_gets_in_and_it_says_so(supa):
+    c, fake = supa
+    fake.down = True
+    r = supa_in(c, "layla@diwan.example", "the owner's password")
+    assert r.status_code == 503 and "reached" in r.json()["detail"]
+    assert c.get("/api/chats").status_code == 401

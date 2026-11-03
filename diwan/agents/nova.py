@@ -89,7 +89,7 @@ def deal_words(g: Graph, deal: str) -> set[str]:
     words = set(re.findall(r"[a-z0-9]+", f"{deal} {d.props['property']} {d.props['customer']}".lower()))
     for f in g.facts(deal, live=False):
         words |= set(re.findall(r"[a-z]+", f"{f.props.get('payer', '')} {f.props.get('party', '')}".lower()))
-    return {w for w in words if (len(w) >= 3 or w.isdigit()) and w not in {"unit", "gate", "the"}}
+    return {w for w in words if (len(w) >= 3 or w.isdigit()) and w not in {"unit", "crest", "the"}}
 
 
 def resolve_deal(g: Graph, text: str, person: str) -> tuple[str | None, list[str]]:
@@ -145,6 +145,20 @@ def records_for(g: Graph, deal: str, intents: set[str], question: str) -> list[s
     return ids
 
 
+def sees_compliance(person: str) -> bool:
+    from diwan import access
+    return access.is_owner(person) or access.department(person) == access.COMP
+
+
+def compliance_record(g: Graph, nid: str) -> bool:
+    """Compliance's own work: a broker reading it could tip the client off, so only Compliance and the owner get it."""
+    from diwan.deal_desk import DRAFT_DEPT, dept
+    n = g.nodes[nid]
+    if n.type in ("draft", "slide"):
+        return DRAFT_DEPT.get(n.props.get("kind"), "review") == "comp"
+    return dept(n.props.get("agent")) == "comp"
+
+
 def compose(g: Graph, deal: str, intents: set[str], ids: list[str]) -> str:
     """The same records in plain sentences, for when no model is plugged in."""
     out = []
@@ -156,7 +170,7 @@ def compose(g: Graph, deal: str, intents: set[str], ids: list[str]) -> str:
             s += f' Earlier: "{older.props["quote"]}" ({older.id}), since replaced.'
         out.append(s)
         out += [f"Expected: {t.props['action'].removeprefix('Expect ')} ({t.id})." for t in g.of("task", deal, OPEN) if t.props["agent"] == "pay"]
-        out += [f"Priya reviews the change before any money moves ({c.id})." for c in g.of("check", deal, "open")]
+        out += [f"Priya reviews the change before any money moves ({c.id})." for c in g.of("check", deal, "open") if c.id in ids]
     elif "changed" in intents or "impact" in intents:
         for old in (f for f in g.facts(deal, live=False) if f.status == "superseded"):
             new = g.nodes[old.props["superseded_by"]]
@@ -260,6 +274,8 @@ def ask(office: Office, question: str, person: str = "layla", *, session: str | 
         return _ask_back(office, req, person, f"Which deal do you mean: {' or '.join(opts)}?", opts,
                          "The question fits more than one deal, and answering about the wrong one is worse than asking.")
     ids = records_for(g, deal, intents, question)
+    if not sees_compliance(person):
+        ids = [i for i in ids if not compliance_record(g, i)]
     sources = {i: g.record(i) for i in ids}
     office.log.append("agent.started", actor=NOVA, agent=NOVA, request=req, deal=deal, content={"task": question, "sources": ids, "asked_by": person})
     if not ids:
@@ -472,9 +488,11 @@ def route(office: Office, text: str, person: str = "layla", *, tape_root=None) -
     tid = office.add_task(deal, c.id, action, by=lead.id, request=req, caused_by=said["id"])
     if handler := HANDLERS.get(c.id):
         result = handler(office, deal, tid, req)
+        if lead.id == "comp" and not sees_compliance(person):  # what Compliance finds stays with Compliance
+            result = "What it finds stays with Compliance."
         return {"kind": "done", "text": f"The {lead.name} gave it to the {c.name}. {result}", "task": tid, "agent": c.id, "request": req}
-    state = "not built yet" if c.status in ("planned", "parked") else "will pick it up"
-    return {"kind": "queued", "text": f"The {lead.name} gave it to the {c.name} ({tid}); the {c.name} is {state}.", "task": tid, "agent": c.id, "request": req}
+    state = "is not built yet" if c.status in ("planned", "parked") else "will pick it up"
+    return {"kind": "queued", "text": f"The {lead.name} gave it to the {c.name} ({tid}); the {c.name} {state}.", "task": tid, "agent": c.id, "request": req}
 
 
 def _specialists():
@@ -486,7 +504,12 @@ def _teams() -> list[str]:
     return ["Sales", "Operations", "Finance", "Compliance"]
 
 
-HANDLERS = {"formf": operations.formf_plan}
+def _money_story(office: Office, deal: str, tid: str, req: str) -> str:
+    from diwan.agents import compliance
+    return compliance.money_story(office, deal, tid, req)
+
+
+HANDLERS = {"formf": operations.formf_plan, "sof": _money_story}
 
 
 # ---------- brief ----------

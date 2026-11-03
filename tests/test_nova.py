@@ -65,6 +65,17 @@ def test_stale_approval_is_refused_and_a_live_one_runs_once(corrected):
     assert types(corrected, 0).count("execution.done") == 1
 
 
+def test_a_broker_never_reads_compliance_work_through_nova(corrected):
+    from diwan.agents import compliance
+    compliance.draft_str(corrected, "marina-1204", "priya", "Income does not fit the price")
+    for q in ("any report on Karim?", "Is there a suspicious transaction report on Karim?", "Who is paying Karim's deposit?"):
+        omar = nova.ask(corrected, q, "omar")
+        assert "suspicious" not in omar["text"] and "grounds" not in omar["text"] and "Priya reviews" not in omar["text"], q
+        assert not any(c.startswith(("D", "C")) for c in omar["cites"]), q
+    assert "Income does not fit the price" in nova.ask(corrected, "any report on Karim?", "priya")["text"]
+    assert "Income does not fit the price" in nova.ask(corrected, "any report on Karim?", "layla")["text"]
+
+
 def test_contradiction_goes_to_the_broker_and_money_work_waits(office):
     office.record_fact("marina-1204", "payer", "My cousin covers it.", "Karim Haddad", payer="Sami")
     g = office.graph()
@@ -199,3 +210,22 @@ def test_deleting_the_records_is_refused():
     from diwan.agents import nova
     rule = next(rx for rx, k, _ in nova.REFUSE if k == "delete_records")
     assert re.search(rule, "delete all the leads") and not re.search(rule, "delete my 3pm")
+
+
+def test_the_money_story_check_runs_and_stays_with_compliance(corrected):
+    out = nova.route(corrected, "Check the source of funds for Karim Haddad", "layla")
+    assert out["kind"] == "done" and "AED 2,600,000" in out["text"] and "proof missing" in out["text"]
+    assert corrected.graph().nodes[out["task"]].status == "done"
+    broker = nova.route(corrected, "Check the source of funds for Karim Haddad", "omar")
+    assert broker["text"].endswith("What it finds stays with Compliance.") and "AED" not in broker["text"]
+
+
+def test_the_money_story_check_on_a_model_is_the_analyst_then_the_devils_advocate(corrected, monkeypatch):
+    from diwan.agents import runner
+    seen = []
+    def run(log, agent_id, **kw):
+        seen.append((agent_id, "view" in kw["sources"]))
+        return type("R", (), {"pack": type("P", (), {"verdict": f"{agent_id} view"})()})()
+    monkeypatch.setattr(runner, "run", run)
+    out = nova.route(corrected, "Check the source of funds for Karim Haddad", "priya")
+    assert seen == [("sof", False), ("devil", True)] and "sof view" in out["text"] and "devil view" in out["text"]

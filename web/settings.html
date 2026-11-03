@@ -288,16 +288,17 @@ async function loadSales() {
 }
 loadSales();
 async function loadLogins() {
-  const people = await api("/api/auth/people");
+  const [people, me] = await Promise.all([api("/api/auth/people"), api("/api/auth/me")]);
   $("logins").replaceChildren(...people.map((p) => {
     const box = h("input", { type: "password", autocomplete: "new-password", placeholder: p.has_login ? "New password" : "Set a password (8 or more characters)", style: "flex:1;min-width:180px", "aria-label": `Password for ${p.name}` });
+    const mail = me.email ? h("input", { type: "email", autocomplete: "off", value: p.email || "", placeholder: "Their email (they sign in with it)", style: "flex:1;min-width:200px", "aria-label": `Email for ${p.name}` }) : null;
     const send = async (password) => {
-      try { await post("/api/auth/password", { person: p.id, password }); toast(password ? `${p.name} can sign in with that password` : `${p.name} can no longer sign in`); loadLogins(); }
+      try { await post("/api/auth/password", { person: p.id, password, email: mail ? mail.value : "" }); toast(password ? `${p.name} can sign in with that password` : `${p.name} can no longer sign in`); loadLogins(); }
       catch (e) { toast(e.message); }
     };
     return h("div", { class: "row", style: "padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap", "data-person": p.id },
       h("span", { style: "flex:0 0 190px" }, h("b", {}, p.name), h("div", { class: "small muted" }, DEPT[p.department] ? `${p.role} · ${DEPT[p.department]}` : p.role)),
-      h("span", { class: `chip ${p.has_login ? "ok" : ""}`, style: "flex:0 0 auto" }, p.has_login ? "can sign in" : "no login"), box,
+      h("span", { class: `chip ${p.has_login ? "ok" : ""}`, style: "flex:0 0 auto" }, p.has_login ? "can sign in" : "no login"), mail, box,
       h("button", { class: "primary", style: "flex:0", onclick: () => send(box.value) }, "Set"),
       p.has_login && p.department ? h("button", { style: "flex:0", onclick: () => send("") }, "Remove") : null);
   }));

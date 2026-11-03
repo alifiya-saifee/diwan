@@ -17,7 +17,8 @@
 <form class="panel box" id="form">
   <h1>Diwan</h1>
   <p class="sub" id="say">Sign in to your office.</p>
-  <div id="who"><label for="person">Your name</label><input id="person" autocomplete="username" autofocus></div>
+  <div id="who"><label for="person" id="who-label">Your name</label><input id="person" autocomplete="username" autofocus></div>
+  <div id="owner-mail" hidden><label for="email">Your email (you sign in with it)</label><input id="email" type="email" autocomplete="username"></div>
   <label for="password">Password</label><input id="password" type="password" autocomplete="current-password">
   <div id="again" hidden><label for="password2">The same password again</label><input id="password2" type="password" autocomplete="new-password"></div>
   <button class="primary" id="go" type="submit">Sign in</button>
@@ -35,17 +36,19 @@ const send = async (path, body) => {
 };
 const me = await fetch("/api/auth/me").then((r) => r.json());
 if (!me.auth || me.person) next(me.home || "office3d.html");
+if (me.email) { $("who-label").textContent = "Your email"; $("person").type = "email"; }
 if (me.setup) {
   $("say").textContent = "First, the owner chooses a password. Everyone else's are set in Settings.";
   $("who").hidden = true; $("again").hidden = false; $("go").textContent = "Create the owner's password";
-  $("password").autocomplete = "new-password"; $("password").focus();
+  $("owner-mail").hidden = !me.email;
+  $("password").autocomplete = "new-password"; (me.email ? $("email") : $("password")).focus();
 }
 $("form").onsubmit = async (e) => {
   e.preventDefault();
   $("err").textContent = "";
   try {
     if (me.setup && $("password").value !== $("password2").value) throw new Error("The two passwords are different");
-    const d = me.setup ? await send("/api/auth/setup", { password: $("password").value })
+    const d = me.setup ? await send("/api/auth/setup", { password: $("password").value, email: $("email").value })
       : await send("/api/auth/login", { person: $("person").value, password: $("password").value });
     next(d.home);
   } catch (x) { $("err").textContent = x.message; $("password").value = ""; $("password").focus(); }

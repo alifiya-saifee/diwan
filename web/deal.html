@@ -507,6 +507,7 @@ function qrow(x) {
   else if (x.act === "invoiced") { const i = inp("Invoice no. (blank: Diwan numbers it)"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/invoiced`, { number: i.value }, "Invoice sent; collecting it next") }, "I sent it")]; }
   else if (x.act === "commission") { const i = inp("Bank reference"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/commission`, { reference: i.value }, "Commission received; receipt filed") }, "Received")]; }
   else if (x.act === "tick") acts = [h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/tick`, {}, "Ticked") }, "Done")];
+  else if (x.act === "stepdone") acts = [h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/step-done`, {}, "Done") }, "Done")];
   else if (x.act === "docscall") { const i = inp("What the client said"); acts = [openBtn(), i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/docscall`, { note: i.value }, "Noted") }, "Done")]; }
   else if (x.act === "discount") { const i = inp("Why (needed to refuse)"); acts = [i, h("button", { class: "primary", onclick: () => doit(`/api/desk/tasks/${x.id}/discount`, { approve: true, note: i.value }, "Discount approved; the deal converts") }, "Approve"),
     h("button", { onclick: () => doit(`/api/desk/tasks/${x.id}/discount`, { approve: false, note: i.value }, "Refused; the broker is told") }, "Refuse")]; }
@@ -520,6 +521,7 @@ function qrow(x) {
   else acts = [openBtn()];
   row.append(h("span", { class: "sev", style: `background:${SEV[x.sev]}` }),
     h("div", { style: "min-width:0" }, h("div", { class: "title" }, x.title),
+      x.act === "stepdone" && x.text ? h("div", { class: "small muted", style: "font-style:italic;margin-top:2px" }, x.text) : null,
       h("div", { class: "meta" }, h("span", { class: "chip" }, x.kind), h("a", { href: `?deal=${encodeURIComponent(x.deal)}${location.hash}`, onclick: (e) => { e.preventDefault(); open(x.deal); } }, `${x.customer} · ${x.property}`),
         h("span", {}, x.due ? `due ${x.due}` : `waiting ${ago(x.at).replace(" ago", "")}`), x.waiting_on ? h("span", {}, `waiting on ${x.waiting_on}`) : null)),
     h("div", { class: "acts" }, ...acts));

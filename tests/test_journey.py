@@ -157,7 +157,7 @@ def test_a_moment_needs_facts_and_lapses(office):
 
 def test_a_new_project_is_a_moment_and_the_demos_are_not(office):
     assert journey.moments(office) == []
-    k = knowledge.add(office, "project", "Marina Crest", "A new tower in the Marina with handover in 2028.", by="layla")["id"]
+    k = knowledge.add(office, "project", "Marina Vista", "A new tower in the Marina with handover in 2028.", by="layla")["id"]
     assert [m["ref"] for m in journey.moments(office) if m["ref"] == k] == [k]
 
 

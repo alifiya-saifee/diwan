@@ -15,7 +15,7 @@ TYPES = {
     # people and authority
     "approval.requested", "approval.given", "approval.refused", "execution.done", "decision.needed", "instruction.given",
     # meetings and facts (filled in as the Scribe lands)
-    "deal.opened", "meeting.started", "consent.given", "utterance", "meeting.ended",
+    "deal.opened", "meeting.started", "consent.given", "utterance", "meeting.ended", "steps.proposed", "steps.approved",
     "fact.created", "fact.superseded", "fact.confirmed",
     # work between agents
     "task.created", "task.withdrawn", "task.done", "check.raised", "review.returned", "review.passed",

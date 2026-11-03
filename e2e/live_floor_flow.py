@@ -50,7 +50,7 @@ with sync_playwright() as p:
     pg.screenshot(path=str(OUT / "7-counter.png"))
     shown = dict((label, value) for value, label in json.loads(pg.get_attribute("#floorripple", "data-counts")))
     desk = pg.request.get(f"{BASE}/api/desk/overview").json()["corrections"][0]
-    check("the counter is the Deal desk's", shown["tasks reopened"] == desk["withdrawn"] + desk["sent_back"] and shown["approvals refused"] == desk["approvals"]
+    check("the counter is the Deal desk's", shown["tasks withdrawn"] == desk["withdrawn"] and shown["drafts sent back"] == desk["sent_back"] and shown["approvals back to the approver"] == desk["approvals"]
           and shown["forms recalled"] == desk["recalled"] and shown["rooms alerted"] == len(desk["rooms"]), {"shown": shown, "desk": desk})
     check("compliance heard first", desk["compliance_first"])
     check("nothing else was touched", shown["other work touched"] == 0)

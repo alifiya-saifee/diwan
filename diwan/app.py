@@ -971,14 +971,38 @@ def turn(mid: str, body: TurnIn):
 
 @app.post("/api/meetings/{mid}/end")
 def end(mid: str):
-    from diwan.agents import followup, visit
+    from diwan.agents import followup, steps, visit
     ev = S.office.end_meeting(mid)
     m = S.office.meeting(mid)
     if not ev.get("duplicate"):  # the meeting just ended: the visit summary, then the follow-up built on it, for the broker
         visit.from_meeting(S.office, mid, cause=ev["id"])
         followup.draft(S.office, m["deal"], why="after the meeting", cause=ev["id"])
+    found = steps.propose(S.office, mid, cause=ev["id"])  # what was agreed at the table, for a person to approve
     chat = followup._chat(g(), m["deal"])
-    return m | {"followup": followup.current(g(), m["deal"]), "visit": visit.latest(g(), m["deal"]), "chat": chat.props["phone"] if chat else None}
+    return m | {"followup": followup.current(g(), m["deal"]), "visit": visit.latest(g(), m["deal"]), "chat": chat.props["phone"] if chat else None,
+                "steps": found, "people": [{"id": k, "name": p["name"], "role": p["role"]} for k, p in PEOPLE.items()]}
+
+
+class StepsIn(BaseModel):
+    rows: list[dict]
+    by: str = "layla"
+
+
+@app.get("/api/meetings/{mid}/steps")
+def meeting_steps(mid: str):
+    from diwan.agents import steps
+    return steps.latest(S.office, mid) or {}
+
+
+@app.post("/api/meetings/{mid}/steps/approve")
+def approve_steps(mid: str, body: StepsIn):
+    from diwan.agents import steps
+    try:
+        return steps.approve(S.office, mid, body.rows, by=_me(body.by))
+    except KeyError:
+        raise HTTPException(404, "This meeting has no list yet: end the meeting first.") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
 
 
 @app.websocket("/api/meetings/{mid}/audio")

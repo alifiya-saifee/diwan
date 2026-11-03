@@ -31,6 +31,7 @@
         <div class="partial" id="partial"></div>
         <div id="turns"></div>
         <div class="row" style="margin-top:12px"><span style="flex:1"></span><button id="end">End the meeting</button></div>
+        <div id="steps" hidden style="margin-top:14px"></div>
         <div id="fu" hidden style="margin-top:12px"></div>
       </div>
     </section>
@@ -72,6 +73,7 @@ $("end").onclick = async () => {
   if (ws) { ws.send("end"); await new Promise((ok) => setTimeout(ok, 1500)); ws.close(); ws = null; }  // the last sentence is still on its way
   const m = await post(`/api/meetings/${mid}/end`);
   $("end").textContent = "Meeting ended";
+  steps(m.steps, m.people || []);
   const f = m.followup;
   if (!f) return;
   const box = h("textarea", { rows: 6, dir: "auto", style: "width:100%" }, f.text);
@@ -84,6 +86,51 @@ $("end").onclick = async () => {
         : h("span", { class: "small muted" }, "No WhatsApp conversation for this deal: copy it and send it from your phone.")));
 };
 $("text").onkeydown = (e) => { if (e.key === "Enter") say(); };
+
+// what the meeting agreed: each row is the person's to fix before one press sends it to its owner (docs/meeting-tasks-spec.md)
+function steps(s, people) {
+  if (!s) return;
+  const box = $("steps"), rows = [];
+  const pick = (sel) => h("select", { "aria-label": "Who does it", style: "flex:1 1 170px" }, h("option", { value: "" }, "Who does it?"),
+    ...people.map((p) => h("option", { value: p.id, selected: p.id === sel }, `${p.name} · ${p.role}`)));
+  const row = (r, list, unclear) => {
+    const a = h("input", { value: r.action || "", placeholder: "What needs doing", "aria-label": "Task", style: "flex:3 1 260px" });
+    const o = pick(r.owner), d = h("input", { type: "date", value: r.due || "", "aria-label": "Due", style: "flex:0 0 150px" });
+    const rec = { get: () => ({ action: a.value, owner: o.value, due: d.value, quote: r.quote, speaker: r.speaker, facts: r.facts || [] }), unclear };
+    const el = h("div", { class: "item", style: "margin-top:8px" }, h("div", { class: "row" }, a, o, d,
+      h("button", { title: "Remove", "aria-label": "Remove", onclick: () => { el.remove(); rows.splice(rows.indexOf(rec), 1); head(); } }, "✕")),
+      h("div", { class: "small muted", style: "margin-top:4px;font-style:italic" }, r.quote ? `${r.speaker}: "${r.quote}"` : "Added after the meeting"));
+    rows.push(rec); list.append(el); return el;
+  };
+  const title = h("h2", {}), mine = h("div"), unsure = h("div"), go = h("button", { class: "primary" }, "Approve all");
+  const head = () => { const n = rows.filter((r) => !r.unclear).length; title.textContent = n ? `From this meeting: ${n} task${n === 1 ? "" : "s"}` : "Nothing in this meeting was a task for anyone"; };
+  s.items.forEach((r) => row(r, mine, false));
+  s.unclear.forEach((r) => row(r, unsure, true));
+  const add = h("button", { onclick: () => { row({ action: "", owner: "", due: "" }, mine, false).querySelector("input").focus(); head(); } }, "+ Add a task");
+  go.onclick = async () => {
+    go.disabled = true;
+    try {
+      const sent = rows.map((r) => r.get()).filter((r, i) => r.action.trim() && (!rows[i].unclear || r.owner));
+      const res = await post(`/api/meetings/${mid}/steps/approve`, { rows: sent });
+      const by = {}; res.tasks.forEach((t) => { by[t.owner] = (by[t.owner] || 0) + 1; });
+      const names = Object.entries(by).map(([k, n]) => `${(people.find((p) => p.id === k) || { name: k }).name.split(" ")[0]} (${n})`).join(", ");
+      box.replaceChildren(h("h2", {}, `Sent: ${res.tasks.length} task${res.tasks.length === 1 ? "" : "s"}`),
+        h("p", {}, names ? `To ${names}. Each one is in their My work, with the words it came from.` : "Nothing was sent."),
+        h("a", { class: "btn", href: "deal.html#my-work" }, "Open My work →"));
+    } catch (e) { go.disabled = false; toast(e.message); }
+  };
+  head();
+  box.hidden = false;
+  box.replaceChildren(title,
+    h("p", { class: "small muted" }, `The Next-step taker listed what people agreed to, with the words it came from${s.by === "rules" ? " (read by plain rules)" : ""}. Fix anything, then approve: nothing is sent before.`),
+    mine,
+    s.unclear.length ? h("div", { style: "margin-top:12px" }, h("strong", {}, `Not turned into tasks (${s.unclear.length}): couldn't tell who`),
+      h("p", { class: "small muted" }, "Pick who does it to send it too, or leave it."), unsure) : null,
+    s.withdrawn.length ? h("div", { style: "margin-top:12px" }, h("strong", {}, `Changed by this meeting (${s.withdrawn.length})`),
+      ...s.withdrawn.map((w) => h("div", { class: "small", style: "margin-top:4px" }, h("s", {}, w.action), h("span", { class: "chip bad", style: "margin-left:6px" }, "withdrawn"),
+        h("div", { class: "muted" }, w.because)))) : null,
+    h("div", { class: "row", style: "margin-top:12px" }, add, h("span", { style: "flex:1" }), go));
+}
 
 $("mic").onclick = async () => {
   if (ws) { ws.send("end"); ws.close(); ctx?.close(); ws = null; $("mic").textContent = "Use the microphone"; $("micstate").textContent = ""; $("swap").hidden = true; return; }

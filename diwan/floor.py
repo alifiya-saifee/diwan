@@ -75,6 +75,8 @@ _r("stuck", ("self",), "attention.overdue agent.failed email.failed")
 _r("task", ("self",), "agent.pack agent.started agent.refused content.idea content.briefed content.scripted content.ready content.made "
                       "post.paused post.withdrawn campaign.started campaign.ended mchat.analysed")
 _r("note", ("self",), "meeting.started meeting.ended consent.given pocket.started pocket.ended")
+_r("note", ("self",), "steps.proposed")
+_r("task", ("owners",), "steps.approved")  # from the Meeting room to the room of each person given work
 
 QUIET |= set("""listing.access agent.added agent.paused agent.removed agent.resumed autonomy.changed board.pinned board.unpinned calendar.blocked
 calendar.morning calendar.unblocked chat.merged client.queued appointment.link_removed followup.dismissed item.edited item.reconfirmed
@@ -163,6 +165,8 @@ def message(e: dict, g: Graph | None = None) -> dict | None:
     src = None if "in" in to else room  # from outside: it arrives at the door of the room that handles it
     if "in" in to:
         takers = [room or "sales"]
+    if "owners" in to:  # the meeting's tasks leave the Meeting room for the room of each person given one
+        src, takers = "meet", sorted({r for x in (e.get("content") or {}).get("tasks", []) if (r := access.department(x["owner"])) in ROOMS}) or [room or "sales"]
     m = {"id": e["id"], "type": RENAMED.get(t, t), "source": t, "caused_by": e.get("caused_by") or e["id"], "at": e["at"], "deal": e.get("deal"),
          "agent": e.get("agent") or (e.get("actor") if room_of(e.get("actor")) else None), "from": src, "to": takers, "card": card, "text": _words(e),
          "record": _record(e), "count": 1, "stuck": card == "stuck"}

@@ -231,7 +231,7 @@ export function attachFloor(ctx) {
     document.getElementById("floorripple")?.remove();
     const w = document.createElement("div"); w.id = "floorripple";
     w.style.cssText = "position:fixed;left:50%;top:84px;transform:translateX(-50%);display:flex;gap:18px;align-items:center;background:rgba(13,18,27,.94);border:1px solid #e8c77a;border-radius:14px;padding:12px 18px;z-index:55;color:#ece8df;font:13px Inter,system-ui;box-shadow:0 12px 40px #000a";
-    const rows = [["1", "sentence"], [r.rooms?.length || 0, "rooms alerted"], [r.withdrawn + r.sent_back, "tasks reopened"], [r.approvals, "approvals refused"], [r.recalled, "forms recalled"], [r.other, "other work touched"]];
+    const rows = [["1", "sentence"], [r.rooms?.length || 0, "rooms alerted"], [r.withdrawn, "tasks withdrawn"], [r.approvals, "approvals back to the approver"], [r.sent_back, "drafts sent back"], [r.recalled, "forms recalled"], [r.other, "other work touched"]];
     for (const [v, l] of rows) { const c = document.createElement("div"); c.style.textAlign = "center"; const b = document.createElement("b"); b.style.cssText = "display:block;font:600 24px Inter,system-ui"; b.textContent = v; c.append(b, l); w.append(c); }
     const x = document.createElement("button"); x.textContent = "×"; x.title = "Close"; x.style.cssText = "background:none;border:0;color:#8b92a3;font-size:18px;cursor:pointer"; x.onclick = () => w.remove(); w.append(x);
     document.body.append(w); w.dataset.counts = JSON.stringify(rows);

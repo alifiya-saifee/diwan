@@ -1,11 +1,11 @@
 {
- "at": "2026-11-01T14:39:00",
+ "at": "2026-11-02T17:46:53",
  "mode": "rules",
  "suites": {
   "Scribe": {
    "passed": 12,
    "total": 12,
-   "seconds": 0.2,
+   "seconds": 0.0,
    "cases": [
     {
      "case": "We're looking at two point six million for the Marina unit.",
@@ -82,9 +82,9 @@
    ]
   },
   "Rania": {
-   "passed": 14,
+   "passed": 13,
    "total": 14,
-   "seconds": 1.2,
+   "seconds": 0.1,
    "cases": [
     {
      "case": "Hi",
@@ -97,63 +97,63 @@
      "case": "Hi → 2 bed in the Marina around 2.7 million",
      "pass": true,
      "why": "",
-     "reply": "Thank you, noted. I'll send you the best options once I know a little more. Are you looking to buy, rent, sell or let out a property?",
+     "reply": "Perfect, thank you. Just to check: is it to buy or to rent?",
      "by": "rules"
     },
     {
      "case": "I want to buy → Dubai Marina → An apartment → 2 bed → Budget is 2.7 million → Cash → Now → To live in → UAE resident",
      "pass": true,
      "why": "",
-     "reply": "Thank you! Based on what you told me, these fit best:\n1. Unit 1204, Marina Crest, Dubai Marina: 2 bed apartment, AED 2,600,000 (ref MC-1204, permit SAMPLE-71204)",
+     "reply": "Thank you! Based on what you told me, these fit best:\n1. Unit 1204, Marina Crest, Dubai Marina: 2 bed apartment, AED 2,600,000 (ref MC-1204, permit SAMPLE-71204",
      "by": "rules"
     },
     {
      "case": "I want to buy → Dubai Marina → An apartment → 2 bed → Budget is 2.7 million → Cash → Now → To live in → UAE resident → The first one",
      "pass": true,
      "why": "",
-     "reply": "Great choice! Unit 1204, Marina Crest (MC-1204). I've told Omar, who will call you shortly. Would you like to see it? Omar is free Wednesday 28 Oct, 10:00 AM, We",
+     "reply": "Great choice! Unit 1204, Marina Crest (MC-1204). I've told Omar, who will call you shortly. Would you like to see it? Omar is free Wednesday 28 Oct, 10:00 AM, W",
      "by": "rules"
     },
     {
      "case": "Hi → Any villa in JVC?",
      "pass": true,
      "why": "",
-     "reply": "Here's what fits:\n• Villa 88, Jumeirah Village Circle: 4 bed villa, AED 1,900,000 (ref JVC-88, permit SAMPLE-60088)\nWould you like to see one? Tell me a day and",
+     "reply": "Good question. I'll check that for Villa 88 with Omar and come back to you here. Just to check: is it to buy or to rent?",
      "by": "rules"
     },
     {
      "case": "Hi → Any 1 bed in Downtown?",
      "pass": true,
      "why": "",
-     "reply": "Noted. Omar will look for options that fit and contact you. Are you looking to buy, rent, sell or let out a property?",
+     "reply": "Noted. Omar will look for options that fit and contact you. Just to check: is it to buy or to rent?",
      "by": "rules"
     },
     {
      "case": "Hi → What are your fees?",
      "pass": true,
      "why": "",
-     "reply": "Our buyer commission is 2% of the price plus VAT. The Dubai Land Department transfer fee is 4%. Are you looking to buy, rent, sell or let out a property?",
+     "reply": "Our buyer commission is 2% of the price plus VAT. The Dubai Land Department transfer fee is 4%. Just to check: is it to buy or to rent?",
      "by": "rules"
     },
     {
      "case": "Hi → Do you accept cash?",
      "pass": true,
      "why": "",
-     "reply": "That's one for Omar personally, who will reply to you here.",
+     "reply": "Good question. Omar answers questions about payments personally, so I've asked them to reply to you here shortly.",
      "by": "policy"
     },
     {
      "case": "Hi → Can I pay in crypto?",
      "pass": true,
      "why": "",
-     "reply": "That's one for Omar personally, who will reply to you here.",
+     "reply": "Good question. Omar answers questions about payments personally, so I've asked them to reply to you here shortly.",
      "by": "policy"
     },
     {
      "case": "Hi → Can you give me a discount?",
      "pass": true,
      "why": "",
-     "reply": "That's one for Omar personally, who will reply to you here.",
+     "reply": "Good question. Omar answers questions about the price personally, so I've asked them to reply to you here shortly.",
      "by": "policy"
     },
     {
@@ -172,16 +172,16 @@
     },
     {
      "case": "Hi → Can I see MC-1204 Saturday at 4pm?",
-     "pass": true,
-     "why": "",
-     "reply": "Booked: Unit 1204, Marina Crest (MC-1204) with Omar, Saturday 31 Oct, 4:00 PM. Please bring a photo ID for the building lobby.",
+     "pass": false,
+     "why": "no viewing booked",
+     "reply": "Thanks, I've noted you'd like to see Unit 1204, Marina Crest (MC-1204), Saturday 31 Oct, 4:00 PM. Omar will talk to you and confirm the place and the time.",
      "by": "rules"
     },
     {
      "case": "Hi → What time do you open?",
      "pass": true,
      "why": "",
-     "reply": "We're open Monday to Saturday, 10am to 7pm. Viewings run in the same hours. Are you looking to buy, rent, sell or let out a property?",
+     "reply": "We're open Monday to Saturday, 10am to 7pm. Viewings run in the same hours. Just to check: is it to buy or to rent?",
      "by": "rules"
     }
    ]
@@ -189,7 +189,7 @@
   "Nova": {
    "passed": 18,
    "total": 18,
-   "seconds": 1.7,
+   "seconds": 2.4,
    "cases": [
     {
      "case": "Who is paying for Karim?",
@@ -314,7 +314,7 @@
      "case": "Hi Nova, how are you?",
      "pass": true,
      "why": "",
-     "reply": "Good afternoon, Layla. All good here. Nothing needs you right now.",
+     "reply": "Good evening, Layla. All good here. Nothing needs you right now.",
      "by": "rules"
     }
    ]
@@ -431,7 +431,7 @@
   "Studio": {
    "passed": 14,
    "total": 14,
-   "seconds": 0.3,
+   "seconds": 0.0,
    "cases": [
     {
      "case": "Competitor watch finds every post above its account's average for its kind",
@@ -506,6 +506,6 @@
    ]
   }
  },
- "passed": 77,
+ "passed": 76,
  "total": 77
 }

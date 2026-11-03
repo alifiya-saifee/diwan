@@ -255,6 +255,10 @@ class Ledger:
                                          "act": "confirm" if t.props.get("step") == "figures" else "docs"})
                 elif who and ag == "screen" and t.props.get("result") == "possible match":
                     items.append(base | {"id": t.id, "who": who, "kind": "Possible match", "sev": "bad", "title": f"{t.props.get('person')}: {t.props.get('hit')}", "at": t.at, "act": "hit"})
+                elif who and ag == "steps":
+                    q = t.props.get("quote")
+                    items.append(base | {"id": t.id, "who": who, "kind": "From a meeting", "sev": "info", "title": t.props["action"], "at": t.at, "act": "stepdone",
+                                         "due": t.props.get("due"), "text": f'{t.props.get("speaker") or "Said"}: "{q}"' if q else "Added after the meeting"})
                 elif who and ag in ("screen", "report", "formf", "transfer", "inv"):
                     kind, sev, act = {"screen": ("Screening", "warn", "screen"), "report": ("Report to file", "bad", "filed"),
                                       "formf": ("Form F", "warn", "submitted"), "transfer": ("Transfer", "info", "open" if t.props.get("flag") == "gate" else "tick"),
@@ -689,6 +693,13 @@ def formf_submitted(tid: str, body: Submitted):
 class Tick(BaseModel):
     by: str
     note: str = ""
+
+
+@router.post("/api/desk/tasks/{tid}/step-done")
+def step_done(tid: str, body: Tick):
+    from diwan.agents import steps
+    _call(steps.done, _office(), tid, by=pid(body.by), note=body.note)
+    return {"ok": True}
 
 
 @router.post("/api/desk/tasks/{tid}/tick")
