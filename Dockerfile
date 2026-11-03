@@ -14,12 +14,12 @@ RUN grep -v -E '^(pytest|faster-whisper)' requirements.txt > runtime.txt \
 # Named folders only, so .env, the databases and media can never end up in the image.
 COPY diwan ./diwan
 COPY web ./web
-COPY tapes ./tapes
 COPY evals ./evals
 COPY deploy ./deploy
 
 # The spend ledger sits on the disk, or the monthly cap would reset on every deploy.
 RUN ln -s /data/usage.jsonl /app/usage.jsonl
 
-ENV PYTHONUNBUFFERED=1 PYTHONUTF8=1
+# Recorded model replies (tapes/) stay out of the image: a public server always calls the models live.
+ENV PYTHONUNBUFFERED=1 PYTHONUTF8=1 DIWAN_TAPE=off
 CMD ["python", "-m", "deploy.start"]
