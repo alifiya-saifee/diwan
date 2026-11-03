@@ -93,3 +93,10 @@ def test_arabic_clients_are_asked_in_arabic(office):
     say(office, "مرحبا")
     r = say(office, "Can I see MC-1204 next Tuesday at 4pm? شكرا")
     assert r.startswith("للتأكد فقط")
+
+
+def test_todays_weekday_with_a_time_already_passed_is_next_week_without_asking():
+    from diwan.slots import DUBAI, parse, which_day
+    tue_night = datetime(2026, 11, 3, 20, 58, tzinfo=DUBAI)
+    assert which_day("call me Tuesday at 10", tue_night) is None and parse("call me Tuesday at 10", tue_night).day == 10
+    assert which_day("call me Tuesday at 10", tue_night.replace(hour=8)) is not None  # 10am today is still ahead: she asks

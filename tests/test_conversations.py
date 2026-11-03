@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from diwan import demo, leads  # noqa: E402
+from diwan import demo, events, leads  # noqa: E402
 from diwan.agents import nudge, reception, reminders  # noqa: E402
 from diwan.events import EventLog  # noqa: E402
 from diwan.office import Office  # noqa: E402
@@ -77,9 +77,12 @@ def play(name, msgs, confirms=False):
     """The conversation, then a day or two of quiet (follow-ups and reminders); the office and the chat. `confirms`: the
     broker confirms each viewing (the app's default) instead of Rania booking it."""
     reception.agent_confirms = lambda g: confirms
+    clock = [MON]
+    events.now = lambda: clock[0].isoformat(timespec="milliseconds")  # each event at the conversation's own time, never the real clock
     o, ph, t, handed = office(), f"97150{abs(hash(name)) % 10**7:07d}", MON, []
     for m in msgs:
         t += timedelta(minutes=2)
+        clock[0] = t
         if isinstance(m, list):  # a burst: kept together, one reply
             for x in m[:-1]:
                 reception.receive(o, ph, x, name_="Sara Khan", now=t)
@@ -92,9 +95,10 @@ def play(name, msgs, confirms=False):
         due = nudge.state(o.graph(), o.graph().nodes[f"chat:{ph}"], t)["next"]
         if not due or datetime.fromisoformat(due) > MON + timedelta(days=3):
             break
-        t = max(t, datetime.fromisoformat(due))
+        t = clock[0] = max(t, datetime.fromisoformat(due))
         nudge.sweep(o, t)
     for at in (MON + timedelta(days=1, hours=1), MON + timedelta(days=3)):
+        clock[0] = max(clock[0], at)
         nudge.sweep(o, at)
         reminders.sweep(o, at)
     return o, o.graph().nodes[f"chat:{ph}"], handed
@@ -114,7 +118,8 @@ def problems(name, chat, handed):
 
 @pytest.fixture(autouse=True)
 def _mode_back(monkeypatch):
-    monkeypatch.setattr(reception, "agent_confirms", reception.agent_confirms)  # play() switches it: put back after each test
+    monkeypatch.setattr(reception, "agent_confirms", reception.agent_confirms)  # play() switches these: put back after each test
+    monkeypatch.setattr(events, "now", events.now)
 
 
 @pytest.mark.parametrize("confirms", [True, False], ids=["broker-confirms", "rania-books"])

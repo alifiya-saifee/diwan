@@ -335,7 +335,10 @@ def which_day(text: str, now: datetime) -> list | None:
     if re.search(rf"\bnext\s+{DAYS[w][:3]}", low):
         coming = coming if coming > today else coming + timedelta(days=7)
         return [coming, coming + timedelta(days=7)]
-    return [today, today + timedelta(days=7)] if coming == today else None
+    if coming != today:
+        return None
+    t = parse(with_day(text, today), now)  # that time today (none when no hour was said)
+    return None if t and t <= now else [today, today + timedelta(days=7)]  # "Tuesday at 10" at 9pm: only next week fits
 
 
 def with_day(text: str, d) -> str:

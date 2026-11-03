@@ -634,19 +634,22 @@ def test_a_real_question_is_never_silence(office, monkeypatch):
 
 @pytest.mark.parametrize("text,told", [("I'm calling my lawyer, this is unacceptable", True), ("Please pay the new IBAN AE07 0331", True),
                                        ("I'm ready to buy today", True), ("Thanks", False), ("Is it still available?", False)])
-def test_what_the_owner_hears_the_moment_it_happens(office, text, told):
+def test_what_the_owner_hears_the_moment_it_happens(office, text, told, monkeypatch):
+    from diwan import events
     from diwan.agents import watch
+    monkeypatch.setattr(events, "now", lambda: NOON.isoformat())  # at noon: at night good news waits for the morning
     client(office, text)
-    assert watch.alerts(office) == (1 if told else 0)
+    assert watch.alerts(office, NOON + timedelta(minutes=1)) == (1 if told else 0)
     assert bool(watch.headsups(office.log, "layla", 0)) == told
-    assert watch.alerts(office) == 0  # once
+    assert watch.alerts(office, NOON + timedelta(minutes=2)) == 0  # once
 
 
-def test_old_messages_do_not_set_off_alerts(office):
-    from datetime import timedelta
+def test_old_messages_do_not_set_off_alerts(office, monkeypatch):
+    from diwan import events
     from diwan.agents import watch
+    monkeypatch.setattr(events, "now", lambda: NOON.isoformat())
     client(office, "I'm calling my lawyer")
-    assert watch.alerts(office, datetime.now(DUBAI) + timedelta(hours=3)) == 0
+    assert watch.alerts(office, NOON + timedelta(hours=3)) == 0
 
 
 def test_cancel_my_reminder_is_not_swallowed_by_a_waiting_read_back(office):
