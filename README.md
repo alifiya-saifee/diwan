@@ -85,6 +85,12 @@ When a client corrects themselves, Diwan updates the office in one step:
 | **Working** | All capabilities above, verified end to end in the browser, with 1,301 automated tests passing |
 | **In progress** | A live WhatsApp connection (currently a sandbox), video-call integration, calendar sync and full Arabic responses |
 
+## Roadmap
+
+- **3D meeting room:** a live meeting shown in the office's meeting room, with commitments rising as cards as they're spoken.
+- **Night replay:** the office's overnight work replayed on the 3D floor each morning.
+- **Live channels:** a real WhatsApp line, a Zoom or Meet bot, and Google or Outlook calendar sync.
+- **Full Arabic** conversations, and UAE-hosted data for production.
 
 ## Getting started
 
