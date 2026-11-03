@@ -55,7 +55,7 @@ When a client corrects themselves, Diwan updates the office in one step:
 - **Every decision on the record.** An append-only log keeps every message, fact and decision; nothing is edited or deleted. The memory graph replays any deal's history step by step.
 - **Hire an agent in one sentence.** The owner describes a new agent in plain words, and it joins the office with built-in limits: it can't message clients, change facts or move money.
 - **Cost-aware.** Every model call is logged with its cost. A monthly cap stops spending when it's reached, and the agents fall back to plain rules, saying so.
-- **Tested like a real office.** 1,301 automated tests, 35 browser flows that drive the real pages as each team member, and 40 kinds of client conversation read end to end.
+- **Tested like a real office.** 1,318 automated tests, 35 browser flows that drive the real pages as each team member, and 40 kinds of client conversation read end to end.
 
 ## Capabilities
 
@@ -64,6 +64,7 @@ When a client corrects themselves, Diwan updates the office in one step:
 | **Client intake** | An AI receptionist answers WhatsApp enquiries at any hour from real listings only, qualifies leads and schedules viewings for broker confirmation |
 | **Meetings** | Consent-gated live transcription, with facts captured with speaker and quote, and commitments turned into tasks |
 | **Coordination** | A personal assistant for every team member. The owner's assistant routes requests, and every answer cites its source |
+| **Calendar** | Each assistant runs its person's calendar: what's on, who's free, meetings with colleagues on both calendars, and client calls, each with a real Zoom link. Nothing is booked without a yes |
 | **Compliance** | Party screening, source-of-funds analysis, cash payments held for review, and role-based confidentiality |
 | **Deal execution** | Approvals linked to facts, regulatory forms prepared up to submission, and invoices calculated from agreed terms |
 | **Marketing** | Listing scripts scored by an AI creative director, film lists for brokers and a weekly content plan |
@@ -73,7 +74,7 @@ When a client corrects themselves, Diwan updates the office in one step:
 
 | Model | Role in Diwan |
 |---|---|
-| **Muse Spark** | Client conversations, the assistants, fact extraction, meeting tasks, script writing and review |
+| **Muse Spark** | Client conversations, the assistants, fact extraction, meeting tasks, script writing and review. Calendar answers and bookings are read from the records by rules, so a time is never guessed |
 | **Muse Spark Open** (via Baseten) | Source-of-funds analysis and the counter-argument, run on open weights |
 | **Muse Voice Transcribe** | Live meeting transcription with speaker separation |
 | **Muse Image** | Visual content for marketing |
@@ -82,14 +83,15 @@ When a client corrects themselves, Diwan updates the office in one step:
 
 | | |
 |---|---|
-| **Working** | All capabilities above, verified end to end in the browser, with 1,301 automated tests passing |
-| **In progress** | A live WhatsApp connection (currently a sandbox), video-call integration, calendar sync and full Arabic responses |
+| **Working** | All capabilities above, verified end to end in the browser, with 1,318 automated tests passing |
+| **In progress** | A live WhatsApp connection (currently a sandbox), Google Meet links, calendar sync and full Arabic responses |
 
 ## Roadmap
 
+- **Nova joins your call:** the owner's assistant as a participant in Zoom or Meet. She listens, answers when asked, and shares the deal or calendar on screen.
 - **3D meeting room:** a live meeting shown in the office's meeting room, with commitments rising as cards as they're spoken.
 - **Night replay:** the office's overnight work replayed on the 3D floor each morning.
-- **Live channels:** a real WhatsApp line, a Zoom or Meet bot, and Google or Outlook calendar sync.
+- **Live channels:** a real WhatsApp line and Google or Outlook calendar sync.
 - **Full Arabic** conversations, and UAE-hosted data for production.
 
 ## Getting started

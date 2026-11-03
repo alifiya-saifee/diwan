@@ -623,7 +623,7 @@ def test_the_free_video_reads_the_script_over_the_photos_and_goes_to_editing(off
     r = freevideo.make(office, "MC-1204", by="maya")
     assert r["ok"]
     f = studio.footage(office, "MC-1204")
-    assert f["source"].startswith("free video: the computer's voice") and studio._duration(Path(f["path"])) > 8
+    assert f["source"].startswith(f"free video: {freevideo.voice()} over ") and studio._duration(Path(f["path"])) > 8
     assert studio._width(Path(f["path"])) == 1080
 
 
