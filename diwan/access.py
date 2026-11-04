@@ -402,6 +402,15 @@ deal_guard = None  # set by the app: may this person open this deal? (a broker: 
 file_guard = None  # set by the app: may this person open this client's ID, signature or signed form?
 
 
+# A public demo (DIWAN_TEAM_PASSWORD set: every visitor shares the demo logins) never lets anyone change the keys or the
+# logins from the page: a visitor signed in as the owner could otherwise lock others out or replace the keys.
+LOCKED_IN_DEMO = ("/api/auth/password", "/api/integrations")
+
+
+def demo_locked(path: str, method: str) -> bool:
+    return method in ("POST", "PUT", "PATCH", "DELETE") and path.startswith(LOCKED_IN_DEMO) and bool(config.env("DIWAN_TEAM_PASSWORD"))
+
+
 class Gate:
     """In front of everything, so a route, a page or a socket added later is behind it from the start."""
 
@@ -412,6 +421,8 @@ class Gate:
         if scope["type"] not in ("http", "websocket") or not enabled():
             return await self.app(scope, receive, send)
         path, method = scope["path"], scope.get("method", "GET")
+        if demo_locked(path, method):
+            return await self._refuse(scope, receive, send, 403, "Locked in the public demo", None)
         if _public(path, method):
             return await self.app(scope, receive, send)
         headers = {k.decode("latin1").lower(): v for k, v in scope["headers"]}

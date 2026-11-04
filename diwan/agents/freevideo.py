@@ -163,10 +163,18 @@ def ai_frames(office: Office, ref: str, *, by: str) -> dict:
     return {"ok": True, "frames": len(paths), "review": review}
 
 
+WEB = Path(__file__).resolve().parents[2] / "web"
+
+
+def on_disk(src: str) -> str:
+    """A photo the app serves itself ("/web/img/demo/marina.jpg", as the demo feed lists them) as its file here."""
+    return str(WEB / src[len("/web/"):]) if src.startswith("/web/") else src
+
+
 def _local(src: str, folder: Path, i: int) -> Path | None:
     """A photo as a file here: an uploaded path as it is, a web link downloaded once."""
     if not src.startswith("http"):
-        p = Path(src)
+        p = Path(on_disk(src))
         return p if p.exists() else None
     out = folder / f"photo{i}.jpg"
     if not out.exists():

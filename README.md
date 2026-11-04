@@ -141,6 +141,9 @@ The Marketing room works from the same records as the rest of the office, so a p
   marketing that starts by itself when a listing goes live.
 - **Meetings with guests:** a third voice in a meeting kept as a guest, whose words never become facts until someone
   says who they are, and a screen that hides internal notes while a client is in the call.
+- **Off-plan in 3D:** upload a developer's floor plan; Meta's SAM 3.1 finds each room and Diwan builds a simple walkable
+  3D unit, shared with overseas buyers during a call through a client-safe Diwan link. Room sizes always come from the
+  developer's plan, never from the model.
 - **Nova joins your call:** the owner's assistant as a participant in Zoom or Meet. She listens, answers when asked, and shares the deal or calendar on screen.
 - **3D meeting room:** a live meeting shown in the office's meeting room, with commitments rising as cards as they're spoken.
 - **Night replay:** the office's overnight work replayed on the 3D floor each morning.

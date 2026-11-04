@@ -37,7 +37,7 @@ READ_SCHEMA = {"name": "photos", "strict": True, "schema": {"type": "object", "a
 
 def _load(path: str) -> Image.Image | None:
     try:
-        return Image.open(path).convert("RGB")
+        return Image.open(freevideo.on_disk(path)).convert("RGB")
     except (OSError, ValueError):
         return None
 
@@ -395,6 +395,14 @@ def _wrap(d: ImageDraw.ImageDraw, text: str, font, width: int) -> list[str]:
 ARABIC_DIGITS = str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩")  # the Arabic font has no Western digits: they were drawn as boxes
 
 
+def arabic_text(text: str) -> str:
+    """The Arabic words as the Arabic font can draw them: only its own letters and marks, Arabic digits, and the Arabic
+    thousands separator inside a number ("١٬٣٥٠٬٠٠٠"). The font has no Latin comma (it was a box), and a space would let
+    right-to-left text turn the groups around."""
+    text = re.sub(r"(?<=[0-9\u0660-\u0669]),(?=[0-9\u0660-\u0669])", "\u066C", text or "")
+    return re.sub(r"[^\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF0-9\s.,:!?()-]", "", text).translate(ARABIC_DIGITS).strip()
+
+
 def _wrap_rtl(d: ImageDraw.ImageDraw, text: str, font, width: int) -> list[str]:
     """Arabic words into lines that fit, measured right to left (shaped words are wider than their letters)."""
     out, cur = [], ""
@@ -519,7 +527,7 @@ def _draw(img: Image.Image, text: str, name: str, centre: bool, *, logo: str | N
     while len(lines) > (4 if greeting else 5) and font.size > 36:
         font = _font(font.size - 6)
         lines = _wrap(d, text, font, W - 2 * SAFE - 40)
-    arabic = re.sub(r"[^\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF0-9\s.,:!?()-]", "", arabic or "").translate(ARABIC_DIGITS).strip()  # only what the Arabic font draws
+    arabic = arabic_text(arabic)  # only what the Arabic font draws
     afont = _arabic(int(font.size * .8)) if arabic else None
     alines = _wrap_rtl(d, arabic, afont, W - 2 * SAFE - 40) if afont else []
     while afont and len(alines) > 2 and afont.size > 28:
