@@ -14,6 +14,33 @@ An AI-run back office for real-estate brokerages, where every action traces back
 
 ---
 
+## Try it
+
+**Live demo: https://diwan-kxp4.onrender.com** · a fictional office (names, units, prices and permit numbers are made
+up). It runs on a free server: the first visit after a quiet spell can take about a minute to wake, and the office starts
+fresh each time it does.
+
+Sign in by name. The passwords are in the submission notes.
+
+| Sign in as | To see |
+|---|---|
+| `layla` (the owner) | The whole office, Nova her assistant, every room |
+| `omar` (a broker) | Only his own clients and calendar; nothing from Compliance |
+| `priya` (Compliance) | Screening, source-of-funds work and the reasons, which nobody else sees |
+| `maya` (Marketing) | The Studio: scripts waiting, the week's plan, a post paused by a price change |
+
+**Four steps, as Layla:**
+1. **Office** shows the day already in motion: clients on WhatsApp, viewings booked, work waiting in every room.
+2. **Meeting**: pick *Unit 1204, Marina Crest · Karim Haddad*, press Start, then *The customer agrees*. Type the broker's
+   line, then Karim's: *"Actually, forget my brother. I'll pay it all myself."* (Or press **Karim corrects himself** in
+   the Office.)
+3. Back in **Office**, watch the ripple: Compliance first, only the work that rested on the old words withdrawn,
+   *0 other work touched*.
+4. **Deals** shows the same counts under *Latest correction*. Ask **Nova**: *"Who is paying Karim's deposit?"*
+
+**WhatsApp without a phone:** in **Inbox**, the **Sandbox phone** button lets you write in as a new client and watch
+Rania, the receptionist agent, answer from the real listings. No real WhatsApp number is connected.
+
 ## Problem
 
 A brokerage deal passes through many hands: the broker, Finance, Compliance, Operations and Marketing. Each team acts on what the client said, usually relayed through chat messages and meeting notes.

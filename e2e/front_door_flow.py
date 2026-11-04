@@ -130,7 +130,7 @@ with sync_playwright() as p:
     lst = pg.locator(".conv").filter(has_text="Huda Karim")
     prof = pg.locator("#prof").inner_text()
     check(10, "Once qualified, the lead is 🔥 hot at once, with the options Rania sent",
-          rc["hot"] == "yes" and lst.locator(".tg.hot", has_text="🔥 hot").count() == 1 and "Hot lead: qualified" in prof
+          rc["hot"] == "yes" and lst.locator(".tg.hot", has_text="hot").count() == 1 and "Hot lead: qualified" in prof
           and rc["attention"]["reason"].startswith("🔥 Hot lead, ready to close: qualified") and any(f"{n}. " in reply for n in (1, 2, 3)), shot("10-hot-qualified"))
 
     # 6. A portal lead starts from the listing

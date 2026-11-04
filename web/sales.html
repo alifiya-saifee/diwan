@@ -123,7 +123,7 @@
   <div id="board"><div class="calm">Loading…</div></div>
 </main>
 <script type="module">
-import { h, api, post, follow, header, NAMES, toast, SESSION } from "./app.js";
+import { h, api, post, follow, header, NAMES, toast, SESSION, icon } from "./app.js";
 header("sales.html");
 const $ = (id) => document.getElementById(id);
 const ME = SESSION.person || "layla";
@@ -159,7 +159,7 @@ function callRow(r) {
     person(r, reason, ...(latest ? [line(latest)] : []),
       ...(earlier.length ? [h("details", { class: "more" }, h("summary", {}, `Show ${plural(earlier.length, "earlier message")}`), ...earlier.map(line))] : [])),
     h("div", { class: "acts" }, h("span", { class: `status ${a.pooled ? "pool" : a.overdue ? "late" : ""}` }, when),
-      r.tel && !r.no_calls ? h("a", { class: "btn primary", href: `tel:+${r.tel}` }, "📞 Call") : h("span", { class: "chip" }, r.no_calls ? "No calls" : "Instagram"),
+      r.tel && !r.no_calls ? h("a", { class: "btn primary", href: `tel:+${r.tel}` }, icon("phone"), "Call") : h("span", { class: "chip" }, r.no_calls ? "No calls" : "Instagram"),
       h("button", { onclick: () => clearCard(a.id, r) }, "Called")));
 }
 async function clearCard(id, r) {
@@ -225,8 +225,8 @@ function draw() {
   const work = h("div", {},
     h("div", { class: "label" }, "Needs you now"),
     h("div", { class: "stack" },
-      card("s-call", "📞 Call now", d.call_now.length, d.call_now.map(callRow), d.call_now.length ? "urgent" : "", "Nobody is waiting for a call.", true),
-      card("s-outcome", "❗ Outcome needed", d.outcome.length, d.outcome.map(outcomeRow), d.outcome.length ? "attn" : "", "Every call has an outcome.", true)),
+      card("s-call", [icon("phone"), "Call now"], d.call_now.length, d.call_now.map(callRow), d.call_now.length ? "urgent" : "", "Nobody is waiting for a call.", true),
+      card("s-outcome", [icon("alert"), "Outcome needed"], d.outcome.length, d.outcome.map(outcomeRow), d.outcome.length ? "attn" : "", "Every call has an outcome.", true)),
     h("div", { class: "label" }, "Pipeline"),
     h("div", { class: "lanes" },
       lane("s-new", "New leads", "var(--blue)", d.new.total, d.new.rows.map((r) => lead(r, h("span", { class: "chip" }, CHANNEL[r.source] || r.source))), "No new leads yet",
@@ -240,10 +240,10 @@ function draw() {
       lane("s-follow", "Follow-ups due today", "var(--teal)", d.followups.length, d.followups.map((r) => lead(r, h("span", { class: "status" }, hhmm(r.at)),
         h("span", { class: "chip" }, r.set ? "you set this" : `follow-up ${r.n} of ${r.of}`))), "Nothing due today")));
   const side = h("aside", { class: "side" },
-    h("section", { class: "card", id: "s-team" }, h("h2", {}, d.sees_all ? "👥 Each broker's day" : "📅 Your day"), ...d.brokers.map(brokerRow)),
-    card("s-dup", "🔗 Same person twice?", d.duplicates.length, dupGroups(d.duplicates), d.duplicates.length ? "attn" : "", "No duplicates found."),
-    card("s-quiet", "🌙 Quiet clients", d.quiet.length, d.quiet.map((r) => lead(r)), "", "No one has gone quiet.", true),
-    card("s-match", "🏠 New listings for waiting clients", d.matches.length, d.matches.map((m) => h("div", { class: "srow" },
+    h("section", { class: "card", id: "s-team" }, h("h2", {}, icon("calendar"), d.sees_all ? "Each broker's day" : "Your day"), ...d.brokers.map(brokerRow)),
+    card("s-dup", [icon("link"), "Same person twice?"], d.duplicates.length, dupGroups(d.duplicates), d.duplicates.length ? "attn" : "", "No duplicates found."),
+    card("s-quiet", [icon("clock"), "Quiet clients"], d.quiet.length, d.quiet.map((r) => lead(r)), "", "No one has gone quiet.", true),
+    card("s-match", [icon("bell"), "New listings for waiting clients"], d.matches.length, d.matches.map((m) => h("div", { class: "srow" },
       person(m, `${m.ref}: ${m.title}, ${m.community}, AED ${m.price_aed.toLocaleString("en")}`),
       h("div", { class: "acts" }, h("button", { class: "primary", onclick: async () => { try { await post(`/api/chats/${encodeURIComponent(m.chat)}/send-match`, { by: ME, ref: m.ref }); toast("Sent"); load(); } catch (e) { toast(e.message); } } }, "Send it")))),
       "", "No new matches.", true));

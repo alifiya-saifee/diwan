@@ -42,12 +42,14 @@ header.top {
 .brand svg { width: 26px; height: 26px; }
 .brand .word { font-family: var(--display); font-size: 25px; letter-spacing: .3px; line-height: 1; }
 .brand .tag { white-space: nowrap; font-size: 11px; color: var(--muted); letter-spacing: .4px; border-left: 1px solid var(--line-2); padding-left: 10px; margin-left: 2px; }
-header.top nav { display: flex; gap: 2px; flex-wrap: nowrap; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }  /* more rooms than fit: the menu scrolls, the page does not */
+header.top nav { display: flex; gap: 2px; flex-wrap: nowrap; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }  /* more rooms than fit: the menu scrolls and fades at its edge, never a word cut in half */
+header.top nav::-webkit-scrollbar { display: none; }
 header.top nav a { white-space: nowrap; }
 header.top nav a { color: var(--muted); padding: 7px 12px; border-radius: 9px; font-weight: 500; font-size: 13px; transition: .15s; }
 header.top nav a:hover { color: var(--ink); background: var(--chip); }
 header.top nav a.on { color: var(--bg); background: var(--gold); }
-header.top .status { min-width: 0; overflow: hidden; flex-wrap: nowrap; white-space: nowrap; margin-left: auto; display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+header.top .status { flex: 0 0 auto; min-width: 0; overflow: hidden; flex-wrap: nowrap; white-space: nowrap; margin-left: auto; display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
 .live-pill { flex: 0 0 auto; font-size: 12px; padding: 5px 12px 5px 22px; border-radius: 999px; background: var(--ai); border: 1px solid rgba(92, 207, 181, .35); color: var(--teal); position: relative; cursor: pointer; white-space: nowrap; }
 .live-pill::before { content: ""; position: absolute; left: 10px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: var(--teal); animation: livepulse 1.6s ease-in-out infinite; }
 .live-pill[data-s="speaking"], .live-pill[data-s="thinking"] { color: var(--gold); border-color: rgba(232, 199, 122, .35); background: var(--gold-soft); }
@@ -72,7 +74,7 @@ header.top .status { min-width: 0; overflow: hidden; flex-wrap: nowrap; white-sp
 .dot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(130, 217, 159, .15); }
 .meta-badge { background: linear-gradient(135deg, rgba(126, 166, 248, .18), rgba(181, 145, 243, .18)); border-color: rgba(126, 166, 248, .3); color: #cdd9ff; font-weight: 500; }
 /* the one search across knowledge and the catalog, in every header */
-.hsearch { position: relative; flex: 0 1 240px; min-width: 130px; margin-left: auto; }
+.hsearch { position: relative; flex: 0 1 200px; min-width: 120px; margin-left: auto; }
 .hsearch + .status { margin-left: 0; }
 .hsearch input { padding: 6px 11px; font-size: 13px; border-radius: 9px; }
 .hresults { position: absolute; top: 40px; right: 0; width: min(460px, 92vw); max-height: 70vh; overflow: auto; z-index: 40;
@@ -158,3 +160,7 @@ th { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: .8p
 .converted .cmeta { color: var(--muted); font-size: 12.5px; }
 .converted .copen { margin-top: 4px; font-size: 13px; font-weight: 600; }
 .interim { opacity: .6; font-style: italic; }
+/* line icons (app.js icon()): sit on the text line, in its colour */
+.ic { display: inline-flex; vertical-align: -2px; margin-right: 6px; }
+.ib .ic, .wic .ic, .bell .ic { margin-right: 0; }  /* an icon on its own */
+.ic svg { display: block; }

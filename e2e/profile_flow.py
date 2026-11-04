@@ -141,7 +141,7 @@ with sync_playwright() as p:
     pg.locator(".futabs button", has_text="Calls").click()
     pg.wait_for_timeout(300)
     calls = pg.locator(".quietsec").inner_text()
-    check(13, "The Calls tab lists this lead's call cards and calls", "Calls · " in calls and "📞" in calls, shot("14-calls"), calls.replace("\n", " / ")[:140])
+    check(13, "The Calls tab lists this lead's call cards and calls", "Calls · " in calls and pg.locator(".quietsec .ic").count() > 0, shot("14-calls"), calls.replace("\n", " / ")[:140])
 
     # 3. This lead's follow-ups
     E = "971508880005"
