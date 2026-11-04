@@ -125,7 +125,7 @@ def test_the_scripts_are_offered_best_first(office, monkeypatch):
 
 
 def test_removing_on_the_plan_is_a_signal_and_forgetting_undoes_it(office):
-    d = rhythm.make_plan(office, TODAY, auto=False, days_ahead=2)["days"][1]
+    d = rhythm.make_plan(office, rhythm._local_today(office), auto=False, days_ahead=2)["days"][1]
     rhythm.decide_day(office, d["date"], "reject", by="maya")
     feats = taste.features(office, d["ref"])
     assert any(taste.weight(office, f) < 0 for f in feats)

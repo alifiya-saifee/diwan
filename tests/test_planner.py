@@ -138,7 +138,7 @@ def test_an_automatic_run_rests_on_a_day_without_a_post(office):
 
 
 def test_moving_a_day_keeps_its_reason(office):
-    days = rhythm.make_plan(office, TODAY, auto=False, days_ahead=2)["days"]
+    days = rhythm.make_plan(office, rhythm._local_today(office), auto=False, days_ahead=2)["days"]
     moved = rhythm.move(office, days[0]["date"], 1, by="maya")["days"]
     assert (moved[1]["ref"], moved[1]["why"]) == (days[0]["ref"], days[0]["why"])
 
