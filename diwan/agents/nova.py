@@ -229,7 +229,7 @@ def converse(office: Office, text: str, person: str = "layla", *, session: str =
         return {"kind": "done", "text": f"Done. I'll do my rounds before {at} and have your briefing ready then."}
     if re.match(r"(?i)^(brief me|brief|play( the)? briefing|what('s| is) (new|happening))\W*$", t):
         return brief(office, person, log=False, now=now) | {"kind": "brief"}
-    if not any(re.search(rx, t.lower()) for rx, _, _ in REFUSE) and (out := lobby.draft(t, person, session, now)):
+    if not re.match(BARE_REPLY, t) and not any(re.search(rx, t.lower()) for rx, _, _ in REFUSE) and (out := lobby.draft(t, person, session, now)):
         return out  # a request for a person; anything only people may do is refused by route() below first
     low = t.lower()
     jotting = re.search(r"\b(remember to|don'?t forget|not forget|forget to)\b", low)  # "I need to remember to sign the lease" asks for a note, not a signature
@@ -243,6 +243,8 @@ def converse(office: Office, text: str, person: str = "layla", *, session: str =
         return out
     q = (t.endswith("?") or re.search(HEAR, t.lower()) or re.match(r"(?i)(who|what|when|where|why|how|is|are|does|did|can|which|show|find|any|hi|hello|hey|thanks|summar\w*|tell me|give me)\b", t)
          or re.search(SMALLTALK, t.lower()))
+    if re.match(BARE_REPLY, t):  # a yes or no with nothing waiting for it is never sent to a team as work
+        return {"kind": "answer", "text": "There's nothing waiting for a yes or no just now. What do you need?", "cites": [], "by": "rules"}
     return ask(office, t, person, session=session, tape_root=tape_root, today=now.date()) if q else route(office, t, person, tape_root=tape_root)
 
 
@@ -303,6 +305,7 @@ def ask(office: Office, question: str, person: str = "layla", *, session: str | 
 
 # ---------- everyday questions the records answer directly ----------
 
+BARE_REPLY = r"(?i)^\W*(?:(?:yes|yeah|yep|yup|ok(?:ay)?|sure|right|correct|exactly|that'?s (?:right|correct)|no|nope|not now|cancel|never mind)\W*)+$"  # an answer, never a new request
 SMALLTALK = r"^\s*(hi|hello|hey|salam|marhaba|good (morning|afternoon|evening))\b|\bhow are you\b|^\s*(thanks|thank you)\b"
 HEAR = r"\b(can|do|could) you (hear|see|read) me\b|\bare you (there|listening|working)\b|^\W*(testing|test|mic check)\W*$"
 ASKING = r"\W*(who|what|when|where|why|how|is|are|does|did|can|which|should|do|has|have|will|would)\b"
@@ -325,6 +328,11 @@ def everyday(office: Office, g: Graph, q: str, person: str, req: str) -> dict | 
 
     if re.search(HEAR, low):
         return {"kind": "answer", "text": f"Yes, I can hear you, {name(person)}. What do you need?", "cites": [], "by": "rules", "request": req}
+    if re.match(BARE_REPLY, q):
+        return {"kind": "answer", "text": "There's nothing waiting for a yes or no just now. What do you need?", "cites": [], "by": "rules", "request": req}
+    from diwan import app_guide
+    if said := app_guide.answer(q, person):  # the app itself: connections, models, spend, and where things are
+        return {"kind": "answer", "text": said, "cites": [], "by": "rules", "request": req}
     if re.search(SMALLTALK, low) and len(low.split()) <= 6:
         if low.startswith(("thanks", "thank you")):
             return {"kind": "answer", "text": "Any time.", "cites": [], "by": "rules", "request": req}

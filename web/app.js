@@ -154,14 +154,34 @@ export const pa = (() => {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let log = [], rec = null, on = false, state = "off", busy = false, playing = false, talking = null, turn = 0, held = null;
   try { log = JSON.parse(localStorage.getItem(key()) || "[]"); } catch { log = []; }
-  const subs = new Set(), states = new Set();
+  const subs = new Set(), states = new Set(), hearing = new Set();  // hearing: the words as they are heard, before the sentence ends
   const push = (m) => { log.push(m); log = log.slice(-60); try { localStorage.setItem(key(), JSON.stringify(log)); } catch {} subs.forEach((f) => f(m)); };
   const show = (s) => { state = s; states.forEach((f) => f(s)); };
   const words = (s) => s.toLowerCase().match(/[\p{L}\p{N}']+/gu) || [];
-  const echo = (t) => {  // her own voice coming back through the speakers
-    if (!talking || Date.now() > talking.until) return false;
+  const MONTHS = { jan: "january", feb: "february", mar: "march", apr: "april", jun: "june", jul: "july", aug: "august", sep: "september", sept: "september", oct: "october", nov: "november", dec: "december",
+    mon: "monday", tue: "tuesday", wed: "wednesday", thu: "thursday", fri: "friday", sat: "saturday", sun: "sunday" };
+  const nth = (n) => n + (/1[123]$/.test(n) ? "th" : { 1: "st", 2: "nd", 3: "rd" }[n.slice(-1)] || "th");
+  const spoken = (text) => {  // the words as the voice says them: "4 Nov" comes out as "the 4th of November"
+    const s = new Set(["the", "of", "at", "and"]);
+    for (const x of words(text)) { s.add(x); if (MONTHS[x]) s.add(MONTHS[x]); if (/^\d{1,2}$/.test(x)) s.add(nth(x)); }
+    return s;
+  };
+  let recent = [];  // what she said in the last few seconds: the browser can hand it back late
+  const echo = (t) => {  // her own voice coming back through the speakers: true, or what they said after it
+    const now = Date.now();
+    recent = recent.filter((r) => now < r.until);
     const w = words(t);
-    return w.length > 0 && w.filter((x) => talking.words.has(x)).length / w.length >= 0.6;
+    if (!w.length) return false;
+    for (const r of [...(talking ? [talking] : []), ...recent]) {
+      if (!r.until || now > r.until) continue;
+      if (w.filter((x) => r.words.has(x)).length / w.length >= 0.6) {  // mostly hers: keep only a tail that isn't
+        let i = w.length;
+        while (i > 0 && !r.words.has(w[i - 1])) i--;
+        const tail = w.slice(i);
+        return tail.length >= 1 && i >= 3 ? tail.join(" ") : true;
+      }
+    }
+    return false;
   };
   const hush = () => { if (playing) window.speechSynthesis?.cancel(); };
   const hear = () => {  // the mic stays open while she talks and thinks, so she can be cut off
@@ -169,8 +189,12 @@ export const pa = (() => {
     rec = new SR(); rec.lang = "en-US"; rec.continuous = true; rec.interimResults = true;
     rec.onresult = (e) => {
       const r = e.results[e.results.length - 1], t = r[0].transcript.trim();
-      if (!t || echo(t)) return;
+      if (!t) return;
+      const back = echo(t);
+      if (back === true) return;
+      if (typeof back === "string") { if (r.isFinal) heard(back); return; }
       if (words(t).length >= 2) hush();
+      hearing.forEach((f) => f(r.isFinal ? "" : t));
       if (r.isFinal) heard(t);
     };
     rec.onerror = (e) => { if (["not-allowed", "service-not-allowed", "audio-capture"].includes(e.error)) { stop(); toast("Allow the microphone for this site to talk to your PA"); } };
@@ -190,10 +214,10 @@ export const pa = (() => {
     await loaded();
     return new Promise((done) => {
       const words_ = clean.length > 500 ? `${clean.slice(0, 500).replace(/[^.?!]*$/, "")}` : clean;
-      const mine = talking = { words: new Set(words(clean)), until: Infinity };
+      const mine = talking = { words: spoken(clean), until: Infinity };
       playing = true;
       let t, watchdog, started = false, tries = 0;
-      const end = () => { clearTimeout(t); clearTimeout(watchdog); if (talking === mine) { playing = false; mine.until = Date.now() + 1500; } done(); };
+      const end = () => { clearTimeout(t); clearTimeout(watchdog); if (talking === mine) { playing = false; mine.until = Date.now() + 8000; } recent = [...recent, mine].slice(-3); done(); };
       t = setTimeout(end, Math.min(25000, clean.length * 90 + 4000));  // a browser that never says it finished can't leave her deaf
       const go = () => {
         const u = new SpeechSynthesisUtterance(words_), v = speechSynthesis.getVoices();
@@ -216,28 +240,31 @@ export const pa = (() => {
   };
   let queue = Promise.resolve();  // one voice at a time: nothing she says cuts off what she's saying
   const speak = (text) => { const next = queue.then(() => talk(text)); queue = next.catch(() => {}); return next; };
+  let order = Promise.resolve();  // answers come back in the order things were asked, however long each one took
   async function say(text, asked, voice = false) {
     text = (text || "").trim();
     if (!text) return null;
     const mine = ++turn, line = { from: "you", text };
+    const before = order;
+    let done;
+    order = new Promise((ok) => { done = ok; });
     const history = log.slice(-12).map((m) => ({ who: m.from === "you" ? "You" : "Nova", text: m.text }));
     if (!voice) push(line);  // off the open mic it only shows once she knows it was meant for her
     busy = true; hush(); show(on ? "thinking" : "off");
-    const wait = on ? setTimeout(() => { if (mine === turn && busy) speak("One moment."); }, 7000) : null;  // Muse can take a while: she doesn't just go quiet
+    const wait = on ? setTimeout(() => { if (mine === turn && busy) speak("Let me check."); }, 3500) : null;  // Muse can take a while: she doesn't just go quiet
     let r;
     try { r = await post("/api/pa/say", { text: asked || text, person: me(), session: `pa-${me()}`, voice, history }); }
     catch (e) { r = e.message === "Failed to fetch" ? { kind: "answer", text: "I lost the line for a moment. Say that again?" } : { kind: "refused", text: e.message }; }
     clearTimeout(wait);
-    if (r.kind !== "silent" && (r.text || "").trim()) {
-      if (voice) push(line);
-      push({ from: "pa", text: r.text, kind: r.kind, options: r.options || [], cites: r.cites || [], asked: text });
-      if (on && mine === turn) { held = null; show("speaking"); await speak(r.spoken || r.text); }
-      else if (on) held = r.spoken || r.text;  // the mic broke their sentence in two: this is the answer unless the next piece has a better one
-    } else if (on && mine === turn && held) {
-      const said = held; held = null;
-      show("speaking"); await speak(said);
-    }
-    if (mine === turn) { busy = false; show(on ? "listening" : "off"); }  // cut off: the newer turn has the floor
+    await before;  // an earlier question is answered first
+    try {
+      if (r.kind !== "silent" && (r.text || "").trim()) {
+        if (voice) push(line);
+        push({ from: "pa", text: r.text, kind: r.kind, options: r.options || [], cites: r.cites || [], asked: text });
+        if (on) { show("speaking"); await speak(r.spoken || r.text); }  // every answer is said: two or three questions in a row each get theirs
+      }
+    } finally { done(); }
+    if (mine === turn) { busy = false; show(on ? "listening" : "off"); }
     return r;
   }
   const heard = (t) => {
@@ -274,7 +301,7 @@ export const pa = (() => {
     try { if (localStorage.getItem(`${key()}.live`)) start(); } catch {}
     if (!timer) { timer = setInterval(watch, 60000); setTimeout(watch, 4000); }
   };
-  return { say, start, stop, resume, push, get log() { return log; }, get state() { return state; }, get live() { return on; }, subs, states,
+  return { say, start, stop, resume, push, get log() { return log; }, get state() { return state; }, get live() { return on; }, subs, states, hearing,
            clear() { log = []; try { localStorage.removeItem(key()); } catch {} } };
 })();
 
@@ -315,6 +342,8 @@ function paBox() {
   const panel = h("div", { class: "pa-panel", hidden: true });
   const add = (m) => { log.append(h("div", { class: `pa-m ${m.from === "you" ? "me" : m.kind || ""}` }, m.text, ...(m.options || []).map((o) => h("button", { onclick: () => pa.say(o) }, o)))); log.scrollTop = 1e9; };
   pa.log.forEach(add); pa.subs.add(add);
+  let live = null;
+  pa.hearing.add((t) => { if (!t) { live?.remove(); live = null; return; } live ??= log.appendChild(h("div", { class: "pa-m me interim" })); live.textContent = `${t} …`; log.scrollTop = 1e9; });
   input.onkeydown = (e) => { if (e.key === "Enter") { const t = input.value; input.value = ""; pa.say(t); } };
   const who = SESSION.owner ? "Nova" : `${SESSION.name || "Your"}'s PA`;
   panel.append(h("div", { class: "pa-head" }, who, h("span", {}, h("button", { title: "Keep her on the line: talk without clicking", onclick: () => (pa.live ? pa.stop() : pa.start()) }, "🎙 Live"), " ",

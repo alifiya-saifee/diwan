@@ -106,6 +106,12 @@ function empty() {
 }
 function draw() { $("answer").replaceChildren(...(pa.log.length ? pa.log.map(bubble) : [empty()])); $("answer").scrollTop = 1e9; }
 pa.subs.add(draw);
+let hearingNow = null;  // what they are saying, shown as they say it
+pa.hearing.add((t) => {
+  if (!t) { hearingNow?.remove(); hearingNow = null; return; }
+  hearingNow ??= $("answer").appendChild(h("div", { class: "answer me interim" }));
+  hearingNow.textContent = `${t} …`; $("answer").scrollTop = 1e9;
+});
 const paint = (s) => { const b = $("livebtn"); b.classList.toggle("on", s !== "off"); b.textContent = s === "off" ? "Go live" : "End call"; };
 pa.states.add(paint);
 $("livebtn").onclick = () => (pa.live ? pa.stop() : pa.start());
