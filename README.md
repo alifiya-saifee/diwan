@@ -55,7 +55,7 @@ When a client corrects themselves, Diwan updates the office in one step:
 - **Every decision on the record.** An append-only log keeps every message, fact and decision; nothing is edited or deleted. The memory graph replays any deal's history step by step.
 - **Hire an agent in one sentence.** The owner describes a new agent in plain words, and it joins the office with built-in limits: it can't message clients, change facts or move money.
 - **Cost-aware.** Every model call is logged with its cost. A monthly cap stops spending when it's reached, and the agents fall back to plain rules, saying so.
-- **Tested like a real office.** 1,318 automated tests, 35 browser flows that drive the real pages as each team member, and 40 kinds of client conversation read end to end.
+- **Tested like a real office.** 1,367 automated tests, 35 browser flows that drive the real pages as each team member, and 40 kinds of client conversation read end to end.
 
 ## Capabilities
 
@@ -70,6 +70,26 @@ When a client corrects themselves, Diwan updates the office in one step:
 | **Marketing** | Listing scripts scored by an AI creative director, film lists for brokers and a weekly content plan |
 | **Improvement** | Weekly reports from each team, with controlled experiments tested on half the leads before being kept |
 
+## Marketing Studio
+
+The Marketing room works from the same records as the rest of the office, so a post can't say what the listing doesn't.
+
+- **Scripts with a frame-by-frame plan.** Muse Spark writes three script options, in English and Arabic. Each comes
+  with its shots (when, what's shown, the words on screen, the spoken line) and a visual brief per frame. A Creative
+  Director scores every option, and a person picks one.
+- **The right format for what exists.** A reel, a carousel, a single image or a designed graphic, chosen from the photos
+  and footage the listing actually has.
+- **Pictures that look like the place.** A listing uses only its own photos. A topic post gets photographs drawn by
+  Muse Image from a planned shot (place, camera, light, materials), with no text or logos inside the picture.
+- **Brand and permit on every picture.** The company's logo and colours go on each slide, and a listing's advertising
+  permit sits on every picture of it. A listing with no permit is never advertised.
+- **A change of facts stops the post.** If a listing's price, status or permit changes after its script was approved,
+  the post pauses with the reason ("The price was AED 1,900,000, now AED 1,950,000"). It resumes when the facts match
+  again, and comes down if the unit is sold.
+- **A plan for the week.** Posting days and the best time for each post, with Approve and Reschedule buttons.
+  Nothing goes out without a person's yes. Each platform (Instagram, Facebook, LinkedIn, TikTok, YouTube Shorts,
+  Property Finder) gets copy written in its own style.
+
 ## Built on Meta's models
 
 | Model | Role in Diwan |
@@ -83,11 +103,17 @@ When a client corrects themselves, Diwan updates the office in one step:
 
 | | |
 |---|---|
-| **Working** | All capabilities above, verified end to end in the browser, with 1,318 automated tests passing |
+| **Working** | All capabilities above, verified end to end in the browser, with 1,367 automated tests passing |
 | **In progress** | A live WhatsApp connection (currently a sandbox), Google Meet links, calendar sync and full Arabic responses |
 
 ## Roadmap
 
+- **Marketing next:** a scannable QR code on the last frame that opens WhatsApp with the listing's code; long YouTube
+  walk-throughs with chapters; a LinkedIn investment card that shows a yield only when the office has recorded one;
+  the photo director choosing shots with a clearer sense of place, and the best of two pictures for the opening frame;
+  marketing that starts by itself when a listing goes live.
+- **Meetings with guests:** a third voice in a meeting kept as a guest, whose words never become facts until someone
+  says who they are, and a screen that hides internal notes while a client is in the call.
 - **Nova joins your call:** the owner's assistant as a participant in Zoom or Meet. She listens, answers when asked, and shares the deal or calendar on screen.
 - **3D meeting room:** a live meeting shown in the office's meeting room, with commitments rising as cards as they're spoken.
 - **Night replay:** the office's overnight work replayed on the 3D floor each morning.

@@ -37,3 +37,11 @@ def test_never_with_supabase_logins(start, monkeypatch):
     monkeypatch.setattr(access, "has_password", lambda p: True)
     monkeypatch.setenv("DIWAN_TEAM_PASSWORD", "the team's password")
     assert start.logins() == []
+
+
+def test_the_start_says_whether_pictures_can_carry_arabic(start, monkeypatch):
+    from diwan.agents import eventpost
+    monkeypatch.setattr(eventpost, "ARABIC_FONTS", ("/nowhere/NoArabic.ttf",))
+    assert start.arabic().startswith("Arabic on pictures: no, no Arabic font")
+    monkeypatch.setattr(eventpost, "ARABIC_FONTS", (__file__,))  # any file that exists stands in for a font
+    assert start.arabic().startswith("Arabic on pictures: yes") or "shaping" in start.arabic()

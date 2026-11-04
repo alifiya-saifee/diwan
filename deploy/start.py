@@ -37,8 +37,21 @@ def logins() -> list[str]:
     return given
 
 
+def arabic() -> str:
+    """Whether pictures can carry Arabic here: a font that has it, and Pillow's shaping (libraqm with fribidi)."""
+    from PIL import features
+
+    from diwan.agents import eventpost
+    shaping = features.check("raqm")
+    font = next((f for f in eventpost.ARABIC_FONTS if os.path.exists(f)), None)
+    if shaping and font:
+        return f"Arabic on pictures: yes ({font})"
+    return "Arabic on pictures: no, " + " and ".join(x for x in (not font and "no Arabic font", not shaping and "no shaping (libfribidi)") if x)
+
+
 if __name__ == "__main__":
     import uvicorn
 
+    print(arabic(), flush=True)
     logins()
     uvicorn.run("diwan.app:app", host="0.0.0.0", port=int(os.environ.get("PORT", "8000")), proxy_headers=True, forwarded_allow_ips="*")
