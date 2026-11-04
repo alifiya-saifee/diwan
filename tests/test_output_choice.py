@@ -190,3 +190,19 @@ def test_a_broker_cannot_choose_how_a_post_goes_out(monkeypatch):
         assert c.post("/api/studio/output", json={"ref": REF, "output": "pictures"}).status_code == 403
         assert c.post("/api/auth/login", json={"person": "maya", "password": "a good password"}).status_code == 200
         assert c.get("/api/studio/output", params={"ref": REF}).status_code == 200
+
+
+def test_the_studio_opens_with_no_post_chosen_and_with_one_that_is_gone(office, monkeypatch):
+    """The Studio's first load has no ref: the choice says there is nothing to choose, and the page still loads."""
+    from fastapi.testclient import TestClient
+    from diwan import app as app_module
+    for ref in ("", "NO-SUCH-REF"):
+        o = studio.output_options(office, ref)
+        assert o["picked"] is False and o["chosen"] is None and o["can"]["pictures"] is False
+        with pytest.raises(studio.OutputRefused, match="Choose a post first"):
+            studio.choose_output(office, ref, "pictures", by="maya")
+    monkeypatch.setenv("DIWAN_AUTH", "off")
+    monkeypatch.setattr(app_module.S, "office", office)
+    with TestClient(app) as c:
+        assert c.get("/api/studio", params={"ref": ""}).status_code == 200
+        assert c.get("/api/studio/output", params={"ref": ""}).status_code == 200

@@ -2079,11 +2079,15 @@ def _chosen_output(office: Office, ref: str) -> dict | None:
 def output_options(office: Office, ref: str) -> dict:
     """What the Production step offers: the suggestion, what this server can make, and what was chosen."""
     voice_ok, video_ok, why_not = _can_render()
+    try:
+        lst = _listing(office, ref)
+    except KeyError:  # no post chosen yet (the Studio opens with none), or one that is gone: nothing to choose
+        return {"suggest": {"pick": "pictures", "why": ""}, "video_mode": video_mode(), "can": {"pictures": False, "voice": voice_ok, "video": video_ok},
+                "why_not": why_not, "where": {o: [] for o in OUTPUTS}, "picked": False, "chosen": None}
     sc = approved_script(office, ref)
     base = (_content(office, sc["revises"]) if sc and sc.get("via") == "pictures from brief" else sc) or {}
     ch = _chosen_output(office, ref)
     from diwan import platforms
-    lst = _listing(office, ref)
     where = {o: platforms.for_post(office, listing=lst.get("item") == "listing", video=o != "pictures") for o in OUTPUTS}
     return {"suggest": suggest_output(office, ref, base), "video_mode": video_mode(), "can": {"pictures": True, "voice": voice_ok, "video": video_ok},
             "why_not": why_not, "where": where, "picked": bool(sc), "chosen": ch["output"] if ch and base and ch.get("script") == base.get("id") else None}
@@ -2095,6 +2099,10 @@ def choose_output(office: Office, ref: str, output: str, *, by: str) -> dict:
     from diwan.agents import eventpost
     if output not in OUTPUTS:
         raise OutputRefused("Choose pictures, a voice-over or a video.")
+    try:
+        _listing(office, ref)
+    except KeyError:
+        raise OutputRefused("Choose a post first.") from None
     sc = approved_script(office, ref)
     if not sc:
         raise OutputRefused("Pick a script first.")
