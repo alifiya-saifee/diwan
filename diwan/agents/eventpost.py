@@ -420,8 +420,9 @@ def _fit(img: Image.Image) -> Image.Image:
     return img.crop((x, y, x + W, y + H))
 
 
-def _background(office: Office, ref: str, feedback: str | None = None) -> tuple[Image.Image, str]:
-    """A graphic's background: abstract, made by Muse Image when it can be, else plain."""
+def _background(office: Office, ref: str, feedback: str | None = None, say: str = "", frame: dict | None = None) -> tuple[Image.Image, str]:
+    """A graphic's background, made by Muse Image when it can be, else plain. A greeting card gets a designed
+    background; a post about a place or a topic gets a real-looking photograph of it, planned shot first (shots.py)."""
     dark, accent = brand.colours(office)
     plain = Image.new("RGB", (W, H), dark)
     if not meta.ready():
@@ -435,6 +436,20 @@ def _background(office: Office, ref: str, feedback: str | None = None) -> tuple[
     colours = f" Its colours lean to {'#%02x%02x%02x' % dark} and {'#%02x%02x%02x' % accent}."
     from diwan import occasions
     learned = (occasions.studied(office, lst["occasion"]) or {}).get("notes", {}).get("look", "") if lst.get("occasion") else ""
+    designed = ((frame or {}).get("background") or {}).get("source") == "brand colour"  # the brief asked for a designed background
+    if not motif and not designed and (say or lst.get("title")):  # a post with a subject: show it, the way the free video does
+        from diwan.agents import shots
+        about = business.describe(office)
+        from diwan.agents import visual
+        shot = visual.shot(frame) or shots.plan(office, lst.get("title") or say, [say or lst["title"]], about)[0]  # the writer's brief first
+        try:
+            served = meta.image(shots.prompt(shot, about=about, title=lst.get("title") or say, avoid=(feedback or "")[:300])
+                                + "\nWORDS GO ON TOP LATER: keep the middle of the picture calm and a little darker so white words read on it.",
+                                f"bg-{ref}", size="1024x1792", reasoning="high")
+            return _fit(Image.open(meta.media_path(served)).convert("RGB")), "Muse Image"
+        except (meta.MetaError, OSError) as e:
+            studio._blocked(office, "mthumb", f"Muse Image failed, using a plain background: {str(e)[:120]}")
+            return plain, "plain"
     try:
         served = meta.image((f"An elegant greeting-card background for {lst['title']}: {motif}. Festive but calm, premium, lots of quiet space in the middle "
                              f"for words.{colours} " + (f"Aim for this, learned from the best competitor posts for the day: {learned[:300]} " if learned else "") if motif else
@@ -464,12 +479,11 @@ def _arabic(size: int):
     return None
 
 
-def _mark(img: Image.Image, name: str, logo: str | None, dark, accent, *, big: bool = False, bigger: bool = False) -> None:
-    """The company on the picture: its logo (when set) and its name, top-left inside the safe area, on a small plate so
-    they read on any photo. `bigger` is a person asking for a bigger logo."""
+def _mark(img: Image.Image, name: str, logo: str | None, dark, accent, *, big: bool = False, bigger: bool = False, at: str = "top-left") -> None:
+    """The company on the picture: its logo (when set) and its name, in a corner inside the safe area (top-left unless
+    the visual brief says another), on a small plate so they read on any photo. `bigger` is a person asking for a bigger logo."""
     d = ImageDraw.Draw(img)
     font = _font(56 if bigger else 46 if big else 38)
-    x, y = SAFE, SAFE
     mark = None
     if logo:
         try:
@@ -480,6 +494,8 @@ def _mark(img: Image.Image, name: str, logo: str | None, dark, accent, *, big: b
             mark = None
     w = (mark.width + 18 if mark else 0) + (int(d.textlength(name, font=font)) if name else 0) + 44
     h = max(mark.height if mark else 0, font.size) + 32
+    x = SAFE if at.endswith("left") else W - SAFE - w + 44
+    y = SAFE if at.startswith("top") else H - SAFE - h + 32
     plate = Image.new("RGBA", (w, h), (*dark, 215))
     img.alpha_composite(plate, (x - 22, y - 16))
     if mark:
@@ -490,13 +506,15 @@ def _mark(img: Image.Image, name: str, logo: str | None, dark, accent, *, big: b
 
 
 def _draw(img: Image.Image, text: str, name: str, centre: bool, *, logo: str | None = None, colours=None, arabic: str = "",
-          greeting: bool = False, big_logo: bool = False, sub: str = "") -> Image.Image:
+          greeting: bool = False, big_logo: bool = False, sub: str = "", frame: dict | None = None) -> Image.Image:
     """The words on a band across the bottom (or a centred card for a graphic or a greeting), the company's logo and name
-    on every picture, the Arabic words under the English when the business posts in Arabic."""
+    on every picture, the Arabic words under the English when the business posts in Arabic. `frame` is the visual
+    brief's frame (visual.py): where the words go, how big, on a band or plain, and the logo's corner."""
     dark, accent = colours or (INK, GOLD)
     img = img.convert("RGBA")
     d = ImageDraw.Draw(img)
-    font = _font(84 if greeting else 64)
+    words = (frame or {}).get("words") or {} if not greeting else {}
+    font = _font(84 if greeting else {"big": 76, "small": 52}.get(words.get("size"), 64))
     lines = _wrap(d, text, font, W - 2 * SAFE - 40)
     while len(lines) > (4 if greeting else 5) and font.size > 36:
         font = _font(font.size - 6)
@@ -510,15 +528,21 @@ def _draw(img: Image.Image, text: str, name: str, centre: bool, *, logo: str | N
     alines = alines[:2]
     sfont = _font(max(30, font.size // 2 - 4)) if sub else None
     high = len(lines) * (font.size + 16) + 96 + (len(alines) * (afont.size + 20) + 8 if afont else 0) + ((sfont.size + 30) if sfont else 0)
-    top = (H - high) // 2 if centre or greeting else H - high - SAFE
-    band = Image.new("RGBA", (W, high), (*dark, 225 if greeting else 205))
+    at = words.get("position")
+    logo_at = (frame or {}).get("logo") or "top-left"
+    clear = 190 if logo_at.startswith(at or "-") else 0  # words in the logo's half sit clear of its plate
+    top = (SAFE + clear if at == "top" else H - high - SAFE - clear if at == "bottom" else (H - high) // 2 if at == "middle" or centre or greeting else H - high - SAFE)
+    plain = words.get("style") == "plain"  # a soft wash, not a solid strip: the picture shows through, the words still read
+    band = Image.new("RGBA", (W, high), (*dark, 110 if plain else 225 if greeting else 205))
     img.alpha_composite(band, (0, top))
     d = ImageDraw.Draw(img)
     if greeting:  # an accent rule above the words, the way a printed card is set
         d.rectangle(((W - 120) // 2, top + 30, (W + 120) // 2, top + 36), fill=accent)
     y = top + 52
     for ln in lines:
-        x = (W - d.textlength(ln, font=font)) // 2 if greeting or centre else SAFE + 20
+        x = (W - d.textlength(ln, font=font)) // 2 if greeting or centre or at else SAFE + 20
+        if plain:  # no band: a soft shadow keeps the words readable on the picture
+            d.text((x + 3, y + 3), ln, font=font, fill=(0, 0, 0))
         d.text((x, y), ln, font=font, fill=(255, 255, 255))
         y += font.size + 16
     if afont:
@@ -532,7 +556,7 @@ def _draw(img: Image.Image, text: str, name: str, centre: bool, *, logo: str | N
             pass
     if sfont:
         d.text(((W - d.textlength(sub, font=sfont)) // 2, y + 14), sub, font=sfont, fill=(225, 225, 225))
-    _mark(img, name, logo, dark, accent, big=greeting, bigger=big_logo)
+    _mark(img, name, logo, dark, accent, big=greeting, bigger=big_logo, at=logo_at if not greeting else "top-left")
     return img.convert("RGB")
 
 
@@ -547,7 +571,9 @@ def render(office: Office, ref: str, sc: dict, cause: int | None, feedback: str 
     card = (bool(lst.get("greeting")) and sc["format"] == "graphic") or look.get("card")  # a card ignores photos; a greeting is one unless the person chose photos
     feedback = "\n".join(x for x in (feedback, look.get("background") and f"The person asked: {look['background']}") if x) or None
     tag = f"-v{look['v']}" if look.get("v") else ""
+    from diwan.agents import visual
     for i, s in enumerate(sc["slides"], 1):
+        fr = visual.frame(sc, i - 1)
         if s["photo"] and not card:
             base = _load(s["photo"])
             if base is None:
@@ -556,7 +582,7 @@ def render(office: Office, ref: str, sc: dict, cause: int | None, feedback: str 
             base = _fit(base)
         else:
             if bg_by is None or not card:  # a card's slides share one background: one Muse Image call, not one per slide
-                bg, bg_by = _background(office, ref, feedback)
+                bg, bg_by = _background(office, ref, feedback, say=s["text"], frame=None if card else fr)
             base = bg.copy()
         path = meta.MEDIA / f"post-{ref}-{sc['id']}{tag}-{i}.jpg"
         hello = bool(lst.get("greeting")) and i == 1 and lst.get("greet")  # a greeting's card says the greeting itself; the script's line goes in the caption
@@ -567,7 +593,7 @@ def render(office: Office, ref: str, sc: dict, cause: int | None, feedback: str 
         greet = (bool(lst.get("greeting")) or bool(look.get("card"))) and i == 1
         sub = (name if lst.get("sombre") else f"From all of us at {name}") if hello and name else ""
         _draw(base, text, name, centre=card or not s["photo"], logo=brand.logo(office), colours=brand.colours(office), arabic=arabic,
-              greeting=greet, big_logo=bool(look.get("bigger_logo")), sub=sub).save(path, "JPEG", quality=90)
+              greeting=greet, big_logo=bool(look.get("bigger_logo")), sub=sub, frame=fr).save(path, "JPEG", quality=90)
         out.append({"path": str(path), "served": f"/media/{path.name}", "text": text})
     known = {p["path"]: p for p in photos(office, ref)}
     people = 0 if card else sum(1 for s in sc["slides"] if known.get(s["photo"], {}).get("people"))

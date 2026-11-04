@@ -116,15 +116,37 @@ def look(system: str, text: str, images: list[bytes], schema: dict, *, agent: st
         raise MetaError(f"Muse Spark's answer was not the JSON asked for: {e}") from None
 
 
-def image(prompt: str, name: str, size: str = "1024x1792") -> str:
-    """Generate with Muse Image, save under media/, return the served path. Paid per image; stopped at the budget."""
+def image(prompt: str, name: str, size: str = "1024x1792", *, reasoning: str | None = None) -> str:
+    """Generate with Muse Image, save under media/, return the served path. Paid per image; stopped at the budget.
+    reasoning "high": Muse Image plans the scene before it draws (slower, better for real places)."""
     from diwan import costs
     _guard("image", "mthumb")
-    r = _send("/images/generations", {"model": env("META_MODEL_IMAGE", "muse-image-1.0"), "prompt": prompt[:3000], "n": 1, "size": size, "response_format": "b64_json"}, 120)
+    r = _send("/images/generations", {"model": env("META_MODEL_IMAGE", "muse-image-1.0"), "prompt": prompt[:3000], "n": 1, "size": size, "response_format": "b64_json",
+                                      **({"reasoning_strength": reasoning} if reasoning else {})}, 240 if reasoning == "high" else 120)
     if r.status_code != 200:
         raise MetaError(f"Muse Image returned {r.status_code}: {r.text[:200]}")
     MEDIA.mkdir(exist_ok=True)
     costs.record("mthumb", {"provider": "meta", "model": env("META_MODEL_IMAGE", "muse-image-1.0")}, extra_usd=costs.fee("image", 0.04), what="image")
+    path = MEDIA / f"{name}.webp"
+    path.write_bytes(base64.b64decode(r.json()["data"][0]["b64_json"]))
+    return f"/media/{path.name}"
+
+
+def edit_image(picture: bytes, prompt: str, name: str, *, mime: str = "image/png", agent: str = "mart") -> str:
+    """Muse Image changes an existing picture as the words say, saves it under media/ and returns the served path.
+    Paid per image like a new one; stopped at the budget."""
+    from diwan import costs
+    _guard("picture edit", agent)
+    try:
+        with _client(180) as c:
+            r = c.post(f"{_base()}/images/edits", files={"image": (f"picture.{mime.split('/')[-1]}", picture, mime)},
+                       data={"model": env("META_MODEL_IMAGE", "muse-image-1.0"), "prompt": prompt[:3000], "n": "1", "response_format": "b64_json"})
+    except Exception as e:
+        raise MetaError(f"Muse Image couldn't be reached: {e}") from None
+    if r.status_code != 200:
+        raise MetaError(f"Muse Image returned {r.status_code}: {r.text[:200]}")
+    MEDIA.mkdir(exist_ok=True)
+    costs.record(agent, {"provider": "meta", "model": env("META_MODEL_IMAGE", "muse-image-1.0")}, extra_usd=costs.fee("image", 0.04), what="picture edit")
     path = MEDIA / f"{name}.webp"
     path.write_bytes(base64.b64decode(r.json()["data"][0]["b64_json"]))
     return f"/media/{path.name}"

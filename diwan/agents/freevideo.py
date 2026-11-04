@@ -43,6 +43,20 @@ def _speak(text: str, path: Path) -> Path:
     return out
 
 
+def served(path: str) -> str | None:
+    """Where the page can show a photo: a link stays a link, a file in the media folder is under /media/."""
+    from pathlib import Path
+    from diwan.providers import meta
+    if path.startswith(("http://", "https://", "/media/")):
+        return path
+    p = Path(path)
+    try:
+        p.resolve().relative_to(meta.MEDIA.resolve())
+    except (ValueError, OSError):
+        return None
+    return f"/media/{p.name}"
+
+
 def photos(office: Office, ref: str) -> list[str]:
     """The listing's photos (links from the feed) and the ones uploaded for it, in that order."""
     from diwan.agents import studio
@@ -53,16 +67,18 @@ def photos(office: Office, ref: str) -> list[str]:
         if studio.ended(e, ref):  # a stopped post's drawings go with it; real photos stay
             out = [p for p in out if p not in drawn]
         elif e["type"] == "photos.added" and e["content"]["ref"] == ref:
+            if e["content"].get("made_by") == "muse-image" and e["content"].get("style") != "photo":
+                continue  # drawn in the old painted style, before the pictures became real-looking photos: not used any more
+            if old := e["content"].get("replaces"):  # an edited picture takes its place, in the same spot
+                at = next((i for i, p in enumerate(out) if old in (p, served(p))), len(out))
+                out = out[:at] + e["content"]["paths"] + out[at + 1:]
+                continue
             out += e["content"]["paths"]
             drawn |= set(e["content"]["paths"]) if e["content"].get("made_by") else set()
     return out
 
 
 AI_FRAMES, AI_FRAMES_MIN = 6, 3
-FRAME_STYLE = ("A refined editorial illustration, clearly drawn and not a photograph, for a vertical video by this business: {about} "
-               "The post is about: {title}. This frame shows, as one clear scene from that trade and place: {line} "
-               "Fill the frame with one scene, not a collage. Strictly no clip-art icons (compasses, suitcases, coins, magnifying glasses, charts, shields). "
-               "Strictly no text, letters, logos, faces, real people, or real buildings or landmarks.{avoid}")
 FRAME_ROUNDS = 1  # one redraw after the Creative Director's first look: images are paid for and slow
 
 
@@ -102,17 +118,23 @@ def ai_frames(office: Office, ref: str, *, by: str) -> dict:
     if not meta.ready():
         return {"ok": False, "needs": "the Meta key, for Muse Image"}
     rows = sc.get("shots") or studio.video_plan(sc, studio._listing(office, ref))
-    lines = [w for r in rows if (w := spoken(r["say"]))]
+    lines = [(j, w) for j, r in enumerate(rows) if (w := spoken(r["say"]))]  # with the row each came from: the brief's frames follow the rows
     step = max(1, len(lines) / AI_FRAMES)
-    chosen = [lines[int(i * step)] for i in range(min(AI_FRAMES, len(lines)))]
+    picked = [lines[int(i * step)] for i in range(min(AI_FRAMES, len(lines)))]
+    chosen = [w for _, w in picked]
 
+    from diwan.agents import shots
     lst, about = studio._listing(office, ref), " ".join(x for x in (business.describe(office), taste.brief(office)) if x)
-    what = " ".join(lines)
+    what = " ".join(w for _, w in lines)
+    from diwan.agents import visual
+    briefed = [visual.shot(visual.frame(sc, j)) for j, _ in picked]  # the writer's own brief, frame by frame
+    planned = iter(shots.plan(office, lst["title"], [w for b, w in zip(briefed, chosen) if not b], about) if not all(briefed) else [])
+    plan = [b or next(planned) for b in briefed]  # a line the brief left without a picture: the photo director makes it a shot
 
     def draw(job: tuple[int, str, str]) -> tuple[int, str | None]:
         i, line, avoid = job
         try:
-            return i, str(meta.media_path(meta.image(FRAME_STYLE.format(about=about, title=lst["title"], line=line, avoid=f" Avoid this: {avoid}." if avoid else ""), f"frame-{ref}-{i}")))
+            return i, str(meta.media_path(meta.image(shots.prompt(plan[i], about=about, title=lst["title"], avoid=avoid), f"frame-{ref}-{i}", reasoning="high")))
         except (meta.MetaError, OSError) as e:
             studio._blocked(office, "mthumb", f"Muse Image failed on a frame: {str(e)[:120]}")
             return i, None
@@ -137,7 +159,7 @@ def ai_frames(office: Office, ref: str, *, by: str) -> dict:
         why = "; ".join(list(failed.values())[:2]) if seen else "Muse Image made too few"
         return {"ok": False, "needs": f"better frames: only {len(paths)} of {len(chosen)} passed the Creative Director ({why}). Try again, or add real photos"}
     review = {"score": seen["score"], "checked": True} if seen else {"checked": False}
-    office.log.append("photos.added", actor=by, content={"ref": ref, "paths": paths, "made_by": "muse-image", "review": review})
+    office.log.append("photos.added", actor=by, content={"ref": ref, "paths": paths, "made_by": "muse-image", "style": "photo", "review": review})
     return {"ok": True, "frames": len(paths), "review": review}
 
 

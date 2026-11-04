@@ -994,8 +994,11 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
     c = get("mscript")
     sh = eventpost.shape(office, lst)
     pictures = bool(sh) and sh["format"] in eventpost.SLIDES
-    schema = SCRIPT_SCHEMA if not pictures else {**SCRIPT_SCHEMA, "schema": {**SCRIPT_SCHEMA["schema"], "required": [*SCRIPT_SCHEMA["schema"]["required"], "photos"],
-                                                                             "properties": {**SCRIPT_SCHEMA["schema"]["properties"], "photos": {"type": "array", "items": {"type": "integer"}}}}}
+    from diwan.agents import visual
+    kind = visual.kind_of(lst, sh, pictures)  # the rules chose the kind of post; the writer describes how it looks (visual.py)
+    extra = {"visual": visual.SCHEMA, **({"photos": {"type": "array", "items": {"type": "integer"}}} if pictures else {})}
+    schema = {**SCRIPT_SCHEMA, "schema": {**SCRIPT_SCHEMA["schema"], "required": [*SCRIPT_SCHEMA["schema"]["required"], *extra],
+                                          "properties": {**SCRIPT_SCHEMA["schema"]["properties"], **extra}}}
     arabic = "Arabic" in business.languages(office)
     system = runner.instructions(c, office.log) + (f"\nWrite in the `script` format: about 30 seconds, 5 to 7 lines after the hook. The hook is not one of the lines: lines_en starts with what comes after it. Use only facts and amounts from "
                                                    f"the {lst['item']}, and build the lines from its features. The brand's voice decides the word choice, the sentence length and the attitude: "
@@ -1012,7 +1015,8 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
                                                    + (" This is an informational video about a topic, not an ad for a property: a person speaks it to camera. Write the hook and "
                                                       "lines as natural first-person speech, each short enough to say in one breath; no price, no permit, no property tour. In "
                                                       "shots, one per spoken line: `show` is what the viewer sees (the speaker, or a short cut-away that shows the point), "
-                                                      "`text` a caption of 2 to 6 words or empty, `cut` how it moves." if lst["item"] == "topic" else ""))
+                                                      "`text` a caption of 2 to 6 words or empty, `cut` how it moves." if lst["item"] == "topic" else "")
+                                                   + visual.instructions(lst, kind, idea["pick"]["title"], rec))
     built = built_like(office, idea["pick"].get("cards", []))
     facts = "" if lst.get("job") else "\n".join(journey.company(office, f"{lst['title']} {rec}"))
     task = (f"Script for: {idea['pick']['title']}. Angle: {({**topics.ANGLES, **journey.ANGLES} if lst['item'] == 'topic' else {k: v[0] for k, v in strategy.ANGLES.items()}).get(angle, angle)}. Borrow the structure, never the words, of the hook card if given."
@@ -1075,7 +1079,10 @@ def script(office: Office, ref: str, idea: dict, hook_card: dict | None, cause: 
             except Exception as e:  # noqa: BLE001  the draft so far stands; the score says what it is
                 _blocked(office, "mscript", f"The rewrite after the Director's review failed, keeping the draft: {str(e)[:100]}", cause=cause)
                 break
+    data = {k: v for k, v in data.items() if k != "visual"} | ({"visual": vb} if by == "muse-spark" and (vb := visual.clean(data.get("visual"), lst, kind, data)) else {})
     data = data | ({"shots": [], "slides": eventpost.slides(data, sh)} if pictures else {"shots": video_plan(data, lst)})
+    if pictures and data.get("visual"):  # a still has as many frames as it has pictures: the brief shows only those
+        data["visual"] = data["visual"] | {"frames": data["visual"]["frames"][:max(1, len(data["slides"]))]}
     m = _made(office, "mscript", "script", ref, data | {"via": by, **({"director": review} if review else {}), "angle": angle, "why": why, "idea": idea.get("id"), "cards": idea["pick"].get("cards", []),
                                                        "built_like": built, "listing_was": _facts(lst), "format": sh["format"] if pictures else topics.format_for(lst), "job": journey.job_of(lst), **({"revises": base["id"]} if base else {})}, cause)
     _pack(office, "mscript", f"{angle} script{' (revised from ' + base['id'] + ')' if base else ''}: \"{data['hook_en']}\" · {len(data['lines_en'])} lines ({by}).",
@@ -1608,7 +1615,7 @@ def reschedule(office: Office, ref: str, at: str, *, by: str) -> dict:
     if on and _listing(office, ref).get("greeting") and business.local(t.astimezone(timezone.utc), office).date().isoformat() != on:
         return {"ok": False, "needs": [f"a time on {on}: a greeting goes out on its own day"]}
     _made(office, "mpub", "scheduled", ref, {"at": t.isoformat(), "approved_by": scheduled(office)[ref].get("approved_by"), "moved_by": by}, None)
-    when = t.strftime("%a %-d %b %I:%M %p").replace(" 0", " ")
+    when = f"{t:%a} {t.day} {t:%b %I:%M %p}".replace(" 0", " ")  # %-d is Linux-only
     _pack(office, "mpub", f"{ref} moved by {name(by)}: it goes out {when}.", kind=None)
     return {"ok": True, "next": f"it goes out {when}"}
 
@@ -1704,7 +1711,19 @@ def permit_gate(office: Office, ref: str, sc: dict, text: dict, cause: int | Non
 
 # ---------- the run ----------
 
+# The runs alive in this server right now. A restart empties it, so a run cut short shows as stopped, never as working.
+RUNNING: dict[str, str] = {}
+
+
 async def run(office: Office, ref: str, pause: float = .6, auto: bool = False) -> None:
+    RUNNING[ref] = datetime.now(timezone.utc).isoformat()
+    try:
+        await _run(office, ref, pause, auto)
+    finally:
+        RUNNING.pop(ref, None)
+
+
+async def _run(office: Office, ref: str, pause: float = .6, auto: bool = False) -> None:
     step = lambda fn, *a: asyncio.to_thread(fn, *a)  # noqa: E731
     lst = _listing(office, ref)
     needed = business.permit_needed(office) and lst["item"] != "topic"
@@ -1761,7 +1780,43 @@ async def after_brief(office: Office, ref: str, pause: float = .6) -> None:
     """An automatic run's brief got its yes."""
     idea = made(office, "ideas", ref)
     if idea:
-        await write_scripts(office, ref, idea, made(office, "transcript"), None, pause)
+        RUNNING[ref] = datetime.now(timezone.utc).isoformat()
+        try:
+            await write_scripts(office, ref, idea, made(office, "transcript"), None, pause)
+        finally:
+            RUNNING.pop(ref, None)
+
+
+def progress(office: Office, ref: str) -> dict:
+    """Where the newest run for ref stands, read from the log: its steps, what it is doing now, and whether it is still
+    alive. "stopped" means it started and never reached you, and nothing is running it any more (the office restarted,
+    or a step failed): nothing it made is lost, and Write it now starts it again."""
+    evs = office.log.list()
+    start = next((e for e in reversed(evs) if e["type"] == "agent.pack" and e["agent"] == "mkt"
+                  and (e["content"].get("pack") or {}).get("verdict", "").startswith("New ") and f"({ref})" in e["content"]["pack"]["verdict"]), None)
+    alive = ref in RUNNING
+    if not start and not alive:
+        return {"state": "idle"}
+    after = [e for e in evs if not start or e["id"] > start["id"]]
+    if any(e["type"] == "post.withdrawn" and e["content"].get("ref") == ref for e in after):
+        return {"state": "idle"}
+    mine = lambda e: e["content"].get("ref") == ref  # noqa: E731
+    said = lambda e, head: e["type"] == "agent.pack" and (e["content"].get("pack") or {}).get("verdict", "").startswith(head)  # noqa: E731
+    ready = next((e for e in after if said(e, f"Pick a script for {ref} ") or said(e, f"Approve the brief for {ref}")), None)
+    blocked = next((e for e in after if e["type"] == "step.blocked" and start and e["caused_by"] == start["id"]), None)
+    idea = any(e["type"] in ("content.idea",) and mine(e) for e in after)
+    studied = idea or any(e["type"] == "content.made" and mine(e) and e["content"].get("kind") == "ideas" for e in after)
+    written = sum(e["type"] == "content.made" and mine(e) and e["content"].get("kind") == "script" for e in after)
+    passed = sum(e["type"] == "qa.passed" and mine(e) and e["content"].get("kind") == "script" for e in after)
+    doing = next((e["content"].get("task", "") for e in reversed(after) if e["type"] == "agent.started" and ref in e["content"].get("task", "")), "")
+    state = "ready" if ready else "running" if alive else "stopped"  # a skipped step (a video too big to read) is a note, not a stop
+    steps = [("Studying competitors and trends", studied), ("Choosing the idea", idea),
+             (f"Writing and checking the scripts ({written} written, {passed} passed)" if written else "Writing and checking the scripts", bool(ready)),
+             ("Ready for you to pick", bool(ready))]
+    first_open = next((i for i, (_, done) in enumerate(steps) if not done), None)
+    return {"state": state, "title": _listing(office, ref).get("title", ref), "since": (start or {}).get("at") or RUNNING.get(ref), "last": (after[-1]["at"] if after else None),
+            "now": doing if state == "running" else "", "needs": blocked["content"].get("needs") if blocked else "",
+            "steps": [{"name": n, "done": d, "active": state == "running" and i == first_open} for i, (n, d) in enumerate(steps)]}
 
 
 def _content(office: Office, cid: str) -> dict | None:
@@ -1808,6 +1863,115 @@ def own_script(office: Office, ref: str, text: str, *, by: str) -> dict:
             alts.append(sc)
     ask_script_approval(office, ref, [own, *alts], start)
     return {"own": own, "others": alts}
+
+
+def _media_file(served: str):
+    """The file behind a picture the page shows: only ever one in the media folder."""
+    from pathlib import Path
+    from diwan.providers import meta
+    if not (served or "").startswith("/media/"):
+        return None
+    p = (meta.MEDIA / Path(served).name).resolve()
+    try:
+        p.relative_to(meta.MEDIA.resolve())
+    except ValueError:
+        return None
+    return p if p.is_file() else None
+
+
+def post_pictures(office: Office, ref: str) -> list[str]:
+    """Every picture of this post a person may edit: the finished post's images and the pictures for the free video."""
+    from diwan.agents import freevideo
+    slides = [x["served"] for x in (made(office, "slides", ref) or {}).get("images", []) if x.get("served")]
+    return slides + [u for u in map(freevideo.served, freevideo.photos(office, ref)) if u and u not in slides]
+
+
+def edit_picture(office: Office, ref: str, served: str, note: str, *, by: str) -> dict:
+    """A person asks for a change to one picture: Muse Image edits that picture with their words. Nothing in the post
+    changes until they choose to use the result."""
+    from diwan.providers import meta
+    note = (note or "").strip()
+    if not note:
+        return {"ok": False, "error": "Say what should change in the picture."}
+    if served not in post_pictures(office, ref):
+        return {"ok": False, "error": "That picture isn't part of this post any more. Refresh the page."}
+    src = _media_file(served)
+    if not src:
+        return {"ok": False, "error": "This picture is a link, not a file here, so it can't be edited. Upload it with Add photos first."}
+    if not meta.ready():
+        return {"ok": False, "error": "Editing a picture needs Muse Image (META_API_KEY), and the office is offline or has no key."}
+    lst = _listing(office, ref)
+    if re.search(REAL_LOOK, note.lower()):  # a new look, not a touch-up: keeping "the style" would keep the painting
+        prompt = (f"Recreate this picture as a real photograph for a social media post about {lst.get('title', ref)}: {note}. "
+                  "Keep the same scene, subject and composition, but redo every surface so it looks shot on a full-frame camera: real materials, real daylight, "
+                  "true-to-life colours, sharp detail, the look of high-end real estate and architectural photography. "
+                  "It must not look painted, drawn, illustrated, watercolour, sketched or like a 3D render. Keep any words and logo already on it. "
+                  "No invented prices, people or claims, no recognisable faces.")
+    else:
+        prompt = (f"Edit this picture for a social media post about {lst.get('title', ref)}. Make exactly this change: {note}. "
+                  "Keep everything else as it is: the layout, the words already on it, the logo and the style, unless the change says otherwise. "
+                  "No invented prices, people or claims.")
+    mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(src.suffix.lower(), "image/png")
+    n = 1 + sum(1 for e in office.log.list() if e["type"] == "content.made")
+    try:
+        after = meta.edit_image(src.read_bytes(), prompt, f"edit-{ref}-{n}", mime=mime)
+    except meta.MetaError as e:
+        return {"ok": False, "error": str(e)}
+    _pack(office, "mart", f"Picture edit tried for {ref}: \"{note[:120]}\". Waiting for {name(by)} to use it or not.", kind="assign")
+    return {"ok": True, "before": served, "after": after, "note": note}
+
+
+def use_edit(office: Office, ref: str, before: str, after: str, note: str, *, by: str) -> dict:
+    """The edited picture takes the old one's place in the post; the old one stays in the history."""
+    from diwan.providers import meta
+    if before not in post_pictures(office, ref):
+        return {"ok": False, "error": "That picture isn't part of this post any more. Refresh the page."}
+    new = _media_file(after)
+    if not new or not new.name.startswith(f"edit-{ref}-"):
+        return {"ok": False, "error": "That edited picture wasn't made for this post."}
+    slides = made(office, "slides", ref) or {}
+    if any(x.get("served") == before for x in slides.get("images", [])):
+        images = [x | {"path": str(new), "served": after, "edited": note} if x.get("served") == before else x for x in slides["images"]]
+        _made(office, "mart", "slides", ref, {k: v for k, v in slides.items() if k not in ("id", "kind", "ref", "by", "review", "change")} | {"images": images}, None)
+    else:  # a picture for the free video
+        office.log.append("photos.added", actor=by, content={"ref": ref, "paths": [str(new)], "replaces": before, "made_by": "muse-image-edit", "asked": note})
+    _pack(office, "mart", f"{name(by)} used the edited picture for {ref}: \"{note[:120]}\".", kind="assign")
+    return {"ok": True, "next": "The post uses the edited picture now."}
+
+
+def stuck(office: Office, ref: str) -> list[dict]:
+    """Work on ref that failed review too many times and waits for a person to say what to do."""
+    return [{"id": n.id, "question": n.props.get("text", ""), "options": n.props.get("options") or []}
+            for n in office.graph().of("decision", status="open") if ref in (n.props.get("refs") or []) and n.props.get("agent") == "mkt"]
+
+
+def resolve_stuck(office: Office, did: str, choice: str, *, by: str) -> dict:
+    """The person's answer to work that kept failing review: write it themselves, take what was written, or stop the post."""
+    from diwan.agents import marketing
+    n = office.graph().nodes.get(did)
+    if not n or n.type != "decision" or n.status != "open":
+        return {"ok": False, "error": "This was already answered. Refresh the page."}
+    if choice not in (n.props.get("options") or []):
+        return {"ok": False, "error": f"Choose one of: {', '.join(n.props.get('options') or [])}"}
+    ref = (n.props.get("refs") or [None])[0]
+    if choice == "Accept as is":
+        scs, idea_seen = [], False
+        for e in office.log.list():  # the scripts written for this post since its idea
+            c = e["content"]
+            if e["type"] == "content.idea" and c.get("ref") == ref:
+                scs, idea_seen = [], True
+            elif e["type"] == "content.made" and c.get("ref") == ref and c.get("kind") == "script":
+                scs.append(c)
+        if not scs:
+            return {"ok": False, "error": "No script was written for this post yet. Write your own, or stop it."}
+        office.log.append("decision.made", actor=by, content={"card": did, "answer": choice})
+        ask_script_approval(office, ref, scs[-3:], None)
+        return {"ok": True, "next": "The scripts it wrote are under Your turn: pick one, or ask for a change."}
+    office.log.append("decision.made", actor=by, content={"card": did, "answer": choice})
+    if choice == "Stop this reel":
+        marketing.withdraw(office, ref, f"stopped by {name(by)}: the scripts kept failing review")
+        return {"ok": True, "next": "It is off the plan."}
+    return {"ok": True, "next": "Write your own script below: it is checked the same way.", "open": "own"}
 
 
 def script_options(office: Office, text: str) -> list[dict]:
@@ -1923,6 +2087,8 @@ async def _to_approval(office: Office, ref: str, sc: dict, text: dict, start: in
 CAPTION = r"\b(caption|hashtags?|post text|description|sign.?off)\b"
 REFILM = r"\b(video|footage|film|refilm|retake|reshoot|re-?shoot|clip|lighting|sound|audio)\b"
 STORY = r"\b(hook|lines?|script|story|order|shorter|longer|different (first )?(photo|picture)|another (photo|picture)|swap)\b"
+REAL_LOOK = r"\b(real|realistic|photo-?real|photograph\w*|photo|camera|not (?:a )?(?:painting|drawing|illustration|cartoon)|less (?:painted|drawn|cartoon\w*))\b"
+PICTURE = r"\b(pictures?|images?|photos?|visuals?|illustrations?|drawings?)\b"
 LOOK = r"\b(festive|logo|arabic|background|colou?rs?|design|card|graphic|font|bigger|brighter|darker|no (property|listing|house|building|photo)|celebrat\w*|premium|luxur\w*)\b"
 CAPTION_SCHEMA = {"name": "post", "strict": True, "schema": {"type": "object", "additionalProperties": False, "required": ["text"], "properties": {"text": {"type": "string"}}}}
 
@@ -1956,6 +2122,8 @@ async def change_post(office: Office, ref: str, note: str, pause: float = .6) ->
     if not sc:
         return
     who = change_goes_to(sc, note)
+    if who == "mscript" and made(office, "slides", ref) and re.search(PICTURE, note.lower()) and not re.search(r"\b(script|hook|lines?|story)\b", note.lower()):
+        who = "mart"  # a designed image: "a different picture" is a new picture, not a new script
     start = _pack(office, "mkt", f"Change asked to the finished {ref} post: \"{note}\". Back to the {get(who).name}.", kind="assign")
     if who == "mwriter":
         text = await step(reviewed, office, "post text", ref, lambda fb: rewrite_caption(office, ref, note, start, fb), start)

@@ -27,7 +27,7 @@ def drawn(monkeypatch, tmp_path, fail=()):
     asked = []
     monkeypatch.setattr(meta, "ready", lambda: True)
 
-    def image(prompt, name, size="1024x1792"):
+    def image(prompt, name, size="1024x1792", **k):
         asked.append(prompt)
         if len(asked) in fail:
             raise meta.MetaError("no")
@@ -51,7 +51,7 @@ def test_a_brand_post_gets_frames_from_its_script_that_the_video_can_use(office,
     scripted(monkeypatch, [f"Line number {w}." for w in "one two three four five six seven eight nine".split()])
     r = freevideo.ai_frames(office, "JOB-introduce", by="maya")
     assert r["ok"] and r["frames"] == freevideo.AI_FRAMES and r["review"]["score"] == 5 and len(asked) == freevideo.AI_FRAMES
-    assert all("not a photograph" in a and "no text" in a for a in asked)
+    assert all("real estate and architectural photography" in a and "painting" in a and "any text" in a for a in asked)
     pics = freevideo.photos(office, "JOB-introduce")
     assert len(pics) == freevideo.AI_FRAMES and freevideo._local(pics[0], tmp_path, 0).exists()
 
@@ -111,7 +111,7 @@ def test_a_frame_the_director_rejects_is_redrawn_and_then_not_offered(office, mo
     monkeypatch.setattr(meta, "look", lambda s, t, imgs, sc, **k: {"images": [{"n": i, "score": 2 if i == 0 else 5, "problem": "generic clip-art" if i == 0 else ""} for i in range(len(imgs))]})
     r = freevideo.ai_frames(office, "JOB-introduce", by="maya")
     assert r["ok"] and r["frames"] == 5 and r["review"]["checked"]
-    assert len(asked) == 6 + freevideo.FRAME_ROUNDS and "Avoid this: generic clip-art" in asked[-1]
+    assert len(asked) == 6 + freevideo.FRAME_ROUNDS and "AVOID ALSO: generic clip-art" in asked[-1]
 
 
 def test_when_every_frame_fails_nothing_is_offered_and_it_says_why(office, monkeypatch, tmp_path):
@@ -149,7 +149,7 @@ def test_every_recommendation_says_what_it_is_based_on(office):
 def test_a_stopped_post_loses_its_drawings_but_not_real_photos(office):
     from diwan.agents import marketing
     office.log.append("photos.added", actor="maya", content={"ref": "JOB-introduce", "paths": ["real.jpg"]})
-    office.log.append("photos.added", actor="maya", content={"ref": "JOB-introduce", "paths": ["drawn.webp"], "made_by": "muse-image", "review": {"checked": True, "score": 4}})
+    office.log.append("photos.added", actor="maya", content={"ref": "JOB-introduce", "paths": ["drawn.webp"], "made_by": "muse-image", "style": "photo", "review": {"checked": True, "score": 4}})
     assert freevideo.photos(office, "JOB-introduce") == ["real.jpg", "drawn.webp"] and freevideo.frame_review(office, "JOB-introduce")
     marketing.withdraw(office, "JOB-introduce", "the pictures look wrong")
     assert freevideo.photos(office, "JOB-introduce") == ["real.jpg"] and freevideo.frame_review(office, "JOB-introduce") is None
@@ -163,3 +163,11 @@ def test_what_a_person_said_about_pictures_reaches_the_next_drawing(office, monk
     assert taste.doubts_pictures(office)
     freevideo.ai_frames(office, "JOB-introduce", by="maya")
     assert asked and all("pictures: fictional" in p for p in asked)
+
+
+def test_a_topic_posts_graphic_is_a_planned_photo_of_its_subject_not_an_abstract_pattern(office, monkeypatch, tmp_path):
+    from diwan.agents import eventpost
+    asked = drawn(monkeypatch, tmp_path)
+    img, by = eventpost._background(office, "JOB-introduce", say="Sunset walks in Dubai Marina")
+    assert by == "Muse Image" and len(asked) == 1
+    assert "PLACE: Dubai Marina" in asked[0] and "real estate and architectural photography" in asked[0] and "WORDS GO ON TOP LATER" in asked[0]

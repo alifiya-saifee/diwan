@@ -461,9 +461,35 @@ def plan_view(office: Office) -> dict:
     removed = [{"date": r["date"], "title": (_subject(office, r["ref"]) or {}).get("title") or r["ref"]} for r in (p or {}).get("removed") or []]
     stopped = [{"ref": r, "title": x.get("title") or r, "why": x.get("why", "")} for r, x in have.items() if x["stage"] == "withdrawn"]
     live = [{"ref": r, "title": x.get("title") or r, "since": x["since"][:10]} for r, x in have.items() if x["stage"] == "live"]
-    return {"days": days, "waiting": waiting(office), "scheduled": going, "removed": removed, "stopped": stopped, "live": live,
+    asks = waiting(office)
+    return {"days": days, "waiting": asks, "carry_on": carry_on(office, have, {w["ref"] for w in asks}), "scheduled": going, "removed": removed, "stopped": stopped, "live": live,
             "rhythm": rhythm.settings(office)["rhythm"], "automatic": rhythm.settings(office)["auto"] == "on", "next": rhythm.next_run(office),
             "chosen_by": (p or {}).get("chosen_by", "rules"), "plan_ahead": rhythm.settings(office)["plan_ahead"] == "on"}
+
+
+def carry_on(office: Office, have: dict | None = None, asked: set | None = None) -> list[dict]:
+    """Every post started and not yet scheduled, posted or stopped, whatever day it was planned for, newest first,
+    with the next step in words. A post already waiting under Waiting for you isn't listed twice."""
+    from diwan.agents import freevideo
+    have = have if have is not None else pieces(office)
+    out = []
+    for ref, x in sorted(have.items(), key=lambda kv: kv[1]["since"], reverse=True):
+        if x["stage"] not in ("idea", "briefed", "scripted", "in_production", "ready", "paused") or ref in (asked or set()):
+            continue
+        writing = ref in studio.RUNNING
+        if studio.stuck(office, ref):
+            out.append({"ref": ref, "title": (_subject(office, ref) or {}).get("title") or ref, "stage": LABELS[x["stage"]],
+                        "next": "The scripts failed review 3 times: decide what to do", "since": x["since"], "writing": False})
+            continue
+        n = len(freevideo.photos(office, ref)) if x["stage"] == "in_production" else 0
+        cut = studio.made(office, "cut", ref) if x["stage"] == "in_production" else None
+        nxt = ("The scripts are being written now" if writing else
+               {"idea": "Write the scripts", "briefed": "Write the scripts", "scripted": "Pick a script",
+                "in_production": "Check the video and approve it" if cut else (f"Make the video: {n} picture{'s' if n != 1 else ''} ready" if n else "Film it, or make the video"),
+                "ready": "Approve publishing", "paused": f"Paused: {x.get('why') or 'see why'}"}[x["stage"]])
+        out.append({"ref": ref, "title": (_subject(office, ref) or {}).get("title") or ref, "stage": LABELS[x["stage"]], "next": nxt,
+                    "since": x["since"], "writing": writing})
+    return out
 
 
 # ---------- campaigns ----------

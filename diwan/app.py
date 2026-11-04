@@ -281,15 +281,17 @@ def studio_view(ref: str = "MC-1204"):
                        "started": sorted(rhythm.started(S.office)), "stages": marketing.stage_labels(S.office),
                        "evidence": planner.evidence(S.office, [d["ref"] for d in (rhythm.current(S.office) or {}).get("days", []) if d.get("ref")])},
             "footage": studio.footage(S.office, ref), "approvals": [{"id": n.id, "text": n.props["text"], "kind": n.props.get("kind"),
-                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises", "cards", "built_like", "own", "problems", "shots", "format", "slides", "director")} | {"stale": studio.stale(S.office, x)}
+                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises", "cards", "built_like", "own", "problems", "shots", "format", "slides", "director", "visual")} | {"stale": studio.stale(S.office, x), "look": __import__("diwan.agents.visual", fromlist=["describe"]).describe(x.get("visual"))}
                                        for x in studio.script_options(S.office, n.props["text"])] if n.props.get("kind") == "use_script" else []} for n in reqs],
             "strategy": strategy.report(S.office), "journey": journey.report(S.office), "costs": costs.summary(),
             "script_approved": bool(studio.approved_script(S.office, ref)), "heygen": heygen.ready(), "stopped": studio.stopped(S.office, ref),
+            "making": studio.progress(S.office, ref), "making_refs": sorted(studio.RUNNING), "stuck": studio.stuck(S.office, ref),
             "chain": studio.chain(S.office, ref),
             "brand_voice": __import__("diwan.brand", fromlist=["profile"]).profile(S.office)["voice"]["value"],
             "approvers": {r: {"id": w, "label": approvers.label(S.office, r)} for r, w in approvers.get(S.office).items()},
             "others": [w for w in marketing.waiting(S.office) if w["ref"] != ref],
             "free_video": {"missing": freevideo.missing(), "photos": len(freevideo.photos(S.office, ref)), "voice": freevideo.voice(),
+                           "photo_urls": [u for u in map(freevideo.served, freevideo.photos(S.office, ref)) if u],
                            "can_draw": freevideo.can_draw(S.office, ref), "frames": freevideo.AI_FRAMES, "review": freevideo.frame_review(S.office, ref), "doubt": taste.doubts_pictures(S.office)},
             "listings": [{"ref": p["ref"], "title": p["title"], "permit": p.get("permit"), "kind": p.get("kind")} for p in __import__("diwan.products", fromlist=["items"]).items(S.office).values()]
             + [{"ref": t["ref"], "title": t["title"], "permit": None, "kind": "topic"} for t in [*journey.items(S.office).values(), *__import__("diwan.topics", fromlist=["items"]).items(S.office).values()]]
@@ -525,6 +527,40 @@ class DecideIn(BaseModel):
     note: str = ""
     choice: str | None = None  # which of the offered scripts
     at: str | None = None  # a publishing time the person chose
+
+
+class EditPictureIn(BaseModel):
+    ref: str
+    picture: str
+    note: str = ""
+    after: str = ""
+    by: str = "layla"
+
+
+@app.post("/api/studio/edit-picture")
+async def edit_picture(body: EditPictureIn):
+    """Muse Image edits one picture of a post with the person's words. Nothing in the post changes yet."""
+    from diwan.agents import studio
+    return await asyncio.to_thread(studio.edit_picture, S.office, body.ref, body.picture, body.note, by=body.by)
+
+
+@app.post("/api/studio/edit-picture/use")
+def use_edited_picture(body: EditPictureIn):
+    """The edited picture replaces the old one in the post."""
+    from diwan.agents import studio
+    return studio.use_edit(S.office, body.ref, body.picture, body.after, body.note, by=body.by)
+
+
+class StuckIn(BaseModel):
+    choice: str
+    by: str = "layla"
+
+
+@app.post("/api/studio/stuck/{did}")
+def studio_stuck(did: str, body: StuckIn):
+    """The answer to work that failed review three times: Fix it myself, Accept as is, or Stop this reel."""
+    from diwan.agents import studio
+    return studio.resolve_stuck(S.office, did, body.choice, by=body.by)
 
 
 @app.post("/api/requests/{rid}/decide")

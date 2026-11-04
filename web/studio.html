@@ -220,6 +220,39 @@
   #csv { flex: 0 1 220px; }
   #turn .row { flex-wrap: wrap; } #turn .row input { min-width: 0; max-width: 100%; }
   #others { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } #others button { white-space: normal; max-width: 100%; text-align: left; overflow-wrap: anywhere; }
+  .making { border: 1px solid rgba(92, 207, 181, .35); background: linear-gradient(135deg, rgba(92, 207, 181, .10), transparent 70%); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .making.stopped { border-color: rgba(240, 179, 94, .4); background: linear-gradient(135deg, rgba(240, 179, 94, .10), transparent 70%); }
+  .making .mk-head { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .making .mk-head .when { margin-left: auto; font-weight: 400; font-size: 12px; color: var(--muted); }
+  .making ol { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+  .making li { display: flex; gap: 9px; align-items: center; font-size: 13px; color: var(--muted); }
+  .making li.done { color: var(--ink); }
+  .making li .ic { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; border: 1px solid var(--line-2); flex: 0 0 auto; }
+  .making li.done .ic { background: rgba(130, 217, 159, .15); border-color: transparent; color: var(--green); }
+  .making li.active .ic { border-color: var(--teal); border-top-color: transparent; animation: mkspin .9s linear infinite; }
+  .making .now { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+  .making .row { margin-top: 10px; }
+  .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--teal); border-top-color: transparent; animation: mkspin .9s linear infinite; display: inline-block; }
+  @keyframes mkspin { to { transform: rotate(360deg); } }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; margin: 10px 0 4px; }
+  .thumbs img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 8px; border: 1px solid var(--line-2); display: block; transition: transform .15s; }
+  .thumbs a:hover img { transform: scale(1.03); border-color: var(--gold); }
+  .carryhead { margin: 16px 0 6px; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .vbrief { border: 1px solid var(--line-2); border-radius: 10px; padding: 8px 12px; margin: 8px 0; }
+  .vbrief summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+  .vbrief ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+  .editable { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+  .editpic { font-size: 12px; padding: 4px 8px; }
+  .picedit { position: fixed; inset: 0; background: rgba(5, 7, 11, .72); z-index: 90; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .pe-card { width: min(760px, 100%); max-height: 92vh; overflow: auto; background: var(--panel-solid); border: 1px solid var(--line-2); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .pe-src { max-height: 300px; object-fit: contain; border-radius: 10px; align-self: center; }
+  .pe-card textarea { width: 100%; }
+  .pe-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pe-two figure { margin: 0; } .pe-two img { width: 100%; max-height: 360px; object-fit: contain; border-radius: 10px; border: 1px solid var(--line-2); }
+  .pe-two figcaption { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .note.bad { color: var(--bad); }
+  .item.stuck { border-color: rgba(240, 179, 94, .4); }
+  .tag.writing { color: var(--teal); background: rgba(92, 207, 181, .12); border-radius: 99px; padding: 3px 10px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -503,7 +536,7 @@ const NAME = { mrival: "Competitor watch", mtrend: "Trend scout", mtrans: "Trans
   mcopy: "Copywriter (review)", mshoot: "Shoot coordinator", mvideo: "AI video producer" };
 const BRAND_GROUPS = [["Who we are", ["name", "positioning", "audience"]], ["How we sound", ["voice", "say"]], ["Rules", ["avoid", "never_claim"]],
   ["Sign-off & hashtags", ["cta", "hashtags"]]];
-let last = {}, lastAt = {};
+let last = {}, lastAt = {}, lastRaw = {}, evSeen = 0;
 const fromText = (ids) => (ids || []).map((x) => x.startsWith("listing:") ? `the listing ${x.slice(8)}` : x.startsWith("product:") ? `the product ${x.slice(8)}` : x.startsWith("topic:") ? "the facts given" : `${x} "${data.board.find((b) => b.id === x)?.title || "card not on the board"}"`).join("; ");
 
 // ---------- tabs ----------
@@ -538,24 +571,28 @@ async function load(quiet) {  // quiet: a refresh nobody pressed for, which must
   const mine = ++loads;
   if (!data) $("top").textContent = "Loading the studio…";
   let d, evs;
-  try {
-    d = await api(`/api/studio?ref=${ref}`);
+  try {  // the post and only the events since the last look, side by side: the whole log is megabytes
+    [d, evs] = await Promise.all([api(`/api/studio?ref=${ref}`), api(`/api/events?after=${evSeen}`)]);
     if (mine !== loads) return;
     if (d.listings.length && !d.listings.some((l) => l.ref === ref)) { ref = d.listings[0].ref; d = await api(`/api/studio?ref=${ref}`); if (mine !== loads) return; }
-    evs = await api("/api/events");
   } catch {
     if (mine === loads && !data) { $("top").textContent = "Can't reach Diwan right now. Trying again…"; setTimeout(load, 3000); }
     return;
   }
   if (mine !== loads) return;
   data = d;
-  last = {}; lastAt = {};
-  for (const e of evs) {
-    if (e.type === "agent.pack" && NAME[e.agent]) last[e.agent] = e.content.pack.verdict;
-    if (e.type === "agent.started" && NAME[e.agent]) last[e.agent] = `Working: ${e.content.task}… (a free model endpoint can take a couple of minutes)`;
-    if (NAME[e.agent] && ["agent.pack", "agent.started", "step.blocked"].includes(e.type)) lastAt[e.agent] = e.id;
+  if (new URLSearchParams(location.search).get("ref") !== ref) history.replaceState(null, "", `?ref=${encodeURIComponent(ref)}${location.hash}`);  // a reload comes back to this post
+  for (const e of evs) {  // each agent's newest word; an older answer arriving late never overwrites a newer one
+    if (!NAME[e.agent] || e.id <= (lastAt[e.agent] || 0)) continue;
+    if (e.type === "agent.pack") lastRaw[e.agent] = e.content.pack.verdict;
+    if (e.type === "agent.started") lastRaw[e.agent] = `Working: ${e.content.task}… (a free model endpoint can take a couple of minutes)`;
+    if (["agent.pack", "agent.started", "step.blocked"].includes(e.type)) lastAt[e.agent] = e.id;
   }
+  if (evs.length) evSeen = Math.max(evSeen, evs.at(-1).id);
+  last = { ...lastRaw };
+  if (!(d.making_refs || []).length && d.making) for (const k of Object.keys(last)) if (last[k].startsWith("Working: ")) last[k] = `Not running now. Last: ${last[k].slice(9).replace(/… \(a free model.*$/, "")}`;
   render(quiet === true);
+  watchMaking();
 }
 
 function pill(on, text, title, warn) { return h("a", { class: `pill${warn ? " warn" : ""}`, href: "settings.html", ...(title ? { title } : {}) }, h("span", { class: `dot ${on ? "on" : ""}` }), text); }
@@ -568,7 +605,7 @@ function render(quiet) {
   $("top").replaceChildren(
     h("div", { class: "left" }, h("h1", {}, "The ", h("em", {}, "studio")),
       h("select", { "aria-label": "Listing", onchange: (e) => { ref = e.target.value; load(); } }, data.listings.map((l) => h("option", { value: l.ref, selected: l.ref === ref }, `${l.kind === "listing" ? "" : l.kind === "service" ? "Service · " : l.kind === "topic" ? "Topic · " : "Product · "}${l.kind === "topic" ? "" : l.ref + " · "}${l.title}${data.permit_needed && !l.permit ? " (no permit)" : ""}`))),
-      h("button", { class: "primary", id: "runbtn", onclick: async () => { await post(`/api/marketing/run?ref=${ref}`); showTab("run"); toast("Running: watch it here or on the Marketing floor"); } }, (() => { const k = (data.listings.find((l) => l.ref === ref) || {}).kind; return k === "listing" ? "Run this listing" : data.journey.shape && data.journey.next && data.journey.next.ref === ref ? "Write this post" : k === "topic" ? "Make an informational video" : "Make a reel for this"; })()),
+      h("button", { class: "primary", id: "runbtn", onclick: async () => { askToNotify(); await post(`/api/marketing/run?ref=${ref}`); showTab("run"); toast("Running: watch it here or on the Marketing floor"); } }, (() => { const k = (data.listings.find((l) => l.ref === ref) || {}).kind; return k === "listing" ? "Run this listing" : data.journey.shape && data.journey.next && data.journey.next.ref === ref ? "Write this post" : k === "topic" ? "Make an informational video" : "Make a reel for this"; })()),
       h("a", { class: "btn", href: "office3d.html?enter=mkt" }, "Watch on the floor"),
       h("button", { id: "talkbtn", onclick: () => openChat({ ref: () => ref }) }, "Talk to the Marketing lead")),
     h("div", { class: "right" },
@@ -586,6 +623,78 @@ function render(quiet) {
 
 // ---------- run tab ----------
 let turnKey = "";
+let pollT = 0, wasRunning = {};
+const ago = (iso) => { if (!iso) return ""; const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000)); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ${m % 60} min ago`; };
+function makingCard() {
+  const m = data.making;
+  if (!m || !["running", "stopped"].includes(m.state)) return [];
+  const steps = h("ol", {}, ...m.steps.map((s) => h("li", { class: s.done ? "done" : s.active ? "active" : "" }, h("span", { class: "ic" }, s.done ? "✓" : ""), s.name)));
+  if (m.state === "running") {
+    return [h("div", { class: "making", id: "making" },
+      h("div", { class: "mk-head" }, h("span", { class: "spin" }), `Making: ${m.title}`, h("span", { class: "when" }, `started ${ago(m.since)}`)),
+      steps, m.now ? h("div", { class: "now" }, `Now: ${m.now}`) : null,
+      m.needs ? h("div", { class: "now" }, `Skipped: ${m.needs}`) : null,
+      h("div", { class: "now" }, "The three scripts appear right here when they are ready, usually in 3 to 5 minutes. You can leave this page: they wait under Your turn."))];
+  }
+  return [h("div", { class: "making stopped", id: "making" },
+    h("div", { class: "mk-head" }, `This run stopped part-way: ${m.title}`, h("span", { class: "when" }, `last step ${ago(m.last)}`)),
+    steps, h("div", { class: "now" }, "Nothing is running it any more (the office restarted, or a step failed). Nothing it made is lost."),
+    h("div", { class: "row" }, h("button", { class: "primary", onclick: async (e) => { e.target.disabled = true; await post(`/api/marketing/run?ref=${encodeURIComponent(ref)}`); toast("Started again"); load(); } }, "Start again")))];
+}
+function editPicture(picture) {  // the picture, what should change, then before and after: nothing changes until "Use this"
+  document.getElementById("picedit")?.remove();
+  const note = h("textarea", { rows: 3, placeholder: "What should change? e.g. make it look like a real photo, remove the logo, a brighter sky, no text on it" });
+  const out = h("div", { class: "pe-out" });
+  const close = () => box.remove();
+  const go = async (btn) => {
+    if (!note.value.trim()) return toast("Say what should change");
+    btn.disabled = true; out.replaceChildren(h("p", { class: "note" }, h("span", { class: "spin" }), " Muse Image is editing the picture… (about 20–60 seconds)"));
+    let r;
+    try { r = await post("/api/studio/edit-picture", { ref, picture, note: note.value, by: me() }); } catch (e) { r = { ok: false, error: e.message }; }
+    btn.disabled = false;
+    if (!r.ok) { out.replaceChildren(h("p", { class: "note bad" }, r.error || "It didn't work")); return; }
+    out.replaceChildren(h("div", { class: "pe-two" }, h("figure", {}, h("figcaption", {}, "Before"), h("img", { src: r.before })), h("figure", {}, h("figcaption", {}, "After"), h("img", { src: `${r.after}?v=${Date.now()}` }))),
+      h("div", { class: "row" }, h("span", { class: "grow note" }, "Nothing in the post changes until you press Use this."),
+        h("button", { onclick: (e) => go(e.target) }, "Try again"),
+        h("button", { class: "primary", onclick: async (e) => { e.target.disabled = true; const u = await post("/api/studio/edit-picture/use", { ref, picture, after: r.after, note: r.note, by: me() });
+          if (!u.ok) { e.target.disabled = false; return toast(u.error); }
+          e.target.textContent = "Putting it in the post…";  // the box stays until the page shows the new picture: a refresh already on its way may still carry the old one
+          const shown = () => JSON.stringify([data.made.slides, data.free_video]).includes(r.after);
+          for (let i = 0; i < 10 && !shown(); i++) { await load(); if (!shown()) await new Promise((ok) => setTimeout(ok, 700)); }
+          close(); toast(u.next); } }, "Use this")));
+  };
+  const box = h("div", { class: "picedit", id: "picedit", onclick: (e) => { if (e.target === box) close(); } },
+    h("div", { class: "pe-card" }, h("div", { class: "row" }, h("b", { class: "grow" }, "Edit this picture"), h("button", { onclick: close }, "✕")),
+      h("img", { class: "pe-src", src: picture }), note,
+      h("div", { class: "row" }, h("span", { class: "grow note" }, "Muse Image edits this picture with your words · about $0.04 each time"), h("button", { class: "primary", onclick: (e) => go(e.target) }, "Make the change")),
+      out));
+  document.body.append(box); note.focus();
+}
+function stuckCard(s) {  // work that failed review three times: the person says what happens next
+  return h("div", { class: "item stuck", id: `stuck-${s.id}` }, h("b", {}, "Needs your decision: "), s.question,
+    h("div", { class: "row" }, h("span", { class: "grow" }), ...s.options.map((o) => h("button", { class: o === "Accept as is" ? "primary" : "", onclick: async (e) => {
+      e.target.disabled = true;
+      const r = await post(`/api/studio/stuck/${encodeURIComponent(s.id)}`, { choice: o, by: me() });
+      if (!r.ok) { toast(r.error || "That didn't work"); e.target.disabled = false; return; }
+      toast(r.next);
+      await load();
+      if (r.open === "own") { const d = $("ownbox"); d.open = true; d.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    } }, o))));
+}
+function watchMaking() {
+  const m = data.making || {};
+  if (wasRunning[ref] && m.state === "ready") {
+    toast(`Scripts ready for ${m.title}: pick one under Your turn.`);
+    if (document.hidden) document.title = "✓ Scripts ready · Studio";
+    if (window.Notification && Notification.permission === "granted") new Notification("Scripts ready", { body: `${m.title}: pick one in the Studio.` });
+  }
+  wasRunning[ref] = m.state === "running";
+  clearTimeout(pollT);
+  if (m.state === "running" || (data.making_refs || []).length) pollT = setTimeout(() => load(true), 4000);  // nothing else moves the page while the model writes
+}
+addEventListener("focus", () => { if (document.title.startsWith("✓")) document.title = "Studio · Diwan"; });
+const writing = (r) => (data?.making_refs || []).includes(r);
+const askToNotify = () => { if (window.Notification && Notification.permission === "default") Notification.requestPermission(); };
 const unsent = () => [...$("turn").querySelectorAll("input")].some((i) => i === document.activeElement || (i.type === "file" ? i.files.length : i.type === "checkbox" ? i.checked : i.value));
 function renderRun(quiet) {
   $("rooms").replaceChildren(...ROOMS.map(([room, ids]) => {
@@ -601,7 +710,7 @@ function renderRun(quiet) {
       h("span", { class: "nm" }, NAME[id]), h("span", { class: "tx" }, b ? `Waiting: ${b}` : t || "Not run yet"));
   }))));
   $("footage").hidden = !data.script_approved;
-  const turn = [data.stopped ? h("div", { class: "item", id: "stopnote" }, h("b", {}, "This post is stopped. "), `It will not go out, and what was made for it is gone from here. ${data.stopped.why ? `Your reason: ${data.stopped.why}. ` : ""}To try again, press the button at the top: it starts fresh, with what Diwan learned from your reason.`) : "",
+  const turn = [...makingCard(), ...(data.stuck || []).map(stuckCard), data.stopped ? h("div", { class: "item", id: "stopnote" }, h("b", {}, "This post is stopped. "), `It will not go out, and what was made for it is gone from here. ${data.stopped.why ? `Your reason: ${data.stopped.why}. ` : ""}To try again, press the button at the top: it starts fresh, with what Diwan learned from your reason.`) : "",
     ...data.approvals.map((r) => r.kind === "use_script" ? scriptCard(r) : r.kind === "approve_brief" ? h("div", { class: "item" }, h("div", {}, h("b", {}, `Waiting for ${data.approvers.script.label}: `), r.text),
     h("div", { class: "row" }, h("span", { class: "grow" }), h("button", { onclick: () => decide(r.id, "reject", "", approver("script")) }, "Not this one"), h("button", { class: "primary", onclick: () => decide(r.id, "approve", "", approver("script")) }, "Write the scripts"))) : h("div", { class: "item" },
     h("div", {}, h("b", {}, `Waiting for ${data.approvers.publish.label}: `), r.text),
@@ -626,15 +735,20 @@ function renderRun(quiet) {
         + (data.made.slides.change.cannot ? ` Can't do: ${data.made.slides.change.cannot}` : "")) : "",
       data.made.slides.change && data.made.slides.change.before.length ? h("div", { class: "beforeafter" },
         h("div", {}, h("span", { class: "note" }, "Before"), h("div", { class: "slideshow" }, ...data.made.slides.change.before.map((s) => h("img", { src: s, alt: "before" })))),
-        h("div", {}, h("span", { class: "note" }, "After"), h("div", { class: "slideshow" }, ...data.made.slides.images.map((x) => h("img", { src: x.served, alt: x.text }))))) :
-      h("div", { class: "slideshow" }, ...data.made.slides.images.map((x) => h("img", { src: x.served, alt: x.text })))) : "",
+        h("div", {}, h("span", { class: "note" }, "After"), h("div", { class: "slideshow" }, ...data.made.slides.images.map((x) => h("div", { class: "editable" }, h("img", { src: x.served, alt: x.text }),
+          h("button", { class: "editpic", onclick: () => editPicture(x.served) }, "✎ Edit picture")))))) :
+      h("div", { class: "slideshow" }, ...data.made.slides.images.map((x) => h("div", { class: "editable" }, h("img", { src: x.served, alt: x.text }),
+        h("button", { class: "editpic", onclick: () => editPicture(x.served) }, "✎ Edit picture"))))) : "",
     data.script_approved && !data.made.slides && !data.approvals.some((r) => r.kind === "use_script") ? h("div", { class: "item" }, h("b", {}, "Production: "), "the broker has the film list. Or make the video without filming, one of two ways:",
       h("div", { class: "two" },
         h("div", { class: "way" }, h("b", {}, "Free video"), h("p", { class: "note" }, `The computer's voice (${data.free_video.voice}) reads the script over the listing's photos with a slow zoom, the price card and an end card. No avatar, no cost. ${data.free_video.photos} photo${data.free_video.photos === 1 ? "" : "s"} ready.`),
           h("div", { class: "row" }, h("input", { type: "file", id: "photos", accept: "image/*", multiple: true, "aria-label": "Add photos of the listing" }), h("button", { onclick: addPhotos }, "Add photos")),
+          (data.free_video.photo_urls || []).length ? h("div", { class: "thumbs" }, ...data.free_video.photo_urls.map((u, i) =>
+            h("div", { class: "editable" }, h("a", { href: u, target: "_blank", title: `Open picture ${i + 1} full size` }, h("img", { src: u, alt: `Picture ${i + 1} for the video`, loading: "lazy" })),
+              h("button", { class: "editpic", onclick: () => editPicture(u) }, "✎ Edit")))) : "",
           data.free_video.review ? h("p", { class: "note" }, data.free_video.review.checked ? `Creative Director: ${data.free_video.review.score} out of 5.` : "These frames could not be checked. Look at them closely before you use them.") : "",
           data.free_video.can_draw && !data.free_video.photos && data.free_video.doubt ? h("p", { class: "note" }, "You turned down how the pictures looked before. Real photos of your team or office will look better than anything drawn.") : "",
-          data.free_video.can_draw && !data.free_video.photos ? h("div", { class: "row" }, h("span", { class: "note grow" }, `No photos? Muse can draw ${data.free_video.frames} illustrations from the script, about $${(data.free_video.frames * 0.04).toFixed(2)}, up to double if some are redrawn.`),
+          data.free_video.can_draw && !data.free_video.photos ? h("div", { class: "row" }, h("span", { class: "note grow" }, `No photos? Muse can make ${data.free_video.frames} real-estate-style AI photos from the script, about $${(data.free_video.frames * 0.04).toFixed(2)}, up to double if some are redrawn.`),
             h("button", { onclick: drawFrames }, "Make the frames with AI")) : "",
           h("div", { class: "row" }, h("span", { class: "note grow" }, data.free_video.missing.length ? `Needs ${data.free_video.missing.join(", ")}.` : data.free_video.photos ? "" : "Add photos first."),
             h("button", { class: "primary", disabled: !!data.free_video.missing.length || !data.free_video.photos, onclick: freeVideo }, "Make free video"))),
@@ -669,6 +783,9 @@ function scriptCard(r) {
       h("pre", {}, [o.hook_en, o.hook_ar, "", ...o.lines_en].join("\n")),
       o.director ? h("p", { class: `note ${o.director.score >= 4 ? "ok" : ""}`, title: o.director.fix ? `To raise it: ${o.director.fix}` : "" },
         `Creative Director ${o.director.score}/5${o.director.rewritten_from ? ` (rewritten from ${o.director.rewritten_from}/5)` : ""}: ${o.director.why}`) : "",
+      o.visual ? h("details", { class: "vbrief", open: true }, h("summary", {}, `What it will look like: ${o.visual.kind}, ${o.visual.frames.length} frame${o.visual.frames.length === 1 ? "" : "s"}`),
+        o.visual.why ? h("p", { class: "note" }, `Why: ${o.visual.why}`) : "", o.visual.mood ? h("p", { class: "note" }, `Mood: ${o.visual.mood}`) : "",
+        h("ol", {}, ...(o.look || []).map((t) => h("li", {}, t.replace(/^Frame \d+ · /, ""))))) : "",
       o.slides ? h("div", { class: "slidesplan" }, h("b", {}, `${o.slides.length} image${o.slides.length === 1 ? "" : "s"}`), ...o.slides.map((s, k) => h("p", { class: "note" }, `${k + 1}. ${s.photo ? s.photo.split(/[\\/]/).pop() : "graphic"}: ${s.text}`))) : "",
       o.shots && o.shots.length ? h("details", { class: "vplan" }, h("summary", {}, `Video plan: ${o.shots.length} shots, about ${Math.round(o.shots[o.shots.length - 1].at + 3)} seconds`),
         h("div", { class: "scroll" }, h("table", { class: "kpi" }, h("tr", {}, ...["At", "On screen", "Words on screen", "Said", "Cut"].map((x) => h("th", {}, x))),
@@ -700,8 +817,16 @@ $("ownsend").onclick = async (e) => {
 const approver = (role) => data.approvers[role].id || undefined;  // the person set in Setup; else the server's default
 const me = () => (data && data.approvers.script.id) || undefined;  // no sign-in yet: actions are recorded as the person who picks scripts
 async function decide(id, decision, note = "", by = undefined, choice = null, at = null) {
-  const r = await post(`/api/requests/${id}/decide`, { decision, by, note, choice, at });
-  toast(r.next ? `Done: ${r.next}` : r.ok ? (r.id ? `Published: ${r.id}` : "Done") : `${choice ? "This script can't be used yet" : "Not published yet"}: ${(r.needs || [r.error]).join("; ")}`);
+  const btns = [...$("turn").querySelectorAll("button")].filter((b) => !b.disabled);  // one click is one answer: the buttons wait until it is in
+  btns.forEach((b) => { b.disabled = true; });
+  toast("Working…");
+  let r;
+  try { r = await post(`/api/requests/${id}/decide`, { decision, by, note, choice, at }); }
+  catch (e) { btns.forEach((b) => { b.disabled = false; }); return toast(e.message); }
+  const why = (r.needs || [r.error]).filter(Boolean).join("; ");
+  const head = choice ? "This script can't be used yet" : decision === "approve" ? "Not published yet" : "Not done";
+  toast(r.next ? `Done: ${r.next}` : r.ok ? (r.id ? `Published: ${r.id}` : "Done") : `${head}: ${why}`);
+  if (!r.ok) btns.forEach((b) => { b.disabled = false; });
   load();
 }
 async function aiVideo() {
@@ -1183,12 +1308,19 @@ async function loadPlan() {
   $("pl-wait").replaceChildren(...(m.waiting.length ? [h("ol", { class: "days" }, ...m.waiting.map((w) => h("li", {}, h("span", { class: "d" }, w.label), h("span", { class: "grow" }, h("b", {}, w.title || ""), h("span", { class: "note" }, w.kind === "publish" ? ` · ${w.text.replace(/^Publish the \S+ /, "")}` : "")),
       h("span", { class: "moves" }, w.kind === "use_script" ? h("button", { class: "primary", onclick: () => open(w.ref) }, "Read the scripts") : h("button", { class: "primary", onclick: () => act(`/api/requests/${w.id}/decide`, { decision: "approve", note: "" }) }, w.kind === "publish" ? "Approve" : "Write the scripts"),
         w.kind === "publish" ? h("button", { onclick: () => open(w.ref) }, "Open") : "", h("button", { onclick: () => { const note = prompt(w.kind === "use_script" ? "What is wrong with them? They go back to be written again." : "Why stop it? Diwan learns from your reason (you can leave this empty)."); if (note !== null) act(`/api/requests/${w.id}/decide`, { decision: "reject", note }); } }, w.kind === "use_script" ? "Send back" : "Reject")))))] : [h("p", { class: "note" }, "Nothing is waiting for you.")]));
+  if ((m.carry_on || []).length) $("pl-wait").append(h("h3", { class: "carryhead" }, "Carry on where you left off"),
+    h("ol", { class: "days" }, ...m.carry_on.map((c) => h("li", {},
+      h("span", { class: "d" }, new Date(c.since).toLocaleDateString("en-GB", { day: "numeric", month: "short" })),
+      h("span", { class: "grow" }, h("b", { class: "openpost", role: "link", tabindex: 0, title: "Open this post where you left it", onclick: () => openPost(c.ref) }, c.title),
+        h("span", { class: "note", style: "display:block" }, c.next)),
+      h("span", { class: `tag ${c.writing ? "writing" : ""}` }, c.writing ? "Writing…" : c.stage),
+      h("span", { class: "moves" }, h("button", { class: "primary", onclick: () => openPost(c.ref) }, "Open"))))));
   const TAG = { pending: "Pending", approved: "Approved", written: "Written" };
   $("pl-days").replaceChildren(...(m.days.length ? [h("ol", { class: "days" }, ...m.days.map((d) => h("li", { class: `pl-${d.state}` }, h("span", { class: "d" }, date(d.date)),
       h("span", { class: "grow" }, h("b", d.ref ? { class: "openpost", role: "link", tabindex: 0, title: "Open this post", onclick: () => openPost(d.ref) } : {}, d.title || "Nothing planned"), d.ref ? h("span", { class: "note" }, ` · ${d.job} · ${d.format}`) : "", h("span", { class: "note", style: "display:block" }, d.why), d.evidence ? h("span", { class: "note", style: "display:block" }, `Based on: ${d.evidence}`) : ""),
       h("span", { class: `tag st-${d.state}` }, d.stage || TAG[d.state]),
       d.state !== "written" && d.ref ? h("span", { class: "moves" }, d.state === "pending" ? h("button", { class: "primary", onclick: () => act("/api/marketing/plan/day", { day: d.date, decision: "approve" }) }, "Approve") : "",
-        h("button", { onclick: async () => { const r = await act("/api/marketing/plan/write", { day: d.date }); if (r.ok) toast("Writing it now: it will appear under Waiting for you."); } }, "Write it now"),
+        h("button", { onclick: async () => { const r = await act("/api/marketing/plan/write", { day: d.date }); if (r.ok) { askToNotify(); toast("Writing it now: follow it on the Run tab."); ref = r.ref; showTab("run"); load(); } } }, "Write it now"),
         h("button", { onclick: changeDay(d) }, "Change"), h("button", { onclick: moveDay(d) }, "Reschedule"), h("button", { onclick: removeDay(d) }, "Remove")) : ""))),
     ] : [h("p", { class: "note" }, "No plan yet. Choose how far ahead and press Make the plan.")]));
   const out = [...m.scheduled.map((x) => h("li", {}, h("span", { class: "d" }, "Scheduled"), h("span", { class: "grow" }, h("b", {}, x.title), h("span", { class: "note" }, ` · ${when(x.at)}`)),
@@ -1333,7 +1465,7 @@ function renderPlan() {
       done.has(d.date) ? h("span", { class: "note ok" }, (rh.stages || {})[d.ref] || "Scripts written") : h("span", { class: "moves" },
         h("button", { "aria-label": `Move ${day(d.date)} earlier`, disabled: i === 0, onclick: move(d.date, -1) }, "↑"),
         h("button", { "aria-label": `Move ${day(d.date)} later`, disabled: i === p.days.length - 1, onclick: move(d.date, 1) }, "↓"),
-        h("button", { title: "Write this day's three scripts now", onclick: async (e) => { e.target.disabled = true;
+        writing(d.ref) ? h("span", { class: "tag writing" }, "Writing…") : h("button", { title: "Write this day's three scripts now", onclick: async (e) => { e.target.disabled = true; askToNotify();
           const r = await post("/api/marketing/plan/write", { day: d.date, by: me() }); if (!r.ok) { toast(r.error); e.target.disabled = false; return; }
           toast("Writing it now: the three scripts will appear under Your turn."); ref = r.ref; await load(); } }, "Write it now"),
         h("button", { onclick: changeDay(d) }, "Change"), h("button", { onclick: removeDay(d) }, "Remove")))))]
