@@ -664,9 +664,26 @@ def hand_over(office: Office, phone: str, *, to: str | None = None, by: str = RA
         leads.raise_card(office, phone, reason=reason or "needs a person", text=text, to=to, cause=cause, now=now)
 
 
-def give_back(office: Office, phone: str, *, by: str) -> None:
-    deal = office.graph().nodes[f"chat:{phone}"].deal
+def give_back(office: Office, phone: str, *, by: str) -> dict | None:
+    """Rania takes the chat back. Whatever the client wrote while a person had it is answered now, and the card asking
+    that person to reply comes off: handing a chat back never leaves the client waiting."""
+    from diwan import leads
+    g = office.graph()
+    deal = g.nodes[f"chat:{phone}"].deal
     office.log.append("chat.handover", actor=by, deal=deal, content={"chat": phone, "mode": "ai", "by": by})
+    for n in g.of("attention", status="open"):
+        if n.props.get("chat") == phone and n.props.get("kind") == "reply":
+            leads.clear(office, n.id, "not_needed", by=by, note="handed back to Rania, who answers it")
+    waiting = []  # what they wrote since anyone last actually sent them something: a suggestion nobody sent answers nothing
+    for m in reversed(office.graph().nodes[f"chat:{phone}"].props["messages"]):
+        if m["type"] == "sent":
+            break
+        if m["type"] == "received":
+            waiting.append(m)
+    if not waiting:
+        return None
+    last = waiting[0]
+    return message(office, phone, last["text"], received={"deal": deal, "got": {"id": last["event"]}, "heard": {"facts": []}})
 
 
 class WindowClosed(RuntimeError):

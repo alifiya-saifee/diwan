@@ -138,6 +138,10 @@ def convert(office: Office, deal: str, by: str, amount, prop: dict | None = None
         raise ValueError("Enter the agreed price in dirhams.") from None
     if amount <= 0:
         raise ValueError("Enter the agreed price in dirhams.")
+    from diwan import qualify
+    said = qualify.number(((d.props.get("answers") or {}).get("budget_aed") or {}).get("value"))
+    if said and not said / 10 <= amount <= said * 10:  # a zero too many or too few: "20,000" for a client who said 2M
+        raise ValueError(f"AED {amount:,} is far from the AED {int(said):,} the client said they would spend. Is a zero missing? Enter the agreed price again.")
     if agreed(g, deal):
         raise ValueError("The deal is already converted; a new price is recorded as a correction.")
     if pending(g, deal):

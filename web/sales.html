@@ -5,34 +5,122 @@
 <title>Sales · Diwan</title>
 <link rel="stylesheet" href="app.css">
 <style>
-  .sgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; align-items: start; }
-  .sgrid .panel h2 { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .sgrid .wide { grid-column: 1 / -1; }
-  .srow { display: flex; gap: 10px; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
-  .srow:last-child { border-bottom: 0; }
-  .srow .nm { font-weight: 600; color: var(--ink); }
-  .srow a.nm:hover { text-decoration: underline; }
-  .acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .late { color: var(--bad); font-weight: 600; }
-  .said { font-size: 12.5px; color: var(--muted); padding-left: 8px; border-left: 2px solid var(--line); margin-top: 4px; max-width: 520px; }
-  .count { font-size: 12px; color: var(--muted); font-weight: 400; }
-  .none { color: var(--muted); font-size: 13px; padding: 6px 0; }
-  .brokers { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
-  .broker { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-  .bar { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 14px; }
-  form.add { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin-top: 10px; }
+  main.sr { max-width: 1640px; }
+  .bar { display: flex; gap: 16px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; margin-bottom: 18px; }
+  .bar h1 { margin-bottom: 2px; }
+
+  /* the numbers at a glance */
+  .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .kpi { display: flex; flex-direction: column; gap: 1px; padding: 13px 16px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel);
+    cursor: pointer; text-align: left; color: var(--ink); font: inherit; transition: border-color .15s, transform .15s; }
+  .kpi:hover { border-color: var(--line-2); transform: translateY(-1px); }
+  .kpi b { font: 600 26px/1.15 var(--font); letter-spacing: -.5px; }
+  .kpi span { font-size: 12px; color: var(--muted); }
+  .kpi small { font-size: 11px; color: var(--faint); margin-top: 2px; }
+  .kpi.bad { border-color: rgba(242, 125, 125, .35); background: linear-gradient(135deg, var(--bad-soft), var(--panel) 70%); }
+  .kpi.bad b { color: var(--bad); }
+  .kpi.warn { border-color: rgba(240, 179, 94, .3); background: linear-gradient(135deg, var(--warn-soft), var(--panel) 70%); }
+  .kpi.warn b { color: var(--warn); }
+  .kpi.zero b { color: var(--faint); }
+
+  /* page: work on the left, the team and the watch list on the right */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+  .side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 72px; max-height: calc(100vh - 88px); overflow-y: auto; padding-right: 2px; }
+  .label { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; font-size: 11.5px; font-weight: 600; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); }
+  .label::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .stack { display: flex; flex-direction: column; gap: 14px; margin-bottom: 22px; }
+
+  .card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 14px 16px; min-width: 0; }
+  .card h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: 13px; font-weight: 600; letter-spacing: .3px; }
+  .card h2 .n { margin-left: auto; min-width: 24px; height: 22px; padding: 0 8px; border-radius: 99px; background: var(--chip); color: var(--muted); font-size: 12px;
+    display: inline-flex; align-items: center; justify-content: center; }
+  .card.urgent { border-color: rgba(242, 125, 125, .3); }
+  .card.urgent h2 .n { background: var(--bad-soft); color: var(--bad); }
+  .card.attn { border-color: rgba(240, 179, 94, .25); }
+  .card.attn h2 .n { background: var(--warn-soft); color: var(--warn); }
+  .scroll { max-height: 520px; overflow-y: auto; margin-right: -8px; padding-right: 8px; }
+  .calm { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; padding: 8px 0 2px; }
+  .calm i { font-style: normal; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(130, 217, 159, .12); color: var(--green); font-size: 12px; }
+
+  /* a row: who, what, then the actions in a fixed place */
+  .srow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; align-items: center; padding: 11px 0; border-top: 1px solid var(--line); }
+  .card h2 + .srow, .scroll > .srow:first-child, .lane .body .srow:first-child { border-top: 0; }
+  .who { display: flex; gap: 11px; align-items: flex-start; min-width: 0; }
+  .av { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #10131a; }
+  .who .nm { font-weight: 600; color: var(--ink); }
+  .who a.nm:hover { color: var(--gold-2); }
+  .who > div { min-width: 0; }
+  .meta { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+  .acts button, .acts .btn { padding: 5px 11px; font-size: 12.5px; }
+  .status { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 99px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+  .status.late { background: var(--bad-soft); color: var(--bad); }
+  .status.pool { background: var(--warn-soft); color: var(--warn); }
+  .said { font-size: 12.5px; color: var(--muted); padding: 5px 10px; border-radius: 8px; background: rgba(255, 255, 255, .03); margin-top: 6px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .said b { color: var(--ink); font-weight: 500; }
+  details.more summary { cursor: pointer; font-size: 12px; color: var(--faint); margin-top: 4px; list-style: none; }
+  details.more summary::-webkit-details-marker { display: none; }
+  details.more summary:hover { color: var(--muted); }
+  details.more .said { white-space: normal; }
+  .srow > .full { grid-column: 1 / -1; }
+
+  /* the pipeline: four equal lanes */
+  .lanes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .lane { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); min-height: 170px; overflow: hidden; }
+  .lane .head { display: flex; align-items: center; gap: 8px; padding: 13px 14px 11px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 600; }
+  .lane .head .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .lane .head .n { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 500; }
+  .lane .sub2 { padding: 8px 14px 0; display: flex; gap: 6px; flex-wrap: wrap; }
+  .lane .body { padding: 2px 14px 10px; overflow-y: auto; max-height: 380px; flex: 1; }
+  .lane .srow { grid-template-columns: 1fr; gap: 6px; }
+  .lane .srow .acts { justify-content: flex-start; padding-left: 43px; }
+  .empty { flex: 1; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; text-align: center; padding: 24px 14px; color: var(--faint); font-size: 12.5px; }
+  .empty::before { content: ""; width: 28px; height: 2px; border-radius: 2px; background: var(--line-2); }
+
+  /* the team, compact */
+  .broker { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 11px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .card h2 + .broker { border-top: 0; }
+  .broker .nm { font-weight: 600; }
+  .state { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+  .state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .state.on { color: var(--green); }
+  .state.on::before { background: var(--green); box-shadow: 0 0 0 3px rgba(130, 217, 159, .15); }
+  .nums { display: flex; gap: 12px; text-align: right; }
+  .nums div b { display: block; font-size: 15px; font-weight: 600; line-height: 1.1; }
+  .nums div span { font-size: 10.5px; color: var(--faint); }
+  .nums .bad b { color: var(--bad); }
+  .appt { grid-column: 2 / -1; display: flex; gap: 8px; font-size: 12px; color: var(--muted); }
+  .appt time { font-family: var(--mono); color: var(--gold); }
+
+  /* duplicates, grouped by name */
+  .dup summary { display: grid; grid-template-columns: auto 1fr auto; gap: 11px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); cursor: pointer; list-style: none; }
+  .dup summary::-webkit-details-marker { display: none; }
+  .card h2 + .dup summary { border-top: 0; }
+  .dup .pairs { padding: 0 0 8px 43px; }
+  .dup .pairs .srow { padding: 7px 0; }
+  .showall { margin-top: 6px; width: 100%; font-size: 12.5px; }
+
+  form.add { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 12px; }
   form.add .full { grid-column: 1 / -1; }
-  form.add label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+  form.add label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  #addbox { margin-bottom: 18px; }
+
+  @media (max-width: 1280px) { .layout { grid-template-columns: 1fr; } .side { position: static; max-height: none; overflow: visible; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; } }
+  @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .lanes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 720px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .lanes { grid-template-columns: 1fr; } .lane { min-height: 0; }
+    .srow { grid-template-columns: 1fr; } .acts { justify-content: flex-start; } .said { white-space: normal; } }
 </style>
 </head>
 <body>
-<main>
+<main class="sr">
   <div class="bar">
     <div><h1>Sales <em>room</em></h1><p class="sub" id="sub">Who to call, who is hot, and what is waiting on a person.</p></div>
     <button class="primary" id="addbtn">+ Add a lead</button>
   </div>
-  <section class="panel" id="addbox" hidden style="margin-bottom:14px"></section>
-  <div class="sgrid" id="board"><div class="none">Loading…</div></div>
+  <section class="panel" id="addbox" hidden></section>
+  <div class="kpis" id="kpis"></div>
+  <div id="board"><div class="calm">Loading…</div></div>
 </main>
 <script type="module">
 import { h, api, post, follow, header, NAMES, toast, SESSION } from "./app.js";
@@ -44,21 +132,33 @@ const CHANNEL = { whatsapp: "WhatsApp", instagram: "Instagram", propertyfinder: 
 const hhmm = (iso) => new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Dubai" });
 const open = (chat) => `inbox.html?chat=${encodeURIComponent(chat)}`;
 const who = (id) => NAMES[id] || id;
-let data = null;
+const span = (m) => { const a = Math.abs(m); return a < 60 ? `${a} min` : a < 1440 ? `${Math.floor(a / 60)} h${a % 60 ? ` ${a % 60} min` : ""}` : `${Math.round(a / 1440)} day${a >= 2160 ? "s" : ""}`; };
+const TONES = ["#e8c77a", "#5ccfb5", "#7ea6f8", "#b591f3", "#82d99f", "#f0b35e", "#f08fc0"];
+const avatar = (name) => { const s = String(name || "?"), i = [...s].reduce((a, c) => a + c.charCodeAt(0), 0) % TONES.length;
+  return h("span", { class: "av", style: `background:${TONES[i]}` }, s.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase()); };
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : /(ch|sh|s|x)$/.test(w) ? "es" : "s"}`;
+let data = null, allDups = false;
 
-const block = (title, n, kids, cls = "") => h("section", { class: `panel ${cls}` }, h("h2", {}, title, n != null ? h("span", { class: "count" }, String(n)) : null),
-  ...(kids.length ? kids : [h("div", { class: "none" }, "Nothing here.")]));
-const lead = (r, ...right) => h("div", { class: "srow" }, h("div", {}, h("a", { class: "nm", href: open(r.chat) }, r.name),
-  h("div", { class: "small muted" }, [data.sees_all ? who(r.broker) : null, r.stage].filter(Boolean).join(" · "))), h("div", { class: "acts" }, ...right));
+const card = (id, title, n, kids, cls = "", calm = "Nothing here.", scroll = false) => h("section", { class: `card ${cls}`, id },
+  h("h2", {}, title, h("span", { class: "n" }, String(n))),
+  ...(kids.length ? (scroll ? [h("div", { class: "scroll" }, ...kids)] : kids) : [h("div", { class: "calm" }, h("i", {}, "✓"), calm)]));
+const lane = (id, title, color, n, kids, empty, extra = null) => h("section", { class: "lane", id },
+  h("div", { class: "head" }, h("span", { class: "dot", style: `background:${color}` }), title, h("span", { class: "n" }, String(n))),
+  extra, kids.length ? h("div", { class: "body" }, ...kids) : h("div", { class: "empty" }, empty));
+const person = (r, line, ...below) => h("div", { class: "who" }, avatar(r.name), h("div", {}, h("a", { class: "nm", href: open(r.chat) }, r.name), h("div", { class: "meta", title: line }, line), ...below));
+const lead = (r, ...right) => h("div", { class: "srow" },
+  person(r, [data.sees_all ? who(r.broker) : null, r.stage].filter(Boolean).join(" · ")), h("div", { class: "acts" }, ...right.filter(Boolean)));
+const line = (m) => h("div", { class: "said" }, h("b", {}, `${m.who === "client" ? "Client" : m.who === "rania" ? "Rania" : who(m.who)}: `), m.text);
 
 function callRow(r) {
   const a = r.attention;
-  const when = a.pooled ? "in the Pool" : a.overdue ? `${-a.minutes_left} min late` : `${a.minutes_left} min left`;
+  const when = a.pooled ? "In the Pool" : a.overdue ? `${span(a.minutes_left)} late` : `${span(a.minutes_left)} left`;
+  const msgs = a.last || [], latest = msgs.at(-1), earlier = msgs.slice(0, -1);
+  const reason = `${who(a.who)}${a.escalated ? ` · moved from ${who(a.moved_from)}` : ""} · ${a.reason.slice(0, 110)}`;
   return h("div", { class: "srow" },
-    h("div", { style: "flex:1;min-width:220px" }, h("a", { class: "nm", href: open(r.chat) }, r.name),
-      h("div", { class: "small muted" }, `${who(a.who)}${a.escalated ? ` · moved from ${who(a.moved_from)}` : ""} · ${a.reason.slice(0, 110)}`),
-      ...a.last.map((m) => h("div", { class: "said" }, `${m.who === "client" ? "Client" : m.who === "rania" ? "Rania" : who(m.who)}: ${m.text}`))),
-    h("div", { class: "acts" }, h("span", { class: a.overdue ? "late" : "small muted" }, when),
+    person(r, reason, ...(latest ? [line(latest)] : []),
+      ...(earlier.length ? [h("details", { class: "more" }, h("summary", {}, `Show ${plural(earlier.length, "earlier message")}`), ...earlier.map(line))] : [])),
+    h("div", { class: "acts" }, h("span", { class: `status ${a.pooled ? "pool" : a.overdue ? "late" : ""}` }, when),
       r.tel && !r.no_calls ? h("a", { class: "btn primary", href: `tel:+${r.tel}` }, "📞 Call") : h("span", { class: "chip" }, r.no_calls ? "No calls" : "Instagram"),
       h("button", { onclick: () => clearCard(a.id, r) }, "Called")));
 }
@@ -68,46 +168,86 @@ async function clearCard(id, r) {
 }
 
 function outcomeRow(r) {
-  const box = h("div", { class: "full", style: "width:100%" });
+  const box = h("div", { class: "full" });
   const say = async (outcome, extra = {}) => {
     try { await post(`/api/chats/${encodeURIComponent(r.chat)}/outcome`, { by: ME, outcome, ...extra }); toast("Outcome recorded"); load(true); } catch (e) { toast(e.message); }
   };
   const lost = () => { const sel = h("select", {}, ...Object.entries(data.lost_reasons).map(([k, v]) => h("option", { value: k }, v))), note = h("input", { placeholder: "A note (needed for Other)" });
-    box.replaceChildren(h("div", { class: "acts", style: "margin-top:6px" }, sel, note, h("button", { class: "primary", onclick: () => say("not_interested", { reason: sel.value, note: note.value }) }, "Save"))); };
+    box.replaceChildren(h("div", { class: "acts", style: "justify-content:flex-start;margin-top:4px" }, sel, note, h("button", { class: "primary", onclick: () => say("not_interested", { reason: sel.value, note: note.value }) }, "Save"))); };
   const later = () => { const day = h("input", { type: "date", value: new Date(Date.now() + 864e5 + 144e5).toISOString().slice(0, 10) }), t = h("input", { type: "time", value: "10:00" });
-    box.replaceChildren(h("div", { class: "acts", style: "margin-top:6px" }, day, t, h("button", { class: "primary", onclick: () => say("follow_up", { at: `${day.value}T${t.value}:00+04:00` }) }, "Save"))); };
-  return h("div", { class: "srow", id: `out-${r.chat}` }, h("div", {}, h("a", { class: "nm", href: open(r.chat) }, r.name),
-    h("div", { class: "small muted" }, `${r.last.what === "no_answer" ? "No answer" : "Called"} by ${who(r.last.by)}`)),
+    box.replaceChildren(h("div", { class: "acts", style: "justify-content:flex-start;margin-top:4px" }, day, t, h("button", { class: "primary", onclick: () => say("follow_up", { at: `${day.value}T${t.value}:00+04:00` }) }, "Save"))); };
+  return h("div", { class: "srow", id: `out-${r.chat}` }, person(r, `${r.last.what === "no_answer" ? "No answer" : "Called"} by ${who(r.last.by)}`),
     h("div", { class: "acts" }, h("a", { class: "btn", href: `${open(r.chat)}&convert=1` }, "Converted…"), h("button", { onclick: later }, "Follow up on…"), h("button", { onclick: lost }, "Not interested…"),
       h("button", { onclick: () => say("no_response") }, "No response")), box);
 }
 
+function brokerRow(b) {
+  return h("div", { class: "broker" }, avatar(b.name),
+    h("div", {}, h("div", { class: "nm" }, b.name), h("span", { class: `state ${b.on_shift ? "on" : ""}` }, b.on_shift ? "On shift" : "Off today")),
+    h("div", { class: "nums" }, h("div", {}, h("b", {}, String(b.leads_today)), h("span", {}, "new")),
+      h("div", {}, h("b", {}, String(b.cards)), h("span", {}, "cards")),
+      h("div", { class: b.overdue ? "bad" : "" }, h("b", {}, String(b.overdue || 0)), h("span", {}, "late"))),
+    ...b.appointments.map((a) => h("div", { class: "appt" }, h("time", {}, hhmm(a.at)), h("span", {}, `${a.what}${a.listing ? ` of ${a.listing}` : ""}, ${a.customer}`))));
+}
+
+function dupGroups(list) {
+  const groups = new Map();
+  for (const x of list) { const k = x.a_name === x.b_name ? x.a_name : `${x.a_name} / ${x.b_name}`; (groups.get(k) || groups.set(k, []).get(k)).push(x); }
+  const rows = [...groups.entries()].sort((a, b) => b[1].length - a[1].length).map(([name, pairs]) => {
+    const owners = [...new Set(pairs.flatMap((x) => x.brokers || []))].map(who);
+    return h("details", { class: "dup" }, h("summary", {}, avatar(name), h("div", { style: "min-width:0" }, h("div", { class: "nm", style: "font-weight:600" }, name),
+      h("div", { class: "meta" }, `${plural(pairs.length, "possible match")}${owners.length ? ` · ${owners.join(", ")}` : ""}`)), h("span", { class: "status" }, "Review")),
+      h("div", { class: "pairs" }, ...pairs.map((x) => h("div", { class: "srow" },
+        h("div", { class: "meta" }, h("a", { href: open(x.a) }, x.a_name), " and ", h("a", { href: open(x.b) }, x.b_name), ` · same ${x.why}`),
+        h("div", { class: "acts" }, h("button", { onclick: async () => { try { await post(`/api/chats/${encodeURIComponent(x.a)}/merge`, { by: ME, other: x.b }); toast("Merged"); load(); } catch (e) { toast(e.message); } } }, "Merge"))))));
+  });
+  if (rows.length > 5 && !allDups) return [...rows.slice(0, 5), h("button", { class: "showall", onclick: () => { allDups = true; draw(); } }, `Show all ${rows.length} names`)];
+  return rows;
+}
+
+function kpis(d) {
+  const late = d.call_now.filter((r) => r.attention.overdue || r.attention.pooled).length;
+  const tile = (n, label, note, target, tone) => h("button", { class: `kpi ${n ? tone : "zero"}`, onclick: () => $(target)?.scrollIntoView({ behavior: "smooth", block: "center" }) },
+    h("b", {}, String(n)), h("span", {}, label), note ? h("small", {}, note) : null);
+  $("kpis").replaceChildren(
+    tile(d.call_now.length, "Call now", late ? `${late} late or in the Pool` : "", "s-call", "bad"),
+    tile(d.outcome.length, "Outcome needed", "", "s-outcome", "warn"),
+    tile(d.new.total, "New leads", Object.entries(d.new.by_channel).map(([c, n]) => `${CHANNEL[c] || c} ${n}`).join(" · "), "s-new", ""),
+    tile(d.qualifying.length, "Qualifying", "", "s-qual", ""),
+    tile(d.hot.length, "Hot leads", "", "s-hot", "warn"),
+    tile(d.followups.length, "Follow-ups today", "", "s-follow", ""));
+}
+
 function draw() {
   const d = data;
-  const brokers = h("div", { class: "brokers" }, ...d.brokers.map((b) => h("div", { class: "broker" },
-    h("div", { class: "nm", style: "font-weight:600" }, b.name, " ", h("span", { class: `chip ${b.on_shift ? "" : "warn"}` }, b.on_shift ? "on shift" : "off")),
-    h("div", { class: "small muted" }, `${b.leads_today} new today · ${b.cards} open card${b.cards === 1 ? "" : "s"}${b.overdue ? ` · ${b.overdue} late` : ""}`),
-    ...(b.appointments.length ? b.appointments.map((a) => h("div", { class: "small", style: "margin-top:4px" }, `${hhmm(a.at)} ${a.what}${a.listing ? ` of ${a.listing}` : ""}, ${a.customer}`))
-      : [h("div", { class: "small muted", style: "margin-top:4px" }, "No appointments today")]))));
+  kpis(d);
   const channels = Object.entries(d.new.by_channel);
-  $("board").replaceChildren(
-    block("📞 Call now", d.call_now.length, d.call_now.map(callRow), "wide"),
-    block("❗ Outcome needed", d.outcome.length, d.outcome.map(outcomeRow), "wide"),
-    block("🔥 Hot leads", d.hot.length, d.hot.map((r) => lead(r, r.heat ? h("span", { class: "chip", title: r.heat.parts.map((p) => `${p.ok ? "✓" : "✗"} ${p.name}`).join("\n") }, `heat ${r.heat.score}/${r.heat.of}`) : null,
-      r.hot !== "yes" ? h("span", { class: "chip" }, r.hot) : null, h("a", { class: "btn", href: `calendar.html?book=${encodeURIComponent(r.chat)}&as=${encodeURIComponent(ME)}` }, "Book a viewing"), r.deal ? h("a", { class: "btn", href: `deal.html?deal=${encodeURIComponent(r.deal)}` }, "Open the deal") : null))),
-    block("🆕 New leads", d.new.total, [
-      channels.length ? h("div", { style: "padding:4px 0 6px" }, ...channels.map(([c, n]) => h("span", { class: "chip", style: "margin-right:6px" }, `${CHANNEL[c] || c} ${n}`))) : null,
-      ...d.new.rows.map((r) => lead(r, h("span", { class: "chip" }, CHANNEL[r.source] || r.source)))].filter(Boolean)),
-    block("✍️ Qualifying", d.qualifying.length, d.qualifying.map((r) => lead(r, r.progress ? h("span", { class: "chip" }, `Qualifying ${r.progress.done}/${r.progress.of}`) : null))),
-    block("⏰ Follow-ups due today", d.followups.length, d.followups.map((r) => lead(r, h("span", { class: "small muted" }, hhmm(r.at)), h("span", { class: "chip" }, r.set ? "you set this" : `follow-up ${r.n} of ${r.of}`)))),
-    block("🌙 Quiet clients", d.quiet.length, d.quiet.map((r) => lead(r))),
-    block("🏠 New listings for waiting clients", d.matches.length, d.matches.map((m) => h("div", { class: "srow" }, h("div", {}, h("a", { class: "nm", href: open(m.chat) }, m.name),
-      h("div", { class: "small muted" }, `${m.ref}: ${m.title}, ${m.community}, AED ${m.price_aed.toLocaleString("en")}`)),
-      h("button", { class: "primary", onclick: async () => { try { await post(`/api/chats/${encodeURIComponent(m.chat)}/send-match`, { by: ME, ref: m.ref }); toast("Sent"); load(); } catch (e) { toast(e.message); } } }, "Send it")))),
-    block("🔗 Same person twice?", d.duplicates.length, d.duplicates.map((x) => h("div", { class: "srow" }, h("div", {}, h("a", { class: "nm", href: open(x.a) }, x.a_name), " and ", h("a", { class: "nm", href: open(x.b) }, x.b_name),
-      h("div", { class: "small muted" }, `Same ${x.why}${x.two_brokers ? ` · ${x.brokers.map(who).join(" and ")} own them` : ""}`)),
-      h("button", { onclick: async () => { try { await post(`/api/chats/${encodeURIComponent(x.a)}/merge`, { by: ME, other: x.b }); toast("Merged"); load(); } catch (e) { toast(e.message); } } }, "Merge")))),
-    block(d.sees_all ? "👥 Each broker's day" : "📅 Your day", null, [brokers], "wide"));
+  const work = h("div", {},
+    h("div", { class: "label" }, "Needs you now"),
+    h("div", { class: "stack" },
+      card("s-call", "📞 Call now", d.call_now.length, d.call_now.map(callRow), d.call_now.length ? "urgent" : "", "Nobody is waiting for a call.", true),
+      card("s-outcome", "❗ Outcome needed", d.outcome.length, d.outcome.map(outcomeRow), d.outcome.length ? "attn" : "", "Every call has an outcome.", true)),
+    h("div", { class: "label" }, "Pipeline"),
+    h("div", { class: "lanes" },
+      lane("s-new", "New leads", "var(--blue)", d.new.total, d.new.rows.map((r) => lead(r, h("span", { class: "chip" }, CHANNEL[r.source] || r.source))), "No new leads yet",
+        channels.length > 1 ? h("div", { class: "sub2" }, ...channels.map(([c, n]) => h("span", { class: "chip" }, `${CHANNEL[c] || c} ${n}`))) : null),
+      lane("s-qual", "Qualifying", "var(--violet)", d.qualifying.length, d.qualifying.map((r) => lead(r, r.progress ? h("span", { class: "chip" }, `Qualifying ${r.progress.done}/${r.progress.of}`) : null)), "Nobody mid-qualification"),
+      lane("s-hot", "Hot leads", "var(--warn)", d.hot.length, d.hot.map((r) => lead(r,
+        r.heat ? h("span", { class: "chip", title: r.heat.parts.map((p) => `${p.ok ? "✓" : "✗"} ${p.name}`).join("\n") }, `heat ${r.heat.score}/${r.heat.of}`) : null,
+        r.hot !== "yes" ? h("span", { class: "chip" }, r.hot) : null,
+        h("a", { class: "btn", href: `calendar.html?book=${encodeURIComponent(r.chat)}&as=${encodeURIComponent(ME)}` }, "Book a viewing"),
+        r.deal ? h("a", { class: "btn", href: `deal.html?deal=${encodeURIComponent(r.deal)}` }, "Open the deal") : null)), "No hot leads right now"),
+      lane("s-follow", "Follow-ups due today", "var(--teal)", d.followups.length, d.followups.map((r) => lead(r, h("span", { class: "status" }, hhmm(r.at)),
+        h("span", { class: "chip" }, r.set ? "you set this" : `follow-up ${r.n} of ${r.of}`))), "Nothing due today")));
+  const side = h("aside", { class: "side" },
+    h("section", { class: "card", id: "s-team" }, h("h2", {}, d.sees_all ? "👥 Each broker's day" : "📅 Your day"), ...d.brokers.map(brokerRow)),
+    card("s-dup", "🔗 Same person twice?", d.duplicates.length, dupGroups(d.duplicates), d.duplicates.length ? "attn" : "", "No duplicates found."),
+    card("s-quiet", "🌙 Quiet clients", d.quiet.length, d.quiet.map((r) => lead(r)), "", "No one has gone quiet.", true),
+    card("s-match", "🏠 New listings for waiting clients", d.matches.length, d.matches.map((m) => h("div", { class: "srow" },
+      person(m, `${m.ref}: ${m.title}, ${m.community}, AED ${m.price_aed.toLocaleString("en")}`),
+      h("div", { class: "acts" }, h("button", { class: "primary", onclick: async () => { try { await post(`/api/chats/${encodeURIComponent(m.chat)}/send-match`, { by: ME, ref: m.ref }); toast("Sent"); load(); } catch (e) { toast(e.message); } } }, "Send it")))),
+      "", "No new matches.", true));
+  $("board").replaceChildren(h("div", { class: "layout" }, work, side));
 }
 
 function addForm() {
@@ -118,17 +258,17 @@ function addForm() {
     h("form", { class: "add", onsubmit: async (e) => { e.preventDefault();
       try { await post("/api/leads/add", { by: ME, name: name.value, phone: phone.value, source: src.value, note: note.value, email: email.value, ref: ref.value, referred_by: by.value }); toast("Lead added"); $("addbox").hidden = true; load(); } catch (er) { toast(er.message); } } },
       f("Name", name), f("Phone", phone), f("Came from", src), f("Referred by", by), f("Email", email), f("Listing ref", ref), h("label", { class: "full" }, "Note", note),
-      h("div", { class: "full acts" }, h("button", { class: "primary", type: "submit" }, "Add"), h("button", { type: "button", onclick: () => { $("addbox").hidden = true; } }, "Cancel"))));
+      h("div", { class: "full acts", style: "justify-content:flex-start" }, h("button", { class: "primary", type: "submit" }, "Add"), h("button", { type: "button", onclick: () => { $("addbox").hidden = true; } }, "Cancel"))));
   $("addbox").hidden = false;
 }
 $("addbtn").onclick = addForm;
 
-// an open outcome form or a field being typed in is never redrawn away
+// an open outcome form, a field being typed in, or an opened group is never redrawn away
 let loadN = 0;
 async function load(force) {
   const n = ++loadN;
   const fresh = await api(`/api/sales/board?person=${encodeURIComponent(ME)}`);
-  const busy = $("board").querySelector("input, select");  // asked after the answer comes: a form may have opened meanwhile
+  const busy = $("board").querySelector("input, select, details[open]");  // asked after the answer comes: a form may have opened meanwhile
   if (n !== loadN || (busy && !force)) return;  // an older answer never overwrites a newer one
   data = fresh; draw();
 }
