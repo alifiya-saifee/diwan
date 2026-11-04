@@ -33,6 +33,8 @@ with sync_playwright() as p:
     errors = []
     pg.on("pageerror", lambda e: errors.append(str(e)))
     pg.goto(BASE + "/web/studio.html")
+    pg.wait_for_selector("#jfold")
+    pg.evaluate("document.getElementById('jfold').open = true")  # Your next post is folded to one line on Make; it stays open after a reload
     pg.wait_for_selector("#jbody p")
     body = pg.inner_text("#jpanel")
     ok("unknown account: it asks, and assumes nothing", "Have you posted on this account before?" in body and "Write this post" not in body, body[:200])

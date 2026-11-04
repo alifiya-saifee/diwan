@@ -34,6 +34,8 @@ with sync_playwright() as p:
     errors = []
     pg.on("pageerror", lambda e: errors.append(str(e)))
     pg.goto(BASE + "/web/studio.html")
+    pg.wait_for_selector("#jfold")
+    pg.evaluate("document.getElementById('jfold').open = true")  # Your next post is folded to one line on Make
     pg.wait_for_selector("#jmake")
     pg.locator("#jmoment summary").click()
     pg.fill("#jm-title", "Cityscape Global stand")

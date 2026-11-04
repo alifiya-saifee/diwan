@@ -130,6 +130,7 @@ def studio(ref: str | None = None, tab: str = "run"):
     PG.goto(f"{BASE}/web/studio.html" + (f"?ref={ref}" if ref else "") + f"#{tab}")
     PG.wait_for_selector("select[aria-label=Listing] option", state="attached", timeout=60000)
     PG.wait_for_timeout(1200)
+    PG.evaluate("(d => d && (d.open = true))(document.getElementById('jfold'))")  # Your next post, folded on Make
     if ref:
         try:
             PG.select_option("select[aria-label=Listing]", value=ref)

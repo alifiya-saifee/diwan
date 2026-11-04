@@ -82,6 +82,9 @@
   .setupnav a:hover, .setupnav a:focus-visible { color: var(--gold-2); background: rgba(255,255,255,.04); }
   .setupbody > .panel + .panel { margin-top: var(--s3); }
   @media (max-width: 800px) { .setupgrid { grid-template-columns: minmax(0, 1fr); } .setupnav { position: static; } .setupnav ol { display: flex; flex-wrap: wrap; } }
+  .jsum { cursor: pointer; font-size: 14px; list-style: none; } .jsum::-webkit-details-marker { display: none; }
+  .jsum .jopen { color: var(--gold-2); text-decoration: underline; margin-left: var(--s1); } #jfold[open] .jopen { display: none; }
+  #jfold[open] > .jsum { margin-bottom: var(--s2); }
   ol.steps5 { list-style: none; display: flex; gap: 4px; padding: 0; margin: 0 0 var(--s3); flex-wrap: wrap; }
   ol.steps5 li { flex: 1; min-width: 80px; text-align: center; font-size: 12px; padding: 6px; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); }
   ol.steps5 li.done { color: var(--green); border-color: var(--green); } ol.steps5 li.now { color: #1a1712; background: var(--gold); border-color: var(--gold); font-weight: 700; }
@@ -292,7 +295,7 @@
 
   <section role="tabpanel" id="tab-run" aria-labelledby="t-run">
     <ol class="steps5" id="steps5" aria-label="Where this post is"></ol>
-    <section class="panel planpanel" id="jpanel"><div class="row"><h2 class="grow">Your next post</h2><span class="note" id="jstage"></span></div>
+    <section class="panel planpanel" id="jpanel"><details id="jfold"><summary class="jsum"><b>Your next post:</b> <span id="jnext"></span> <span class="note" id="jstage"></span> <span class="jopen">Show</span></summary>
       <div id="jbody"></div>
       <details id="jmoment"><summary>Something just happened</summary>
         <p class="note">News, a new law, a market change. It goes before the plan for 7 days, or until the date you give. Scripts use only the facts you write here.</p>
@@ -302,7 +305,7 @@
         <label for="jm-files">Photos from it (optional)</label><input id="jm-files" type="file" accept="image/*" multiple>
         <div class="row"><button id="jm-add">Put it first</button><span class="fieldmsg" id="jm-msg" role="status"></span></div>
       </details>
-    </section>
+    </details></section>
     <section class="panel planpanel" id="chainpanel"><h2>Where this listing's reel is now</h2><ol class="chain" id="chain"></ol></section>
     <div class="work">
       <section class="panel now"><h2>Running now, step by step</h2><div id="rooms"></div>
@@ -803,6 +806,8 @@ function renderRun(quiet) {
   $("steps5").replaceChildren(...["Idea", "Script", "Make", "Edit", "Publish"].map((t, i) => h("li", { class: i + 1 < at || m.published ? "done" : i + 1 === at ? "now" : "", ...(i + 1 === at ? { "aria-current": "step" } : {}) }, `${i + 1}. ${t}`)));
 }
 document.querySelectorAll(".setupnav a").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); $(a.dataset.jump).scrollIntoView({ behavior: "smooth", block: "start" }); }));
+try { $("jfold").open = localStorage.getItem("diwan.jfold") === "open"; } catch (e) { /* no storage: stays folded */ }
+$("jfold").addEventListener("toggle", () => { try { localStorage.setItem("diwan.jfold", $("jfold").open ? "open" : ""); } catch (e) { /* fine */ } });
 const PICTURES = ["carousel", "image", "graphic"];
 function suggested(o) {  // what this script makes, from its own plan: a carousel or image is pictures, the rest is a video
   if (o.slides && o.slides.length) return `Pictures: ${o.slides.length} image${o.slides.length === 1 ? "" : "s"}`;
@@ -820,16 +825,19 @@ function cardTabs(panels) {  // Script / Look / Plan / Why, all closed until pre
   box.append(...ps.map(([, p]) => p));
   return [bar, box];
 }
+function bestOf(options) {  // the highest Creative Director score (the first on a tie); "Recommended" only at 4/5 or better
+  const scores = options.map((o) => (o.director ? o.director.score : -1)), top = Math.max(-1, ...scores);
+  return { i: top >= 0 ? scores.indexOf(top) : -1, score: top, recommended: top >= 4 };
+}
 function scriptCard(r) {
-  const scores = r.options.map((o) => (o.director ? o.director.score : -1)), top = Math.max(...scores);
-  const best = top >= 0 ? scores.indexOf(top) : -1;  // the highest Creative Director score; the first one on a tie
+  const pick = bestOf(r.options), best = pick.i;
   return h("div", { class: "item" },
     h("b", {}, `Pick a script: ${r.options.length} checked by the Copywriter, waiting for ${data.approvers.script.label}`),
     h("p", { class: "note" }, "Filming, AI video, editing and covers start only after you pick one. Ask for a change in plain words and only that script is rewritten."),
-    h("div", { class: "opts" }, ...r.options.map((o, i) => { const d = o.director; return h("div", { class: `opt${i === best ? " best" : ""}`, "data-script": o.id },
+    h("div", { class: "opts" }, ...r.options.map((o, i) => { const d = o.director; return h("div", { class: `opt${i === best && pick.recommended ? " best" : ""}`, "data-script": o.id },
       h("div", { class: "top" },
         d ? h("span", { class: `score ${d.score >= 4 ? "hi" : d.score === 3 ? "mid" : "lo"}`, title: d.fix ? `To raise it: ${d.fix}` : "" }, `${d.score}/5`) : "",
-        i === best ? h("span", { class: "rec" }, "Recommended") : "",
+        i === best ? (pick.recommended ? h("span", { class: "rec" }, "Recommended") : h("span", { class: "tag" }, `Best scored: ${pick.score}/5`)) : "",
         h("span", { class: "tag" }, `${i + 1} · ${o.angle}`)),
       h("p", { class: "hook" }, o.hook_en || ""),
       o.hook_ar ? h("p", { class: "hook-ar", dir: "rtl", lang: "ar" }, o.hook_ar) : "",
@@ -1484,7 +1492,8 @@ $("cp-add").onclick = async () => {
 $("cp-spend").onclick = async () => { const rows = await api("/api/marketing/campaigns/spend"); toast((rows.find((x) => x.note) || {}).note || "Spend read"); };
 function renderJourney() {
   const j = data.journey, MARK = { done: "✓", waiting: "●", "not yet": "○" }, say = (posted) => async () => { await post("/api/business", { values: { posted_before: posted }, by: me() }); await load(); };
-  $("jstage").textContent = `Stage: ${j.label} · ${j.posts} post${j.posts === 1 ? "" : "s"} seen${j.waiting ? `, ${j.waiting} approved and waiting` : ""}`;
+  $("jnext").textContent = j.next ? `${j.next.label}${j.next.title ? `: ${j.next.title}` : ""}` : j.ask ? "tell us if this account has posted before" : "nothing yet";
+  $("jstage").textContent = `· Stage: ${j.label} · ${j.posts} post${j.posts === 1 ? "" : "s"} seen${j.waiting ? `, ${j.waiting} approved and waiting` : ""}`;
   const make = async () => { ref = j.next.ref; await post(`/api/marketing/run?ref=${ref}`); await load(); toast("Writing three scripts: they will wait for you here."); };
   $("jbody").replaceChildren(h("p", { class: "note" }, j.why),
     ...(j.ask ? [h("p", {}, "Have you posted on this account before?"), h("div", { class: "row" }, h("button", { onclick: say("no") }, "No, it is new"), h("button", { onclick: say("yes") }, "Yes, we already post"))] : []),
