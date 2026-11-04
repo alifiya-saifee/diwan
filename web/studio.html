@@ -392,7 +392,7 @@
           <p class="note">Diwan finds the pages of your own site (up to 20, free), you untick any, then the Brand brain reads them and proposes knowledge cards and your products or services, each quoted from its page (about $0.02 to $0.05).</p>
           <p class="note">Find properties reads each property page on your site in code (free) and adds the ones not in Diwan to your listings; the model only fills what a page doesn't label (community, type), about $0.01 per 8 pages, and anything it gives that isn't on the page is dropped. Ones already here are not added twice; one that differs is shown to you, not changed.</p>
           <div id="sitepages" class="note"></div><div id="sitelistings" class="note"></div></div>
-        <div class="wide"><label>Where we post</label><div class="checks" id="bz-platforms"></div></div>
+        <div class="wide"><label>Where we post</label><div class="checks" id="bz-platforms"></div><p class="note">TikTok and YouTube Shorts take videos only; Property Finder, listings only.</p></div>
       </div>
       <div class="savebar"><span id="bizmsg"></span><button class="primary" id="bizsave">Save</button></div>
     </section>
@@ -1546,7 +1546,7 @@ async function loadBusiness() {
   $("bz-industry").value = v.industry; $("bz-city").value = v.city; $("bz-permit").value = v.permit || ""; $("bz-languages").value = v.languages || ""; $("siteurl").value = v.website || "";
   $("bz-country").replaceChildren(h("option", { value: "" }, "Pick a country"), ...biz.countries.map((c) => h("option", { value: c.code, selected: c.code === v.country }, c.name)));
   zones(v.timezone);
-  const on = v.platforms ? v.platforms.split(",").map((x) => x.trim()) : biz.platforms_known;
+  const on = v.platforms ? v.platforms.split(",").map((x) => x.trim()) : (biz.platforms_default || biz.platforms_known);  // nothing picked: the defaults
   $("bz-platforms").replaceChildren(...biz.platforms_known.map((pl) => h("label", { class: "check" }, h("input", { type: "checkbox", value: pl, checked: on.includes(pl), onchange: () => bizState() }), pl)));
   bizSaved = JSON.stringify(bizValues());
   $("bizstate").textContent = biz.missing.length ? "· not set yet" : "· saved";

@@ -275,7 +275,7 @@ def studio_view(ref: str = "MC-1204"):
             "analysis": analysis.report(S.office), "board": studio.board(S.office), "made": made, "blocked": blocked,
             "ads": [b for b in studio.board(S.office) if b["kind"] == "ad"],
             "ad_library": {n.lower(): studio.ad_library_url(n, business.get(S.office)["country"]) for n in studio.competitors(g())},
-            "business": business.get(S.office) | {"missing": business.missing(S.office), "platforms_known": list(studio.LIMITS)},
+            "business": business.get(S.office) | {"missing": business.missing(S.office), "platforms_known": list(studio.LIMITS), "platforms_default": __import__("diwan.platforms", fromlist=["DEFAULT"]).DEFAULT + ["Property Finder"]},
             "refresh": {"last": rhythm.last_refresh(S.office), "next": rhythm.next_refresh(S.office)},
             "rhythm": {"settings": rhythm.settings(S.office), "next": rhythm.next_run(S.office), "plan": rhythm.current(S.office),
                        "started": sorted(rhythm.started(S.office)), "stages": marketing.stage_labels(S.office),

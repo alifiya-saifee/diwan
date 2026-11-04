@@ -85,7 +85,7 @@ def get_business():
     from diwan.agents import studio
     return {"fields": [{"key": k, "label": lab, "hint": hint} for k, (lab, hint) in business.FIELDS.items()],
             "profile": business.profile(_office()), "missing": business.missing(_office()), "countries": business.countries(),
-            "platforms_known": list(studio.LIMITS)}
+            "platforms_known": list(studio.LIMITS), "platforms_default": __import__("diwan.platforms", fromlist=["DEFAULT"]).DEFAULT + ["Property Finder"]}
 
 
 class BusinessIn(BaseModel):
