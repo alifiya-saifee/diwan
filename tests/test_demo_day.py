@@ -92,3 +92,12 @@ def test_a_price_change_pauses_the_post_that_said_the_old_price(office):
 def test_the_demo_writes_for_every_platform(office):
     from diwan import business, platforms
     assert set(business.platforms(office)) == set(platforms.RULES)
+
+
+def test_the_demo_brand_has_hashtags_so_every_platform_version_passes(office):
+    from diwan import brand, platforms
+    tags = brand.hashtags(office)
+    assert len(tags) >= 5
+    for p in platforms.RULES:
+        text = platforms.fit(p, "Meet Diwan Realty. We help families buy their first home in Dubai.", tags)
+        assert platforms.check(p, text) == [], (p, platforms.check(p, text))

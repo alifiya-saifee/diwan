@@ -130,7 +130,8 @@ def _parts(o: Office, now: datetime) -> list[tuple[str, callable]]:
                           "platforms": "Instagram, Facebook, LinkedIn, TikTok, YouTube Shorts, Property Finder", "posted_before": "no"}, by="maya")
         approvers.save(o, {"script": "maya", "publish": "layla"}, by="layla")
         brand.save(o, {"name": "Diwan Realty", "positioning": "We help families buy their first home in Dubai.", "audience": "Families moving to Dubai",
-                       "different": "We only sell homes we have visited ourselves.", "voice": "warm, straight-talking"}, by="maya")
+                       "different": "We only sell homes we have visited ourselves.", "voice": "warm, straight-talking",
+                       "hashtags": "#DiwanRealty #DubaiRealEstate #DubaiHomes #MovingToDubai #DubaiFamilies"}, by="maya")
         for ref in ("MC-1204", "JVC-88"):
             asyncio.run(studio.run(o, ref, pause=0))
         studio.approve_script_now(o, "MC-1204")  # Marina Crest's reel moves on to filming
