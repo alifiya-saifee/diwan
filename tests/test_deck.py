@@ -36,7 +36,7 @@ def test_a_hot_off_plan_lead_gets_a_deck_from_the_project_and_the_archive(office
     g = office.graph()
     d = deck.view(g, deck.latest(g, deal).id)
     titles = [s["title"] for s in d["slides"]]
-    assert titles == ["The property", "Why it fits", "Creek Vista Heights: payment plan and handover", "Documents"]
+    assert titles == ["The property", "Why it fits", "Quillmore Heights: payment plan and handover", "Documents"]
     assert "DR-134" in d["slides"][0]["text"] and d["slides"][0]["photo"]
     assert "Budget: AED 2,000,000 (“Budget is 2 million”)" in d["slides"][1]["text"]
     assert "10% on booking" in d["slides"][2]["text"] and d["slides"][2]["sources"][0].startswith("K")
@@ -49,9 +49,9 @@ def test_what_is_missing_becomes_a_task_for_the_broker_never_a_guess(office):
                "The first one")
     g = office.graph()
     d = deck.view(g, deck.latest(g, deal).id)
-    assert "Bayline Residences" in d["slides"][2]["title"] and "No brochure or floor plan for Bayline Residences" in d["slides"][3]["text"]
+    assert "Tamberlay Residences" in d["slides"][2]["title"] and "No brochure or floor plan for Tamberlay Residences" in d["slides"][3]["text"]
     tasks = [t for t in g.of("task", deal) if t.props.get("agent") == "deck"]
-    assert len(tasks) == 1 and "Ask the developer for the brochure and floor plan for Bayline Residences" in tasks[0].label
+    assert len(tasks) == 1 and "Ask the developer for the brochure and floor plan for Tamberlay Residences" in tasks[0].label
     assert tasks[0].props["needs_person"] == g.nodes[f"deal:{deal}"].props["broker"] == "hamza"
     deck.build(office, deal)  # remade: the task is not asked twice
     assert len([t for t in office.graph().of("task", deal) if t.props.get("agent") == "deck"]) == 1

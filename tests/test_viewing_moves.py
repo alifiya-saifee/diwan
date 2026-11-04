@@ -63,7 +63,7 @@ def test_two_homes_held_are_both_on_the_brokers_card(broker_confirms):
 
 def test_moving_a_confirmed_viewing_keeps_the_gallery_hours(broker_confirms):
     o = office()
-    viewings.set_access(o, "BB-305", {"mode": "developer", "place": "the Bay Square gallery", "open": "10:00", "close": "13:00",
+    viewings.set_access(o, "BB-305", {"mode": "developer", "place": "the Mallowby Square gallery", "open": "10:00", "close": "13:00",
                                       "days": [0, 1, 2, 3, 4, 5, 6]}, by="layla")
     chat(o, "Hi", "Can I see BB-305 on Tuesday at 11am?")
     v = mine(o)[0]

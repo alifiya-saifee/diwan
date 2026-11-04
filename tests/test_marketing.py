@@ -145,8 +145,8 @@ def test_each_post_gets_its_own_code_word_in_the_caption(office):
     text = studio.made(office, "post text", "MC-1204")
     assert text["code"] == "MARINA" and "Say MARINA." in text["text"]
     assert marketing.code_for(office, "MC-1204") == "MARINA"
-    office.log.append("listing.added", actor="layla", content={"ref": "MG-2", "title": "Unit 7, Marina Heights", "community": "Dubai Marina", "type": "apartment", "beds": 1, "price_aed": 900000, "permit": "P", "status": "available", "features": []})
-    assert marketing.code_for(office, "MG-2") == "HEIGHTS"  # its most distinctive word, not "Marina" again with a number
+    office.log.append("listing.added", actor="layla", content={"ref": "MG-2", "title": "Unit 7, Fallowmere Heights", "community": "Dubai Marina", "type": "apartment", "beds": 1, "price_aed": 900000, "permit": "P", "status": "available", "features": []})
+    assert marketing.code_for(office, "MG-2") == "FALLOWMERE"  # its most distinctive word, not "Marina" again with a number
 
 
 def test_a_lead_that_says_the_code_is_traced_to_the_post(office):

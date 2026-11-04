@@ -156,7 +156,7 @@ with sync_playwright() as p:
     # 6. the agency comes back with its details; our listing with an agency's buyer
     deal(three)
     conv = convert_box()
-    conv.get_by_label("Search our listings").fill("Bay Square")
+    conv.get_by_label("Search our listings").fill("Mallowby Square")
     pg.wait_for_selector("#propresults button:has-text('Apartment 305')")
     pg.locator("#propresults button", has_text="Apartment 305").click()
     conv.locator("#propbrought").check()
@@ -183,14 +183,14 @@ with sync_playwright() as p:
     deal(four)
     conv = convert_box("Reservation")
     conv.get_by_label("Developer", exact=True).select_option("Emaar")
-    conv.get_by_label("Project").fill("Creek Rise")
+    conv.get_by_label("Project").fill("Thornby Rise")
     conv.get_by_label("Unit").fill("1204")
     conv.locator(AGREED).fill("2000000")
     shot("7-developer")
     msg = save()
     v = api.get(f"{BASE}/api/desk/deals/{four}").json()
     check("7a", "off-plan offers the developer first; with no agreements it says the owner adds them", first == "developer" and "No developer agreements yet" in none)
-    check("7b", "a developer's unit names the deal and uses its rate; an unknown developer is refused", v["property"] == "1204, Creek Rise" and "4%" in pg.inner_text("main")
+    check("7b", "a developer's unit names the deal and uses its rate; an unknown developer is refused", v["property"] == "1204, Thornby Rise" and "4%" in pg.inner_text("main")
           and bad.status == 400 and "no agreement with Nobody" in bad.json()["detail"], msg)
 
     # 8. a rental
@@ -213,7 +213,7 @@ with sync_playwright() as p:
     pg.click("#propchange")
     pg.wait_for_selector("#propcard")
     card = pg.locator("#propcard")
-    card.get_by_label("Search our listings").fill("Burj Vista")
+    card.get_by_label("Search our listings").fill("Ostrey Vista")
     pg.wait_for_selector("#propresults button:has-text('Apartment 2210')")
     pg.locator("#propresults button", has_text="Apartment 2210").click()
     clear()
@@ -261,7 +261,7 @@ with sync_playwright() as p:
         check("9a", "a deal converted before this gets the form, instead of the other-side question", card.count() == 1 and "Which property" in card.inner_text()
               and pg.locator("#savesides").count() == 0 and "Say which property this is above" in before)
         card.get_by_label("Developer", exact=True).select_option("Emaar")
-        card.get_by_label("Project").fill("Creek Rise")
+        card.get_by_label("Project").fill("Thornby Rise")
         card.get_by_label("Unit").fill("804")
         clear()
         pg.click("#propsave")
@@ -269,7 +269,7 @@ with sync_playwright() as p:
         pg.wait_for_timeout(1000)
         v = api.get(f"{OLD}/api/desk/deals/{OLD_DEAL}").json()
         shot("9b-old-deal-saved")
-        check("9b", "saving it names the deal and closes the question", v["property"] == "804, Creek Rise" and pg.locator("#propcard").count() == 0
+        check("9b", "saving it names the deal and closes the question", v["property"] == "804, Thornby Rise" and pg.locator("#propcard").count() == 0
               and not [t for t in v["tasks"] if t.get("step") == "sides" and t["status"] not in ("done", "withdrawn")], msg)
     b.close()
 

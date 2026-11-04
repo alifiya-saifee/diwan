@@ -108,7 +108,7 @@ with sync_playwright() as p:
     s1 = shot("02a-search-word")
     pg.fill(".hsearch input", "SX-0042")
     expect(pg.locator(".hresults")).to_contain_text("SX-0042")
-    pg.fill(".hsearch input", "Burj Vista")
+    pg.fill(".hsearch input", "Ostrey Vista")
     expect(pg.locator(".hresults")).to_contain_text("Listing")
     s2 = shot("02b-search-catalog")
     pg.fill(".hsearch input", "lobby")  # a word only in the Viewings item's text
@@ -280,7 +280,7 @@ with sync_playwright() as p:
 
     pg.click("#clear")
     found = {}
-    for q in ["SX-0042", "Burj Vista", "Villa"]:
+    for q in ["SX-0042", "Ostrey Vista", "Villa"]:
         pg.fill(".hsearch input", q)
         pg.wait_for_timeout(700)
         found[q] = pg.locator("#count").inner_text().split(" of")[0]

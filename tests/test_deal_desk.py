@@ -254,7 +254,7 @@ def test_only_the_owner_assigns_a_role_and_new_work_follows_the_holder(client):
     table = client.post("/api/desk/roles", json={"by": "layla", "role": "compliance", "person": "maya"}).json()
     assert next(r for r in table if r["role"] == "compliance")["holder"] == "maya"
     o = appmod.S.office
-    o.open_deal("d-new", property="Apt 9, Bay Square", customer="Noor Saleh", broker="omar")
+    o.open_deal("d-new", property="Apt 9, Mallowby Square", customer="Noor Saleh", broker="omar")
     o.record_fact("d-new", "deal_term", "One point two for the apartment.", "Noor Saleh", amount_aed=1_200_000)
     t = next(t for t in o.graph().of("task", "d-new") if t.props["agent"] == "screen")
     assert t.props["needs_person"] == "maya"

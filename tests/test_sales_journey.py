@@ -81,7 +81,7 @@ def test_the_view_is_lovely_is_not_asking_to_view(office):
 
 def test_asking_the_price_of_one_is_not_choosing_it(office):
     qualified(office)
-    say(office, "How much is Marina Promenade?")
+    say(office, "How much is Amberlow Marina?")
     assert not (deal(office).get("hot") or {}).get("listing")
 
 

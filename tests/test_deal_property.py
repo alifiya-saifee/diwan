@@ -137,13 +137,13 @@ def test_a_developers_unit_uses_its_agreement_and_an_unknown_one_is_refused(offi
     from diwan.agents import finance
     desk_rules.set_path(office, "lead-1", "offplan", by="omar")
     assert list(c.get("/api/desk/deals/lead-1").json()["stages"]["property"]["sources"])[0] == "developer"
-    prop = {"source": "developer", "developer": "Emaar", "project": "Creek Rise", "unit": "1204"}
+    prop = {"source": "developer", "developer": "Emaar", "project": "Thornby Rise", "unit": "1204"}
     r = _convert(c, prop=prop)
     assert r.status_code == 400 and "no agreement with Emaar" in r.json()["detail"]
     assert "project" in _convert(c, prop=prop | {"unit": ""}).json()["detail"]
     _developer(office)
     assert _convert(c, prop=prop).json()["waiting"] is None
-    assert _deal(office)["property"] == "1204, Creek Rise" and _deal(office)["stage"] == "Reservation"
+    assert _deal(office)["property"] == "1204, Thornby Rise" and _deal(office)["stage"] == "Reservation"
     com = finance.commission(office.graph(), "lead-1")
     assert com["pct"] == 4 and com["developer"] == "Emaar" and _live(office) == []
 

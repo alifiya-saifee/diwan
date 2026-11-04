@@ -116,7 +116,7 @@ with sync_playwright() as p:
     # 5. off-plan shown at the developer's gallery, in its hours
     catalog("BB-305", "layla")
     pg.select_option("#amode", "developer")
-    pg.fill("#aplace", "the Bay Square sales gallery, Business Bay")
+    pg.fill("#aplace", "the Mallowby Square sales gallery, Business Bay")
     pg.fill("#aopen", "10:00"); pg.fill("#aclose", "16:00")
     for d in ["Mon", "Tue", "Wed", "Thu", "Fri"]:  # the gallery opens at the weekend only
         btn = pg.locator("#access .row button", has_text=d)
@@ -132,7 +132,7 @@ with sync_playwright() as p:
     r3 = confirm(api, BASE, C)
     check(8, "The gallery's hours decide: a weekday is refused with weekend times; the weekend is held, and once confirmed it's at the gallery",
           "Developer's gallery" in box and r.startswith("That time isn't available") and slots.say_day(SAT).split()[0] in r
-          and r2.startswith("Thanks, I've noted") and r3.startswith("Good news") and "at the Bay Square sales gallery" in r3, shot("08-gallery"), f"{r2[:60]} | {r3[:120]}")
+          and r2.startswith("Thanks, I've noted") and r3.startswith("Good news") and "at the Mallowby Square sales gallery" in r3, shot("08-gallery"), f"{r2[:60]} | {r3[:120]}")
 
     pg.set_viewport_size({"width": 390, "height": 844})
     pg.goto(f"{BASE}/web/inbox.html?chat={B}&as={bb}")

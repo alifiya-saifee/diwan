@@ -98,7 +98,7 @@ def test_commission_is_worked_out_from_the_clients_price_and_the_owners_rate(off
     assert (c["base"], c["fact"], c["pct"], c["amount"], c["vat"], c["total"], c["payer"]) == (2_600_000, "F1", 2, 52_000, 2_600, 54_600, "buyer")
     desk_rules.save(office, edited(office, paths__ready__commission_pct=1.5, vat_pct=5), by="layla")
     assert finance.commission(office.graph(), "marina-1204")["total"] == 40_950
-    office.open_deal("d-x", property="Apt 1, Bay Square", customer="Noor Saleh", broker="omar")
+    office.open_deal("d-x", property="Apt 1, Mallowby Square", customer="Noor Saleh", broker="omar")
     assert "No price" in finance.commission(office.graph(), "d-x")["missing"]
 
 

@@ -17,9 +17,9 @@ PH = "971501238888"
 def office():
     o = Office(EventLog())
     demo.company(o)  # MC-1204 is vacant with keys at the office; JVC-88 is lived in (nobody set it: asks first)
-    o.log.append("listing.added", actor="omar", content={"ref": "OP-7", "title": "Unit 7, Creek Rise", "community": "Dubai Creek Harbour",
+    o.log.append("listing.added", actor="omar", content={"ref": "OP-7", "title": "Unit 7, Thornby Rise", "community": "Dubai Creek Harbour",
                                                           "type": "apartment", "beds": 2, "price_aed": 1_900_000, "permit": "SAMPLE-77",
-                                                          "status": "available", "agent": "omar", "completion": "off_plan", "project": "Creek Rise"})
+                                                          "status": "available", "agent": "omar", "completion": "off_plan", "project": "Thornby Rise"})
     return o
 
 
@@ -97,16 +97,16 @@ def test_a_tenant_gets_their_notice(office):
 
 
 def test_off_plan_is_shown_at_the_gallery_in_its_hours(office):
-    viewings.set_access(office, "OP-7", {"mode": "developer", "place": "the Creek Rise sales gallery, Creek Marina", "open": "10:00", "close": "16:00",
+    viewings.set_access(office, "OP-7", {"mode": "developer", "place": "the Thornby Rise sales gallery, Creek Marina", "open": "10:00", "close": "16:00",
                                          "days": [5, 6]}, by="omar")
     say(office, "Hi")
     r = say(office, "Can I see OP-7 on Tuesday at 11am?")
     assert r.startswith("That time isn't available") and "Saturday 7 Nov" in r  # the gallery is open at the weekend only
     r = say(office, "Can I see OP-7 on Saturday at 11am?")
-    assert r.startswith("Booked: ") and "at the Creek Rise sales gallery, Creek Marina" in r
+    assert r.startswith("Booked: ") and "at the Thornby Rise sales gallery, Creek Marina" in r
     from diwan.agents import reminders
     v = next(v for v in office.graph().of("viewing", status="booked"))
-    assert reminders._where(office.graph(), v) == "At the Creek Rise sales gallery, Creek Marina."
+    assert reminders._where(office.graph(), v) == "At the Thornby Rise sales gallery, Creek Marina."
 
 
 def test_a_vacant_home_with_keys_books_at_once(office):

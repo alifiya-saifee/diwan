@@ -48,7 +48,7 @@
     <permit_number>SAMPLE-30305</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 305, Bay Square</title_en>
+    <title_en>Apartment 305, Mallowby Square</title_en>
     <community>Business Bay</community>
     <bedroom>1</bedroom>
     <price>1150000</price>
@@ -68,7 +68,7 @@
     <reference_number>DT-2210</reference_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 2210, Burj Vista</title_en>
+    <title_en>Apartment 2210, Ostrey Vista</title_en>
     <community>Downtown Dubai</community>
     <bedroom>1</bedroom>
     <price>1450000</price>
@@ -89,7 +89,7 @@
     <permit_number>SAMPLE-80101</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 1802, Marina Promenade</title_en>
+    <title_en>Apartment 1802, Amberlow Marina</title_en>
     <community>Dubai Marina</community>
     <bedroom>1</bedroom>
     <price>1350000</price>
@@ -110,7 +110,7 @@
     <permit_number>SAMPLE-80102</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 3301, Marina Crown</title_en>
+    <title_en>Apartment 3301, Kestrel Crown</title_en>
     <community>Dubai Marina</community>
     <bedroom>3</bedroom>
     <price>3900000</price>
@@ -131,7 +131,7 @@
     <permit_number>SAMPLE-80103</permit_number>
     <offering_type>rent</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Studio 907, Marina Heights</title_en>
+    <title_en>Studio 907, Fallowmere Heights</title_en>
     <community>Dubai Marina</community>
     <bedroom>studio</bedroom>
     <price>85000</price>
@@ -152,7 +152,7 @@
     <permit_number>SAMPLE-80104</permit_number>
     <offering_type>sale</offering_type>
     <property_type>penthouse</property_type>
-    <title_en>Penthouse 52, Marina Sky</title_en>
+    <title_en>Penthouse 52, Carrow Sky</title_en>
     <community>Dubai Marina</community>
     <bedroom>4</bedroom>
     <price>12500000</price>
@@ -173,7 +173,7 @@
     <permit_number>SAMPLE-80105</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 1408, Shams 2</title_en>
+    <title_en>Apartment 1408, Larkfield 2</title_en>
     <community>Jumeirah Beach Residence</community>
     <bedroom>2</bedroom>
     <price>2300000</price>
@@ -194,7 +194,7 @@
     <permit_number>SAMPLE-80106</permit_number>
     <offering_type>rent</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 2203, Rimal 4</title_en>
+    <title_en>Apartment 2203, Dunmore 4</title_en>
     <community>Jumeirah Beach Residence</community>
     <bedroom>3</bedroom>
     <price>210000</price>
@@ -215,7 +215,7 @@
     <permit_number>SAMPLE-80107</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 1110, Lake View Tower</title_en>
+    <title_en>Apartment 1110, Ferncliff Tower</title_en>
     <community>Jumeirah Lakes Towers</community>
     <bedroom>2</bedroom>
     <price>1250000</price>
@@ -236,7 +236,7 @@
     <permit_number>SAMPLE-80108</permit_number>
     <offering_type>rent</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 605, Goldcrest Views</title_en>
+    <title_en>Apartment 605, Tansley Views</title_en>
     <community>Jumeirah Lakes Towers</community>
     <bedroom>1</bedroom>
     <price>75000</price>
@@ -257,7 +257,7 @@
     <permit_number>SAMPLE-80109</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 3905, The Address Residences</title_en>
+    <title_en>Apartment 3905, The Pennington Residences</title_en>
     <community>Downtown Dubai</community>
     <bedroom>2</bedroom>
     <price>4200000</price>
@@ -278,7 +278,7 @@
     <permit_number>SAMPLE-80110</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 1206, South Ridge</title_en>
+    <title_en>Apartment 1206, Sorrelby Tower</title_en>
     <community>Downtown Dubai</community>
     <bedroom>1</bedroom>
     <price>1600000</price>
@@ -299,7 +299,7 @@
     <permit_number>SAMPLE-80111</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 4410, Opera Grand</title_en>
+    <title_en>Apartment 4410, Ellery Grand</title_en>
     <community>Downtown Dubai</community>
     <bedroom>3</bedroom>
     <price>7800000</price>
@@ -320,7 +320,7 @@
     <permit_number>SAMPLE-80112</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 802, Executive Towers</title_en>
+    <title_en>Apartment 802, Rookwood Towers</title_en>
     <community>Business Bay</community>
     <bedroom>2</bedroom>
     <price>1750000</price>
@@ -341,7 +341,7 @@
     <permit_number>SAMPLE-80113</permit_number>
     <offering_type>rent</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Studio 1504, Damac Maison</title_en>
+    <title_en>Studio 1504, Maison Varley</title_en>
     <community>Business Bay</community>
     <bedroom>studio</bedroom>
     <price>70000</price>
@@ -361,7 +361,7 @@
     <reference_number>DR-114</reference_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 2710, Peninsula One</title_en>
+    <title_en>Apartment 2710, Corriford One</title_en>
     <community>Business Bay</community>
     <bedroom>1</bedroom>
     <price>1300000</price>
@@ -370,7 +370,7 @@
     <agent_name>Hamza</agent_name>
     <geopoints>25.18290,55.26340</geopoints>
     <completion_status>off_plan</completion_status>
-    <project_name>Peninsula One</project_name>
+    <project_name>Corriford One</project_name>
     <photos>
       <photo>/web/img/demo/business-bay.jpg</photo>
       <photo>/web/img/demo/living.jpg</photo>
@@ -404,7 +404,7 @@
     <permit_number>SAMPLE-80116</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 610, Shoreline 8</title_en>
+    <title_en>Apartment 610, Saltmarsh 8</title_en>
     <community>Palm Jumeirah</community>
     <bedroom>2</bedroom>
     <price>3100000</price>
@@ -425,7 +425,7 @@
     <permit_number>SAMPLE-80117</permit_number>
     <offering_type>rent</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 1903, Tiara Residences</title_en>
+    <title_en>Apartment 1903, Linnet Residences</title_en>
     <community>Palm Jumeirah</community>
     <bedroom>1</bedroom>
     <price>145000</price>
@@ -446,7 +446,7 @@
     <permit_number>SAMPLE-80118</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 2402, Creek Rise</title_en>
+    <title_en>Apartment 2402, Thornby Rise</title_en>
     <community>Dubai Creek Harbour</community>
     <bedroom>2</bedroom>
     <price>2050000</price>
@@ -467,7 +467,7 @@
     <permit_number>SAMPLE-80119</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 1507, Harbour Gate</title_en>
+    <title_en>Apartment 1507, Wrenhaven Gate</title_en>
     <community>Dubai Creek Harbour</community>
     <bedroom>1</bedroom>
     <price>1250000</price>
@@ -488,7 +488,7 @@
     <permit_number>SAMPLE-80120</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 3108, Creek Edge</title_en>
+    <title_en>Apartment 3108, Ashgrove Edge</title_en>
     <community>Dubai Creek Harbour</community>
     <bedroom>3</bedroom>
     <price>3300000</price>
@@ -509,7 +509,7 @@
     <permit_number>SAMPLE-80121</permit_number>
     <offering_type>sale</offering_type>
     <property_type>villa</property_type>
-    <title_en>Villa 7, Saheel</title_en>
+    <title_en>Villa 7, Sanderling</title_en>
     <community>Arabian Ranches</community>
     <bedroom>4</bedroom>
     <price>5200000</price>
@@ -530,7 +530,7 @@
     <permit_number>SAMPLE-80122</permit_number>
     <offering_type>sale</offering_type>
     <property_type>townhouse</property_type>
-    <title_en>Townhouse 33, Mirador</title_en>
+    <title_en>Townhouse 33, Halloway</title_en>
     <community>Arabian Ranches</community>
     <bedroom>3</bedroom>
     <price>3400000</price>
@@ -551,7 +551,7 @@
     <permit_number>SAMPLE-80123</permit_number>
     <offering_type>rent</offering_type>
     <property_type>villa</property_type>
-    <title_en>Villa 19, Alma</title_en>
+    <title_en>Villa 19, Cindral</title_en>
     <community>Arabian Ranches</community>
     <bedroom>5</bedroom>
     <price>320000</price>
@@ -593,7 +593,7 @@
     <permit_number>SAMPLE-80125</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 408, Belgravia</title_en>
+    <title_en>Apartment 408, Halberton</title_en>
     <community>Jumeirah Village Circle</community>
     <bedroom>1</bedroom>
     <price>850000</price>
@@ -614,7 +614,7 @@
     <permit_number>SAMPLE-80126</permit_number>
     <offering_type>sale</offering_type>
     <property_type>villa</property_type>
-    <title_en>Villa 3, The Nest</title_en>
+    <title_en>Villa 3, The Wrenfold</title_en>
     <community>Al Barari</community>
     <bedroom>6</bedroom>
     <price>24000000</price>
@@ -635,7 +635,7 @@
     <permit_number>SAMPLE-80127</permit_number>
     <offering_type>sale</offering_type>
     <property_type>villa</property_type>
-    <title_en>Villa 41, Ponderosa</title_en>
+    <title_en>Villa 41, Ashcombe</title_en>
     <community>The Villa</community>
     <bedroom>5</bedroom>
     <price>4800000</price>
@@ -656,7 +656,7 @@
     <permit_number>SAMPLE-80128</permit_number>
     <offering_type>rent</offering_type>
     <property_type>villa</property_type>
-    <title_en>Villa 9, Aldea</title_en>
+    <title_en>Villa 9, Willowmere</title_en>
     <community>The Villa</community>
     <bedroom>4</bedroom>
     <price>230000</price>
@@ -677,7 +677,7 @@
     <permit_number>SAMPLE-80129</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 2105, Marina Quays</title_en>
+    <title_en>Apartment 2105, Hollins Quay</title_en>
     <community>Dubai Marina</community>
     <bedroom>2</bedroom>
     <price>2450000</price>
@@ -698,7 +698,7 @@
     <permit_number>SAMPLE-80130</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 1610, Silverene</title_en>
+    <title_en>Apartment 1610, Calderly</title_en>
     <community>Dubai Marina</community>
     <bedroom>2</bedroom>
     <price>2750000</price>
@@ -719,7 +719,7 @@
     <permit_number>SAMPLE-80131</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 806, Marina Diamond</title_en>
+    <title_en>Apartment 806, Merrow Point</title_en>
     <community>Dubai Marina</community>
     <bedroom>2</bedroom>
     <price>1950000</price>
@@ -740,7 +740,7 @@
     <permit_number>SAMPLE-80132</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 2702, Sparkle Tower</title_en>
+    <title_en>Apartment 2702, Wrenley Tower</title_en>
     <community>Dubai Marina</community>
     <bedroom>2</bedroom>
     <price>2950000</price>
@@ -761,7 +761,7 @@
     <permit_number>SAMPLE-8133</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 1204, Creek Vista Heights</title_en>
+    <title_en>Apartment 1204, Quillmore Heights</title_en>
     <community>Dubai Creek Harbour</community>
     <bedroom>1</bedroom>
     <price>1350000</price>
@@ -770,7 +770,7 @@
     <agent_name>Hamza</agent_name>
     <geopoints>25.20140,55.34410</geopoints>
     <completion_status>off_plan</completion_status>
-    <project_name>Creek Vista Heights</project_name>
+    <project_name>Quillmore Heights</project_name>
     <photos>
       <photo>/web/img/demo/creek.jpg</photo>
       <photo>/web/img/demo/living.jpg</photo>
@@ -783,7 +783,7 @@
     <permit_number>SAMPLE-8134</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 2208, Creek Vista Heights</title_en>
+    <title_en>Apartment 2208, Quillmore Heights</title_en>
     <community>Dubai Creek Harbour</community>
     <bedroom>2</bedroom>
     <price>1950000</price>
@@ -792,7 +792,7 @@
     <agent_name>Hamza</agent_name>
     <geopoints>25.20190,55.34480</geopoints>
     <completion_status>off_plan</completion_status>
-    <project_name>Creek Vista Heights</project_name>
+    <project_name>Quillmore Heights</project_name>
     <photos>
       <photo>/web/img/demo/creek.jpg</photo>
       <photo>/web/img/demo/living.jpg</photo>
@@ -805,7 +805,7 @@
     <permit_number>SAMPLE-8135</permit_number>
     <offering_type>sale</offering_type>
     <property_type>apartment</property_type>
-    <title_en>Apartment 1507, Bayline Residences</title_en>
+    <title_en>Apartment 1507, Tamberlay Residences</title_en>
     <community>Business Bay</community>
     <bedroom>2</bedroom>
     <price>2300000</price>
@@ -814,7 +814,7 @@
     <agent_name>Hamza</agent_name>
     <geopoints>25.18610,55.26390</geopoints>
     <completion_status>off_plan</completion_status>
-    <project_name>Bayline Residences</project_name>
+    <project_name>Tamberlay Residences</project_name>
     <photos>
       <photo>/web/img/demo/business-bay.jpg</photo>
       <photo>/web/img/demo/living.jpg</photo>

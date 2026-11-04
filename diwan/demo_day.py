@@ -18,7 +18,7 @@ from diwan.slots import DUBAI
 LEADS = [
     ("971500000101", "Fatima Al Mansoori", ["Hello, is Villa 88 in JVC still available?", "We're a family of five, buying to live in. Budget up to 2 million",
                                             "Can we see it tomorrow at 11am?"]),
-    ("971500000102", "Daniel Brooks", ["Hi, I saw the Bay Square apartment on Property Finder. Is it still on the market?", "Investment, I'd rent it out. Cash buyer"]),
+    ("971500000102", "Daniel Brooks", ["Hi, I saw the Mallowby Square apartment on Property Finder. Is it still on the market?", "Investment, I'd rent it out. Cash buyer"]),
     ("971500000103", "Aisha Rahman", ["Looking for a 1 bed in Downtown under 1.5M", "Please call me, I prefer to talk"]),
     ("971500000104", "Omar Farouk", ["مرحبا، أبحث عن شقة بغرفتين في دبي مارينا"]),
     ("971500000105", "Elena Petrova", ["Do you have anything with a sea view in the Marina?"]),

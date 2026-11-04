@@ -726,7 +726,7 @@ def person_sends(office: Office, phone: str, text: str, *, by: str) -> dict:
 
 
 def _listing_named(g: Graph, text: str, chat: Node | None) -> Node | None:
-    """The listing a message names: its reference, or a word of its title that no other listing has ("Ponderosa"),
+    """The listing a message names: its reference, or a word of its title that no other listing has ("Ashcombe"),
     never a shared word like "villa" or "marina"."""
     low = text.lower()
     said = set(re.findall(r"[a-z]{4,}", low))
@@ -736,7 +736,7 @@ def _listing_named(g: Graph, text: str, chat: Node | None) -> Node | None:
         if n.props["ref"].lower() in low:
             return n
     # the building's whole name ("Marina Crest"), when exactly one listing has it: its words alone may be shared
-    # ("Harbour Gate", "Marina Crown"), the name together isn't
+    # ("Wrenhaven Gate", "Kestrel Crown"), the name together isn't
     building = lambda n: [p.strip().lower() for p in n.props["title"].split(",")  # noqa: E731
                           if len(p.strip()) > 4 and not re.match(r"(unit|apartment|apt|flat|studio|villa|townhouse|penthouse|office|shop)\b", p.strip(), re.I)]
     hits = [n for n in ads if any(re.search(rf"\b{re.escape(b)}\b", low) for b in building(n))]
