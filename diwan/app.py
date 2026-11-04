@@ -525,6 +525,7 @@ async def ai_frames(body: FreeVideoIn):
 class OutputIn(BaseModel):
     ref: str
     output: str  # pictures | voice | video
+    shape: str = "image"  # pictures: one picture (the default) or a carousel
     by: str = "maya"
 
 
@@ -541,7 +542,7 @@ async def studio_choose_output(body: OutputIn):
     Voice-over: the free video. Video: filming or the AI presenter, as before. Choosing the same again does nothing new."""
     from diwan.agents import studio
     try:
-        r = await asyncio.to_thread(studio.choose_output, S.office, body.ref, body.output, by=body.by)
+        r = await asyncio.to_thread(studio.choose_output, S.office, body.ref, body.output, by=body.by, shape=body.shape)
     except studio.OutputRefused as e:
         raise HTTPException(409, str(e)) from None
     if not r.get("again"):

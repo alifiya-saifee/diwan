@@ -31,8 +31,8 @@ def listing_video(o, folder, n=5):
     return sc, paths
 
 
-def as_pictures(o):
-    return studio.choose_output_now(o, REF, "pictures", by="maya")
+def as_pictures(o, shape="carousel"):
+    return studio.choose_output_now(o, REF, "pictures", by="maya", shape=shape)
 
 
 # 1. the suggestion, decided by code
@@ -115,7 +115,7 @@ def test_a_topic_draws_one_picture_a_slide_one_at_a_time(office, monkeypatch):
             now[0] -= 1
         return Image.new("RGB", (eventpost.W, eventpost.H), (40, 60, 80)), "Muse Image"
     monkeypatch.setattr(eventpost, "_background", bg)
-    v = studio.choose_output_now(office, ref, "pictures", by="maya")
+    v = studio.choose_output_now(office, ref, "pictures", by="maya", shape="carousel")
     assert all(s["photo"] is None for s in v["slides"])  # nothing real to show: drawn
     assert len(calls) == len(v["slides"]) and most[0] == 1
 
@@ -147,7 +147,7 @@ def test_the_original_script_is_unchanged_and_choosing_twice_is_the_same(office,
     assert as_pictures(office)["id"] == v["id"]
     assert sum(1 for e in office.log.list() if e["type"] == "content.made" and e["content"]["kind"] == "slides") == n
     chosen = [e["content"] for e in office.log.list() if e["type"] == "post.output_chosen"]
-    assert len(chosen) == 1 and chosen[0] | {} == {"ref": REF, "script": sc["id"], "output": "pictures", "by": "maya", "version": v["id"]}
+    assert len(chosen) == 1 and chosen[0] | {} == {"ref": REF, "script": sc["id"], "output": "pictures", "shape": "carousel", "by": "maya", "version": v["id"]}
 
 
 # 5. it ends at the publish approver; nothing goes out by itself
@@ -206,3 +206,60 @@ def test_the_studio_opens_with_no_post_chosen_and_with_one_that_is_gone(office, 
     with TestClient(app) as c:
         assert c.get("/api/studio", params={"ref": ""}).status_code == 200
         assert c.get("/api/studio/output", params={"ref": ""}).status_code == 200
+
+
+# one picture (the default) or a carousel
+def test_one_picture_of_a_listing_is_its_best_photo_with_the_hook_the_price_and_the_permit(office, tmp_path, monkeypatch):
+    sc, paths = listing_video(office, tmp_path, 5)
+    before = dict(studio._content(office, sc["id"]))
+    seen, real = [], eventpost._draw
+    monkeypatch.setattr(eventpost, "_draw", lambda *a, **k: seen.append((a[1], k.get("sub", ""), k.get("permit", ""))) or real(*a, **k))
+    v = as_pictures(office, "image")
+    assert v["format"] == "image" and len(v["slides"]) == 1 and v["slides"][0]["photo"] == eventpost.own_photos(office, REF)[0]["path"]
+    made = studio.made(office, "slides", REF)
+    assert len(made["images"]) == 1 and made["format"] == "image"
+    text, sub, permit = seen[0]
+    assert text == sc["hook_en"] and permit == "SAMPLE-71204"
+    assert "2,600,000" in text or sub == "AED 2,600,000"  # the price is on the picture, once
+    assert studio._content(office, sc["id"]) == before  # the original script is unchanged
+    caption = studio.made(office, "post text", REF)["text"]
+    assert all(x in caption for x in sc["lines_en"][:2])  # the rest of the script is the caption
+    assert [n for n in office.graph().of("request", status="open") if n.props.get("agent") == "mpub"]  # and it waits for Layla
+
+
+def test_one_picture_of_a_topic_is_one_muse_image_call(office, monkeypatch):
+    monkeypatch.setattr(studio, "_can_render", lambda: (True, True, ""))
+    sc = approve(office, "JOB-introduce")
+    before = dict(studio._content(office, sc["id"]))
+    calls = []
+    monkeypatch.setattr(eventpost, "_background", lambda o, r, feedback=None, say="", frame=None: calls.append(say) or (Image.new("RGB", (eventpost.W, eventpost.H), (40, 60, 80)), "Muse Image"))
+    v = studio.choose_output_now(office, "JOB-introduce", "pictures", by="maya", shape="image")
+    assert len(v["slides"]) == 1 and v["slides"][0]["photo"] is None and len(calls) == 1
+    assert studio._content(office, sc["id"]) == before
+
+
+def test_one_picture_and_a_carousel_are_different_choices_each_made_once(office, tmp_path):
+    listing_video(office, tmp_path)
+    one = as_pictures(office, "image")
+    assert as_pictures(office, "image")["id"] == one["id"]
+    many = as_pictures(office, "carousel")
+    assert many["id"] != one["id"] and len(many["slides"]) > 1
+    o = studio.output_options(office, REF)
+    assert o["chosen"] == "pictures" and o["shape"] == "carousel" and o["slides"]["image"] == 1 and o["slides"]["carousel"] == len(many["slides"])
+
+
+# the permit is written once in the post text
+def test_the_permit_is_written_once_in_the_post_text(office, tmp_path):
+    listing_video(office, tmp_path)
+    for shape in ("image", "carousel"):
+        as_pictures(office, shape)
+        text = studio.made(office, "post text", REF)["text"]
+        assert text.count("SAMPLE-71204") == 1, text
+
+
+def test_one_permit_keeps_the_first_and_drops_repeats():
+    t = "Hook\n\nAED 2,600,000. Permit P-1.\nPermit P-1\n\nSay CREST."
+    assert studio.one_permit(t, "P-1") == "Hook\n\nAED 2,600,000. Permit P-1.\n\nSay CREST."
+    assert studio.one_permit("Permit P-1. Then Permit P-1.", "P-1") == "Permit P-1. Then"
+    assert studio.one_permit("Permit P-1", "P-1") == "Permit P-1"
+    assert studio.one_permit("No permit here", None) == "No permit here"

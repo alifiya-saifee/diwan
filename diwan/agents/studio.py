@@ -1368,20 +1368,33 @@ def post_text(office: Office, ref: str, sc: dict, cause: int | None, feedback: s
         tags_ok = [t for t in brand.hashtags(office) + ["#" + re.sub(r"\W", "", x) for x in places[:2]] if len(t) <= MAX_TAG]
         written = _caption(office, ref, sc, lst, code, permit, tags_ok, feedback)
         if written:
-            m = _made(office, "mwriter", "post text", ref, {"text": written, "code": code, "by": "muse-spark"}, cause)
+            m = _made(office, "mwriter", "post text", ref, {"text": one_permit(written, lst.get("permit")), "code": code, "by": "muse-spark"}, cause)
             _pack(office, "mwriter", f"Post text written ({len(written)} characters), checked against the listing.", cause=cause,
                   evidence=[Evidence(str(lst.get("permit") or lst["title"]), _key(office, ref))], sources={_key(office, ref): _brief(office, ref)})
             return m
         base = f"{sc['hook_en']}\n\n{facts}{permit}\n\n{brand.cta(office)} Say {code}."
         ar = f"\n\n{sc['hook_ar']}" if sc.get("hook_ar") else ""
         tags = "\n\n" + " ".join(dict.fromkeys(tags_ok))
-    m = _made(office, "mwriter", "post text", ref, {"text": base + ar + tags.rstrip(), "code": code}, cause)
+    m = _made(office, "mwriter", "post text", ref, {"text": one_permit(base + ar + tags.rstrip(), lst.get("permit")), "code": code}, cause)
     _pack(office, "mwriter", f"Post text ready{' with permit ' + str(lst.get('permit')) if permit else ''} ({len(m['text'])} characters).", cause=cause,
           evidence=[Evidence(str(lst.get("permit") or lst["title"]), _key(office, ref))], sources={_key(office, ref): _brief(office, ref)})
     return m
 
 
 MAX_TAG = 25  # characters: a longer hashtag is never searched
+
+
+def one_permit(text: str, permit) -> str:
+    """The permit number written once, where it first appears: a later line that only repeats it goes, and a later
+    "Permit X." inside a line goes."""
+    no = str(permit or "")
+    if not no or text.count(no) <= 1:
+        return text
+    cut = text.index(no) + len(no)
+    head, tail = text[:cut], text[cut:]
+    tail = re.sub(rf"\n[ \t]*Permit:?[ \t]*{re.escape(no)}\.?[ \t]*(?=\n|$)", "", tail, flags=re.I)  # a line that only repeats it
+    tail = re.sub(rf"[ \t]*Permit:?[ \t]*{re.escape(no)}\.?", "", tail, flags=re.I)  # a repeat inside a line
+    return head + tail.replace(no, "")
 
 
 def _caption(office: Office, ref: str, sc: dict, lst: dict, code: str, permit: str, tags: list[str], feedback: str | None) -> str | None:
@@ -2007,6 +2020,7 @@ def approved_script(office: Office, ref: str, *, past: bool = False) -> dict | N
 
 # ---- how the picked script goes out: pictures, a voice-over or a video (docs: "From script to post") ----
 OUTPUTS = {"pictures": "Pictures", "voice": "Voice-over", "video": "Video"}
+SHAPES = ("image", "carousel")  # pictures as one picture (the default) or a carousel people swipe through
 OFF_WHY = "Video making runs on the full server. Post this as pictures, or make the video on the full server."
 
 
@@ -2054,7 +2068,7 @@ def suggest_output(office: Office, ref: str, sc: dict | None = None) -> dict:
             return pick("voice", "You chose a reel for this listing: its own photos with a voice over them.")
         good = [x for x in eventpost.photos(office, ref) if x.get("usable")]
         if len(good) >= 3:
-            return pick("pictures", f"Listings with good photos do well as carousels ({len(good)} usable photos).")
+            return pick("pictures", f"Listings with good photos do well as pictures ({len(good)} usable photos).")
         if (made(office, "listing look", ref) or {}).get("format") == "reel":
             return pick("voice", "A walkthrough needs movement and a voice.")
         return pick("video", f"Only {len(good)} usable photo{'' if len(good) == 1 else 's'}: too few for a carousel, so film it.")
@@ -2072,7 +2086,7 @@ def _chosen_output(office: Office, ref: str) -> dict | None:
         if ended(e, ref):
             return None
         if e["type"] == "post.output_chosen" and e["content"].get("ref") == ref:
-            return e["content"]
+            return e["content"] | {"at_event": e["id"]}
     return None
 
 
@@ -2089,11 +2103,21 @@ def output_options(office: Office, ref: str) -> dict:
     ch = _chosen_output(office, ref)
     from diwan import platforms
     where = {o: platforms.for_post(office, listing=lst.get("item") == "listing", video=o != "pictures") for o in OUTPUTS}
+    from diwan.agents import eventpost
+    slides = {}
+    for shape in SHAPES:
+        try:
+            slides[shape] = len(eventpost.from_brief(office, ref, base, shape)["slides"]) if base else 0
+        except OutputRefused:
+            slides[shape] = 0
+    mine = ch if ch and base and ch.get("script") == base.get("id") else None
     return {"suggest": suggest_output(office, ref, base), "video_mode": video_mode(), "can": {"pictures": True, "voice": voice_ok, "video": video_ok},
-            "why_not": why_not, "where": where, "picked": bool(sc), "chosen": ch["output"] if ch and base and ch.get("script") == base.get("id") else None}
+            "why_not": why_not, "where": where, "picked": bool(sc), "chosen": mine["output"] if mine else None,
+            "shape": (mine.get("shape") or "carousel") if mine and mine["output"] == "pictures" else None, "slides": slides,
+            "since": mine.get("at_event") if mine else None}
 
 
-def choose_output(office: Office, ref: str, output: str, *, by: str) -> dict:
+def choose_output(office: Office, ref: str, output: str, *, by: str, shape: str = "image") -> dict:
     """Record how the picked script goes out. Pictures: a new script version, slides from the script's own brief (the
     original stays as it was). Choosing the same again makes nothing new. The making itself runs after (route or *_now)."""
     from diwan.agents import eventpost
@@ -2110,17 +2134,19 @@ def choose_output(office: Office, ref: str, output: str, *, by: str) -> dict:
     opts = output_options(office, ref)
     if not opts["can"][output]:
         raise OutputRefused(opts["why_not"])
+    if shape not in SHAPES:
+        raise OutputRefused("Choose one picture or a carousel.")
     last = _chosen_output(office, ref)
-    if last and last.get("script") == base["id"] and last["output"] == output:
+    if last and last.get("script") == base["id"] and last["output"] == output and (output != "pictures" or (last.get("shape") or "carousel") == shape):
         return {"ok": True, "output": output, "again": True, **({"version": _content(office, last["version"])} if last.get("version") else {})}
     if output == "pictures":
-        v = _made(office, "mscript", "script", ref, eventpost.from_brief(office, ref, base), None)
-        office.log.append("post.output_chosen", actor=by, content={"ref": ref, "script": base["id"], "output": output, "by": by, "version": v["id"]})
+        v = _made(office, "mscript", "script", ref, eventpost.from_brief(office, ref, base, shape), None)
+        office.log.append("post.output_chosen", actor=by, content={"ref": ref, "script": base["id"], "output": output, "shape": shape, "by": by, "version": v["id"]})
         from diwan.graph import OPEN
         for t in office.graph().of("task", status=OPEN):  # nothing to film any more
             if t.props.get("agent") == "mshoot" and t.props.get("action", "").startswith(f"Film {ref}:"):
                 office.finish_task(t.id, "Posted as pictures instead.")
-        _pack(office, "mart", f"{ref} goes out as pictures: {len(v['slides'])} slide{'s' if len(v['slides']) != 1 else ''} from script {base['id']}'s own brief.")
+        _pack(office, "mart", f"{ref} goes out as " + ("one picture" if shape == "image" else f"a carousel of {len(v['slides'])} slides") + f", from script {base['id']}'s own brief.")
         return {"ok": True, "output": output, "version": v}
     office.log.append("post.output_chosen", actor=by, content={"ref": ref, "script": base["id"], "output": output, "by": by})
     _pack(office, "mkt", f"{ref} goes out as {OUTPUTS[output].lower()}" + (": the computer's voice over the frames." if output == "voice" else ": film it, or make the AI presenter video."))
@@ -2138,9 +2164,9 @@ async def voice_over(office: Office, ref: str, *, by: str) -> dict:
     return r
 
 
-def choose_output_now(office: Office, ref: str, output: str, *, by: str = "maya") -> dict:
+def choose_output_now(office: Office, ref: str, output: str, *, by: str = "maya", shape: str = "image") -> dict:
     """For tests: choose, then make it. Pictures returns the new script version."""
-    r = choose_output(office, ref, output, by=by)
+    r = choose_output(office, ref, output, by=by, shape=shape)
     if output == "pictures":
         if not r.get("again"):
             asyncio.run(after_pictures(office, ref, r["version"], pause=0))

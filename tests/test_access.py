@@ -439,3 +439,20 @@ def test_marketing_reaches_every_route_the_studio_calls_and_a_broker_does_not(we
             assert access.may_call("maya", "GET", p) or access.may_call("maya", "POST", p), p
     signed_in(web, "omar")
     assert web.get("/api/occasions").status_code == 403
+
+
+
+def test_marketing_sees_its_own_agents_at_work_and_no_one_elses():
+    """Running now, on the Studio: the Marketing agents' steps reach Maya; Sales' and Compliance's never do."""
+    from diwan.access import USER
+    evs = [{"type": "agent.pack", "agent": a, "content": {"pack": {"verdict": a}}} for a in ("mscript", "mart", "mwriter", "mkt", "rania", "sof")]
+    token = USER.set("maya")
+    try:
+        assert [e["agent"] for e in access.visible(evs)] == ["mscript", "mart", "mwriter", "mkt"]
+    finally:
+        USER.reset(token)
+    token = USER.set("omar")
+    try:
+        assert not [e for e in access.visible(evs) if e["agent"] in ("mscript", "mart", "mwriter", "mkt")]
+    finally:
+        USER.reset(token)

@@ -143,7 +143,19 @@ def visible(events: list[dict]) -> list[dict]:
             continue  # what Compliance is doing stays with Compliance: anyone else knowing can tip a client off
         elif t.startswith(kinds):
             out.append(e)
+        elif dept == MKT and t.startswith("agent.") and _marketing_agent(e.get("agent")):
+            out.append(e)  # the studio's own agents at work: what "Running now" shows
     return out
+
+
+def _marketing_agent(aid: str | None) -> bool:
+    """An agent in the Marketing lead's team, at any depth."""
+    from diwan.agents import charters
+    while aid and aid in charters.BY_ID:
+        if aid == "mkt":
+            return True
+        aid = charters.BY_ID[aid].parent
+    return False
 
 
 # ---------- passwords and sessions ----------

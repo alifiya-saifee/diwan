@@ -374,8 +374,10 @@ def own_photos(office: Office, ref: str) -> list[dict]:
     return sorted([p for p in photos(office, ref) if p["usable"]], key=lambda p: (rank.get(p["path"], len(rank)), -p.get("strength", 0)))
 
 
-def from_brief(office: Office, ref: str, sc: dict) -> dict:
-    """The picked script as pictures, from its own frame-by-frame brief: one slide a frame (at most 10), the words the
+def from_brief(office: Office, ref: str, sc: dict, shape: str = "carousel") -> dict:
+    """The picked script as pictures. `shape` "image": one picture, the hook as its headline (with the price on a listing),
+    the listing's best photo or, for a topic, one picture drawn from the brief's first frame; the rest of the script is
+    the caption. "carousel": from its own frame-by-frame brief, one slide a frame (at most 10), the words the
     frame shows or else that script line, the call to action last. A listing only ever in its own photos, each once; a
     topic's pictures are drawn when the slides are made (one Muse Image call at a time). Returns the new version's data;
     the original script is not touched. Refuses an amount the listing doesn't have."""
@@ -389,13 +391,26 @@ def from_brief(office: Office, ref: str, sc: dict) -> dict:
     cta = sc["lines_en"][-1]
     words = [w for w in words if w and w != cta][:MAX_SLIDES - 1] + [cta]  # the call to action stays last, once
     lst = studio._listing(office, ref)
-    if lst.get("item") == "listing":
+    if shape == "image":
+        price = f"AED {lst['price_aed']:,}" if lst.get("item") == "listing" and isinstance(lst.get("price_aed"), int) else ""
+        one = {"text": sc["hook_en"], **({"sub": price} if price and str(lst["price_aed"]) not in sc["hook_en"].replace(",", "") else {})}
+        if lst.get("item") == "listing":
+            good = own_photos(office, ref)
+            if not good:
+                raise studio.OutputRefused("This listing has no usable photos. Add photos, or make it a video.")
+            out = [{"photo": good[0]["path"], **one}]
+        else:
+            out = [{"photo": None, **one}]
+        frames = frames[:1]
+    elif lst.get("item") == "listing":
         good = own_photos(office, ref)
         if not good:
             raise studio.OutputRefused("This listing has no usable photos. Add photos, or make it a video.")
         out = slides({"hook_en": words[0], "lines_en": words[1:], "photos": []}, {"format": "carousel" if len(good) > 1 else "image", "photos": good})
     else:
         out = [{"photo": None, "text": w} for w in words]
+    if shape == "image" and frames and frames[0]["background"]["source"] == "speaker":
+        frames = [{**frames[0], "words": {**frames[0]["words"], "text": sc["hook_en"]}}]
     seen = {"speaker": "AI photo"}  # nobody films pictures: a frame that showed the speaker shows what they spoke about
     keep = [{**f, "background": {**f["background"], "source": seen.get(f["background"]["source"], f["background"]["source"])}} for f in frames]
     return ({k: v for k, v in sc.items() if k not in ("id", "by", "kind", "ref")}
@@ -641,7 +656,7 @@ def render(office: Office, ref: str, sc: dict, cause: int | None, feedback: str 
                   (lst.get("greet_ar") if hello and not look.get("words") else s.get("text_ar") or (sc.get("hook_ar") if i == 1 else ""))
                   if "Arabic" in business.languages(office) or look.get("arabic") else "")
         greet = (bool(lst.get("greeting")) or bool(look.get("card"))) and i == 1
-        sub = (name if lst.get("sombre") else f"From all of us at {name}") if hello and name else ""
+        sub = (name if lst.get("sombre") else f"From all of us at {name}") if hello and name else s.get("sub", "")  # one picture of a listing: its price
         _draw(base, text, name, centre=card or not s["photo"], logo=brand.logo(office), colours=brand.colours(office), arabic=arabic,
               greeting=greet, big_logo=bool(look.get("bigger_logo")), sub=sub, frame=fr,
               permit="" if lst.get("greeting") else str(lst.get("permit") or "")).save(path, "JPEG", quality=90)
