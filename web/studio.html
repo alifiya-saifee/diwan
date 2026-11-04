@@ -62,7 +62,7 @@
   .item .row { margin-top: var(--s2); }
   .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s2); margin-top: var(--s2); }
   .opt { border: 1px solid var(--line); border-radius: 12px; padding: var(--s2); min-width: 0; display: flex; flex-direction: column; gap: var(--s1); }
-  .opt.best { border-color: var(--gold); }
+  .opt.best { border-color: var(--gold); } .opt.chosen { box-shadow: 0 0 0 2px var(--green) inset; }
   .opt .top { display: flex; flex-wrap: wrap; gap: var(--s1); align-items: center; }
   .score { font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; }
   .score.hi { color: var(--green); } .score.mid { color: var(--warn); } .score.lo { color: var(--bad); }
@@ -767,7 +767,8 @@ function renderRun(quiet) {
           h("button", { class: "editpic", onclick: () => editPicture(x.served) }, "✎ Edit picture")))))) :
       h("div", { class: "slideshow" }, ...data.made.slides.images.map((x) => h("div", { class: "editable" }, h("img", { src: x.served, alt: x.text }),
         h("button", { class: "editpic", onclick: () => editPicture(x.served) }, "✎ Edit picture"))))) : "",
-    data.script_approved && !data.made.slides && !data.approvals.some((r) => r.kind === "use_script") ? h("div", { class: "item" }, h("b", {}, "Production: "), "the broker has the film list. Or make the video without filming, one of two ways:",
+    outputCard(),
+    data.script_approved && !data.made.slides && !data.approvals.some((r) => r.kind === "use_script") && data.output.chosen !== "pictures" ? h("div", { class: "item" }, h("b", {}, "Production: "), "the broker has the film list. Or make the video without filming, one of two ways:",
       h("div", { class: "two" },
         h("div", { class: "way" }, h("b", {}, "Free video"), h("p", { class: "note" }, `The computer's voice (${data.free_video.voice}) reads the script over the listing's photos with a slow zoom, the price card and an end card. No avatar, no cost. ${data.free_video.photos} photo${data.free_video.photos === 1 ? "" : "s"} ready.`),
           h("div", { class: "row" }, h("input", { type: "file", id: "photos", accept: "image/*", multiple: true, "aria-label": "Add photos of the listing" }), h("button", { onclick: addPhotos }, "Add photos")),
@@ -785,7 +786,7 @@ function renderRun(quiet) {
           h("div", { class: "row" }, h("span", { class: "note grow" }, data.heygen ? "Uses HeyGen credits." : "Connect HeyGen in Settings first."),
             h("button", { class: "primary", disabled: !data.heygen, onclick: aiVideo }, "Make AI video"))))) : ""].filter(Boolean);
   if (data.others.length) turn.push(h("div", { class: "item", id: "others" }, h("b", {}, "Other posts waiting for you: "), ...data.others.map((o) => h("button", { onclick: () => openPost(o.ref) }, `${o.label}: ${o.title}`))));
-  const key = JSON.stringify([data.approvals.map((r) => [r.id, r.options.map((o) => o.id)]), data.others.map((o) => o.id), !!data.made.scheduled, data.script_approved, !!data.stopped, data.free_video.photos, data.made.slides ? data.made.slides.id : null]);
+  const key = JSON.stringify([data.approvals.map((r) => [r.id, r.options.map((o) => o.id)]), data.others.map((o) => o.id), !!data.made.scheduled, data.script_approved, !!data.stopped, data.free_video.photos, data.made.slides ? data.made.slides.id : null, data.output.chosen]);
   const same = key === turnKey; turnKey = key;  // nothing new to decide: what a person typed or chose stays; anything new always shows
   if (!(quiet && same && unsent())) $("turn").replaceChildren(...(turn.length ? turn : [h("p", { class: "note" }, data.script_approved
     ? "The broker has the film list. Upload the take below when it is filmed." : "Nothing is waiting for you. Pick a listing and press Run this listing.")]));
@@ -803,18 +804,45 @@ function renderRun(quiet) {
   $("made").replaceChildren(...(out.length ? out : [h("p", { class: "note" }, "Run a listing to see what each step makes.")]));
   const at = m.published ? 5 : data.approvals.some((r) => r.kind === "publish") || m.cut || m.slides ? 4 : data.script_approved ? 3
     : data.approvals.some((r) => r.kind === "use_script") ? 2 : 1;
-  $("steps5").replaceChildren(...["Idea", "Script", "Make", "Edit", "Publish"].map((t, i) => h("li", { class: i + 1 < at || m.published ? "done" : i + 1 === at ? "now" : "", ...(i + 1 === at ? { "aria-current": "step" } : {}) }, `${i + 1}. ${t}`)));
+  const making = data.output.chosen ? OUTPUT_NAMES[data.output.chosen] : m.slides ? "Pictures" : "";
+  $("steps5").replaceChildren(...["Idea", "Script", making ? `Make: ${making}` : "Make", "Edit", "Publish"].map((t, i) => h("li", { class: i + 1 < at || m.published ? "done" : i + 1 === at ? "now" : "", ...(i + 1 === at ? { "aria-current": "step" } : {}) }, `${i + 1}. ${t}`)));
 }
 document.querySelectorAll(".setupnav a").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); $(a.dataset.jump).scrollIntoView({ behavior: "smooth", block: "start" }); }));
 try { $("jfold").open = localStorage.getItem("diwan.jfold") === "open"; } catch (e) { /* no storage: stays folded */ }
 $("jfold").addEventListener("toggle", () => { try { localStorage.setItem("diwan.jfold", $("jfold").open ? "open" : ""); } catch (e) { /* fine */ } });
 const PICTURES = ["carousel", "image", "graphic"];
-function suggested(o) {  // what this script makes, from its own plan: a carousel or image is pictures, the rest is a video
+const OUTPUT_NAMES = { pictures: "Pictures", voice: "Voice-over", video: "Video" };
+function suggested(o) {  // the office's suggestion (decided by code), then what the script was written as; the person chooses after the pick
+  const written = writtenAs(o);
+  return o.suggest ? `${OUTPUT_NAMES[o.suggest.pick]}. ${o.suggest.why} Written as ${written[0].toLowerCase()}${written.slice(1)}.` : written;
+}
+function writtenAs(o) {
   if (o.slides && o.slides.length) return `Pictures: ${o.slides.length} image${o.slides.length === 1 ? "" : "s"}`;
   const kind = (o.visual && o.visual.kind) || o.format || "";
   if (PICTURES.includes(kind)) return `Pictures: ${kind}${o.visual ? `, ${o.visual.frames.length} frame${o.visual.frames.length === 1 ? "" : "s"}` : ""}`;
   const secs = o.shots && o.shots.length ? `, about ${Math.round(o.shots[o.shots.length - 1].at + 3)} seconds` : "";
   return `Video${kind ? `: ${kind}` : ""}${o.visual ? `, ${o.visual.frames.length} frame${o.visual.frames.length === 1 ? "" : "s"}` : ""}${secs}`;
+}
+function outputCard() {  // after the pick: how this post goes out; one suggested, with its reason; the server says what it can make
+  const o = data.output;
+  if (!o || !o.picked || !data.script_approved || (data.made.slides && !o.chosen) || data.approvals.some((r) => r.kind === "use_script")) return "";
+  const choose = async (out) => {
+    try { await post("/api/studio/output", { ref, output: out, by: me() });
+      toast({ pictures: "Making the pictures from the script's frames…", voice: "Making the voice-over…", video: "Film it from the film list, or make the AI presenter video below." }[out]); await load();
+    } catch (e) { toast(e.message); }
+  };
+  const ways = [["pictures", "A carousel from this script's own frames: the listing's own photos, or drawn pictures for a topic. About a minute.", "Post as pictures"],
+    ["voice", `The computer's voice${data.free_video.voice ? ` (${data.free_video.voice})` : ""} reads the script over the frames. Free.`, "Use a voice-over"],
+    ["video", "A person on camera: the broker films from the film list, or the AI presenter.", "Make it a video"]];
+  return h("div", { class: "item", id: "outputcard" }, h("b", {}, "How should this post go out?"),
+    h("p", { class: "note" }, o.chosen ? `Chosen: ${OUTPUT_NAMES[o.chosen]}.` : "The same script and its frames, finished one of three ways."),
+    h("div", { class: "opts ways3" }, ...ways.map(([k, what, label]) => h("div", { class: `opt${o.suggest.pick === k ? " best" : ""}${o.chosen === k ? " chosen" : ""}`, "data-output": k },
+      h("div", { class: "top" }, h("b", {}, OUTPUT_NAMES[k]), o.suggest.pick === k ? h("span", { class: "rec" }, "Suggested") : "", o.chosen === k ? h("span", { class: "tag" }, "Chosen") : ""),
+      o.suggest.pick === k ? h("p", { class: "note" }, o.suggest.why) : "",
+      h("p", { class: "note" }, what),
+      h("p", { class: "note" }, `Goes to: ${o.where[k].join(", ")}`),
+      o.can[k] ? "" : h("p", { class: "note warnline" }, o.why_not),
+      h("div", { class: "acts" }, h("button", { class: o.suggest.pick === k ? "primary" : "", disabled: !o.can[k] || o.chosen === k, onclick: () => choose(k) }, label))))));
 }
 function cardTabs(panels) {  // Script / Look / Plan / Why, all closed until pressed
   const box = h("div", { class: "cpanels" }), bar = h("div", { class: "ctabs", role: "group", "aria-label": "Details" });

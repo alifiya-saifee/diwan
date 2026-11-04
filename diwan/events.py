@@ -37,7 +37,7 @@ TYPES = {
     "form.sent", "form.recalled", "portal.drafted", "portal.submitted", "transfer.booked", "transfer.completed",
     # the content studio: what it saw, what it pinned, what it made, and footage people uploaded
     "post.seen", "post.read", "photo.read", "content.idea", "content.briefed", "content.scripted", "content.ready",
-    "post.approved", "post.live", "post.paused", "post.withdrawn", "campaign.started", "campaign.ended", "lead.attributed", "product.saved", "mchat.said", "mchat.upload", "mchat.analysed", "photos.added", "plan.made", "plan.started", "competitor.checked", "board.pinned", "board.unpinned", "content.made", "footage.added", "step.blocked",
+    "post.approved", "post.live", "post.paused", "post.withdrawn", "post.output_chosen", "campaign.started", "campaign.ended", "lead.attributed", "product.saved", "mchat.said", "mchat.upload", "mchat.analysed", "photos.added", "plan.made", "plan.started", "competitor.checked", "board.pinned", "board.unpinned", "content.made", "footage.added", "step.blocked",
     "qa.passed", "qa.failed", "qa.escalated", "taste.signal", "taste.reason", "taste.forgotten",
     # the Lobby room (the spec's Room 9), not the requests board below, which kept the old "lobby." names
     "thread.posted", "playbook.added", "playbook.removed", "experiment.proposed", "experiment.refused", "experiment.approved", "experiment.switched", "experiment.reported", "experiment.ended",

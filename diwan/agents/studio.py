@@ -1987,16 +1987,159 @@ def approved_script(office: Office, ref: str, *, past: bool = False) -> dict | N
     """The script a person approved for filming, if any: the one they picked, or the only one offered. With past, also one
     whose post was stopped: what a post was stays true for its results."""
     g = office.graph()
+    chosen = None  # how the person chose it goes out, after the pick: pictures made from the brief replace the script from then on
     for e in reversed(office.log.list()):
         if not past and ended(e, ref):
             return None
+        if e["type"] == "post.output_chosen" and e["content"].get("ref") == ref and chosen is None:
+            chosen = e["content"]
         if e["type"] == "decision.made" and e["content"].get("answer") == "approve":
             n = g.nodes.get(e["content"]["card"])
             if n and n.props.get("kind") == "use_script" and ref in n.props.get("text", ""):
                 opts = script_options(office, n.props["text"])
                 choice = e["content"].get("choice")
-                return next((x for x in opts if x["id"] == choice), opts[0] if opts else None)
+                sc = next((x for x in opts if x["id"] == choice), opts[0] if opts else None)
+                if sc and chosen and chosen.get("script") == sc["id"] and chosen.get("version"):
+                    return _content(office, chosen["version"]) or sc
+                return sc
     return None
+
+
+# ---- how the picked script goes out: pictures, a voice-over or a video (docs: "From script to post") ----
+OUTPUTS = {"pictures": "Pictures", "voice": "Voice-over", "video": "Video"}
+OFF_WHY = "Video making runs on the full server. Post this as pictures, or make the video on the full server."
+
+
+class OutputRefused(ValueError):
+    """A choice that can't be made here, with the reason a person reads."""
+
+
+def video_mode() -> str:
+    """on, light or off. DIWAN_VIDEO says it; DIWAN_LIGHT_VIDEO=1 still means light."""
+    from diwan.agents import freevideo
+    v = (env("DIWAN_VIDEO") or "").strip().lower()
+    return v if v in ("on", "light", "off") else "light" if freevideo.LIGHT else "on"
+
+
+def _can_render() -> tuple[bool, bool, str]:
+    """(a voice-over can be made, a video can be finished, why not). Off, or no ffmpeg: neither, never a crash or a restart."""
+    from diwan.agents import freevideo
+    if video_mode() == "off":
+        return False, False, OFF_WHY
+    miss = freevideo.missing()
+    if "ffmpeg" in miss:
+        return False, False, "This server has no ffmpeg, so it can't make video. Post this as pictures."
+    if miss:
+        return False, True, f"This server has no {', '.join(miss)}, so it can't make the voice-over. Post this as pictures, or film it."
+    return True, True, ""
+
+
+def suggest_output(office: Office, ref: str, sc: dict | None = None) -> dict:
+    """{pick: pictures|voice|video, why}: decided by code from what the post is, never by the model. The person decides."""
+    from diwan.agents import eventpost, taste
+    voice_ok, video_ok, why_not = _can_render()
+    def pick(p: str, why: str) -> dict:
+        if (p == "voice" and not voice_ok) or (p == "video" and not video_ok):
+            return {"pick": "pictures", "why": why_not}
+        return {"pick": p, "why": why}
+    lst = _listing(office, ref)
+    if lst.get("greeting"):
+        return pick("pictures", "A greeting is one designed picture.")
+    if taste.weight(office, "format:graphic") >= taste.LEAN > taste.weight(office, "format:reel, to camera"):
+        return pick("pictures", "You've chosen pictures lately.")
+    if taste.weight(office, "format:reel, to camera") >= taste.LEAN > taste.weight(office, "format:graphic"):
+        return pick("video", "You've chosen videos lately.")
+    if lst.get("item") == "listing":
+        if eventpost._chosen(office, ref) == "reel":
+            return pick("voice", "You chose a reel for this listing: its own photos with a voice over them.")
+        good = [x for x in eventpost.photos(office, ref) if x.get("usable")]
+        if len(good) >= 3:
+            return pick("pictures", f"Listings with good photos do well as carousels ({len(good)} usable photos).")
+        if (made(office, "listing look", ref) or {}).get("format") == "reel":
+            return pick("voice", "A walkthrough needs movement and a voice.")
+        return pick("video", f"Only {len(good)} usable photo{'' if len(good) == 1 else 's'}: too few for a carousel, so film it.")
+    if lst.get("item") == "topic" and lst.get("job") in ("introduce", "why-us", "team", "comeback"):
+        return pick("voice", "People buy from people: a voice is the next best thing to a face.")
+    if lst.get("item") == "topic" and not lst.get("moment"):
+        return pick("pictures", "Tips read well as slides.")
+    sc = sc or approved_script(office, ref) or {}
+    return pick("pictures", "The script was written as pictures.") if sc.get("slides") else pick("video", "The script was written to be seen and heard.")
+
+
+def _chosen_output(office: Office, ref: str) -> dict | None:
+    """The latest choice for this post, if it was made after the script it belongs to was picked."""
+    for e in reversed(office.log.list()):
+        if ended(e, ref):
+            return None
+        if e["type"] == "post.output_chosen" and e["content"].get("ref") == ref:
+            return e["content"]
+    return None
+
+
+def output_options(office: Office, ref: str) -> dict:
+    """What the Production step offers: the suggestion, what this server can make, and what was chosen."""
+    voice_ok, video_ok, why_not = _can_render()
+    sc = approved_script(office, ref)
+    base = (_content(office, sc["revises"]) if sc and sc.get("via") == "pictures from brief" else sc) or {}
+    ch = _chosen_output(office, ref)
+    from diwan import platforms
+    lst = _listing(office, ref)
+    where = {o: platforms.for_post(office, listing=lst.get("item") == "listing", video=o != "pictures") for o in OUTPUTS}
+    return {"suggest": suggest_output(office, ref, base), "video_mode": video_mode(), "can": {"pictures": True, "voice": voice_ok, "video": video_ok},
+            "why_not": why_not, "where": where, "picked": bool(sc), "chosen": ch["output"] if ch and base and ch.get("script") == base.get("id") else None}
+
+
+def choose_output(office: Office, ref: str, output: str, *, by: str) -> dict:
+    """Record how the picked script goes out. Pictures: a new script version, slides from the script's own brief (the
+    original stays as it was). Choosing the same again makes nothing new. The making itself runs after (route or *_now)."""
+    from diwan.agents import eventpost
+    if output not in OUTPUTS:
+        raise OutputRefused("Choose pictures, a voice-over or a video.")
+    sc = approved_script(office, ref)
+    if not sc:
+        raise OutputRefused("Pick a script first.")
+    base = (_content(office, sc["revises"]) if sc.get("via") == "pictures from brief" else sc) or sc
+    opts = output_options(office, ref)
+    if not opts["can"][output]:
+        raise OutputRefused(opts["why_not"])
+    last = _chosen_output(office, ref)
+    if last and last.get("script") == base["id"] and last["output"] == output:
+        return {"ok": True, "output": output, "again": True, **({"version": _content(office, last["version"])} if last.get("version") else {})}
+    if output == "pictures":
+        v = _made(office, "mscript", "script", ref, eventpost.from_brief(office, ref, base), None)
+        office.log.append("post.output_chosen", actor=by, content={"ref": ref, "script": base["id"], "output": output, "by": by, "version": v["id"]})
+        from diwan.graph import OPEN
+        for t in office.graph().of("task", status=OPEN):  # nothing to film any more
+            if t.props.get("agent") == "mshoot" and t.props.get("action", "").startswith(f"Film {ref}:"):
+                office.finish_task(t.id, "Posted as pictures instead.")
+        _pack(office, "mart", f"{ref} goes out as pictures: {len(v['slides'])} slide{'s' if len(v['slides']) != 1 else ''} from script {base['id']}'s own brief.")
+        return {"ok": True, "output": output, "version": v}
+    office.log.append("post.output_chosen", actor=by, content={"ref": ref, "script": base["id"], "output": output, "by": by})
+    _pack(office, "mkt", f"{ref} goes out as {OUTPUTS[output].lower()}" + (": the computer's voice over the frames." if output == "voice" else ": film it, or make the AI presenter video."))
+    return {"ok": True, "output": output}
+
+
+async def voice_over(office: Office, ref: str, *, by: str) -> dict:
+    """The free video, as it is today: AI frames first when a topic has nothing real to show, then the voice over them."""
+    from diwan.agents import freevideo
+    if not freevideo.photos(office, ref) and freevideo.can_draw(office, ref):
+        await asyncio.to_thread(freevideo.ai_frames, office, ref, by=by)
+    r = await asyncio.to_thread(freevideo.make, office, ref, by=by)
+    if r.get("ok"):
+        await after_footage(office, ref)
+    return r
+
+
+def choose_output_now(office: Office, ref: str, output: str, *, by: str = "maya") -> dict:
+    """For tests: choose, then make it. Pictures returns the new script version."""
+    r = choose_output(office, ref, output, by=by)
+    if output == "pictures":
+        if not r.get("again"):
+            asyncio.run(after_pictures(office, ref, r["version"], pause=0))
+        return r["version"]
+    if output == "voice" and not r.get("again"):
+        asyncio.run(voice_over(office, ref, by=by))
+    return r
 
 
 async def script_revise(office: Office, ref: str, sid: str, note: str, card: str | None = None, pause: float = .6) -> None:

@@ -281,12 +281,13 @@ def studio_view(ref: str = "MC-1204"):
                        "started": sorted(rhythm.started(S.office)), "stages": marketing.stage_labels(S.office),
                        "evidence": planner.evidence(S.office, [d["ref"] for d in (rhythm.current(S.office) or {}).get("days", []) if d.get("ref")])},
             "footage": studio.footage(S.office, ref), "approvals": [{"id": n.id, "text": n.props["text"], "kind": n.props.get("kind"),
-                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises", "cards", "built_like", "own", "problems", "shots", "format", "slides", "director", "visual")} | {"stale": studio.stale(S.office, x), "look": __import__("diwan.agents.visual", fromlist=["describe"]).describe(x.get("visual"))}
+                           "options": [{k: x.get(k) for k in ("id", "angle", "why", "hook_en", "hook_ar", "lines_en", "via", "revises", "cards", "built_like", "own", "problems", "shots", "format", "slides", "director", "visual")} | {"stale": studio.stale(S.office, x), "look": __import__("diwan.agents.visual", fromlist=["describe"]).describe(x.get("visual")),
+                                                                                  "suggest": studio.suggest_output(S.office, ref, x)}
                                        for x in studio.script_options(S.office, n.props["text"])] if n.props.get("kind") == "use_script" else []} for n in reqs],
             "strategy": strategy.report(S.office), "journey": journey.report(S.office), "costs": costs.summary(),
             "script_approved": bool(studio.approved_script(S.office, ref)), "heygen": heygen.ready(), "stopped": studio.stopped(S.office, ref),
             "making": studio.progress(S.office, ref), "making_refs": sorted(studio.RUNNING), "stuck": studio.stuck(S.office, ref),
-            "chain": studio.chain(S.office, ref),
+            "chain": studio.chain(S.office, ref), "output": studio.output_options(S.office, ref),
             "brand_voice": __import__("diwan.brand", fromlist=["profile"]).profile(S.office)["voice"]["value"],
             "approvers": {r: {"id": w, "label": approvers.label(S.office, r)} for r, w in approvers.get(S.office).items()},
             "others": [w for w in marketing.waiting(S.office) if w["ref"] != ref],
@@ -519,6 +520,36 @@ async def ai_frames(body: FreeVideoIn):
     """Muse Image draws the frames for a post about the brand or a topic, ready for the free video."""
     from diwan.agents import freevideo
     return await asyncio.to_thread(freevideo.ai_frames, S.office, body.ref, by=body.by)
+
+
+class OutputIn(BaseModel):
+    ref: str
+    output: str  # pictures | voice | video
+    by: str = "maya"
+
+
+@app.get("/api/studio/output")
+def studio_output(ref: str):
+    """How the picked script can go out here: the suggestion and its reason, what this server can make, what was chosen."""
+    from diwan.agents import studio
+    return studio.output_options(S.office, ref)
+
+
+@app.post("/api/studio/output")
+async def studio_choose_output(body: OutputIn):
+    """The person's choice. Pictures: slides from the script's own brief, then the caption and the publish request.
+    Voice-over: the free video. Video: filming or the AI presenter, as before. Choosing the same again does nothing new."""
+    from diwan.agents import studio
+    try:
+        r = await asyncio.to_thread(studio.choose_output, S.office, body.ref, body.output, by=body.by)
+    except studio.OutputRefused as e:
+        raise HTTPException(409, str(e)) from None
+    if not r.get("again"):
+        if body.output == "pictures":
+            asyncio.create_task(studio.after_pictures(S.office, body.ref, r["version"]))
+        elif body.output == "voice":
+            asyncio.create_task(studio.voice_over(S.office, body.ref, by=body.by))
+    return {"ok": True, "output": body.output, "again": bool(r.get("again")), **({"version": r["version"]["id"]} if r.get("version") else {})}
 
 
 class DecideIn(BaseModel):

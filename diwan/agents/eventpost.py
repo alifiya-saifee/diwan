@@ -367,6 +367,42 @@ def slides(data: dict, sh: dict) -> list[dict]:
     return out
 
 
+def own_photos(office: Office, ref: str) -> list[dict]:
+    """A listing's usable photos, best first: the order its look chose, then the strongest."""
+    order = (studio.made(office, "listing look", ref) or {}).get("photos") or []
+    rank = {p: i for i, p in enumerate(order)}
+    return sorted([p for p in photos(office, ref) if p["usable"]], key=lambda p: (rank.get(p["path"], len(rank)), -p.get("strength", 0)))
+
+
+def from_brief(office: Office, ref: str, sc: dict) -> dict:
+    """The picked script as pictures, from its own frame-by-frame brief: one slide a frame (at most 10), the words the
+    frame shows or else that script line, the call to action last. A listing only ever in its own photos, each once; a
+    topic's pictures are drawn when the slides are made (one Muse Image call at a time). Returns the new version's data;
+    the original script is not touched. Refuses an amount the listing doesn't have."""
+    said = [sc["hook_en"], *sc["lines_en"]]
+    stray = (studio._amounts(" ".join(said)) - studio._amounts(studio._brief(office, ref))) - {0}
+    if stray:
+        raise studio.OutputRefused(f"The script names amounts not on the listing ({', '.join(f'{a:,}' for a in sorted(stray))}). Ask for a change first.")
+    vis = sc.get("visual") or {}
+    frames = (vis.get("frames") or [])[:MAX_SLIDES]
+    words = [(f.get("words") or {}).get("text") or (said[i] if i < len(said) else "") for i, f in enumerate(frames)] if frames else list(said)
+    cta = sc["lines_en"][-1]
+    words = [w for w in words if w and w != cta][:MAX_SLIDES - 1] + [cta]  # the call to action stays last, once
+    lst = studio._listing(office, ref)
+    if lst.get("item") == "listing":
+        good = own_photos(office, ref)
+        if not good:
+            raise studio.OutputRefused("This listing has no usable photos. Add photos, or make it a video.")
+        out = slides({"hook_en": words[0], "lines_en": words[1:], "photos": []}, {"format": "carousel" if len(good) > 1 else "image", "photos": good})
+    else:
+        out = [{"photo": None, "text": w} for w in words]
+    seen = {"speaker": "AI photo"}  # nobody films pictures: a frame that showed the speaker shows what they spoke about
+    keep = [{**f, "background": {**f["background"], "source": seen.get(f["background"]["source"], f["background"]["source"])}} for f in frames]
+    return ({k: v for k, v in sc.items() if k not in ("id", "by", "kind", "ref")}
+            | {"format": "carousel" if len(out) > 1 else "image", "slides": out, "shots": [], "revises": sc["id"], "via": "pictures from brief",
+               **({"visual": {**vis, "kind": "carousel" if len(out) > 1 else "image", "mood": "", "frames": keep}} if frames else {})})
+
+
 def _stems(text: str) -> set[str]:
     return {w.rstrip("s") for w in re.findall(r"[a-z]{4,}", text.lower())} - {"with", "from", "your", "this", "that", "into", "over"}
 

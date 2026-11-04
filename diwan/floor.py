@@ -78,7 +78,7 @@ _r("note", ("self",), "meeting.started meeting.ended consent.given pocket.starte
 _r("note", ("self",), "steps.proposed")
 _r("task", ("owners",), "steps.approved")  # from the Meeting room to the room of each person given work
 
-QUIET |= set("""listing.access agent.added agent.paused agent.removed agent.resumed autonomy.changed board.pinned board.unpinned calendar.blocked
+QUIET |= set("""post.output_chosen listing.access agent.added agent.paused agent.removed agent.resumed autonomy.changed board.pinned board.unpinned calendar.blocked
 calendar.morning calendar.unblocked chat.merged client.queued appointment.link_removed followup.dismissed item.edited item.reconfirmed
 item.restored item.retired lead.sweep lesson.added lesson.removed listing.added listings.synced lobby.seen mchat.said mchat.upload
 notify.digest notify.read notify.sent nova.watched photo.read playbook.removed pocket.line product.saved qualify.asked qualify.form
