@@ -425,3 +425,17 @@ def test_when_supabase_cant_be_reached_nobody_gets_in_and_it_says_so(supa):
     r = supa_in(c, "layla@diwan.example", "the owner's password")
     assert r.status_code == 503 and "reached" in r.json()["detail"]
     assert c.get("/api/chats").status_code == 401
+
+
+def test_marketing_reaches_every_route_the_studio_calls_and_a_broker_does_not(web):
+    """The occasions on the Studio's plan belong to Marketing: Maya gets them, a broker doesn't."""
+    signed_in(web, "maya")
+    assert web.get("/api/occasions").status_code == 200
+    import re
+    from pathlib import Path
+    page = (Path(__file__).parent.parent / "web/studio.html").read_text(encoding="utf-8")
+    for p in sorted(set(re.findall(r'["`](/api/[A-Za-z0-9_/-]+)', page))):
+        if not p.startswith(access.PUBLIC_API):
+            assert access.may_call("maya", "GET", p) or access.may_call("maya", "POST", p), p
+    signed_in(web, "omar")
+    assert web.get("/api/occasions").status_code == 403

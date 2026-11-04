@@ -65,7 +65,7 @@ API = [("/api/listings/sync", set(), None), ("/api/lobby-room", STAFF, "GET"), (
        ("/api/desk/rooms/compliance", {COMP}, None), ("/api/desk/rooms/finance", {FIN, COMP}, None), ("/api/desk/rooms/operations", {OPS, COMP}, None),
        ("/api/desk/", DEAL_TEAM, None),
        *((p, {MKT}, None) for p in ("/api/studio", "/api/marketing", "/api/brand", "/api/products", "/api/topics", "/api/moments",
-                                    "/api/requests", "/api/business", "/api/kpis/marketing"))]
+                                    "/api/requests", "/api/business", "/api/kpis/marketing", "/api/occasions"))]
 COMP_AGENTS = ("comp", "screen", "sof", "report")
 OWN_PATH = ("/api/notices/",)  # the next part of the path is the person: only their own
 

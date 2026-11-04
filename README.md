@@ -106,6 +106,11 @@ The Marketing room works from the same records as the rest of the office, so a p
   Director scores every option, and a person picks one.
 - **The right format for what exists.** A reel, a carousel, a single image or a designed graphic, chosen from the photos
   and footage the listing actually has.
+- **Pictures, a voice-over or a video.** After a script is picked, the person chooses how it goes out, and one option
+  is suggested with its reason. Pictures turn the script's own frames into a carousel: a listing's own photos, with the
+  permit and the call to action last. A voice-over is the script read by the computer's voice over the frames. A video
+  is filmed or made by the AI presenter. On a server that can't make video safely (`DIWAN_VIDEO=off`), only pictures
+  are offered.
 - **Pictures that look like the place.** A listing uses only its own photos. A topic post gets photographs drawn by
   Muse Image from a planned shot (place, camera, light, materials), with no text or logos inside the picture.
 - **Brand and permit on every picture.** The company's logo and colours go on each slide, and a listing's advertising
@@ -130,7 +135,7 @@ The Marketing room works from the same records as the rest of the office, so a p
 
 | | |
 |---|---|
-| **Working** | All capabilities above, verified end to end in the browser, with 1,367 automated tests passing |
+| **Working** | All capabilities above, verified end to end in the browser, with 1,405 automated tests passing |
 | **In progress** | A live WhatsApp connection (currently a sandbox), Google Meet links, calendar sync and full Arabic responses |
 
 ## Roadmap
