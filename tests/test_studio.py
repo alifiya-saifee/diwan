@@ -624,7 +624,7 @@ def test_the_free_video_reads_the_script_over_the_photos_and_goes_to_editing(off
     assert r["ok"]
     f = studio.footage(office, "MC-1204")
     assert f["source"].startswith(f"free video: {freevideo.voice()} over ") and studio._duration(Path(f["path"])) > 8
-    assert studio._width(Path(f["path"])) == 1080
+    assert studio._width(Path(f["path"])) == freevideo.W  # 1080, or 720 on a small server (DIWAN_LIGHT_VIDEO)
 
 
 def test_each_step_says_who_it_waits_for_by_the_role_set_in_setup(office):

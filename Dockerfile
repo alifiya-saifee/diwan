@@ -24,5 +24,6 @@ COPY deploy ./deploy
 RUN ln -s /data/usage.jsonl /app/usage.jsonl
 
 # Recorded model replies (tapes/) stay out of the image: a public server always calls the models live.
-ENV PYTHONUNBUFFERED=1 PYTHONUTF8=1 DIWAN_TAPE=off
+# A small host (a tenth of a processor, 512 MB): the free video is made at 720 x 1280, 15 frames a second (freevideo.LIGHT).
+ENV PYTHONUNBUFFERED=1 PYTHONUTF8=1 DIWAN_TAPE=off DIWAN_LIGHT_VIDEO=1
 CMD ["python", "-m", "deploy.start"]

@@ -18,7 +18,14 @@ import httpx
 from diwan.config import env
 from diwan.office import Office
 
-W, H, FPS = 1080, 1920, 30
+# A small server (DIWAN_LIGHT_VIDEO=1, set in the Dockerfile: a free host has a tenth of a processor and 512 MB) makes a
+# lighter video: 720 wide at 15 frames a second, a smaller zoom canvas, ffmpeg's fastest setting on one thread. The full
+# 1080 x 1920 at 30 ran out of memory there. A laptop keeps the full quality.
+LIGHT = env("DIWAN_LIGHT_VIDEO") == "1"
+W, H, FPS = (720, 1280, 15) if LIGHT else (1080, 1920, 30)
+ZOOM = 1.15 if LIGHT else 1.5  # the canvas the slow zoom moves over, as a share of the frame
+X264 = ["-preset", "ultrafast", "-threads", "1"] if LIGHT else ["-preset", "veryfast"]
+FW, FH = 1080, 1920  # cards and titles are drawn at full size, then shrunk to the video's size, so they look the same
 WINDOWS = sys.platform == "win32"
 
 
@@ -235,13 +242,19 @@ def _matcher(office: Office, ref: str, pics: list[str], folder: Path):
     return pick
 
 
-def _fit(path: Path) -> "Image.Image":
+def _fit(path: Path, w: int | None = None, h: int | None = None) -> "Image.Image":
     from PIL import Image
+    w, h = w or W, h or H
     img = Image.open(path).convert("RGB")
-    k = max(W / img.width, H / img.height)
+    k = max(w / img.width, h / img.height)
     img = img.resize((round(img.width * k), round(img.height * k)))
-    x, y = (img.width - W) // 2, (img.height - H) // 2
-    return img.crop((x, y, x + W, y + H))
+    x, y = (img.width - w) // 2, (img.height - h) // 2
+    return img.crop((x, y, x + w, y + h))
+
+
+def _shrink(img):
+    """A card or title drawn at full size, at the video's own size."""
+    return img if W == FW else img.resize((round(img.width * W / FW), round(img.height * W / FW)))
 
 
 def _font(size: int):
@@ -258,27 +271,27 @@ def _card(text: str, path: Path, back: Path | None = None, logo: str | None = No
     """A card over the property itself, blurred and darkened so the words stand out: the price, or the end of the reel,
     with the company's logo above the words when it has one."""
     from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
-    img = ImageEnhance.Brightness(_fit(back).filter(ImageFilter.GaussianBlur(26))).enhance(.35) if back else Image.new("RGB", (W, H), (14, 18, 27))
+    img = ImageEnhance.Brightness(_fit(back, FW, FH).filter(ImageFilter.GaussianBlur(26))).enhance(.35) if back else Image.new("RGB", (FW, FH), (14, 18, 27))
     d = ImageDraw.Draw(img)
     parts = [x.strip() for x in text.split("·") if x.strip()] or [text]
-    y = H // 2 - len(parts) * 80
+    y = FH // 2 - len(parts) * 80
     if logo:
         try:
             mark = Image.open(logo).convert("RGBA")
             mark.thumbnail((260, 260))
             img = img.convert("RGBA")
-            img.alpha_composite(mark, ((W - mark.width) // 2, y - mark.height - 70))
+            img.alpha_composite(mark, ((FW - mark.width) // 2, y - mark.height - 70))
             img = img.convert("RGB")
             d = ImageDraw.Draw(img)
         except OSError:
             pass
     for i, ln in enumerate(parts):
         font = _font(112 if i == 0 else 68)
-        while d.textlength(ln, font=font) > W - 120 and font.size > 40:
+        while d.textlength(ln, font=font) > FW - 120 and font.size > 40:
             font = _font(font.size - 6)
-        d.text(((W - d.textlength(ln, font=font)) / 2, y), ln, font=font, fill=accent if i == 0 else (255, 255, 255))
+        d.text(((FW - d.textlength(ln, font=font)) / 2, y), ln, font=font, fill=accent if i == 0 else (255, 255, 255))
         y += font.size + 56
-    img.save(path)
+    _shrink(img).save(path)
     return path
 
 
@@ -289,18 +302,18 @@ def _title(text: str, path: Path) -> Path:
     d = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
     for w in words:
         t = f"{line} {w}".strip()
-        if d.textlength(t, font=font) > W - 140 and line:
+        if d.textlength(t, font=font) > FW - 140 and line:
             lines.append(line)
             line = w
         else:
             line = t
     lines.append(line)
     high = len(lines) * 112 + 70
-    img = Image.new("RGBA", (W, high), (14, 18, 27, 190))
+    img = Image.new("RGBA", (FW, high), (14, 18, 27, 190))
     d = ImageDraw.Draw(img)
     for i, ln in enumerate(lines):
-        d.text(((W - d.textlength(ln, font=font)) / 2, 34 + i * 112), ln, font=font, fill=(255, 255, 255))
-    img.save(path)
+        d.text(((FW - d.textlength(ln, font=font)) / 2, 34 + i * 112), ln, font=font, fill=(255, 255, 255))
+    _shrink(img).save(path)
     return path
 
 
@@ -330,9 +343,10 @@ def _shot(still: Path, seconds: float, move: str, out: Path) -> None:
                "out": (f"1.22-{step:.6f}*on", "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"),
                "right": ("1.2", f"(iw-iw/zoom)*on/{frames}", "ih/2-(ih/zoom/2)"),
                "left": ("1.2", f"(iw-iw/zoom)*(1-on/{frames})", "ih/2-(ih/zoom/2)")}[move]
-    studio._ffmpeg("-i", str(still), "-vf", f"scale={W * 3 // 2}:{H * 3 // 2}:force_original_aspect_ratio=increase,crop={W * 3 // 2}:{H * 3 // 2},"
+    cw, ch = int(W * ZOOM) // 2 * 2, int(H * ZOOM) // 2 * 2
+    studio._ffmpeg("-i", str(still), "-vf", f"scale={cw}:{ch}:force_original_aspect_ratio=increase,crop={cw}:{ch},"
                                             f"zoompan=z='{z}':x='{x}':y='{y}':d={frames}:s={W}x{H}:fps={FPS},format=yuv420p",
-                   "-frames:v", str(frames), "-an", "-c:v", "libx264", "-preset", "veryfast", str(out))
+                   "-frames:v", str(frames), "-an", "-c:v", "libx264", *X264, str(out))
 
 
 def _run(*args: str) -> None:
@@ -410,8 +424,8 @@ def make(office: Office, ref: str, *, by: str) -> dict:
     music = env("DIWAN_FREE_MUSIC")  # your own or a licensed track, under the voice; none is built in
     inputs = ["-i", str(picture), "-i", str(voice_), "-i", str(title)] + (["-stream_loop", "-1", "-i", music] if music and Path(music).exists() else [])
     mix = ";[3:a]volume=0.14[m];[1:a][m]amix=inputs=2:duration=first[a]" if len(inputs) > 6 else ""
-    studio._ffmpeg(*inputs, "-filter_complex", f"[0:v][2:v]overlay=0:240:enable='lt(t,{first:.2f})',format=yuv420p[v]{mix}", "-map", "[v]", "-map", "[a]" if mix else "1:a",
-                   "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-ar", "44100", "-shortest", str(out))
+    studio._ffmpeg(*inputs, "-filter_complex", f"[0:v][2:v]overlay=0:{round(240 * W / FW)}:enable='lt(t,{first:.2f})',format=yuv420p[v]{mix}", "-map", "[v]", "-map", "[a]" if mix else "1:a",
+                   "-c:v", "libx264", *X264, "-c:a", "aac", "-ar", "44100", "-shortest", str(out))
     office.log.append("footage.added", actor=by, agent="mvideo",
                       content={"id": f"F{n_}", "ref": ref, "path": str(out), "served": f"/media/{out.name}",
                                "source": f"free video: {voice()} over {len(local)} photo{'s' if len(local) != 1 else ''}, {len(shots)} shots", "lines": said})
