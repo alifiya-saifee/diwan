@@ -76,6 +76,12 @@
   .opt .ctabs button { flex: 1; font-size: 12px; padding: 4px 6px; }
   .opt .ctabs button[aria-expanded="true"] { border-color: var(--gold); color: var(--gold-2); }
   .opt .cpanel { font-size: 13px; }
+  .setupgrid { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: var(--s3); align-items: start; }
+  .setupnav { position: sticky; top: 190px; } .setupbody > .panel { scroll-margin-top: 190px; } .setupnav ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .setupnav a { display: block; padding: 6px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 13px; }
+  .setupnav a:hover, .setupnav a:focus-visible { color: var(--gold-2); background: rgba(255,255,255,.04); }
+  .setupbody > .panel + .panel { margin-top: var(--s3); }
+  @media (max-width: 800px) { .setupgrid { grid-template-columns: minmax(0, 1fr); } .setupnav { position: static; } .setupnav ol { display: flex; flex-wrap: wrap; } }
   ol.steps5 { list-style: none; display: flex; gap: 4px; padding: 0; margin: 0 0 var(--s3); flex-wrap: wrap; }
   ol.steps5 li { flex: 1; min-width: 80px; text-align: center; font-size: 12px; padding: 6px; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); }
   ol.steps5 li.done { color: var(--green); border-color: var(--green); } ol.steps5 li.now { color: #1a1712; background: var(--gold); border-color: var(--gold); font-weight: 700; }
@@ -297,10 +303,7 @@
         <div class="row"><button id="jm-add">Put it first</button><span class="fieldmsg" id="jm-msg" role="status"></span></div>
       </details>
     </section>
-    <section class="panel planpanel" id="planpanel"><div class="row"><h2 class="grow">The plan</h2><span class="note" id="nextrun"></span><button id="planbtn">Plan from today</button></div>
-      <div id="plan-ask"></div><div id="plan"></div>
-      <h2 class="sub">Where this listing's reel is now</h2><ol class="chain" id="chain"></ol>
-    </section>
+    <section class="panel planpanel" id="chainpanel"><h2>Where this listing's reel is now</h2><ol class="chain" id="chain"></ol></section>
     <div class="work">
       <section class="panel now"><h2>Running now, step by step</h2><div id="rooms"></div>
         <details class="more" id="allsteps"><summary>Show every agent's last message</summary><div id="steps"></div></details>
@@ -373,6 +376,9 @@
       <div id="pl-ask"></div>
       <p class="note" id="pl-who"></p><p class="note">Each day's three scripts are written that morning (today's straight away), or when you press Write it now. Nothing is filmed or posted without your yes. Approved stays on its day. Removed comes off and the day stays empty, until you make a new plan.</p>
       <div id="pl-days"></div></section>
+    <section class="panel planpanel" id="planpanel"><div class="row"><h2 class="grow">Day by day</h2><span class="note" id="nextrun"></span><button id="planbtn">Plan from today</button></div>
+      <div id="plan-ask"></div><div id="plan"></div>
+    </section>
     <section class="panel planpanel"><h2>What Diwan has learned</h2><p class="note" id="pl-learn-note"></p><div id="pl-learn"></div></section>
     <section class="panel planpanel"><h2>Going out</h2><div id="pl-out"></div></section>
     <section class="panel planpanel"><h2>Came off</h2><div id="pl-off"></div></section>
@@ -395,7 +401,8 @@
     </section>
   </section>
 
-  <section role="tabpanel" id="tab-setup" aria-labelledby="t-setup" hidden>
+  <section role="tabpanel" id="tab-setup" aria-labelledby="t-setup" hidden><div class="setupgrid">
+    <nav class="setupnav" aria-label="Setup sections"><ol><li><a href="#bizpanel" data-jump="bizpanel">Our business</a></li><li><a href="#occpanel" data-jump="occpanel">Occasions</a></li><li><a href="#brandpanel" data-jump="brandpanel">Brand</a></li><li><a href="#productpanel" data-jump="productpanel">Products and services</a></li><li><a href="#topicpanel" data-jump="topicpanel">Topics</a></li><li><a href="#approvalpanel" data-jump="approvalpanel">Approvals</a></li><li><a href="#rhythmpanel" data-jump="rhythmpanel">Rhythm</a></li><li><a href="#stylepanel" data-jump="stylepanel">Style notes</a></li><li><a href="#comppanel" data-jump="comppanel">Competitor accounts</a></li><li><a href="#importpanel" data-jump="importpanel">Import posts</a></li></ol></nav><div class="setupbody">
     <section class="panel" id="bizpanel"><h2>Our business <span id="bizstate" class="note"></span></h2>
       <p class="note">Set once, when you start. Every search, suggestion, competitor check, ad link and posting hour follows it; nothing assumes a trade or a country.</p>
       <div class="adform">
@@ -515,7 +522,7 @@
       <div id="stylelist"></div>
     </section>
 
-    <section class="panel"><h2>Competitor accounts</h2>
+    <section class="panel" id="comppanel"><h2>Competitor accounts</h2>
       <p class="note" id="compnote">Instagram business or creator accounts of businesses you compete with. Each one is checked as you add it; their public posts are read with our own account. They never see it.</p>
       <div class="addrow">
         <label class="prefix" for="addname"><span aria-hidden="true">@</span><input id="addname" placeholder="Add an Instagram business account" autocomplete="off" spellcheck="false"></label>
@@ -529,14 +536,14 @@
       <div class="accounts" id="acclist"></div>
     </section>
 
-    <section class="panel"><h2>Import posts from a spreadsheet</h2>
+    <section class="panel" id="importpanel"><h2>Import posts from a spreadsheet</h2>
       <div class="row importrow"><span class="note">For when Instagram can't be read: copy real posts into the
         <a href="/api/studio/import-template">spreadsheet template</a> (likes, comments, caption, link, date) and import it.</span>
         <input type="file" id="csv" accept=".csv,text/csv"><button class="primary" id="imp">Import posts</button></div>
       <details class="sample" id="impsample" open><summary>The format, with one example row</summary><div class="scroll" id="impcols"></div></details>
       <div id="impres" class="fieldmsg" role="status"></div>
     </section>
-  </section>
+  </div></div></section>
   <div class="undo" id="undo" role="status" hidden><span id="undotext"></span><button id="undobtn">Undo</button></div>
 </main>
 <script type="module">
@@ -795,6 +802,7 @@ function renderRun(quiet) {
     : data.approvals.some((r) => r.kind === "use_script") ? 2 : 1;
   $("steps5").replaceChildren(...["Idea", "Script", "Make", "Edit", "Publish"].map((t, i) => h("li", { class: i + 1 < at || m.published ? "done" : i + 1 === at ? "now" : "", ...(i + 1 === at ? { "aria-current": "step" } : {}) }, `${i + 1}. ${t}`)));
 }
+document.querySelectorAll(".setupnav a").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); $(a.dataset.jump).scrollIntoView({ behavior: "smooth", block: "start" }); }));
 const PICTURES = ["carousel", "image", "graphic"];
 function suggested(o) {  // what this script makes, from its own plan: a carousel or image is pictures, the rest is a video
   if (o.slides && o.slides.length) return `Pictures: ${o.slides.length} image${o.slides.length === 1 ? "" : "s"}`;
