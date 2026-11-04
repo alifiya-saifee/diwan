@@ -201,6 +201,8 @@ def test_the_studio_opens_with_no_post_chosen_and_with_one_that_is_gone(office, 
         assert o["picked"] is False and o["chosen"] is None and o["can"]["pictures"] is False
         with pytest.raises(studio.OutputRefused, match="Choose a post first"):
             studio.choose_output(office, ref, "pictures", by="maya")
+    assert studio.suggest_output(office, "") is None
+    studio.run_now(office, REF)  # a "Pick a script" card waiting somewhere in the office
     monkeypatch.setenv("DIWAN_AUTH", "off")
     monkeypatch.setattr(app_module.S, "office", office)
     with TestClient(app) as c:

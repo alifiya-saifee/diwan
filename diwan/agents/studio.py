@@ -1817,7 +1817,9 @@ def progress(office: Office, ref: str) -> dict:
         return {"state": "idle"}
     mine = lambda e: e["content"].get("ref") == ref  # noqa: E731
     said = lambda e, head: e["type"] == "agent.pack" and (e["content"].get("pack") or {}).get("verdict", "").startswith(head)  # noqa: E731
-    ready = next((e for e in after if said(e, f"Pick a script for {ref} ") or said(e, f"Approve the brief for {ref}")), None)
+    ready = next((e for e in reversed(after) if said(e, f"Pick a script for {ref} ") or said(e, f"Approve the brief for {ref}")), None)  # the newest ask
+    if ready and said(ready, f"Approve the brief for {ref}") and (alive or any(e["id"] > ready["id"] and e["type"] == "agent.started" and ref in e["content"].get("task", "") for e in after)):
+        ready = None  # the brief was approved and the scripts are being written: that is progress to show, not a card waiting
     blocked = next((e for e in after if e["type"] == "step.blocked" and start and e["caused_by"] == start["id"]), None)
     idea = any(e["type"] in ("content.idea",) and mine(e) for e in after)
     studied = idea or any(e["type"] == "content.made" and mine(e) and e["content"].get("kind") == "ideas" for e in after)
@@ -2048,7 +2050,7 @@ def _can_render() -> tuple[bool, bool, str]:
     return True, True, ""
 
 
-def suggest_output(office: Office, ref: str, sc: dict | None = None) -> dict:
+def suggest_output(office: Office, ref: str, sc: dict | None = None) -> dict | None:
     """{pick: pictures|voice|video, why}: decided by code from what the post is, never by the model. The person decides."""
     from diwan.agents import eventpost, taste
     voice_ok, video_ok, why_not = _can_render()
@@ -2056,7 +2058,10 @@ def suggest_output(office: Office, ref: str, sc: dict | None = None) -> dict:
         if (p == "voice" and not voice_ok) or (p == "video" and not video_ok):
             return {"pick": "pictures", "why": why_not}
         return {"pick": p, "why": why}
-    lst = _listing(office, ref)
+    try:
+        lst = _listing(office, ref)
+    except KeyError:  # no post chosen, or one that is gone: no suggestion
+        return None
     if lst.get("greeting"):
         return pick("pictures", "A greeting is one designed picture.")
     if taste.weight(office, "format:graphic") >= taste.LEAN > taste.weight(office, "format:reel, to camera"):

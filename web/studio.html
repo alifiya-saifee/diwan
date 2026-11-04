@@ -822,7 +822,7 @@ function renderRun(quiet) {
   $("made").replaceChildren(...(out.length ? out : [h("p", { class: "note" }, "Run a listing to see what each step makes.")]),
     ...(old.length ? [h("details", { class: "earlier" }, h("summary", {}, "From an earlier version (not used)"), h("div", { class: "made" }, ...old))] : []));
   const at = m.published ? 5 : data.approvals.some((r) => r.kind === "publish") || m.cut || m.slides ? 4 : data.script_approved ? 3
-    : data.approvals.some((r) => r.kind === "use_script") ? 2 : 1;
+    : data.approvals.some((r) => r.kind === "use_script") || (data.making || {}).state === "running" ? 2 : 1;
   const making = data.output.chosen ? OUTPUT_NAMES[data.output.chosen] : m.slides ? "Pictures" : "";
   $("steps5").replaceChildren(...["Idea", "Script", making ? `Make: ${making}` : "Make", "Edit", "Publish"].map((t, i) => h("li", { class: i + 1 < at || m.published ? "done" : i + 1 === at ? "now" : "", ...(i + 1 === at ? { "aria-current": "step" } : {}) }, `${i + 1}. ${t}`)));
 }
@@ -833,7 +833,7 @@ const PICTURES = ["carousel", "image", "graphic"];
 const OUTPUT_NAMES = { pictures: "Pictures", voice: "Voice-over", video: "Video" };
 function suggested(o) {  // the office's suggestion (decided by code), then what the script was written as; the person chooses after the pick
   const written = writtenAs(o);
-  return o.suggest ? `${OUTPUT_NAMES[o.suggest.pick]}. ${o.suggest.why} Written as ${written[0].toLowerCase()}${written.slice(1)}.` : written;
+  return o.suggest && OUTPUT_NAMES[o.suggest.pick] ? `${OUTPUT_NAMES[o.suggest.pick]}. ${o.suggest.why} Written as ${written[0].toLowerCase()}${written.slice(1)}.` : written;
 }
 function writtenAs(o) {
   if (o.slides && o.slides.length) return `Pictures: ${o.slides.length} image${o.slides.length === 1 ? "" : "s"}`;
