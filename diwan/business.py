@@ -19,7 +19,7 @@ FIELDS = {  # key: (label, what to write)
     "country": ("Country", "Where it operates"),
     "city": ("City or market", "Optional: the city or region it serves"),
     "timezone": ("Time zone", "Set from the country; pick one if the country has several"),
-    "platforms": ("Where we post", "The platforms the studio writes versions for; all of them until some are picked"),
+    "platforms": ("Where we post", "The platforms the studio writes versions for; Instagram, Facebook and LinkedIn (and Property Finder for a listing) until some are picked. TikTok and YouTube Shorts take videos only"),
     "permit": ("Do our posts need a permit or licence number?", "yes or no: when yes, every post shows it and is held without it"),
     "languages": ("Languages we post in", "e.g. English, Arabic: scripts carry the hook in each"),
     "website": ("Our website", "The home page; the studio reads it to learn the company and its products"),
@@ -137,7 +137,7 @@ def permit_needed(office: Office) -> bool:
 
 
 def platforms(office: Office) -> list[str]:
-    """The platforms picked in Setup, or [] when none are (then every platform the studio knows)."""
+    """The platforms picked in Setup, or [] when none are (then platforms.DEFAULT)."""
     return [x.strip() for x in get(office)["platforms"].split(",") if x.strip()]
 
 

@@ -32,8 +32,23 @@ SCHEMA = {"name": "versions", "strict": True, "schema": {"type": "object", "addi
 EMOJI = re.compile("[\U0001F300-\U0001FAFF\U00002600-\U000027BF]")
 
 
+DEFAULT = ["Instagram", "Facebook", "LinkedIn"]  # where a post goes until the business picks its own (Setup, Where we post)
+VIDEO_ONLY = {"TikTok", "YouTube Shorts"}  # they take a video, never pictures; off until someone picks them
+LISTING_ONLY = {"Property Finder"}  # a property portal: a listing's own post, never a topic or a greeting
+
+
 def known() -> list[str]:
     return list(RULES)
+
+
+def for_post(office: Office, *, listing: bool, video: bool) -> list[str]:
+    """The platforms this post gets a version for: the ones picked in Setup (or the defaults, plus Property Finder for a
+    listing), less any that can't take it (a video-only platform for pictures, a portal for something that isn't a
+    listing). Instagram, where it posts by itself, always."""
+    from diwan import business
+    want = business.platforms(office) or DEFAULT + (sorted(LISTING_ONLY) if listing else [])
+    want = [p for p in want if p in RULES and (video or p not in VIDEO_ONLY) and (listing or p not in LISTING_ONLY)]
+    return list(dict.fromkeys(["Instagram"] + want))
 
 
 def _tags(text: str) -> list[str]:
@@ -75,12 +90,13 @@ def by_rules(platform: str, caption: str) -> str:
     return fit(platform, body, tags)
 
 
-def versions(office: Office, caption: str, *, what: str = "", platforms: list[str] | None = None) -> dict[str, dict]:
-    """{platform: {text, shape, posts}} for each platform the business posts on (Setup → Where we post)."""
+def versions(office: Office, caption: str, *, what: str = "", platforms: list[str] | None = None, listing: bool = True,
+             video: bool = True) -> dict[str, dict]:
+    """{platform: {text, shape, posts}} for each platform this post can go to (for_post), or the ones given."""
     from diwan import brand, business
     from diwan.agents import runner
     from diwan.agents.charters import get
-    want = [p for p in (platforms or business.platforms(office) or ["Instagram"]) if p in RULES]
+    want = [p for p in platforms if p in RULES] if platforms else for_post(office, listing=listing, video=video)
     if "Instagram" in RULES and "Instagram" not in want:
         want = want or ["Instagram"]
     tags = _tags(caption)

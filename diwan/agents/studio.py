@@ -1534,7 +1534,9 @@ def planned_at(office: Office, ref: str, at: str) -> str:
 def cross(office: Office, ref: str, text: dict, cause: int | None) -> dict:
     from diwan import platforms
     lst = _listing(office, ref)
-    full = platforms.versions(office, text["text"], what=f"{lst['title']} ({lst['item']})")
+    sc = approved_script(office, ref) or {}
+    full = platforms.versions(office, text["text"], what=f"{lst['title']} ({lst['item']})", listing=lst.get("item") == "listing",
+                              video=not sc.get("slides"))  # a picture post never goes to a video-only platform
     versions = {p: v["text"] for p, v in full.items()}
     m = _made(office, "mcross", "versions", ref, {"versions": versions, "detail": full}, cause)
     _pack(office, "mcross", f"Versions for {', '.join(versions)}, each written for its platform"

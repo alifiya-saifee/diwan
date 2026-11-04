@@ -89,9 +89,10 @@ def test_a_price_change_pauses_the_post_that_said_the_old_price(office):
     assert paused and any("1,900,000" in p["why"] and "1,950,000" in p["why"] for p in paused)
 
 
-def test_the_demo_writes_for_every_platform(office):
+def test_the_demo_posts_where_an_office_does_by_default(office):
     from diwan import business, platforms
-    assert set(business.platforms(office)) == set(platforms.RULES)
+    assert business.platforms(office) == []  # nothing picked: the defaults
+    assert platforms.for_post(office, listing=True, video=False) == ["Instagram", "Facebook", "LinkedIn", "Property Finder"]
 
 
 def test_the_demo_brand_has_hashtags_so_every_platform_version_passes(office):
