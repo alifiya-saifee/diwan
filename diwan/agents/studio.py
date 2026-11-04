@@ -2102,7 +2102,7 @@ def output_options(office: Office, ref: str) -> dict:
         lst = _listing(office, ref)
     except KeyError:  # no post chosen yet (the Studio opens with none), or one that is gone: nothing to choose
         return {"suggest": {"pick": "pictures", "why": ""}, "video_mode": video_mode(), "can": {"pictures": False, "voice": voice_ok, "video": video_ok},
-                "why_not": why_not, "where": {o: [] for o in OUTPUTS}, "picked": False, "chosen": None}
+                "why_not": why_not, "where": {o: [] for o in OUTPUTS}, "picked": False, "chosen": None, "written": None}
     sc = approved_script(office, ref)
     base = (_content(office, sc["revises"]) if sc and sc.get("via") == "pictures from brief" else sc) or {}
     ch = _chosen_output(office, ref)
@@ -2119,7 +2119,7 @@ def output_options(office: Office, ref: str) -> dict:
     return {"suggest": suggest_output(office, ref, base), "video_mode": video_mode(), "can": {"pictures": True, "voice": voice_ok, "video": video_ok},
             "why_not": why_not, "where": where, "picked": bool(sc), "chosen": mine["output"] if mine else None,
             "shape": (mine.get("shape") or "carousel") if mine and mine["output"] == "pictures" else None, "slides": slides,
-            "since": mine.get("at_event") if mine else None}
+            "since": mine.get("at_event") if mine else None, "written": "pictures" if base.get("slides") else "video" if base else None}
 
 
 def choose_output(office: Office, ref: str, output: str, *, by: str, shape: str = "image") -> dict:

@@ -768,7 +768,7 @@ function renderRun(quiet) {
     data.made.scheduled ? h("div", { class: "item" }, h("b", {}, `Approved: goes out ${new Date(data.made.scheduled.at).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })}. `),
       h("button", { onclick: async () => { const r = await post("/api/studio/post-now", { ref, by: me() }); toast(r.ok ? "Posted" : `Not posted yet: ${(r.needs || [r.error]).join("; ")}`); await load(); } }, "Post now"),
       h("button", { onclick: async () => { await post("/api/studio/unschedule", { ref, by: me() }); toast("Cancelled: it waits for your decision again"); await load(); } }, "Cancel it")) : "",
-    data.made.slides ? h("div", { class: "item" }, h("b", {}, `The post: ${data.made.slides.images.length} image${data.made.slides.images.length === 1 ? "" : "s"}`),
+    data.made.slides && (!data.output.picked || data.output.written === "pictures" || data.output.chosen === "pictures") ? h("div", { class: "item" }, h("b", {}, `The post: ${data.made.slides.images.length} image${data.made.slides.images.length === 1 ? "" : "s"}`),
       data.made.slides.people ? h("p", { class: "note" }, `${data.made.slides.people} show people: check they agreed before publishing.`) : "",
       data.made.slides.change ? h("p", { class: "note" }, `Your change: "${data.made.slides.change.asked}". `
         + (data.made.slides.change.done === true ? "Done" : data.made.slides.change.done === false ? "Not fully done" : "Made, not checked")
@@ -781,7 +781,7 @@ function renderRun(quiet) {
       h("div", { class: "slideshow" }, ...data.made.slides.images.map((x) => h("div", { class: "editable" }, h("img", { src: x.served, alt: x.text }),
         h("button", { class: "editpic", onclick: () => editPicture(x.served) }, "✎ Edit picture"))))) : "",
     outputCard(),
-    data.script_approved && !data.made.slides && !data.approvals.some((r) => r.kind === "use_script") && data.output.chosen !== "pictures" ? h("div", { class: "item" }, h("b", {}, "Production: "), "the broker has the film list. Or make the video without filming, one of two ways:",
+    data.script_approved && data.output.written === "video" && !data.approvals.some((r) => r.kind === "use_script") && data.output.chosen !== "pictures" ? h("div", { class: "item" }, h("b", {}, "Production: "), "the broker has the film list. Or make the video without filming, one of two ways:",
       h("div", { class: "two" },
         h("div", { class: "way" }, h("b", {}, "Free video"), h("p", { class: "note" }, `The computer's voice (${data.free_video.voice}) reads the script over the listing's photos with a slow zoom, the price card and an end card. No avatar, no cost. ${data.free_video.photos} photo${data.free_video.photos === 1 ? "" : "s"} ready.`),
           h("div", { class: "row" }, h("input", { type: "file", id: "photos", accept: "image/*", multiple: true, "aria-label": "Add photos of the listing" }), h("button", { onclick: addPhotos }, "Add photos")),
@@ -845,7 +845,7 @@ function writtenAs(o) {
 let pictureShape = null;  // what the person pressed on the Pictures card, until the choice is made
 function outputCard() {  // after the pick: how this post goes out; one suggested, with its reason; the server says what it can make
   const o = data.output;
-  if (!o || !o.picked || !data.script_approved || (data.made.slides && !o.chosen) || data.approvals.some((r) => r.kind === "use_script")) return "";
+  if (!o || !o.picked || !data.script_approved || (o.written === "pictures" && !o.chosen) || data.approvals.some((r) => r.kind === "use_script")) return "";  // written as pictures: nothing to choose
   const choose = async (out) => {
     try { await post("/api/studio/output", { ref, output: out, shape: out === "pictures" ? (pictureShape || o.shape || "image") : undefined, by: me() });
       toast({ pictures: "Making the pictures from the script's frames…", voice: "Making the voice-over…", video: "Film it from the film list, or make the AI presenter video below." }[out]); await load();

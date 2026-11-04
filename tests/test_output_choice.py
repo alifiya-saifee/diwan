@@ -265,3 +265,24 @@ def test_one_permit_keeps_the_first_and_drops_repeats():
     assert studio.one_permit("Permit P-1. Then Permit P-1.", "P-1") == "Permit P-1. Then"
     assert studio.one_permit("Permit P-1", "P-1") == "Permit P-1"
     assert studio.one_permit("No permit here", None) == "No permit here"
+
+
+
+def test_a_second_post_of_the_same_listing_is_offered_the_choice_again(office, tmp_path):
+    """Old slides from an earlier post never hide the choice for a new script."""
+    listing_video(office, tmp_path)
+    as_pictures(office, "image")
+    assert studio.made(office, "slides", REF)
+    studio.run_now(office, REF)  # a new post of the same listing
+    req = studio.script_request(office, REF)
+    sc = studio.script_options(office, req.props["text"])[0]
+    studio.approve_script_now(office, REF, choice=sc["id"])
+    o = studio.output_options(office, REF)
+    assert o["picked"] and o["written"] == "video" and o["chosen"] is None  # the page shows "How should this post go out?"
+
+
+def test_a_script_written_as_pictures_has_nothing_to_choose(office, tmp_path):
+    from .test_eventpost import moment
+    ref = moment(office, tmp_path, 5)
+    approve(office, ref)
+    assert studio.output_options(office, ref)["written"] == "pictures"
