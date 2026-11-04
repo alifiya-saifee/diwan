@@ -56,28 +56,29 @@ Rules for every shot:
 - People only as small figures, from behind or at a distance: never a recognisable face.
 - Never a picture that pretends to be a specific home for sale.
 - Vary the shots across the video: mix wide establishing views, mid shots and close details; mix day, golden hour and blue hour.
-- Keep the upper third calm (sky, ceiling, water) so captions can sit there."""
+- Name the materials and textures in the frame (travertine, oak, brushed brass, linen, matte black steel, glass), so it reads as a real place."""
 
 SCHEMA = {"name": "shots", "strict": True, "schema": {"type": "object", "additionalProperties": False, "required": ["shots"], "properties": {
     "shots": {"type": "array", "items": {"type": "object", "additionalProperties": False,
-                                         "required": ["n", "place", "subject", "camera", "light"],
+                                         "required": ["n", "place", "subject", "camera", "light", "details"],
                                          "properties": {"n": {"type": "integer"},
                                                         "place": {"type": "string", "description": "the real named place shown, or empty"},
                                                         "subject": {"type": "string", "description": "what is in the frame, in one or two concrete sentences"},
                                                         "camera": {"type": "string", "description": "where the camera stands, height, lens"},
-                                                        "light": {"type": "string", "description": "time of day and light"}}}}}}}
+                                                        "light": {"type": "string", "description": "time of day and light"},
+                                                        "details": {"type": "string", "description": "the materials and textures in frame, in one line (travertine, oak, brushed brass, linen…)"}}}}}}}
 
-PROMPT = """Photograph, vertical 9:16, for a social video by a real estate business. {about}
-The video is about: {title}.
+PROMPT = """{subject}
+{place}Camera: {camera}. Full-frame camera, wide-angle lens on a tripod, straight verticals, level horizon, sharp from front to back.
+Light: {light}. True-to-life colour, gentle contrast, real reflections and a little natural haze.
+Materials and detail: {details}.
+A real photograph from a top Dubai property magazine, vertical 9:16. {calm}
+People: none, or small figures from behind and far away.
+No text or logos anywhere. Not an illustration or a 3D render.{taste}{avoid}"""
 
-SUBJECT: {subject}
-{place}CAMERA: {camera}. Straight verticals, level horizon, sharp from front to back.
-LIGHT: {light}. True-to-life colours, natural contrast, no heavy filter.
-STYLE: high-end real estate and architectural photography, shot on a full-frame camera; it must look like a real photo
-from a top Dubai property magazine. Calm empty space in the upper third for a caption.
-PEOPLE: none, or small figures from behind or far away. No recognisable faces.
-NEVER: any text, letters, numbers, signs, logos or watermarks; a painting, drawing, illustration, watercolour, cartoon or
-3D render; a map, scale model, collage, frame within a frame or clip-art icons (compasses, coins, charts, shields).{avoid}"""
+CALM = {"top": "Leave the top third simple (sky, ceiling or water) for a caption.",
+        "middle": "Leave the centre simple and a little darker for a caption.",
+        "bottom": "Leave the bottom third simple (floor, water or lawn) for a caption."}
 
 
 def look_of(text: str) -> tuple[str, str]:
@@ -111,11 +112,15 @@ def plan(office: Office, title: str, lines: list[str], about: str) -> list[dict]
     return out
 
 
-def prompt(shot: dict, *, about: str, title: str, avoid: str = "") -> str:
-    """The brief Muse Image draws from."""
+def prompt(shot: dict, *, about: str = "", title: str = "", avoid: str = "", words_at: str = "top", taste: str = "") -> str:
+    """The brief Muse Image draws from: the subject first, the way an image model weighs words. The business and the
+    headline (`about`, `title`) stay out of the picture: they belong to the photo director's planning, and in a picture
+    prompt they invite signs and logos. `words_at` is where the caption will sit, so that part is kept simple. `taste`: what
+    this office's people have said yes and no to (taste.brief), so a picture they turned down isn't drawn again."""
     place = ""
     if shot.get("place"):
-        place = f"PLACE: {shot['place']}" + (f", which really looks like this: {shot['looks']}" if shot.get("looks") else "") + \
-                ". Show it accurately as it looks today; do not invent landmarks.\n"
-    return PROMPT.format(about=about, title=title, subject=shot["subject"], place=place, camera=shot["camera"], light=shot["light"],
-                         avoid=f"\nAVOID ALSO: {avoid}" if avoid else "")
+        place = f"Place: {shot['place']}" + (f", which really looks like this: {shot['looks']}" if shot.get("looks") else "") + \
+                ". Show it accurately as it looks today; no invented landmarks.\n"
+    details = (shot.get("details") or "").strip().rstrip(".") or "natural stone, warm wood, glass and soft fabrics where they fit the scene"
+    return PROMPT.format(subject=shot["subject"].strip().rstrip(".") + ".", place=place, camera=shot["camera"], light=shot["light"], details=details,
+                         calm=CALM.get(words_at, CALM["top"]), taste=f"\n{taste}" if taste else "", avoid=f"\nThe last picture was turned down: {avoid}. Fix that." if avoid else "")

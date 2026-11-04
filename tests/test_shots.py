@@ -19,8 +19,10 @@ def test_the_photo_directors_shots_become_the_brief(monkeypatch):
     assert plan[0]["subject"] == "The Marina canal with yachts" and "canal" in plan[0]["looks"]
     assert plan[1]["subject"].startswith("A real scene that shows: We help buyers")  # not planned: built from the line
     p = shots.prompt(plan[0], about="A Dubai brokerage.", title="Meet us", avoid="too dark")
-    assert "PLACE: Dubai Marina" in p and "do not invent landmarks" in p and "blue hour" in p and "AVOID ALSO: too dark" in p
-    assert "PLACE:" not in shots.prompt(plan[1], about="", title="Meet us")
+    assert p.startswith("The Marina canal with yachts.")  # the subject first: image models weigh the first words most
+    assert "Place: Dubai Marina" in p and "no invented landmarks" in p and "blue hour" in p and "turned down: too dark" in p
+    assert "A Dubai brokerage" not in p and "Meet us" not in p  # the business and the headline invite signs and logos
+    assert "Place:" not in shots.prompt(plan[1], about="", title="Meet us")
 
 
 def test_when_the_photo_director_fails_every_line_still_gets_a_shot(monkeypatch):

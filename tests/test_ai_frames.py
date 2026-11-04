@@ -51,7 +51,7 @@ def test_a_brand_post_gets_frames_from_its_script_that_the_video_can_use(office,
     scripted(monkeypatch, [f"Line number {w}." for w in "one two three four five six seven eight nine".split()])
     r = freevideo.ai_frames(office, "JOB-introduce", by="maya")
     assert r["ok"] and r["frames"] == freevideo.AI_FRAMES and r["review"]["score"] == 5 and len(asked) == freevideo.AI_FRAMES
-    assert all("real estate and architectural photography" in a and "painting" in a and "any text" in a for a in asked)
+    assert all("property magazine" in a and "Not an illustration" in a and "No text or logos" in a for a in asked)
     pics = freevideo.photos(office, "JOB-introduce")
     assert len(pics) == freevideo.AI_FRAMES and freevideo._local(pics[0], tmp_path, 0).exists()
 
@@ -111,7 +111,7 @@ def test_a_frame_the_director_rejects_is_redrawn_and_then_not_offered(office, mo
     monkeypatch.setattr(meta, "look", lambda s, t, imgs, sc, **k: {"images": [{"n": i, "score": 2 if i == 0 else 5, "problem": "generic clip-art" if i == 0 else ""} for i in range(len(imgs))]})
     r = freevideo.ai_frames(office, "JOB-introduce", by="maya")
     assert r["ok"] and r["frames"] == 5 and r["review"]["checked"]
-    assert len(asked) == 6 + freevideo.FRAME_ROUNDS and "AVOID ALSO: generic clip-art" in asked[-1]
+    assert len(asked) == 6 + freevideo.FRAME_ROUNDS and "turned down: generic clip-art" in asked[-1]
 
 
 def test_when_every_frame_fails_nothing_is_offered_and_it_says_why(office, monkeypatch, tmp_path):
@@ -170,4 +170,4 @@ def test_a_topic_posts_graphic_is_a_planned_photo_of_its_subject_not_an_abstract
     asked = drawn(monkeypatch, tmp_path)
     img, by = eventpost._background(office, "JOB-introduce", say="Sunset walks in Dubai Marina")
     assert by == "Muse Image" and len(asked) == 1
-    assert "PLACE: Dubai Marina" in asked[0] and "real estate and architectural photography" in asked[0] and "WORDS GO ON TOP LATER" in asked[0]
+    assert "Place: Dubai Marina" in asked[0] and "property magazine" in asked[0] and "a caption" in asked[0]

@@ -59,8 +59,7 @@ def review(office: Office, title: str, what: str, paths: list[str], against: lis
     system = ("You are a strict creative director at a top agency. You judge pictures for one social post. " + business.describe(office) + "\n" + brand.brief(office) + "\n" + style.brief(office) + "\n" + taste.brief(office) + "\n"
               "Score each picture from 1 to 5. 5 only if all of these hold: it is clearly about this post; it clearly belongs to this business, its trade and its place; "
               "it does not look like generic stock art or clip-art icons; it is on brand; any words are easy to read; it would hold up beside a leading competitor's best post. "
-              "A picture that could belong to any company in any country scores 2 or lower. These are AI photographs on purpose: they never show real named places, landmarks or recognisable faces, "
-              "so never mark one down for that. Mark down anything that looks painted, drawn, cartoonish or like a 3D render: it should look like real estate photography. "
+              "A picture that could belong to any company in any country scores 2 or lower. They never show recognisable faces, so never mark one down for that. Mark down anything that looks painted, drawn, cartoonish or like a 3D render: it should look like real estate photography. "
               "When the post names a place, the picture must look like that place (its skyline, water, streets); a generic city scores 2 or lower. Judge whether it feels right for this trade and region and whether a viewer would stop for it. If it is under 4, problem says in one short line what is wrong; otherwise problem is empty.")
     try:
         got = meta.look(system, f"The post: {title}. It says: {what[:400]}\nWhat wins for competitors: {reader.winning(office)['line']}\n"

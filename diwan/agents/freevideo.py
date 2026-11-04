@@ -134,7 +134,7 @@ def ai_frames(office: Office, ref: str, *, by: str) -> dict:
     def draw(job: tuple[int, str, str]) -> tuple[int, str | None]:
         i, line, avoid = job
         try:
-            return i, str(meta.media_path(meta.image(shots.prompt(plan[i], about=about, title=lst["title"], avoid=avoid), f"frame-{ref}-{i}", reasoning="high")))
+            return i, str(meta.media_path(meta.image(shots.prompt(plan[i], avoid=avoid, taste=taste.brief(office)), f"frame-{ref}-{i}", reasoning="high")))
         except (meta.MetaError, OSError) as e:
             studio._blocked(office, "mthumb", f"Muse Image failed on a frame: {str(e)[:120]}")
             return i, None
@@ -362,7 +362,8 @@ def make(office: Office, ref: str, *, by: str) -> dict:
         if "price card" in show or "end card" in show or last:
             name = brand.profile(office)["name"]["value"].strip()
             item = studio._listing(office, ref)
-            close = f"{item.get('greet') or 'With warm wishes'} · {name}" if item.get("greeting") else f"{name} · Message us · Say {marketing.code_for(office, ref)}"
+            close = f"{item.get('greet') or 'With warm wishes'} · {name}" if item.get("greeting") else f"{name} · Message us · Say {marketing.code_for(office, ref)}" + \
+                (f" · Permit {item['permit']}" if item.get("permit") else "")
             text = close if last else r.get("text") or words
             card = _card(text, folder / f"card{i}.png", pick(words), logo=brand.logo(office) if last else None, accent=brand.colours(office)[1])
             parts = [(card, dur)]

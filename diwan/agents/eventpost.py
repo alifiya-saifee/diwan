@@ -438,13 +438,12 @@ def _background(office: Office, ref: str, feedback: str | None = None, say: str 
     learned = (occasions.studied(office, lst["occasion"]) or {}).get("notes", {}).get("look", "") if lst.get("occasion") else ""
     designed = ((frame or {}).get("background") or {}).get("source") == "brand colour"  # the brief asked for a designed background
     if not motif and not designed and (say or lst.get("title")):  # a post with a subject: show it, the way the free video does
-        from diwan.agents import shots
+        from diwan.agents import shots, taste
         about = business.describe(office)
         from diwan.agents import visual
         shot = visual.shot(frame) or shots.plan(office, lst.get("title") or say, [say or lst["title"]], about)[0]  # the writer's brief first
         try:
-            served = meta.image(shots.prompt(shot, about=about, title=lst.get("title") or say, avoid=(feedback or "")[:300])
-                                + "\nWORDS GO ON TOP LATER: keep the middle of the picture calm and a little darker so white words read on it.",
+            served = meta.image(shots.prompt(shot, avoid=(feedback or "")[:300], taste=taste.brief(office), words_at=((frame or {}).get("words") or {}).get("position") or "middle"),
                                 f"bg-{ref}", size="1024x1792", reasoning="high")
             return _fit(Image.open(meta.media_path(served)).convert("RGB")), "Muse Image"
         except (meta.MetaError, OSError) as e:
@@ -506,10 +505,11 @@ def _mark(img: Image.Image, name: str, logo: str | None, dark, accent, *, big: b
 
 
 def _draw(img: Image.Image, text: str, name: str, centre: bool, *, logo: str | None = None, colours=None, arabic: str = "",
-          greeting: bool = False, big_logo: bool = False, sub: str = "", frame: dict | None = None) -> Image.Image:
+          greeting: bool = False, big_logo: bool = False, sub: str = "", frame: dict | None = None, permit: str = "") -> Image.Image:
     """The words on a band across the bottom (or a centred card for a graphic or a greeting), the company's logo and name
     on every picture, the Arabic words under the English when the business posts in Arabic. `frame` is the visual
-    brief's frame (visual.py): where the words go, how big, on a band or plain, and the logo's corner."""
+    brief's frame (visual.py): where the words go, how big, on a band or plain, and the logo's corner. `permit`: the
+    listing's advertising permit, small in the bottom margin of every picture of it (an ad in Dubai must carry it)."""
     dark, accent = colours or (INK, GOLD)
     img = img.convert("RGBA")
     d = ImageDraw.Draw(img)
@@ -557,6 +557,12 @@ def _draw(img: Image.Image, text: str, name: str, centre: bool, *, logo: str | N
     if sfont:
         d.text(((W - d.textlength(sub, font=sfont)) // 2, y + 14), sub, font=sfont, fill=(225, 225, 225))
     _mark(img, name, logo, dark, accent, big=greeting, bigger=big_logo, at=logo_at if not greeting else "top-left")
+    if permit:
+        pfont, ptext = _font(26), f"Permit {permit}"
+        d = ImageDraw.Draw(img)
+        x, y = W - SAFE - d.textlength(ptext, font=pfont), H - SAFE + (SAFE - pfont.size) // 2 - 4
+        d.text((x + 2, y + 2), ptext, font=pfont, fill=(0, 0, 0))
+        d.text((x, y), ptext, font=pfont, fill=(235, 235, 235))
     return img.convert("RGB")
 
 
@@ -593,7 +599,8 @@ def render(office: Office, ref: str, sc: dict, cause: int | None, feedback: str 
         greet = (bool(lst.get("greeting")) or bool(look.get("card"))) and i == 1
         sub = (name if lst.get("sombre") else f"From all of us at {name}") if hello and name else ""
         _draw(base, text, name, centre=card or not s["photo"], logo=brand.logo(office), colours=brand.colours(office), arabic=arabic,
-              greeting=greet, big_logo=bool(look.get("bigger_logo")), sub=sub, frame=fr).save(path, "JPEG", quality=90)
+              greeting=greet, big_logo=bool(look.get("bigger_logo")), sub=sub, frame=fr,
+              permit="" if lst.get("greeting") else str(lst.get("permit") or "")).save(path, "JPEG", quality=90)
         out.append({"path": str(path), "served": f"/media/{path.name}", "text": text})
     known = {p["path"]: p for p in photos(office, ref)}
     people = 0 if card else sum(1 for s in sc["slides"] if known.get(s["photo"], {}).get("people"))

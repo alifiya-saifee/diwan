@@ -133,7 +133,13 @@ def _parts(o: Office, now: datetime) -> list[tuple[str, callable]]:
                        "different": "We only sell homes we have visited ourselves.", "voice": "warm, straight-talking"}, by="maya")
         for ref in ("MC-1204", "JVC-88"):
             asyncio.run(studio.run(o, ref, pause=0))
-        studio.approve_script_now(o, "MC-1204")  # Marina Crest's reel moves on to filming; Villa 88's scripts wait for Maya
+        studio.approve_script_now(o, "MC-1204")  # Marina Crest's reel moves on to filming
+        studio.approve_script_now(o, "JVC-88")
+        lst = o.graph().nodes["listing:JVC-88"].props  # then the seller raises Villa 88's price: its post must not go out with the old one
+        o.add_listing(ref="JVC-88", title=lst["title"], community=lst["community"], type=lst["type"], beds=lst["beds"], price_aed=1_950_000,
+                      permit=lst.get("permit"), status=lst.get("status") or "available", features=lst.get("features") or [], agent=lst.get("agent"), by="omar")
+        from diwan.agents import marketing as mk
+        mk.watch(o, now)
         from diwan.agents import rhythm  # the week planned ahead, three posts, each going out only on a person's yes
         rhythm.save(o, {"auto": "on", "at": "09:00", "rhythm": "weekly", "posts_per_week": "3", "plan_ahead": "on", "auto_post": "off"}, by="maya")
         rhythm.make_plan(o, now.date(), auto=False, by="maya", days_ahead=7)
