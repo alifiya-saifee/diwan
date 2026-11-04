@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from diwan.graph import Graph, Node
 from diwan.people import PEOPLE, name
+from diwan.slots import DUBAI
 
 # tab: (label, who may edit and retire besides the owner, what to add when it is empty)
 KINDS = {
@@ -56,6 +57,14 @@ def _day(iso: str | None) -> date | None:
         return None
 
 
+def _local_day(at: str | None) -> date | None:
+    """The day in Dubai a moment fell on: just after midnight here is still yesterday in UTC."""
+    try:
+        return datetime.fromisoformat(at).astimezone(DUBAI).date() if at else None
+    except ValueError:
+        return _day(at)
+
+
 def review_by(n: Node) -> date | None:
     """When this item must be re-confirmed: the date a person set, else the kind's period from its last confirmation."""
     if n.type == "listing":
@@ -64,13 +73,13 @@ def review_by(n: Node) -> date | None:
         return set_by
     t = tab(n)
     days = {"company": 90 if n.props.get("kind") in FAST_REVIEW else 180, "area": 90, "answer": 180}.get(t)
-    seen = _day(n.props.get("reviewed_at") or n.at)
+    seen = _local_day(n.props.get("reviewed_at") or n.at)
     return seen + timedelta(days=days) if days and seen else None
 
 
 def stale(n: Node, today: date | None = None) -> str | None:
     """Why this item needs a person's look, or None."""
-    today = today or datetime.now(timezone.utc).date()
+    today = today or datetime.now(DUBAI).date()
     if n.status == "retired":
         return None
     if n.type == "listing":
@@ -95,7 +104,7 @@ def usable(n: Node, today: date | None = None) -> bool:
         return advertised(n)
     until = _day(n.props.get("valid_until"))
     return (n.type == "knowledge" and n.status == "confirmed" and n.props.get("audience", "customer") == "customer"
-            and not (until and until < (today or datetime.now(timezone.utc).date())))
+            and not (until and until < (today or datetime.now(DUBAI).date())))
 
 
 def usage(g: Graph, since: timedelta = timedelta(days=7)) -> dict[str, dict]:
@@ -376,7 +385,7 @@ def apply(g: Graph, e: dict) -> None:
         n.props["reviewed_at"] = e["at"]
         if n.props.get("review_by"):  # a date a person set moves on by the kind's period (90 days when it has none)
             n.props["review_by"] = None
-            n.props["review_by"] = ((review_by(n) or _day(e["at"]) + timedelta(days=90))).isoformat()
+            n.props["review_by"] = ((review_by(n) or _local_day(e["at"]) + timedelta(days=90))).isoformat()
 
 
 def history(office, iid: str) -> list[dict]:

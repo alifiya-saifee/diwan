@@ -184,7 +184,8 @@ def upcoming(office: Office, today: date, within: int = LEAD_DAYS) -> list[dict]
 def facts(office: Office, o: dict) -> str:
     """The true lines a greeting may use: the occasion's own, and the brand's name. Nothing about us is invented."""
     name = brand.profile(office).get("name", {}).get("value") or "the team"
-    when = f"{'is expected on' if o['expected'] else 'falls on'} {date.fromisoformat(o['on']).strftime('%-d %B %Y')}"
+    on = date.fromisoformat(o["on"])
+    when = f"{'is expected on' if o['expected'] else 'falls on'} {on.day} {on.strftime('%B %Y')}"  # %-d is Linux-only
     wish = (f"{name} honours their memory." if o["sombre"] else f"Everyone at {name} wishes you and your family {o['greeting'].lower().replace('happy ', 'a happy ')}.")
     return f"{o['title']} {when}. {o['about']} {wish}"
 
@@ -281,7 +282,8 @@ def brief(office: Office, lst: dict) -> str:
 
 def when(day: str) -> str:
     """2026-12-02 as a person reads it: Wed 2 Dec."""
-    return date.fromisoformat(day).strftime("%a %-d %b")
+    d = date.fromisoformat(day)
+    return f"{d:%a} {d.day} {d:%b}"  # %-d is Linux-only
 
 
 def skip(office: Office, key: str, *, by: str) -> None:
