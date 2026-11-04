@@ -739,6 +739,7 @@ def r3():
     def _():
         studio(L, "run")
         before = [o["id"] for o in options(view(L))]
+        PG.locator(".opt").nth(1).locator("button", has_text="Change…").click()
         PG.locator(".opt").nth(1).locator("button", has_text="Ask for change").click()
         t = toast_text(1200)
         after = [o["id"] for o in options(view(L))]
@@ -750,6 +751,8 @@ def r3():
         studio(L, "run")
         d0 = view(L)
         o0 = options(d0)
+        if not PG.locator(".opt").nth(1).locator("input.change").is_visible():
+            PG.locator(".opt").nth(1).locator("button", has_text="Change…").click()
         PG.locator(".opt").nth(1).locator("input.change").fill("Make the hook shorter and open with the price")
         PG.locator(".opt").nth(1).locator("button", has_text="Ask for change").click()
         d = wait_view(L, lambda d: any(o.get("revises") == o0[1]["id"] for o in options(d)), timeout=400, note="revised script 2")

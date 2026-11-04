@@ -300,6 +300,7 @@ def make():
     step("Run this listing writes scripts and waits for a person", t_run)
 
     def t_change_empty():
+        pg.locator("#turn .opt").first.locator("button", has_text="Change…").click()
         pg.locator("#turn button", has_text="Ask for change").first.click()
         toast("Say what to change", 5000)
     step("Ask for change with nothing typed says so", t_change_empty)
@@ -307,6 +308,8 @@ def make():
     def t_change():
         o = pg.locator("#turn .opt").first
         before = o.locator("pre").inner_text()
+        if not o.locator(".change").is_visible():
+            o.locator("button", has_text="Change…").click()
         o.locator(".change").fill("Make the hook shorter")
         o.locator("button", has_text="Ask for change").click()
         toast("Script writer", 10000)

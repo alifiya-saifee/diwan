@@ -61,7 +61,24 @@
   .item + .item { margin-top: var(--s2); }
   .item .row { margin-top: var(--s2); }
   .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s2); margin-top: var(--s2); }
-  .opt { border: 1px solid var(--line); border-radius: 12px; padding: var(--s2); min-width: 0; }
+  .opt { border: 1px solid var(--line); border-radius: 12px; padding: var(--s2); min-width: 0; display: flex; flex-direction: column; gap: var(--s1); }
+  .opt.best { border-color: var(--gold); }
+  .opt .top { display: flex; flex-wrap: wrap; gap: var(--s1); align-items: center; }
+  .score { font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; }
+  .score.hi { color: var(--green); } .score.mid { color: var(--warn); } .score.lo { color: var(--bad); }
+  .rec { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--gold); color: #1a1712; }
+  .opt .hook { font-size: 18px; font-weight: 700; line-height: 1.3; margin: 0; }
+  .opt .hook-ar { font-size: 15px; color: var(--muted); margin: 0; }
+  .opt .outline { font-size: 13px; margin: 0; } .opt .outline b { color: var(--gold-2); }
+  .opt .acts { display: flex; gap: var(--s1); flex-wrap: wrap; } .opt .acts button { flex: 1; }
+  .opt .changebox { display: flex; flex-direction: column; gap: var(--s1); }
+  .opt .ctabs { display: flex; gap: 4px; border-top: 1px solid var(--line); padding-top: var(--s1); margin-top: auto; }
+  .opt .ctabs button { flex: 1; font-size: 12px; padding: 4px 6px; }
+  .opt .ctabs button[aria-expanded="true"] { border-color: var(--gold); color: var(--gold-2); }
+  .opt .cpanel { font-size: 13px; }
+  ol.steps5 { list-style: none; display: flex; gap: 4px; padding: 0; margin: 0 0 var(--s3); flex-wrap: wrap; }
+  ol.steps5 li { flex: 1; min-width: 80px; text-align: center; font-size: 12px; padding: 6px; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); }
+  ol.steps5 li.done { color: var(--green); border-color: var(--green); } ol.steps5 li.now { color: #1a1712; background: var(--gold); border-color: var(--gold); font-weight: 700; }
   .opt pre, .made pre { white-space: pre-wrap; font: 13px var(--font); margin: var(--s1) 0; color: #dcd8cf; }
   .opt .change { width: 100%; margin-bottom: var(--s1); }
   .tag { display: inline-block; font-size: 11px; padding: 2px var(--s1); border-radius: 99px; border: 1px solid var(--line); margin-right: var(--s1); color: var(--gold-2); }
@@ -259,7 +276,7 @@
 <main class="studio">
   <div class="bar" id="top"></div>
   <nav class="tabs" role="tablist" aria-label="Studio" id="tabs">
-    <button role="tab" id="t-run" aria-controls="tab-run" data-tab="run">Run</button>
+    <button role="tab" id="t-run" aria-controls="tab-run" data-tab="run">Make</button>
     <button role="tab" id="t-plan" aria-controls="tab-plan" data-tab="plan">Plan</button>
     <button role="tab" id="t-competitors" aria-controls="tab-competitors" data-tab="competitors">Competitors</button>
     <button role="tab" id="t-results" aria-controls="tab-results" data-tab="results">Results</button>
@@ -268,6 +285,7 @@
   <div class="banner" id="bizbanner" role="status" hidden></div>
 
   <section role="tabpanel" id="tab-run" aria-labelledby="t-run">
+    <ol class="steps5" id="steps5" aria-label="Where this post is"></ol>
     <section class="panel planpanel" id="jpanel"><div class="row"><h2 class="grow">Your next post</h2><span class="note" id="jstage"></span></div>
       <div id="jbody"></div>
       <details id="jmoment"><summary>Something just happened</summary>
@@ -459,13 +477,13 @@
     </section>
 
     <section class="panel" id="approvalpanel"><h2>Approvals</h2>
-      <p class="note">Who the studio waits for. Cards on the Run tab say who they are waiting for, and work stuck after two returns goes to them.</p>
+      <p class="note">Who the studio waits for. Cards on the Make tab say who they are waiting for, and work stuck after two returns goes to them.</p>
       <div class="adform" id="approvalform"></div>
       <div class="savebar"><span id="apmsg"></span><button class="primary" id="apsave">Save</button></div>
     </section>
 
     <section class="panel" id="rhythmpanel"><h2>Rhythm</h2>
-      <p class="note">When the studio works on its own. At the hour it runs the trend search (once per rhythm), picks a listing and writes its 3 scripts; they wait for you on the Run tab. Nothing is filmed or published without a person.</p>
+      <p class="note">When the studio works on its own. At the hour it runs the trend search (once per rhythm), picks a listing and writes its 3 scripts; they wait for you on the Make tab. Nothing is filmed or published without a person.</p>
       <div class="adform">
         <div><label for="rh-perweek">Posts a week</label><select id="rh-perweek"><option value="0">Not set</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option></select></div>
         <div class="wide"><span class="lbl">Post on these days</span> <span class="checks" id="rh-daybox"></span><input type="hidden" id="rh-days">
@@ -773,34 +791,69 @@ function renderRun(quiet) {
   if (m.transcript) out.push(h("div", {}, h("b", {}, `Outlier transcript · @${m.transcript.account}`), h("pre", {}, m.transcript.text)));
   if (m.published) out.push(h("div", {}, h("b", {}, "Published"), h("pre", {}, `Instagram id ${m.published.instagram_id}`)));
   $("made").replaceChildren(...(out.length ? out : [h("p", { class: "note" }, "Run a listing to see what each step makes.")]));
+  const at = m.published ? 5 : data.approvals.some((r) => r.kind === "publish") || m.cut || m.slides ? 4 : data.script_approved ? 3
+    : data.approvals.some((r) => r.kind === "use_script") ? 2 : 1;
+  $("steps5").replaceChildren(...["Idea", "Script", "Make", "Edit", "Publish"].map((t, i) => h("li", { class: i + 1 < at || m.published ? "done" : i + 1 === at ? "now" : "", ...(i + 1 === at ? { "aria-current": "step" } : {}) }, `${i + 1}. ${t}`)));
+}
+const PICTURES = ["carousel", "image", "graphic"];
+function suggested(o) {  // what this script makes, from its own plan: a carousel or image is pictures, the rest is a video
+  if (o.slides && o.slides.length) return `Pictures: ${o.slides.length} image${o.slides.length === 1 ? "" : "s"}`;
+  const kind = (o.visual && o.visual.kind) || o.format || "";
+  if (PICTURES.includes(kind)) return `Pictures: ${kind}${o.visual ? `, ${o.visual.frames.length} frame${o.visual.frames.length === 1 ? "" : "s"}` : ""}`;
+  const secs = o.shots && o.shots.length ? `, about ${Math.round(o.shots[o.shots.length - 1].at + 3)} seconds` : "";
+  return `Video${kind ? `: ${kind}` : ""}${o.visual ? `, ${o.visual.frames.length} frame${o.visual.frames.length === 1 ? "" : "s"}` : ""}${secs}`;
+}
+function cardTabs(panels) {  // Script / Look / Plan / Why, all closed until pressed
+  const box = h("div", { class: "cpanels" }), bar = h("div", { class: "ctabs", role: "group", "aria-label": "Details" });
+  const ps = panels.filter(([, body]) => body).map(([name, body]) => [name, h("div", { class: "cpanel", hidden: true }, body)]);
+  ps.forEach(([name, panel]) => bar.append(h("button", { "aria-expanded": "false", onclick: (e) => {
+    const open = panel.hidden; ps.forEach(([, p]) => { p.hidden = true; }); bar.querySelectorAll("button").forEach((b) => b.setAttribute("aria-expanded", "false"));
+    panel.hidden = !open; e.target.setAttribute("aria-expanded", String(open)); } }, name)));
+  box.append(...ps.map(([, p]) => p));
+  return [bar, box];
 }
 function scriptCard(r) {
+  const scores = r.options.map((o) => (o.director ? o.director.score : -1)), top = Math.max(...scores);
+  const best = top >= 0 ? scores.indexOf(top) : -1;  // the highest Creative Director score; the first one on a tie
   return h("div", { class: "item" },
     h("b", {}, `Pick a script: ${r.options.length} checked by the Copywriter, waiting for ${data.approvers.script.label}`),
     h("p", { class: "note" }, "Filming, AI video, editing and covers start only after you pick one. Ask for a change in plain words and only that script is rewritten."),
-    h("div", { class: "opts" }, ...r.options.map((o, i) => h("div", { class: "opt", "data-script": o.id },
-      h("div", {}, h("span", { class: "tag" }, `${i + 1} · ${o.angle}`), h("span", { class: "note" }, `${o.why || ""} · ${o.via}${o.format ? ` · ${o.format}` : ""}${o.revises ? ` · revised from ${o.revises}` : ""}`)),
-      h("pre", {}, [o.hook_en, o.hook_ar, "", ...o.lines_en].join("\n")),
-      o.director ? h("p", { class: `note ${o.director.score >= 4 ? "ok" : ""}`, title: o.director.fix ? `To raise it: ${o.director.fix}` : "" },
-        `Creative Director ${o.director.score}/5${o.director.rewritten_from ? ` (rewritten from ${o.director.rewritten_from}/5)` : ""}: ${o.director.why}`) : "",
-      o.visual ? h("details", { class: "vbrief", open: true }, h("summary", {}, `What it will look like: ${o.visual.kind}, ${o.visual.frames.length} frame${o.visual.frames.length === 1 ? "" : "s"}`),
-        o.visual.why ? h("p", { class: "note" }, `Why: ${o.visual.why}`) : "", o.visual.mood ? h("p", { class: "note" }, `Mood: ${o.visual.mood}`) : "",
-        h("ol", {}, ...(o.look || []).map((t) => h("li", {}, t.replace(/^Frame \d+ · /, ""))))) : "",
-      o.slides ? h("div", { class: "slidesplan" }, h("b", {}, `${o.slides.length} image${o.slides.length === 1 ? "" : "s"}`), ...o.slides.map((s, k) => h("p", { class: "note" }, `${k + 1}. ${s.photo ? s.photo.split(/[\\/]/).pop() : "graphic"}: ${s.text}`))) : "",
-      o.shots && o.shots.length ? h("details", { class: "vplan" }, h("summary", {}, `Video plan: ${o.shots.length} shots, about ${Math.round(o.shots[o.shots.length - 1].at + 3)} seconds`),
-        h("div", { class: "scroll" }, h("table", { class: "kpi" }, h("tr", {}, ...["At", "On screen", "Words on screen", "Said", "Cut"].map((x) => h("th", {}, x))),
-          ...o.shots.map((r) => h("tr", {}, h("td", {}, `${r.at}s`), h("td", {}, r.show), h("td", {}, r.text || "—"), h("td", {}, r.say), h("td", {}, r.cut)))))) : "",
-      h("p", { class: "note" }, `Builds on: ${o.cards && o.cards.length ? fromText(o.cards) : `${(data.listings.find((l) => l.ref === ref) || {}).kind === "topic" ? "the facts given" : `the listing ${ref}`} (no research card)`}`),
-      ...(o.built_like || []).map((t) => h("p", { class: "builtlike" }, t)),
+    h("div", { class: "opts" }, ...r.options.map((o, i) => { const d = o.director; return h("div", { class: `opt${i === best ? " best" : ""}`, "data-script": o.id },
+      h("div", { class: "top" },
+        d ? h("span", { class: `score ${d.score >= 4 ? "hi" : d.score === 3 ? "mid" : "lo"}`, title: d.fix ? `To raise it: ${d.fix}` : "" }, `${d.score}/5`) : "",
+        i === best ? h("span", { class: "rec" }, "Recommended") : "",
+        h("span", { class: "tag" }, `${i + 1} · ${o.angle}`)),
+      h("p", { class: "hook" }, o.hook_en || ""),
+      o.hook_ar ? h("p", { class: "hook-ar", dir: "rtl", lang: "ar" }, o.hook_ar) : "",
+      h("p", { class: "outline" }, h("b", {}, "Suggested output: "), suggested(o)),
       o.own ? (o.problems && o.problems.length ? h("div", { class: "stale" }, h("b", {}, `Your script: ${o.problems.length} thing${o.problems.length > 1 ? "s" : ""} to fix before it can be used. `),
         h("ul", {}, ...o.problems.map((t) => h("li", {}, t)))) : h("p", { class: "note ok" }, "Your script passed every check.")) : "",
       o.stale && o.stale.length ? h("div", { class: "stale", role: "status" }, h("b", {}, "Out of date: the listing changed since this was written. "), o.stale.join(" "),
         h("button", { class: "primary", onclick: () => decide(r.id, "revise", `The listing changed since this script was written: ${o.stale.join(" ")} Update the script to the listing as it is now.`, approver("script"), o.id) }, "Rewrite with the new facts")) : "",
-      h("input", { placeholder: "Change something, e.g. make the hook shorter, sea view first", class: "change", "aria-label": `Change for script ${i + 1}` }),
-      h("div", { class: "row" }, h("span", { class: "grow" }),
+      h("div", { class: "acts" },
+        h("button", { class: "primary", onclick: () => decide(r.id, "approve", "", approver("script"), o.id) }, "Use this one"),
+        h("button", { "aria-expanded": "false", onclick: (e) => { const box = e.target.closest(".opt").querySelector(".changebox"); box.hidden = !box.hidden;
+          e.target.setAttribute("aria-expanded", String(!box.hidden)); if (!box.hidden) box.querySelector(".change").focus(); } }, "Change…")),
+      h("div", { class: "changebox", hidden: true },
+        h("input", { placeholder: "Change something, e.g. make the hook shorter, sea view first", class: "change", "aria-label": `Change for script ${i + 1}` }),
         h("button", { onclick: (e) => { const note = e.target.closest(".opt").querySelector(".change").value.trim(); if (!note) return toast("Say what to change");
-          decide(r.id, "revise", note, approver("script"), o.id); } }, "Ask for change"),
-        h("button", { class: "primary", onclick: () => decide(r.id, "approve", "", approver("script"), o.id) }, "Use this one"))))),
+          decide(r.id, "revise", note, approver("script"), o.id); } }, "Ask for change")),
+      ...cardTabs([
+        ["Script", h("pre", {}, [o.hook_en, o.hook_ar, "", ...o.lines_en].join("\n"))],
+        ["Look", o.visual ? h("div", { class: "vbrief" }, h("b", {}, `What it will look like: ${o.visual.kind}, ${o.visual.frames.length} frame${o.visual.frames.length === 1 ? "" : "s"}`),
+          o.visual.mood ? h("p", { class: "note" }, `Mood: ${o.visual.mood}`) : "",
+          h("ol", {}, ...(o.look || []).map((t) => h("li", {}, t.replace(/^Frame \d+ · /, ""))))) : null],
+        ["Plan", o.slides ? h("div", { class: "slidesplan" }, h("b", {}, `${o.slides.length} image${o.slides.length === 1 ? "" : "s"}`), ...o.slides.map((s, k) => h("p", { class: "note" }, `${k + 1}. ${s.photo ? s.photo.split(/[\\/]/).pop() : "graphic"}: ${s.text}`)))
+          : o.shots && o.shots.length ? h("div", { class: "vplan" }, h("b", {}, `Video plan: ${o.shots.length} shots, about ${Math.round(o.shots[o.shots.length - 1].at + 3)} seconds`),
+            h("div", { class: "scroll" }, h("table", { class: "kpi" }, h("tr", {}, ...["At", "On screen", "Words on screen", "Said", "Cut"].map((x) => h("th", {}, x))),
+              ...o.shots.map((r) => h("tr", {}, h("td", {}, `${r.at}s`), h("td", {}, r.show), h("td", {}, r.text || "—"), h("td", {}, r.say), h("td", {}, r.cut)))))) : null],
+        ["Why", h("div", {},
+          d ? h("p", { class: `note ${d.score >= 4 ? "ok" : ""}` }, `Creative Director ${d.score}/5${d.rewritten_from ? ` (rewritten from ${d.rewritten_from}/5)` : ""}: ${d.why}${d.fix ? ` To raise it: ${d.fix}` : ""}`) : "",
+          h("p", { class: "note" }, `${o.why || ""} · ${o.via}${o.format ? ` · ${o.format}` : ""}${o.revises ? ` · revised from ${o.revises}` : ""}`),
+          o.visual && o.visual.why ? h("p", { class: "note" }, `Look: ${o.visual.why}`) : "",
+          h("p", { class: "note" }, `Builds on: ${o.cards && o.cards.length ? fromText(o.cards) : `${(data.listings.find((l) => l.ref === ref) || {}).kind === "topic" ? "the facts given" : `the listing ${ref}`} (no research card)`}`),
+          ...(o.built_like || []).map((t) => h("p", { class: "builtlike" }, t)))],
+      ])); })),
     h("div", { class: "row" }, h("span", { class: "grow" }), h("button", { onclick: () => { const why = prompt("What is wrong with all of them?"); if (why !== null) decide(r.id, "reject", why, approver("script")); } }, "Send all back")));
 }
 $("ownsend").onclick = async (e) => {
@@ -1296,7 +1349,7 @@ function renderChain() {
 async function loadPlan() {
   const m = await api("/api/marketing/plan"), date = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
   const when = (t) => new Date(t).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-  const open = (r) => { location.href = `?ref=${encodeURIComponent(r)}#run`; };  // the scripts and the post are on the Run tab
+  const open = (r) => { location.href = `?ref=${encodeURIComponent(r)}#run`; };  // the scripts and the post are on the Make tab
   const act = async (path, body) => { const r = await post(path, { ...body, by: me() }); if (r.ok === false) toast(r.error || (r.needs || []).join("; ")); await loadPlan(); return r; };
   const l = await api("/api/marketing/learned");
   $("pl-learn-note").textContent = l.decisions ? `From ${l.decisions} decision${l.decisions === 1 ? "" : "s"} and any leads your posts brought. These change what it chooses${l.early ? ". Still early: this is a lean, not proof." : "."}` : "Nothing yet. Every approve, remove, change and lead teaches it.";
@@ -1320,7 +1373,7 @@ async function loadPlan() {
       h("span", { class: "grow" }, h("b", d.ref ? { class: "openpost", role: "link", tabindex: 0, title: "Open this post", onclick: () => openPost(d.ref) } : {}, d.title || "Nothing planned"), d.ref ? h("span", { class: "note" }, ` · ${d.job} · ${d.format}`) : "", h("span", { class: "note", style: "display:block" }, d.why), d.evidence ? h("span", { class: "note", style: "display:block" }, `Based on: ${d.evidence}`) : ""),
       h("span", { class: `tag st-${d.state}` }, d.stage || TAG[d.state]),
       d.state !== "written" && d.ref ? h("span", { class: "moves" }, d.state === "pending" ? h("button", { class: "primary", onclick: () => act("/api/marketing/plan/day", { day: d.date, decision: "approve" }) }, "Approve") : "",
-        h("button", { onclick: async () => { const r = await act("/api/marketing/plan/write", { day: d.date }); if (r.ok) { askToNotify(); toast("Writing it now: follow it on the Run tab."); ref = r.ref; showTab("run"); load(); } } }, "Write it now"),
+        h("button", { onclick: async () => { const r = await act("/api/marketing/plan/write", { day: d.date }); if (r.ok) { askToNotify(); toast("Writing it now: follow it on the Make tab."); ref = r.ref; showTab("run"); load(); } } }, "Write it now"),
         h("button", { onclick: changeDay(d) }, "Change"), h("button", { onclick: moveDay(d) }, "Reschedule"), h("button", { onclick: removeDay(d) }, "Remove")) : ""))),
     ] : [h("p", { class: "note" }, "No plan yet. Choose how far ahead and press Make the plan.")]));
   const out = [...m.scheduled.map((x) => h("li", {}, h("span", { class: "d" }, "Scheduled"), h("span", { class: "grow" }, h("b", {}, x.title), h("span", { class: "note" }, ` · ${when(x.at)}`)),

@@ -30,6 +30,7 @@ with sync_playwright() as p:
     second = opts.nth(1)
     sid = second.get_attribute("data-script")
     before = second.locator("pre").inner_text().split("\n")[0]
+    second.get_by_role("button", name="Change…").click()
     second.locator(".change").fill("make the hook shorter")
     second.get_by_role("button", name="Ask for change").click()
     revised = pg.locator(".opt").nth(1)

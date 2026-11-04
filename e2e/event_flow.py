@@ -52,7 +52,7 @@ with sync_playwright() as p:
 
     pg.click("#jmake")
     pg.wait_for_function("document.querySelector('#turn').innerText.includes('Use this one')", timeout=60000)
-    turn = pg.inner_text("#turn")
+    turn = pg.text_content("#turn")  # the plan sits in a closed tab on each card
     ok("each option shows which photo carries which words", "1. " in turn and ".jpg:" in turn, turn[:300])
     ok("no film or video plan on a carousel", "Video plan" not in turn)
     pg.locator("button", has_text="Use this one").first.click()
