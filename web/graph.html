@@ -5,7 +5,10 @@
 <title>Diwan Memory</title>
 <link rel="stylesheet" href="app.css">
 <style>
+  main { max-width: 1800px; }
   .wrap { display: grid; grid-template-columns: 1fr 320px; gap: 16px; }
+  .flowscroll { overflow-x: auto; border-radius: 12px; }
+  .flowscroll .flow { min-width: 1120px; }
   @media (max-width: 1000px) { .wrap { grid-template-columns: 1fr; } }
   svg { width: 100%; height: 720px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; touch-action: none; }
   .node text { font-size: 11px; fill: var(--ink); pointer-events: none; }
@@ -42,9 +45,16 @@
   .dept .ag:hover { color: #e8c77a; }
   .dept .ag .n { margin-left: auto; font-size: 10.5px; color: var(--faint); }
   .dept .ag.quiet { opacity: .5; }
+  .key { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 0 0 4px; position: relative; z-index: 2; }
+  .key b { color: var(--ink); font-weight: 600; }
+  .key button { font-size: 11.5px; padding: 3px 10px; margin-left: auto; }
+  .flow .dept > h3 { cursor: grab; user-select: none; } .flow .dept.dragging { z-index: 6; box-shadow: 0 14px 40px #000a; cursor: grabbing; }
   .dept .ag.custom .adot { box-shadow: 0 0 0 2px #e8c77a; }
   .dept details summary { font-size: 12px; padding: 4px 0; border-top: 1px solid var(--line); cursor: pointer; color: var(--muted); }
   .dept details .ag { padding-left: 12px; }
+  .dept .ag.head { font-weight: 600; } .dept .ag.head .adot { box-shadow: 0 0 0 2px #e8c77a66; }
+  .dept .ag.sub { padding-left: 16px; } .dept .ag.sub::before { content: "↳"; color: var(--faint); margin-right: -2px; }
+  .zoom .zn.sub { margin-left: 22px; } .zoom .zn.head { border-color: #e8c77a; }
   .adot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
   .dept .add { font-size: 11px; padding: 3px 9px; margin-top: 8px; }
   .nova { max-width: 520px; margin: 0 auto; }
@@ -64,13 +74,51 @@
   @media (max-width: 1000px) { .flow .grid { grid-template-columns: 1fr; gap: 14px; } svg.arrows { display: none; }
     .fl { grid-template-columns: 26px 1fr; } .fl > :nth-child(n+3) { grid-column: 2; } }
   .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 14px; }
+  .tabs button { border-radius: 999px; padding: 7px 14px; }
+  .tabs button.on { background: #e8c77a; color: #1b1608; border-color: #e8c77a; }
+  svg.alinks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; overflow: visible; }
+  .flow.linking .dept .ag { opacity: .35; }
+  .flow.linking .dept .ag.me, .flow.linking .dept .ag.hl { opacity: 1; }
+  .dept .ag.me { color: #e8c77a; font-weight: 600; }
+  .dept .ag.hl { color: #fff; background: #e8c77a1a; border-radius: 6px; }
+  .dept .ag.me, .dept .ag.hl.me { color: #1b1608; background: #e8c77a; border-radius: 6px; opacity: 1; }
+  .zoom { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 70px; position: relative; padding: 8px 4px; }
+  .zoom h3 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  .zoom .zn { border: 1px solid var(--line-2); border-radius: 10px; background: #16181d; padding: 8px 10px; margin-bottom: 10px; font-size: 12.5px; cursor: pointer; position: relative; z-index: 3; }
+  .zoom .zn:hover { border-color: #e8c77a; }
+  .zoom .zn .muted { font-size: 11.5px; margin-top: 2px; }
+  .zoom .mid .zn { border-color: #e8c77a66; }
+  .scen { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .scen button { border-radius: 999px; padding: 6px 12px; font-size: 13px; }
+  .scen button.on { border-color: #e8c77a; color: #e8c77a; }
+  .scen button.none { opacity: .55; }
+  .steps { margin: 10px 0 0; padding: 0; list-style: none; counter-reset: s; }
+  .steps li { counter-increment: s; padding: 7px 8px 7px 30px; border-top: 1px solid var(--line); font-size: 12.5px; position: relative; cursor: pointer; }
+  .steps li::before { content: counter(s); position: absolute; left: 6px; top: 8px; width: 18px; height: 18px; border-radius: 50%; background: #2a2d35; font-size: 10.5px; display: grid; place-items: center; }
+  .steps li.on { background: #e8c77a1a; border-radius: 8px; } .steps li.on::before { background: #e8c77a; color: #1b1608; }
+  .steps li.done { opacity: .6; }
+  .steps .by { color: var(--muted); font-size: 11.5px; }
+  .addline { position: absolute; transform: translate(-50%, -50%); z-index: 4; width: 22px; height: 22px; border-radius: 50%; padding: 0; line-height: 20px;
+    font-size: 15px; border: 1px solid #e8c77a; background: #16181d; color: #e8c77a; cursor: pointer; opacity: .45; transition: opacity .15s, transform .15s; }
+  .addline:hover { opacity: 1; transform: translate(-50%, -50%) scale(1.15); background: #e8c77a; color: #1b1608; }
+  .ck { font-size: 10px; border-radius: 999px; padding: 1px 6px; margin-left: 4px; font-weight: 700; }
+  .ck.worked { background: #25a35a33; color: #5fd08b; } .ck.needs { background: #e8c77a26; color: #e8c77a; } .ck.notreached { background: #d05a5f33; color: #f08a8e; }
+  .scen button.check { border-color: #5fd08b66; }
+  .cklist div { padding: 5px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+  .bridge { position: absolute; transform: translate(-50%, -50%); z-index: 3; font-size: 11.5px; padding: 4px 10px; border-radius: 999px; border: 1px solid #e8c77a; background: #16181d; cursor: pointer; white-space: nowrap; }
+  .bridge:hover, .bridge.me { background: #e8c77a; color: #1b1608; }
+  .zbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+  @media (max-width: 1000px) { .zoom { grid-template-columns: 1fr; gap: 14px; } svg.alinks { display: none; } }
 </style>
 </head>
 <body>
 <main>
   <h1>The office&rsquo;s <em>memory</em></h1>
   <p class="sub" id="sub">The office's memory, rebuilt from the event log. Drag the slider to rewind and watch a correction rewire the office.</p>
-  <div class="row" style="margin-bottom:12px">
+  <div class="tabs" id="tabs" role="tablist"></div>
+  <div class="scen" id="scen" style="display:none"></div>
+  <div class="row" style="margin-bottom:12px" id="controls">
     <select id="deal" style="max-width:260px"></select>
     <input id="find" list="deallist" placeholder="Find a deal: customer or property"><datalist id="deallist"></datalist>
     <button id="play" title="Play the history from the start">▶ Play</button>
@@ -78,7 +126,7 @@
     <span id="at" class="small muted" style="flex:0 0 150px"></span>
   </div>
   <div class="wrap">
-    <div><svg id="svg"></svg><div id="flow" class="flow" hidden></div></div>
+    <div><svg id="svg"></svg><div class="flowscroll"><div id="flow" class="flow" hidden></div></div></div>
     <aside class="panel">
       <div id="recbox">
       <h2>Record</h2>
@@ -92,7 +140,7 @@
   </div>
 </main>
 <script type="module">
-import { h, api, post, header, follow, toast, NAMES } from "./app.js";
+import { h, api, post, header, follow, toast, NAMES, describe } from "./app.js";
 header("graph.html");
 const $ = (id) => document.getElementById(id);
 const COLORS = { person: "#5b7bd5", deal: "#1d1c1a", property: "#8a7f6a", fact: "#0f8a6f", task: "#c27c1a", approval: "#7a4fc4",
@@ -115,7 +163,7 @@ const SUB = document.getElementById("sub").textContent;
 function legend() {
   if (isAg()) {
     $("legend").replaceChildren(...Object.values(DEPT).map(([c, l]) => h("span", {}, h("span", { class: "sw", style: `background:${c}` }), l)),
-      h("div", { style: "margin-top:6px" }, "Gold line: a handoff the log shows (thicker = more). Grey: reports to. Faded: has not acted yet. Gold ring: an agent you added."));
+      h("div", { style: "margin-top:6px" }, "Click an agent to draw its links. Gold: a handoff the log shows, with how often (thicker = more). Grey dashed: who checks its work, or who it reports to. Faded: has not acted yet. Gold ring: an agent you added."));
     return;
   }
   const present = new Set(data.nodes.map((n) => n.type));
@@ -134,8 +182,7 @@ async function deals() {
   else if (want && dealList.some((d) => d.deal === want)) $("deal").value = want;
   else if (view === "marketing") $("deal").value = MKT;
   else if (view === "knowledge") $("deal").value = KN;
-  else if (view === "agents" || !dealList.length) $("deal").value = AG;
-  else $("deal").value = dealList[0].deal;
+  else $("deal").value = AG;  // How the office works comes first
 }
 
 // the slider: a deal view steps through that deal's own events; the other views through the whole log
@@ -150,14 +197,26 @@ function setSlider(upto, last) {
     $("at").textContent = `event ${upto || last} of ${$("upto").max}`;
   }
 }
+// the four views as tabs; the deal picker only shows on a deal's story
+let lastDeal = null;
+function tabs() {
+  const v = $("deal").value, isDeal = ![AG, MKT, KN].includes(v);
+  if (isDeal) lastDeal = v;
+  const go = (val) => { if (val && $("deal").value !== val) { $("deal").value = val; $("deal").onchange(); } };
+  $("tabs").replaceChildren(...[[AG, "How the office works"], [lastDeal || dealList[0]?.deal, "A deal's story"], [MKT, "Marketing"], [KN, "Knowledge"]]
+    .filter(([val]) => val).map(([val, label]) => h("button", { role: "tab", class: (val === v || (label === "A deal's story" && isDeal)) ? "on" : "", "aria-selected": String(val === v), onclick: () => go(val) }, label)));
+  $("deal").style.display = isDeal ? "" : "none";
+}
 async function load(upto) {
+  tabs();
   const ag = isAg();
   $("svg").style.display = ag ? "none" : ""; $("flow").hidden = !ag; $("recbox").hidden = ag; $("agentbox").hidden = !ag;
-  $("find").hidden = isMkt() || isKn();
+  $("find").hidden = isMkt() || isKn() || ag;
+  $("controls").style.display = ag ? "none" : ""; $("scen").style.display = ag ? "" : "none";
   if (ag) {
     steps = null;
     flow = await api(`/api/memory/flow${upto ? `?upto=${upto}` : ""}`);
-    $("sub").textContent = "How the office works: each department, what it does, and what passes between them. Numbered arrows match the list below; gold means the log shows it happening (thicker = more often), grey means built but not seen yet, dashed means planned. Click a department or an agent to see what it does. The owner can add agents to any team.";
+    $("sub").textContent = "Every department, its agents and what passes between them. Click an agent to see its links, pick a scenario to watch one run, or use + to add an agent to a team or on a line between two teams.";
     setSlider(upto, flow.last_event); renderFlow();
     if (!editing) sidePanel();  // never wipe a form someone is filling in
     return;
@@ -347,31 +406,244 @@ let flow = null, focus = null;  // focus: {dept} or {agent} shown in the side pa
 const dcolor = (id) => (DEPT[id] || [id === "customers" || id === "people" ? "#5b7bd5" : "#e8c77a"])[0];
 const bare = (id) => id.replace(/^agent:/, "");  // flow.agents is keyed by the agent's own id
 const agentRow = (a) => h("div", { class: `ag${["planned", "idle", "paused", "removed"].includes(a.status) ? " quiet" : ""}${a.props.custom ? " custom" : ""}`, "data-agent": bare(a.id),
-    title: a.props.job, onclick: (e) => { e.stopPropagation(); focus = { agent: bare(a.id) }; sidePanel(); } },
+    title: a.props.job, onclick: (e) => { e.stopPropagation(); focus = focus?.agent === bare(a.id) ? null : { agent: bare(a.id) }; sidePanel(); } },
   h("span", { class: "adot", style: `background:${dcolor(a.props.dept)}` }), `${a.label}${a.status === "paused" ? " (paused)" : a.status === "removed" ? " ✕" : ""}`,
-  h("span", { class: "n" }, a.props.actions ? `${a.props.actions}` : a.status === "planned" ? "planned" : ""));
+  h("span", { class: "n" }, a.props.actions ? `${a.props.actions}` : a.status === "planned" ? "planned" : a.status === "paused" ? "paused" : "not run yet"), ckMark(bare(a.id)));
+const ckMark = (id) => {
+  const r = check?.result?.agents?.find((x) => x.id === id);
+  if (!r) return null;
+  return h("span", { class: `ck ${r.state.replace(" ", "")}`, title: r.state === "worked" ? `Self-check: worked (${r.actions} actions)` : r.state === "needs" ? `Self-check: needs ${r.needs}` : "Self-check: not reached" },
+    r.state === "worked" ? "✓" : r.state === "needs" ? "needs" : "✗");
+};
+const headRow = (a) => { const r = agentRow(a); r.classList.add("head"); r.querySelector(".n").textContent = "head"; r.firstChild.after("★ "); return r; };
+// agents in reporting order: each one, then the agents who report to it, indented
+function tree(list) {
+  const ids = new Set(list.map((a) => bare(a.id))), out = [];
+  const walk = (a, depth) => { out.push([a, depth]); list.filter((b) => b.props.parent === bare(a.id)).forEach((b) => walk(b, depth + 1)); };
+  list.filter((a) => !ids.has(a.props.parent)).forEach((a) => walk(a, 0));
+  return out;
+}
 function deptCard(d) {
   const owner = (flow.owners || []).includes(me), team = flow.teams[d.id];
-  const rooms = d.rooms.map((r) => h("details", {}, h("summary", {}, `${r.label} · ${d.agents.filter((a) => a.room === r.label).length}`),
-    ...d.agents.filter((a) => a.room === r.label).map(agentRow)));
-  return h("div", { class: `dept${focus?.dept === d.id ? " on" : ""}`, "data-dept": d.id, onclick: () => { focus = { dept: d.id }; sidePanel(); } },
+  const rooms = d.rooms.map((r) => { const inRoom = d.agents.filter((a) => a.room === r.label), busy = inRoom.filter((a) => a.props.actions).length;
+    return h("details", {}, h("summary", {}, `${r.label} · ${inRoom.length} agents${busy ? `, ${busy} worked here` : ", not run yet"}`),
+    ...inRoom.map(agentRow)); });
+  return h("div", { class: `dept${focus?.dept === d.id ? " on" : ""}`, "data-dept": d.id, onclick: (e) => { if (e.currentTarget.dataset.dragged) return; focus = { dept: d.id }; sidePanel(); } },
     h("h3", {}, h("span", { class: "adot", style: `background:${dcolor(d.id)}` }), d.name),
     h("div", { class: "what" }, d.what),
-    ...d.agents.filter((a) => !a.room).map(agentRow), ...rooms,
-    ...d.people.map((p) => h("div", { class: "ag" }, h("span", { class: "adot", style: "background:#5b7bd5" }), p.name, h("span", { class: "n" }, p.role))),
+    d.head ? headRow(d.head) : null,
+    ...tree(d.agents.filter((a) => !a.room)).map(([a, depth]) => { const r = agentRow(a); if (depth) r.classList.add("sub"); return r; }), ...rooms,
+    ...d.people.map((p) => h("div", { class: "ag", "data-person": p.id }, h("span", { class: "adot", style: "background:#5b7bd5" }), p.name, h("span", { class: "n" }, p.role))),
     team && owner ? h("button", { class: "add", onclick: (e) => { e.stopPropagation(); focus = { add: d.id }; sidePanel(); } }, "+ Add an agent here") : null);
 }
 function renderFlow() {
+  if (focus?.zoom) return renderZoom(focus.zoom);
   const D = Object.fromEntries(flow.departments.map((d) => [d.id, d])), col = (c) => flow.departments.filter((d) => d.col === c).map(deptCard);
   const arrows = el("svg", { class: "arrows" });
   const stat = (f) => f.count ? `seen ${f.count} time${f.count === 1 ? "" : "s"}` : f.built ? "built · not in this log yet" : "planned";
-  $("flow").replaceChildren(arrows, h("div", { class: "nova" }, deptCard(D.nova)),
+  const ran = Object.values(flow.agents).filter((a) => a.props.actions).length, all = Object.keys(flow.agents).length;
+  $("flow").replaceChildren(arrows, h("div", { class: "key" },
+      h("span", {}, h("b", {}, "Bright"), " has worked in this office (the number is how many times)"),
+      h("span", {}, h("b", {}, "Faded"), " hasn't run here yet"),
+      h("span", {}, h("b", {}, "Dot colour"), " its department"),
+      h("span", {}, h("b", {}, "✓"), " passed the last self-check"),
+      h("span", {}, `${ran} of ${all} agents have worked here so far · drag a department by its title to move it`),
+      h("button", { onclick: () => { mapLayout = {}; saveLayout(); applyLayout(); redrawLines(); } }, "Reset layout")),
+    h("div", { class: "nova" }, deptCard(D.nova)),
     h("div", { class: "grid" }, ...[1, 2, 3, 4, 5].map((c) => h("div", { class: "stack" }, ...col(c)))),
     h("div", { class: "flows" }, h("h2", {}, "How work flows"),
       ...flow.flows.filter((f) => f.n).sort((a, b) => a.n - b.n).map((f) => h("div", { class: "fl", "data-flow": f.n, onclick: () => { focus = { dept: f.from }; sidePanel(); } },
         h("span", { class: `badge${f.count ? "" : f.built ? " off" : " plan"}` }, String(f.n)),
         h("b", {}, `${D[f.from].name.split(" ·")[0]} → ${D[f.to].name.split(" ·")[0]}`), h("span", {}, f.what), h("span", { class: "small muted" }, stat(f))))));
-  requestAnimationFrame(() => drawArrows(arrows));
+  applyLayout();
+  requestAnimationFrame(() => { drawArrows(arrows); placeBridges(); drawAgentLinks(); drawScenario(); });
+}
+
+// ---------- your own mapLayout: drag a department by its title, like a canvas; saved in this browser ----------
+let mapLayout = (() => { try { return JSON.parse(localStorage.getItem("diwan.map.mapLayout") || "{}"); } catch { return {}; } })();
+const saveLayout = () => { try { localStorage.setItem("diwan.map.mapLayout", JSON.stringify(mapLayout)); } catch {} };
+function applyLayout() {
+  document.querySelectorAll("#flow .dept[data-dept]").forEach((el) => { const p = mapLayout[el.dataset.dept];
+    el.style.transform = p ? `translate(${p.x}px, ${p.y}px)` : ""; el.style.zIndex = p ? String(3 + (p.z || 0)) : ""; });  // a moved box sits on top, the last one moved highest
+}
+function redrawLines() {
+  const svg = $("flow").querySelector("svg.arrows");
+  if (svg) drawArrows(svg);
+  placeBridges(); drawAgentLinks(); drawScenario();
+}
+$("flow").addEventListener("pointerdown", (e) => {
+  const head = e.target.closest(".dept > h3");
+  if (!head || e.button !== 0 || focus?.zoom) return;
+  const card = head.parentElement, id = card.dataset.dept, start = { x: e.clientX, y: e.clientY }, p0 = mapLayout[id] || { x: 0, y: 0 };
+  let moved = false, frame = 0;
+  const move = (ev) => {
+    const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+    if (!moved && Math.hypot(dx, dy) < 4) return;
+    moved = true; card.classList.add("dragging");
+    mapLayout[id] = { x: p0.x + dx, y: p0.y + dy, z: 1 + Math.max(0, ...Object.values(mapLayout).map((q) => q.z || 0)) };
+    card.style.zIndex = String(3 + mapLayout[id].z);
+    card.style.transform = `translate(${mapLayout[id].x}px, ${mapLayout[id].y}px)`;
+    cancelAnimationFrame(frame); frame = requestAnimationFrame(redrawLines);
+  };
+  const up = () => {
+    removeEventListener("pointermove", move); removeEventListener("pointerup", up); card.classList.remove("dragging");
+    if (moved) { saveLayout(); card.dataset.dragged = "1"; setTimeout(() => delete card.dataset.dragged, 0); }
+  };
+  addEventListener("pointermove", move); addEventListener("pointerup", up);
+});
+function placeBridges() {
+  const f = $("flow"), box = f.getBoundingClientRect();
+  f.querySelectorAll(".bridge").forEach((x) => x.remove());
+  for (const b of flow.bridges || []) {
+    const A = f.querySelector(`[data-dept="${b.from}"]`)?.getBoundingClientRect(), B = f.querySelector(`[data-dept="${b.to}"]`)?.getBoundingClientRect(), a = flow.agents[b.agent];
+    if (!A || !B || !a) continue;
+    const x = (B.left > A.right ? (A.right + B.left) / 2 : B.right < A.left ? (A.left + B.right) / 2 : (A.left + A.right) / 2) - box.left;
+    const y = (Math.min(A.top + 70, A.bottom) + Math.min(B.top + 70, B.bottom)) / 2 - box.top;
+    f.append(h("div", { class: "bridge", "data-agent": b.agent, style: `left:${x}px;top:${y}px`, title: `${a.label}: between ${flow.teams[b.from] || b.from} and ${flow.teams[b.to] || b.to}`,
+      onclick: (e) => { e.stopPropagation(); focus = focus?.agent === b.agent ? null : { agent: b.agent }; sidePanel(); } }, `⇄ ${a.label}`));
+  }
+}
+
+// ---------- scenarios: a real run from the log, played on the map step by step ----------
+let scen = null, scenList = null, scenTimer = null;
+let check = null, showCheck = false, checkTimer = null;
+async function scenarios() {
+  [scenList, check] = await Promise.all([api("/api/memory/scenarios"), api("/api/memory/selfcheck").catch(() => null)]);
+  const c = check?.result?.count;
+  $("scen").replaceChildren(h("span", { class: "small muted" }, "See it run:"), ...scenList.map((x) => h("button", { class: `${scen?.id === x.id ? "on" : ""}${x.found ? "" : " none"}`,
+    title: x.found ? `${x.steps.length} steps, from the log` : `Not run in this office yet: ${x.how}`,
+    onclick: () => { clearInterval(scenTimer); showCheck = false; scen = scen?.id === x.id ? null : { id: x.id, i: 0 }; focus = null; scenarios(); sidePanel(); } }, x.title)),
+    h("button", { class: `check${showCheck ? " on" : ""}`, onclick: () => { scen = null; focus = null; showCheck = !showCheck; scenarios(); renderFlow(); sidePanel(); } },
+      check?.running ? "Self-check running…" : c ? `✓ Self-check: ${c.worked} worked` : "✓ Self-check"));
+}
+async function runCheck() {
+  await post("/api/memory/selfcheck", {});
+  showCheck = true; await scenarios(); sidePanel();
+  clearInterval(checkTimer);
+  checkTimer = setInterval(async () => { await scenarios(); if (!check?.running) { clearInterval(checkTimer); renderFlow(); toast("Self-check finished"); } sidePanel(); }, 4000);
+}
+function checkPanel() {
+  const r = check?.result, D = Object.fromEntries(flow.departments.map((d) => [d.id, d.name]));
+  const head = [h("h2", {}, "Self-check"), h("p", { class: "small" }, "A whole office day run through the real code on a throwaway office: a WhatsApp lead, a meeting where the client corrects himself, a cash payment, compliance, the owner's instructions, a deal converting, a late transfer step, a supplier invoice, the brand, the Lobby's week and a listing through the studio. Your office's data isn't touched."),
+    h("button", { class: "primary", disabled: !!check?.running, onclick: runCheck }, check?.running ? "Running… (a few minutes)" : r ? "Run it again" : "Run it now")];
+  if (!r) return [...head, h("p", { class: "small muted", style: "margin-top:10px" }, "Not run yet.")];
+  const group = (state, title) => { const xs = r.agents.filter((a) => a.state === state); return xs.length ? h("div", { class: "cklist", style: "margin-top:10px" }, h("b", {}, `${title} · ${xs.length}`),
+    ...xs.map((a) => h("div", {}, h("span", { class: `ck ${state.replace(" ", "")}` }, state === "worked" ? "✓" : state === "needs" ? "needs" : "✗"), ` ${a.name}`, h("span", { class: "muted" }, ` · ${D[a.dept] || a.dept}`),
+      state === "worked" ? h("span", { class: "muted" }, ` · ${a.actions} actions`) : a.needs ? h("div", { class: "muted" }, `Needs ${a.needs}`) : null))) : null; };
+  return [...head, h("p", { class: "small", style: "margin-top:10px" }, h("b", {}, `${r.count.worked} worked · ${r.count.needs} need a connection · ${r.count["not reached"]} not reached`),
+      h("span", { class: "muted" }, ` · ${r.events} events in ${Math.round(r.seconds)} s · ${new Date(r.at).toLocaleString()}`)),
+    h("div", { class: "cklist" }, h("b", {}, "Scenes"), ...r.scenes.map((x) => h("div", {}, x.ok ? "✓ " : "✗ ", x.title, h("span", { class: "muted" }, ` · ${x.events} events`), x.error ? h("div", { style: "color:var(--bad)" }, x.error) : null))),
+    group("not reached", "Not reached"), group("needs", "Need something outside Diwan"), group("worked", "Worked")];
+}
+const stepOf = () => scen && scenList?.find((x) => x.id === scen.id);
+function drawScenario() {
+  const f = $("flow"), sc = stepOf();
+  if (!sc || !sc.found || focus?.zoom) return;
+  f.querySelector("svg.alinks")?.remove(); f.classList.add("linking");
+  f.querySelectorAll(".ag.me, .ag.hl, .bridge.me").forEach((x) => x.classList.remove("me", "hl"));
+  const svg = el("svg", { class: "alinks" }); f.append(svg);
+  const box = f.getBoundingClientRect(), R = (e) => { const b = e.getBoundingClientRect(); return { l: b.left - box.left, r: b.right - box.left, y: (b.top + b.bottom) / 2 - box.top }; };
+  const st = sc.steps[scen.i], prev = sc.steps.slice(0, scen.i).reverse().find((x) => x.who && x.who !== st.who);
+  for (const x of sc.steps.slice(0, scen.i + 1)) rowEl(x.who || "")?.closest(".ag")?.classList.add("hl");
+  const me = st.who && rowEl(st.who);
+  if (me) { (me.closest(".ag") || me.closest(".bridge"))?.classList.add("me"); }
+  const line = (a, b) => { const A = a && rowEl(a), B = b && rowEl(b); if (A && B && A !== B) { B.closest(".ag")?.classList.add("hl"); curve(svg, R(A), R(B), { kind: "seen", count: scen.i + 1, types: { [st.event.type]: 1 } }); } };
+  if (prev) line(prev.who, st.who);  // the handoff that brought the work here
+  if (st.to) line(st.who, st.to);     // and the person it now waits for
+}
+function scenPanel() {
+  const sc = stepOf();
+  if (!sc) return null;
+  const go = (i) => { scen.i = Math.max(0, Math.min(sc.steps.length - 1, i)); sidePanel(); };
+  const play = () => { clearInterval(scenTimer); go(0); scenTimer = setInterval(() => { if (!scen || scen.i >= sc.steps.length - 1) return clearInterval(scenTimer); go(scen.i + 1); }, 1800); };
+  if (!sc.found) return [h("h2", {}, sc.title), h("p", { class: "small" }, `Starts when: ${sc.starts}.`),
+    h("p", { class: "small muted" }, `Not run in this office yet. To see it, do it once: ${sc.how}. Each step will then show here, from the log.`)];
+  const nm = (id) => id ? nameOf(id) : "";
+  return [h("h2", {}, sc.title), h("p", { class: "small" }, h("b", {}, "Trigger: "), `${sc.starts}. `, h("span", { class: "muted" }, `A real run from this office's log, ${sc.steps.length} steps.`)),
+    h("div", { class: "row", style: "gap:6px;margin-top:8px" }, h("button", { onclick: () => go(scen.i - 1), disabled: scen.i === 0 }, "← Back"),
+      h("button", { class: "primary", onclick: play }, "▶ Play"), h("button", { onclick: () => go(scen.i + 1), disabled: scen.i >= sc.steps.length - 1 }, "Next →"),
+      h("span", { class: "small muted" }, `step ${scen.i + 1} of ${sc.steps.length}`)),
+    h("ol", { class: "steps" }, ...sc.steps.map((x, i) => h("li", { class: i === scen.i ? "on" : i < scen.i ? "done" : "", onclick: () => go(i) },
+      describe(x.event), h("div", { class: "by" }, [nm(x.who), x.to ? `→ ${nm(x.to)}` : ""].filter(Boolean).join(" ")))))];
+}
+
+// ---------- agent to agent: lines from the agent you clicked to every agent it works with ----------
+const nameOf = (id) => id === "customer" ? "Customers" : id.startsWith("person:") ? (NAMES[id.slice(7)] || id.slice(7)) : (flow.agents[id]?.label || id);
+const linksOf = (id) => ({ out: flow.links.filter((l) => l.src === id), inn: flow.links.filter((l) => l.dst === id) });
+const what = (l) => l.kind === "seen" ? `${l.count}× · ${Object.keys(l.types).map((t) => t.replace(/[._]/g, " ")).join(", ")}` : l.what;
+function rowEl(id) {
+  const q = id === "customer" ? '[data-dept="customers"] h3' : id.startsWith("person:") ? `[data-person="${id.slice(7)}"]` : `[data-agent="${id}"]`;
+  let e = $("flow").querySelector(q);
+  if (e && !e.offsetParent && e.closest("details")) e = e.closest("details").querySelector("summary");  // inside a closed room: its heading
+  if (!e && flow.agents[id]) e = $("flow").querySelector(`[data-dept="${flow.agents[id].props.dept}"] h3`);  // a lead: its department's card
+  return e;
+}
+function curve(svg, A, B, l) {
+  const right = B.l >= A.r || !(B.r <= A.l), sx = right ? A.r : A.l, ex = right ? B.l : B.r;
+  const k = Math.max(40, Math.abs(ex - sx) * 0.4) * (right ? 1 : -1), seen = l.kind === "seen";
+  const same = Math.abs(ex - sx) < 30;  // one above the other: loop out to the side
+  const d = same ? `M${A.r},${A.y} C${A.r + 60},${A.y} ${B.r + 60},${B.y} ${B.r},${B.y}` : `M${sx},${A.y} C${sx + k},${A.y} ${ex - k},${B.y} ${ex},${B.y}`;
+  const path = el("path", { d, fill: "none", stroke: seen ? "#e8c77a" : "#8b92a3", "stroke-width": seen ? Math.min(5, 1.6 + Math.log2(1 + l.count) * 0.8) : 1.3,
+    "stroke-dasharray": seen ? "" : "5 4", opacity: seen ? 0.95 : 0.7 });
+  path.append(el("title", {})); path.lastChild.textContent = what(l); svg.append(path);
+  if (seen) {
+    const mx = same ? Math.max(A.r, B.r) + 45 : (sx + ex) / 2, my = (A.y + B.y) / 2;
+    svg.append(el("circle", { cx: mx, cy: my, r: 9, fill: "#e8c77a" }));
+    const t = el("text", { x: mx, y: my + 3.5, "text-anchor": "middle", style: "font:700 10px var(--font);fill:#1b1608" }); t.textContent = l.count; svg.append(t);
+  }
+}
+function drawAgentLinks() {
+  const f = $("flow");
+  f.querySelector("svg.alinks")?.remove();
+  f.querySelectorAll(".ag.me, .ag.hl").forEach((x) => x.classList.remove("me", "hl"));
+  const id = focus?.agent && !focus.zoom ? focus.agent : null;
+  f.classList.toggle("linking", !!id);
+  if (!id || !f.querySelector(".grid")) return;
+  const me = rowEl(id);
+  if (!me) return;
+  const svg = el("svg", { class: "alinks" }); f.append(svg);
+  const box = f.getBoundingClientRect(), R = (e) => { const b = e.getBoundingClientRect(); return { l: b.left - box.left, r: b.right - box.left, y: (b.top + b.bottom) / 2 - box.top }; };
+  me.closest(".ag")?.classList.add("me");
+  const { out, inn } = linksOf(id);
+  const all = [...out.map((l) => [l, l.dst]), ...inn.map((l) => [l, l.src])].sort((a, b) => (a[0].kind === "seen") - (b[0].kind === "seen"));  // gold on top
+  for (const [l, other] of all) {
+    const e = rowEl(other);
+    if (!e || e === me) continue;
+    e.closest(".ag")?.classList.add("hl");
+    curve(svg, R(me), R(e), l);
+  }
+}
+addEventListener("keydown", (e) => { if (e.key === "Escape" && focus?.agent && isAg()) { focus = focus.zoom ? { zoom: focus.zoom } : null; renderFlow(); sidePanel(); } });
+
+const short = (t, n) => t.length <= n ? t : `${t.slice(0, t.lastIndexOf(" ", n))}…`;
+
+// ---------- one department up close: who sends it work, its agents, who it hands work to ----------
+function renderZoom(did) {
+  const D = Object.fromEntries(flow.departments.map((d) => [d.id, d])), d = D[did];
+  const order = tree(d.agents).map(([a, depth]) => [bare(a.id), depth]), headId = d.head ? bare(d.head.id) : null;
+  const mid = [...(headId ? [headId] : []), ...order.map(([x]) => x)].filter((x) => flow.agents[x]), mine = new Set([did, ...mid]);
+  const depth = Object.fromEntries(order);
+  const ls = flow.links.filter((l) => l.kind !== "reports" && (mine.has(l.src) || mine.has(l.dst)));
+  const ins = [...new Set(ls.filter((l) => mine.has(l.dst) && !mine.has(l.src)).map((l) => l.src))];
+  const outs = [...new Set(ls.filter((l) => mine.has(l.src) && !mine.has(l.dst)).map((l) => l.dst))].filter((x) => !ins.includes(x));
+  const where = (id) => flow.agents[id] ? D[flow.agents[id].props.dept]?.name || "" : id.startsWith("person:") ? "A person" : "";
+  const node = (id, sub) => h("div", { class: "zn", "data-z": id, onclick: () => { if (flow.agents[id]) { focus = { agent: id, zoom: did }; sidePanel(); } } },
+    h("b", {}, nameOf(id)), sub ? h("div", { class: "muted" }, sub) : null);
+  const zoom = h("div", { class: "zoom" },
+    h("div", {}, h("h3", {}, "Work comes from"), ...(ins.length ? ins.map((id) => node(id, where(id))) : [h("p", { class: "small muted" }, "Nothing in the log yet")])),
+    h("div", { class: "mid" }, h("h3", {}, d.name), ...mid.map((id) => { const n = node(id, short(flow.agents[id].props.job || "", 110));
+      if (id === headId) { n.classList.add("head"); n.querySelector("b").prepend("★ "); } else if (depth[id]) n.classList.add("sub"); return n; })),
+    h("div", {}, h("h3", {}, "Work goes to"), ...(outs.length ? outs.map((id) => node(id, where(id))) : [h("p", { class: "small muted" }, "Nothing in the log yet")])));
+  $("flow").replaceChildren(h("div", { class: "zbar" }, h("button", { onclick: () => { focus = { dept: did }; renderFlow(); sidePanel(); } }, "← The whole office"),
+    h("b", {}, `${d.name}: who it works with`), h("span", { class: "small muted" }, "Gold: seen in the log, with how often. Dashed: checks its work. Click an agent for its card.")), zoom);
+  requestAnimationFrame(() => {
+    const svg = el("svg", { class: "alinks" }); zoom.append(svg);
+    const box = zoom.getBoundingClientRect(), R = (e) => { const b = e.getBoundingClientRect(); return { l: b.left - box.left, r: b.right - box.left, y: (b.top + b.bottom) / 2 - box.top }; };
+    for (const l of [...ls].sort((a, b) => (a.kind === "seen") - (b.kind === "seen"))) {
+      const a = zoom.querySelector(`[data-z="${CSS.escape(l.src)}"]`), b = zoom.querySelector(`[data-z="${CSS.escape(l.dst)}"]`);
+      if (a && b && a !== b) curve(svg, R(a), R(b), l);
+    }
+  });
 }
 function drawArrows(svg) {
   const box = $("flow").getBoundingClientRect();
@@ -384,7 +656,7 @@ function drawArrows(svg) {
   }
   svg.replaceChildren(defs);
   // every arrow end gets its own spot down the card's edge (ordered by where the other end is), so none share a point
-  const list = flow.flows.filter((f) => f.n && r(f.from) && r(f.to));
+  const list = flow.flows.filter((f) => f.n && r(f.from) && r(f.to)), plusAt = [];
   const fwdOf = (f) => col[f.from] < col[f.to] || (col[f.from] === col[f.to] && r(f.from).cy < r(f.to).cy);
   const slots = {};
   for (const f of list) {
@@ -409,12 +681,22 @@ function drawArrows(svg) {
       d = `M${sx},${sy} C${sx + k},${sy} ${ex - k},${ey} ${ex},${ey}`;
     }
     const on = f.count > 0, kind = on ? "ag" : "off";
+    if ((flow.owners || []).includes(me) && flow.teams[f.from] && flow.teams[f.to]) plusAt.push([d, f]);
     svg.append(el("path", { d, fill: "none", stroke: on ? "#e8c77a" : "#5b5f6b", "stroke-width": on ? Math.min(5, 1.4 + Math.log2(1 + f.count) * 0.7) : 1.4,
       "stroke-dasharray": f.built ? "" : "5 4", "marker-end": `url(#a-${kind})`, opacity: on ? .9 : .7 }));
     // the number sits just after the start, in the gap between cards
     const bx = col[f.to] === 0 ? sx : sx + (ex > sx ? 16 : -16), by = col[f.to] === 0 ? sy - 16 : sy;
     svg.append(el("circle", { cx: bx, cy: by, r: 9, fill: on ? "#e8c77a" : f.built ? "#3a3d46" : "#16181d", stroke: on ? "none" : "#7b7f8a", "stroke-dasharray": f.built ? "" : "2 2" }));
     const t = el("text", { x: bx, y: by + 3.5, "text-anchor": "middle", style: `font:700 10px var(--font);fill:${on ? "#1b1608" : "var(--ink)"}` }); t.textContent = f.n; svg.append(t);
+  }
+  // a "+" on each line between two teams: add an agent right there
+  $("flow").querySelectorAll(".addline").forEach((x) => x.remove());
+  const T = (id) => (flow.departments.find((x) => x.id === id) || {}).name || id;
+  for (const [d, f] of plusAt) {
+    const pth = el("path", { d }); svg.append(pth);
+    const pt = pth.getPointAtLength(pth.getTotalLength() * 0.55); pth.remove();
+    $("flow").append(h("button", { class: "addline", title: `Add an agent between ${T(f.from)} and ${T(f.to)}`, "aria-label": `Add an agent between ${T(f.from)} and ${T(f.to)}`,
+      style: `left:${pt.x}px;top:${pt.y}px`, onclick: (e) => { e.stopPropagation(); focus = { add: f.from, between: `${f.from}>${f.to}` }; sidePanel(); } }, "+"));
   }
 }
 window.addEventListener("resize", () => { if (isAg() && flow) drawArrows($("flow").querySelector("svg.arrows")); });
@@ -428,28 +710,41 @@ function sidePanel() {
   const as = h("select", { onchange: (e) => { me = e.target.value; try { localStorage.setItem("diwan.memory.as", me); } catch {} renderFlow(); sidePanel(); } },
     ...Object.entries(NAMES).map(([id, nm]) => h("option", { value: id, selected: id === me }, `Acting as ${nm}${(flow.owners || []).includes(id) ? " · owner" : ""}`)));
   let body;
-  if (focus?.agent) {
+  if (showCheck && !focus) body = checkPanel();
+  else if (scen && !focus) body = scenPanel();
+  else if (focus?.agent) {
     const a = flow.agents[focus.agent], p = a.props, custom = p.custom;
     const act = async (what) => {
       if (what === "remove" && !confirm(`Remove ${p.name}? Its history stays in the log.`)) return;
       try { await post(`/api/agents/custom/${p.id}/${what}`, { by: me }); toast(`${p.name}: ${what === "pause" ? "paused" : what === "resume" ? "running again" : "removed"}`); load(); }
       catch (e) { toast(e.message); }
     };
-    body = [h("h2", {}, a.label), h("div", { class: "small muted" }, `${p.role} · ${D[p.dept]?.name || p.dept}${custom ? " · added by the owner" : ""}`),
+    body = [h("h2", {}, a.label), h("div", { class: "small muted" }, `${p.role} · ${p.bridge ? `between ${D[p.dept]?.name} and ${D[p.bridge]?.name}` : D[p.dept]?.name || p.dept}${custom ? " · added by the owner" : ""}`),
       h("dl", { class: "ch" }, h("dt", {}, "What it does"), h("dd", {}, p.job), h("dt", {}, "Listens for"), h("dd", {}, p.trigger),
         h("dt", {}, "Reads"), h("dd", {}, p.inputs), h("dt", {}, "Produces"), h("dd", {}, p.out),
         custom ? [h("dt", {}, "Hands work to"), h("dd", {}, NAMES[p.to] || p.to)] : [h("dt", {}, "Does alone"), h("dd", {}, p.alone.join(", ") || "nothing")],
         h("dt", {}, "Needs a person for"), h("dd", {}, custom ? "everything: it only writes tasks" : p.person.join(", ") || "—"),
         h("dt", {}, "Never"), h("dd", {}, p.never), h("dt", {}, "Runs on"), h("dd", {}, { spark: "Muse Spark", open: "Muse Spark Open", rules: "plain code", browser: "a browser", voice: "voice", video: "video" }[p.runs_on] || p.runs_on),
-        h("dt", {}, "So far"), h("dd", {}, `${p.actions} actions in the log · ${a.status}`)),
+        h("dt", {}, "So far"), h("dd", {}, `${p.actions} actions in the log · ${a.status}`),
+        ...(() => {
+          const { out, inn } = linksOf(focus.agent);
+          const go = (o) => (e) => { e.preventDefault(); if (flow.agents[o]) { focus = { agent: o, zoom: focus.zoom }; sidePanel(); } };
+          const list = (ls, end) => ls.length ? h("dd", {}, ...ls.map((l) => h("div", {}, flow.agents[l[end]] ? h("a", { href: "#", onclick: go(l[end]) }, nameOf(l[end])) : nameOf(l[end]),
+            h("span", { class: "muted" }, ` · ${what(l)}`)))) : h("dd", { class: "muted" }, "none yet");
+          return [h("dt", {}, "Reports to"), list(out.filter((l) => l.kind === "reports"), "dst"),
+            h("dt", {}, "Checked by"), list(out.filter((l) => l.kind === "checks"), "dst"),
+            h("dt", {}, "Checks"), list(inn.filter((l) => l.kind === "checks"), "src"),
+            h("dt", {}, "Receives from"), list(inn.filter((l) => l.kind === "seen"), "src"),
+            h("dt", {}, "Hands work to"), list(out.filter((l) => l.kind === "seen"), "dst")];
+        })()),
       custom ? (a.status === "removed" ? h("p", { class: "small muted" }, "Removed. Its history stays in the log.") : h("div", { class: "row", style: "margin-top:10px" },
           a.status === "paused" ? h("button", { disabled: !owner, onclick: () => act("resume") }, "Resume") : h("button", { disabled: !owner, onclick: () => act("pause") }, "Pause"),
           h("button", { disabled: !owner, onclick: () => act("remove") }, "Remove")))
         : h("p", { class: "small muted", style: "margin-top:10px" }, "Built-in agent: part of the office's code and its safety rules, so it is not removed or paused here. ",
             h("a", { href: "team.html" }, "Set how much it may do alone on the Team page →")),
       h("button", { style: "margin-top:8px", onclick: () => { focus = { dept: p.dept }; sidePanel(); } }, `← ${D[p.dept]?.name || "Team"}`)];
-  } else if (focus?.dept && !focus.add) {
-    const d = D[focus.dept];
+  } else if ((focus?.dept || focus?.zoom) && !focus.add) {
+    const d = D[focus.dept || focus.zoom];
     const ins = flow.flows.filter((f) => f.n && f.to === d.id), outs = flow.flows.filter((f) => f.n && f.from === d.id);
     const fl = (f, other) => h("div", { class: "small", style: "padding:4px 0" }, h("span", { class: `badge${f.count ? "" : f.built ? " off" : " plan"}`, style: "display:inline-grid;margin-right:6px" }, String(f.n)),
       `${other}: ${f.what}`);
@@ -459,26 +754,40 @@ function sidePanel() {
       d.agents.length ? h("div", { class: "panelsec" }, h("h2", {}, `Its agents · ${d.agents.length}`),
         ...d.agents.map((a) => h("div", { class: "ag", onclick: () => { focus = { agent: bare(a.id) }; sidePanel(); } }, h("b", {}, a.label), a.room ? h("span", { class: "muted" }, ` · ${a.room}`) : null,
           h("div", { class: "muted" }, a.props.job)))) : null,
+      d.agents.length || flow.agents[d.id] ? h("button", { style: "margin-top:12px;margin-right:8px", onclick: () => { focus = { zoom: d.id }; renderFlow(); sidePanel(); } }, "Zoom in on this team") : null,
       flow.teams[d.id] && owner ? h("button", { class: "primary", style: "margin-top:12px", onclick: () => { focus = { add: d.id }; sidePanel(); } }, `+ Add an agent to ${d.name}`) : null];
   } else {
     const team = focus?.add || "sales";
-    const f = { name: h("input", { placeholder: "e.g. Welcome caller" }), job: h("textarea", { placeholder: "What it does, in a sentence or two. e.g. When a lead qualifies, remind the broker to call within the hour and mention the budget." }),
+    const f = { name: h("input", { placeholder: "e.g. Welcome caller" }), role: h("input", { placeholder: "e.g. Call reminder" }),
+      produces: h("textarea", { rows: 2, placeholder: "What it delivers, e.g. A call task for the broker with the lead's budget and area" }), job: h("textarea", { placeholder: "What it does, in a sentence or two. e.g. When a lead qualifies, remind the broker to call within the hour and mention the budget." }),
       trigger: h("select", {}, ...Object.entries(flow.triggers || {}).map(([k, v]) => h("option", { value: k }, v))),
-      team: h("select", {}, ...Object.entries(flow.teams || {}).map(([k, v]) => h("option", { value: k, selected: k === team }, D[k]?.name || v))),
-      to: h("select", {}, ...Object.entries(NAMES).map(([k, v]) => h("option", { value: k }, v))) };
+      team: h("select", {}, h("optgroup", { label: "In a team" }, ...Object.entries(flow.teams || {}).map(([k, v]) => h("option", { value: k, selected: k === team }, D[k]?.name || v))),
+        h("optgroup", { label: "Between two teams (on the arrow)" }, ...(flow.between || []).map((b) => h("option", { value: b.value }, b.label)))),
+      to: h("select", {}, ...Object.entries(NAMES).map(([k, v]) => h("option", { value: k }, v))), boss: h("select", {}),
+      ai: h("select", {}, h("option", { value: "1" }, "Yes: Muse Spark writes the task from its job"), h("option", { value: "0" }, "No: it hands over the task with the record, no model")) };
+    if (focus?.between) f.team.value = focus.between;
+    const bosses = () => {
+      const t = f.team.value.split(">")[0], d = D[t];
+      f.boss.replaceChildren(h("option", { value: "" }, d?.head ? `${d.head.label} (the team's head)` : "The team"),
+        ...(d ? tree(d.agents).map(([a, depth]) => h("option", { value: bare(a.id) }, `${"  ".repeat(depth)}${a.label}`)) : []));
+    };
+    f.team.onchange = bosses; bosses();
     body = [h("h2", {}, "Add an agent"),
       h("p", { class: "small muted" }, "It listens for one thing happening in the office, writes what its job asks for, and hands it to a person as a task. It never messages a customer, changes a fact, approves or moves money, so it can't get round the office's safety rules."),
       !owner ? h("p", { class: "small", style: "color:var(--warn)" }, "Only the owner adds agents.") : null,
       h("fieldset", { disabled: !owner, style: "border:0;padding:0;margin:0" },
-        h("label", {}, "Name"), f.name, h("label", {}, "What it does"), f.job, h("label", {}, "Listens for"), f.trigger, h("label", {}, "Team"), f.team,
+        h("label", {}, "Name"), f.name, h("label", {}, "Does it use AI?"), f.ai, h("label", {}, "Role"), f.role, h("label", {}, "What it does"), f.job, h("label", {}, "Deliverables"), f.produces, h("label", {}, "Listens for"), f.trigger, h("label", {}, "Where it sits"), f.team, h("label", {}, "Reports to"), f.boss,
+        h("p", { class: "small muted", style: "margin:2px 0 0" }, "Between two teams: it listens on the first team's side and hands its task to a person on the second."),
         h("label", {}, "Hands its work to"), f.to,
         h("button", { class: "primary", id: "addagent", style: "margin-top:10px", onclick: async () => {
-          try { const r = await post("/api/agents/custom", { by: me, name: f.name.value, job: f.job.value, trigger: f.trigger.value, team: f.team.value, to: f.to.value });
+          try { const r = await post("/api/agents/custom", { by: me, name: f.name.value, role: f.role.value, produces: f.produces.value, reports_to: f.boss.value, ai: f.ai.value === "1", job: f.job.value, trigger: f.trigger.value, team: f.team.value, to: f.to.value });
             toast(`${r.name} added: it listens from now on`); focus = { agent: r.id }; editing = false; await load(); }
           catch (e) { toast(e.message); } } }, "Add agent"))];
-    for (const x of [f.name, f.job]) x.oninput = () => { editing = !!(f.name.value || f.job.value); };
+    for (const x of [f.name, f.job, f.role, f.produces]) x.oninput = () => { editing = !!(f.name.value || f.job.value); };
   }
   $("agentbox").replaceChildren(as, ...(body || []).filter(Boolean));
+  if (!focus?.zoom) { drawAgentLinks(); if (!focus) drawScenario(); }
+  document.querySelectorAll(".bridge").forEach((x) => x.classList.toggle("me", x.dataset.agent === focus?.agent));
 }
 
 // ▶ Play: the history rebuilds by itself, like a film of the office
@@ -502,6 +811,7 @@ $("find").onchange = () => {
 $("upto").oninput = () => { live = +$("upto").value === +$("upto").max; load(live ? undefined : slideTo(+$("upto").value)); };
 await deals();
 await load();
+await scenarios();
 follow(() => { if (live) { deals(); load(); } });
 </script>
 </body>

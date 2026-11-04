@@ -82,7 +82,7 @@ When a client corrects themselves, Diwan updates the office in one step:
 - **Every decision on the record.** An append-only log keeps every message, fact and decision; nothing is edited or deleted. The memory graph replays any deal's history step by step.
 - **Hire an agent in one sentence.** The owner describes a new agent in plain words, and it joins the office with built-in limits: it can't message clients, change facts or move money.
 - **Cost-aware.** Every model call is logged with its cost. A monthly cap stops spending when it's reached, and the agents fall back to plain rules, saying so.
-- **Tested like a real office.** 1,367 automated tests, 35 browser flows that drive the real pages as each team member, and 40 kinds of client conversation read end to end.
+- **Tested like a real office.** 1,379 automated tests, 35 browser flows that drive the real pages as each team member, and 40 kinds of client conversation read end to end.
 
 ## Capabilities
 
@@ -135,7 +135,7 @@ The Marketing room works from the same records as the rest of the office, so a p
 
 | | |
 |---|---|
-| **Working** | All capabilities above, verified end to end in the browser, with 1,405 automated tests passing |
+| **Working** | All capabilities above, verified end to end in the browser, with 1,435 automated tests passing |
 | **In progress** | A live WhatsApp connection (currently a sandbox), Google Meet links, calendar sync and full Arabic responses |
 
 ## Roadmap

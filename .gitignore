@@ -8,3 +8,4 @@ diwan.db*
 evals/results-model.json
 usage.jsonl
 tapes/
+selfcheck.json

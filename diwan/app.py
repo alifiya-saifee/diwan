@@ -6,6 +6,7 @@ office, agents and charters the tests exercise.
 from __future__ import annotations
 
 import asyncio
+import sys
 import json
 import re
 import contextlib
@@ -92,6 +93,8 @@ async def morning_loop():
         guarded("client messages", client_msgs.sweep, S.office, now)  # what quiet hours held
         if ticks % 30 == 0:
             guarded("finance reminders", finance.sweep, S.office, now)  # overdue invoices, instalments, rent cheques
+            from diwan.agents import operations
+            guarded("transfer chases", operations.chase_late, S.office, now)  # the Transfer tracker: steps waiting too long on their party
             guarded("nova's watch", watch.sweep, S.office, now)  # the chief of staff chases what has stopped
             guarded("the lobby room", lobby_room.sweep, S.office, now)  # the week's threads, finished experiments, the month's tally
         guarded("leads", leads.sweep, S.office, now)
@@ -198,7 +201,10 @@ class AgentIn(BaseModel):
     by: str
     name: str = ""
     role: str = ""
+    reports_to: str = ""
+    ai: bool = True
     job: str = ""
+    produces: str = ""
     trigger: str = ""
     team: str = ""
     to: str = ""
@@ -216,6 +222,60 @@ def memory_flow(upto: int | None = None):
     """The Memory screen's Agents view: departments, their agents, and the numbered flows between them."""
     from diwan.agents import custom
     return custom.office_flow(S.office, upto)
+
+
+class SupplierInvoiceIn(BaseModel):
+    text: str
+    by: str = "ahmed"
+
+
+@app.get("/api/desk/supplier-invoices")
+def supplier_invoices():
+    from diwan.agents import finance
+    return finance.supplier_invoices(S.office)
+
+
+@app.post("/api/desk/supplier-invoices")
+def check_supplier_invoice(body: SupplierInvoiceIn):
+    """The Invoice clerk reads a supplier invoice and checks VAT, TRN and duplicates: a ledger row, or a hold with its reasons."""
+    from diwan.agents import finance
+    try:
+        return finance.check_supplier_invoice(S.office, body.text, by=_me(body.by))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+SELFCHECK = {"proc": None}
+
+
+def _selfcheck_file():
+    db = env("DIWAN_DB") or ""
+    base = Path(db).resolve().parent if db and db != ":memory:" else Path(__file__).resolve().parents[1]
+    return base / "selfcheck.json"
+
+
+@app.post("/api/memory/selfcheck")
+async def start_selfcheck():
+    """Prove every agent works: a whole office day through the real code on a throwaway office, in its own process. Owner only."""
+    p = SELFCHECK["proc"]
+    if p and p.returncode is None:
+        return {"running": True}
+    SELFCHECK["proc"] = await asyncio.create_subprocess_exec(sys.executable, "-m", "diwan.selfcheck", str(_selfcheck_file()),
+                                                             cwd=str(Path(__file__).resolve().parents[1]), stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+    return {"running": True}
+
+
+@app.get("/api/memory/selfcheck")
+def selfcheck_result():
+    p, f = SELFCHECK["proc"], _selfcheck_file()
+    return {"running": bool(p and p.returncode is None), "result": json.loads(f.read_text()) if f.exists() else None}
+
+
+@app.get("/api/memory/scenarios")
+def memory_scenarios():
+    """How the office runs, step by step: the latest real run of each scenario, from its trigger to the person who acts."""
+    from diwan.agents import custom
+    return custom.scenarios(S.office)
 
 
 @app.post("/api/agents/custom")

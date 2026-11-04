@@ -166,10 +166,15 @@ def test_unclear_instructions_become_questions(corrected):
     assert nova.route(corrected, "Screen the parties and rebuild the deck for Karim")["kind"] == "question"
 
 
-def test_unbuilt_specialist_keeps_the_task_and_says_so(corrected):
+def test_the_invoice_clerk_takes_an_instruction_and_says_what_it_did(corrected):
     r = nova.route(corrected, "Process the invoice for Karim's Marina unit")
-    assert r["kind"] == "queued" and "not built yet" in r["text"]
-    assert corrected.graph().nodes[r["task"]].status == "queued"
+    assert r["kind"] == "done" and ("Invoice" in r["text"] or "Not yet" in r["text"])
+    assert corrected.graph().nodes[r["task"]].status == "done"
+
+
+def test_the_transfer_tracker_lists_the_steps_or_says_none_are_open(corrected):
+    r = nova.route(corrected, "Track the NOC and transfer for Karim's Marina unit")
+    assert r["kind"] == "done" and ("No transfer steps are open" in r["text"] or "Transfer steps:" in r["text"])
 
 
 # ---------- brief ----------

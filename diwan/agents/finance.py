@@ -6,6 +6,7 @@ Compliance before any receipt.
 """
 from __future__ import annotations
 
+import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -432,6 +433,75 @@ def invoice_status(t: Node, today: date) -> str:
         return "part paid"
     due = t.props.get("due")
     return "overdue" if due and due < today.isoformat() else "due" if due == today.isoformat() else "sent"
+
+
+SUPPLIER = {"name": "supplier_invoice", "schema": {"type": "object", "additionalProperties": False,
+             "required": ["supplier", "trn", "number", "date", "net", "vat", "total"],
+             "properties": {"supplier": {"type": "string"}, "trn": {"type": "string"}, "number": {"type": "string"}, "date": {"type": "string"},
+                            "net": {"type": ["number", "null"]}, "vat": {"type": ["number", "null"]}, "total": {"type": ["number", "null"]}}}}
+
+
+def _num(s: str | None) -> float | None:
+    m = re.search(r"-?\d[\d,]*(?:\.\d+)?", s or "")
+    return float(m.group().replace(",", "")) if m else None
+
+
+def read_supplier_invoice(text: str) -> dict:
+    """Plain rules: the labelled lines of an invoice ("Supplier:", "TRN:", "Invoice no", "Net", "VAT", "Total")."""
+    def line(*labels):
+        m = re.search(rf"(?im)^\s*(?:{'|'.join(labels)})\b[^\n:]*[:\-]?\s*(.+)$", text)
+        return m.group(1).strip() if m else ""
+    return {"supplier": line("supplier", "from", "vendor"), "trn": re.sub(r"\D", "", line("trn", "tax registration")), "number": line("invoice no", "invoice number", "invoice #", "number"),
+            "date": line("date"), "net": _num(line("net", "subtotal", "amount before vat")), "vat": _num(line("vat")), "total": _num(line("total", "amount due"))}
+
+
+def check_supplier_invoice(office: Office, text: str, *, by: str) -> dict:
+    """The Invoice clerk's second job: read a supplier invoice (Muse Spark, or plain rules), then check it by rules: a 15-digit
+    TRN, VAT at 5% of net, a total that adds up, and not a duplicate. A clean one becomes a ledger row; anything else is held
+    with its reasons and a task for Finance. Nothing is paid: releasing money is a person's job."""
+    from diwan.agents import runner
+    from diwan.agents.charters import get
+    text = (text or "").strip()
+    if len(text) < 20:
+        raise ValueError("Paste the invoice's text: supplier, TRN, number, net, VAT and total")
+    got, via = read_supplier_invoice(text), "rules"
+    c = get("inv")
+    system = runner.instructions(c, office.log, pack=False) + "\n\nRead this supplier invoice into its fields. Copy the numbers exactly; null when a field is missing."
+    user = runner.user_message("Read the invoice.", {"invoice": text[:4000]})
+    try:
+        if runner.has_model(c, system, user, schema=SUPPLIER):
+            r = runner.call(c, system, user, schema=SUPPLIER, timeout=runner.LIVE)
+            got, via = r.data | {"trn": re.sub(r"\D", "", r.data.get("trn") or "")}, r.usage.get("provider") or "model"
+    except Exception as err:  # noqa: BLE001  the rules reading stands, and the failure is on the record
+        office.log.append("agent.failed", actor="inv", agent="inv", content={"error": str(err)[:300]})
+    why = []
+    if len(got["trn"] or "") != 15:
+        why.append(f"the TRN \"{got['trn'] or 'missing'}\" isn't 15 digits")
+    net, vat, total = got.get("net"), got.get("vat"), got.get("total")
+    if net is None or vat is None or total is None:
+        why.append("net, VAT or total is missing")
+    else:
+        if abs(vat - round(net * 0.05, 2)) > 1:
+            why.append(f"VAT AED {vat:,.2f} isn't 5% of the net AED {net:,.2f} (AED {net * 0.05:,.2f})")
+        if abs(net + vat - total) > 1:
+            why.append(f"net plus VAT is AED {net + vat:,.2f}, not the total AED {total:,.2f}")
+    key = (str(got.get("supplier") or "").strip().lower(), str(got.get("number") or "").strip().lower())
+    if key[1] and any((e["content"].get("supplier", "").strip().lower(), e["content"].get("number", "").strip().lower()) == key
+                      for e in office.log.list() if e["type"] == "invoice.checked"):
+        why.append(f"invoice {got['number']} from {got['supplier']} was already checked: a duplicate")
+    result = "hold" if why else "ledger"
+    ev = office.log.append("invoice.checked", actor=by, agent="inv", content={
+        "supplier": got.get("supplier") or "", "trn": got.get("trn") or "", "number": got.get("number") or "", "date": got.get("date") or "",
+        "net": net, "vat": vat, "total": total, "result": result, "reasons": why, "read_by": via,
+        "text": f"Supplier invoice {got.get('number') or '?'} from {got.get('supplier') or '?'}: " + ("in the ledger" if not why else "held: " + "; ".join(why))})
+    if why:
+        office.add_task(None, "inv", f"Supplier invoice {got.get('number') or '?'} from {got.get('supplier') or '?'} is held: " + "; ".join(why),
+                        needs_person=roles.holder(office.graph(), "finance"), by="inv", caused_by=ev["id"])
+    return ev["content"] | {"id": ev["id"]}
+
+
+def supplier_invoices(office: Office) -> list[dict]:
+    return [e["content"] | {"id": e["id"], "at": e["at"], "by": e["actor"]} for e in reversed(office.log.list()) if e["type"] == "invoice.checked"]
 
 
 def sweep(office: Office, now: datetime) -> int:

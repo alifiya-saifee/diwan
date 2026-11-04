@@ -28,7 +28,8 @@ DEFAULTS = {
     "vat_pct": 5,
     "stuck_days": 7,  # a deal with no step done in this many days counts as stuck
     "discount_approval_pct": 5,
-    "sign_link_days": 14,  # how long a signing or documents link works
+    "sign_link_days": 14,
+    "transfer_chase_days": 3,  # a transfer step that has waited this long on its party gets a chase drafted  # how long a signing or documents link works
     "documents": {"buyer": ["eid_front", "eid_back", "passport", "visa"], "seller": ["eid_front", "eid_back", "passport", "title_deed"],
                   "tenant": ["eid_front", "eid_back", "passport", "visa"], "landlord": ["eid_front", "eid_back", "passport", "title_deed"]},  # what each party sends
     # who the party is changes what they send (common Dubai practice: the conveyancer confirms these lists)

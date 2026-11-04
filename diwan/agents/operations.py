@@ -170,6 +170,51 @@ def rebuild(office: Office, deal: str, by: str) -> None:
 BRING = "Bring: "
 
 
+CHASE = {"name": "chase", "schema": {"type": "object", "additionalProperties": False, "required": ["message"],
+                                    "properties": {"message": {"type": "string"}}}}
+
+
+def chase_late(office: Office, now=None) -> list[str]:
+    """The Transfer tracker: a transfer step that has waited longer than the office's limit on its party (the developer, the
+    trustee office, the bank) gets a polite chase, drafted for the transactions officer to send. Once a day per step; a step
+    still behind the ready-for-transfer gate waits for the gate. The agent never sends anything itself."""
+    from datetime import datetime, timezone
+    now = now or datetime.now(timezone.utc)
+    g = office.graph()
+    limit, today = desk_rules.rules(g).get("transfer_chase_days", 3), now.date().isoformat()
+    done = {(e["content"]["task"], e["content"]["day"]) for e in office.log.list() if e["type"] == "transfer.chased"}
+    out = []
+    for t in g.of("task"):
+        if t.props.get("agent") != "transfer" or t.status not in OPEN or t.props.get("after") or (t.id, today) in done:
+            continue
+        try:
+            _gated(g, t, "A chase")
+        except ValueError:
+            continue
+        waited = (now - datetime.fromisoformat(t.at)).days
+        if waited < limit:
+            continue
+        party, d = t.props.get("waiting_on") or "the other party", g.nodes[f"deal:{t.deal}"].props
+        text = (f"Good morning. We are following up on \"{t.props['action']}\" for {d['property']} ({d['customer']}), which has been with you for "
+                f"{waited} days. Could you let us know where it stands and when to expect it? Thank you.")
+        c = get("transfer")
+        system = runner.instructions(c, office.log, pack=False) + "\n\nWrite a short, polite chase (two or three sentences) to the party this step waits on. Use only the record."
+        user = runner.user_message("Write the chase.", {t.id: f"Step: {t.props['action']}. Waiting on: {party}. Property: {d['property']}. Client: {d['customer']}. Days waiting: {waited}."})
+        try:
+            if runner.has_model(c, system, user, schema=CHASE):
+                text = runner.call(c, system, user, schema=CHASE, timeout=runner.BACKGROUND).data["message"][:600]
+        except Exception as err:  # noqa: BLE001  the chase still goes to the person, from the plain template
+            office.log.append("agent.failed", actor="transfer", agent="transfer", deal=t.deal, content={"error": str(err)[:300]})
+        who = roles.holder(g, "transactions") or t.props.get("needs_person")
+        ev = office.log.append("transfer.chased", actor="transfer", agent="transfer", deal=t.deal, key=f"chase:{t.id}:{today}",
+                               content={"task": t.id, "day": today, "waiting_on": party, "days": waited, "draft": text, "to": who,
+                                        "text": f"{t.props['action']} has waited {waited} days on {party}: a chase is drafted for {name(who)}"})
+        office.log.append("nova.headsup", actor="nova", agent="nova", deal=t.deal, caused_by=ev["id"],
+                          content={"to": who, "text": f"Transfer tracker: \"{t.props['action']}\" has waited {waited} days on {party}. A chase is drafted for you to send."})
+        out.append(t.id)
+    return out
+
+
 def _gated(g: Graph, t, what: str) -> None:
     from diwan import deal_gates
     if t.props.get("before_gate"):

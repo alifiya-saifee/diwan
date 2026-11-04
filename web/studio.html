@@ -574,7 +574,7 @@ function shownIds(ids) {  // once the output is chosen: only its own steps, and 
   return ids.filter((id) => !AFTER_PICK.includes(id) || (keep ? keep.includes(id) : id !== "mart" || lastAt[id] > o.since));
 }
 const fresh = (id) => !data.output || !data.output.chosen || !AFTER_PICK.includes(id) || lastAt[id] > data.output.since;
-const BRAND_GROUPS = [["Who we are", ["name", "positioning", "audience"]], ["How we sound", ["voice", "say"]], ["Rules", ["avoid", "never_claim"]],
+const BRAND_GROUPS = [["Who we are", ["name", "positioning", "audience", "different"]], ["How we sound", ["voice", "say"]], ["Rules", ["avoid", "never_claim"]],
   ["Sign-off & hashtags", ["cta", "hashtags"]]];
 let last = {}, lastAt = {}, lastRaw = {}, evSeen = 0;
 const fromText = (ids) => (ids || []).map((x) => x.startsWith("listing:") ? `the listing ${x.slice(8)}` : x.startsWith("product:") ? `the product ${x.slice(8)}` : x.startsWith("topic:") ? "the facts given" : `${x} "${data.board.find((b) => b.id === x)?.title || "card not on the board"}"`).join("; ");

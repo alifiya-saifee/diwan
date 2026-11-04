@@ -317,6 +317,27 @@ async function roomFinance() {
       list("To pay out", r.payouts.map((x) => rrow(x.action, x.kind === "split" ? "other agency" : "broker", x.deal)), "No commissions to pay out.", "payouts"),
       list("With Compliance", r.flags.map((x) => rrow(x.text, ago(x.at), x.deal)), "No payment is waiting on Compliance.", "flags"),
       list("By broker", r.brokers.map((b) => rrow(h("strong", {}, b.name), `collected ${full(b.collected)} · outstanding ${full(b.outstanding)}`)), "No commission yet.", "brokers")));
+  if (holds("finance") || SESSION.owner) $("view").append(await supplierPanel());
+}
+// the Invoice clerk's second job: a supplier invoice read and checked for VAT, TRN and duplicates; a ledger row or a hold
+async function supplierPanel() {
+  const rows = await api("/api/desk/supplier-invoices").catch(() => []);
+  const box = h("textarea", { rows: 6, placeholder: "Paste the supplier invoice's text, e.g.\nSupplier: Gulf Print LLC\nTRN: 100234567800003\nInvoice no: GP-2211\nDate: 2 Nov 2026\nNet: 4,000\nVAT: 200\nTotal: 4,200", style: "width:100%" });
+  const out = h("div", { id: "supout" });
+  const show = (x) => h("div", { class: "rrow", style: "padding:8px 0;border-top:1px solid var(--line)" },
+    h("div", {}, h("strong", {}, `${x.number || "?"} · ${x.supplier || "?"}`), ` · ${x.total != null ? full(x.total) : "no total"}`,
+      h("span", { class: `chip ${x.result === "ledger" ? "ok" : "bad"}`, style: "margin-left:8px" }, x.result === "ledger" ? "In the ledger" : "Held"),
+      x.reasons.length ? h("div", { class: "small", style: "color:var(--bad);margin-top:3px" }, x.reasons.join("; ")) : null,
+      h("div", { class: "small muted" }, `TRN ${x.trn || "—"} · net ${x.net != null ? full(x.net) : "—"} · VAT ${x.vat != null ? full(x.vat) : "—"} · read by ${x.read_by === "rules" ? "plain rules" : "Muse Spark"}`)));
+  out.replaceChildren(...rows.map(show));
+  const go = h("button", { class: "primary", onclick: async () => {
+    go.disabled = true;
+    try { const x = await post("/api/desk/supplier-invoices", { text: box.value, by: me() }); out.prepend(show(x)); box.value = ""; toast(x.result === "ledger" ? "In the ledger" : "Held: a task went to Finance"); }
+    catch (e) { toast(e.message); } finally { go.disabled = false; }
+  } }, "Check it");
+  return h("section", { class: "panel", style: "margin-top:16px" }, h("h2", {}, "Check a supplier invoice"),
+    h("p", { class: "small muted" }, "The Invoice clerk reads it and checks the TRN (15 digits), VAT at 5% of the net, that the total adds up, and that it isn't a duplicate. Clean ones go to the ledger; anything else is held with its reasons. Nothing is paid from here."),
+    box, h("div", { class: "row", style: "margin-top:8px" }, h("span", { style: "flex:1" }), go), out);
 }
 async function roomOperations() {
   const r = await api("/api/desk/rooms/operations");

@@ -39,6 +39,7 @@ KIND_WORDS = {
 
 # instruction -> specialist, in the words people use. Checked after the refusals below.
 ROUTES = [
+    (r"\bfact.?check", "factcheck", "Check the latest draft against the client's live words"),
     (r"\bform ?f\b|\bmou\b", "formf", "Prepare Form F"),
     (r"\bdeck\b|presentation|slides?\b", "deck", "Rebuild the customer deck from live facts"),
     (r"\bscreen|sanction|\bpep\b", "screen", "Screen the parties"),
@@ -517,7 +518,104 @@ def _money_story(office: Office, deal: str, tid: str, req: str) -> str:
     return compliance.money_story(office, deal, tid, req)
 
 
-HANDLERS = {"formf": operations.formf_plan, "sof": _money_story}
+def _invoice(office: Office, deal: str, tid: str, req: str) -> str:
+    """The Invoice clerk drafts the commission invoice from the price the client said; Finance sends it."""
+    from diwan import roles
+    from diwan.agents import finance
+    try:
+        did = finance._draft(office, deal)
+    except ValueError as e:
+        office.finish_task(tid, f"Not yet: {e}")
+        return f"Not yet: {e}"
+    office.finish_task(tid, f"Invoice {did} drafted")
+    return f"Invoice {did} is drafted from the price the client said and checked by Review; it waits for {roles.who(office.graph(), 'finance')} to send it."
+
+
+def _transfer(office: Office, deal: str, tid: str, req: str) -> str:
+    """The Transfer tracker: the deal's open transfer steps, who each waits on and how long, and a chase drafted for any late one."""
+    from datetime import datetime, timezone
+    g = office.graph()
+    steps = [t for t in g.of("task", deal) if t.props.get("agent") == "transfer" and t.status in OPEN and t.id != tid]
+    if not steps:
+        office.finish_task(tid, "No transfer steps open")
+        return "No transfer steps are open for this deal yet: they start when its paperwork does."
+    chased = set(operations.chase_late(office))
+    now = datetime.now(timezone.utc)
+    lines = [f"{t.props['action']}: waiting on {t.props.get('waiting_on') or 'nobody named'}, {(now - datetime.fromisoformat(t.at)).days} days"
+             + (" (chase drafted)" if t.id in chased else "") for t in steps]
+    office.finish_task(tid, f"{len(steps)} steps tracked, {len(chased)} chased")
+    return "Transfer steps: " + "; ".join(lines) + "."
+
+
+def _factcheck(office: Office, deal: str, tid: str, req: str) -> str:
+    """The Fact checker reads the deal's latest draft against the client's live words: it passes, or goes back with both quotes."""
+    from diwan.agents import review
+    g = office.graph()
+    drafts = sorted(g.of("draft", deal), key=lambda d: d.event)
+    if not drafts:
+        office.finish_task(tid, "No draft to check")
+        return "There's no draft on this deal yet."
+    d = drafts[-1]
+    n = len(office.log.list())
+    review.check_draft(office, d.id)
+    back = [e for e in office.log.list(after=office.log.list()[n - 1]["id"]) if e["type"] == "review.returned"]
+    office.finish_task(tid, f"{d.id} checked")
+    return f"{d.id} ({d.props['kind']}) was sent back: {back[0]['content'].get('reason', 'it rests on replaced words')}" if back else f"{d.id} ({d.props['kind']}) matches the client's live words."
+
+
+def _deck(office: Office, deal: str, tid: str, req: str) -> str:
+    """The Deck builder rebuilds the customer deck from the live facts only."""
+    from diwan import agency_forms
+    from diwan.agents import deck
+    lst = agency_forms.our_listing(office.graph(), deal)  # the property the deal is about, when no listing was picked for it
+    did = deck.build(office, deal, listing=lst.id if lst else None)
+    office.finish_task(tid, f"Deck {did} built" if did else "Nothing to build")
+    return f"Deck {did} is rebuilt from the client's live words, and the Fact checker has read it." if did else "There's nothing to build a deck from yet."
+
+
+def _screen(office: Office, deal: str, tid: str, req: str) -> str:
+    """The Screening analyst lists every party of the deal for the compliance officer to screen."""
+    from diwan.agents import compliance
+    compliance.screen_parties(office, deal, None)
+    g = office.graph()
+    open_ = [t.props.get("person") for t in g.of("task", deal) if t.props.get("agent") == "screen" and t.status in OPEN]
+    office.finish_task(tid, f"{len(open_)} to screen")
+    return f"Waiting to be screened: {', '.join(p for p in open_ if p)}." if open_ else "Every party on this deal has been screened."
+
+
+def _cash_report(office: Office, deal: str, tid: str, req: str) -> str:
+    """The Report drafter: a cash report draft for any cash promise at or above the limit. Only the compliance officer files it."""
+    from diwan.agents import compliance
+    before = {d.id for d in office.graph().of("draft", deal)}
+    compliance.cash_rules(office, deal, None)
+    new = [d.id for d in office.graph().of("draft", deal) if d.id not in before]
+    office.finish_task(tid, f"{len(new)} report drafts")
+    return f"Cash report {new[0]} is drafted for the compliance officer to file." if new else "No cash at or above the reporting limit on this deal, so no report is needed."
+
+
+def _payments(office: Office, deal: str, tid: str, req: str) -> str:
+    """The Payment tracker: what money is expected on this deal, from whom, and when, each from the client's words."""
+    from datetime import date
+    from diwan.agents import finance
+    g = office.graph()
+    rows = [finance.expected(g, t, date.today()) | {"action": t.props["action"]} for t in g.of("task", deal)
+            if t.props.get("agent") == "pay" and t.status in OPEN and t.id != tid]
+    office.finish_task(tid, f"{len(rows)} expected")
+    if not rows:
+        return "No payment is expected on this deal yet."
+    return "Expected: " + "; ".join(f"{r['action'].removeprefix('Expect ')}" + (f", due {r['due']}" if r.get("due") else "") + (" (overdue)" if r.get("overdue") else "") for r in rows) + "."
+
+
+def _follow(office: Office, deal: str, tid: str, req: str) -> str:
+    """The Follow-up drafter writes the client's follow-up from what was said; the broker sends it. It never mentions compliance."""
+    from diwan.agents import followup
+    f = followup.draft(office, deal, why="the owner asked") or {}
+    office.finish_task(tid, "Follow-up drafted")
+    return f"Drafted for the broker to send: \"{(f.get('text') or '').strip()[:300]}\"" if f.get("text") else "The follow-up is drafted for the broker."
+
+
+HANDLERS = {"formf": operations.formf_plan, "sof": _money_story, "inv": _invoice, "transfer": _transfer, "factcheck": _factcheck,
+            "deck": _deck, "screen": _screen, "report": _cash_report, "pay": _payments, "follow": _follow}
 
 
 # ---------- brief ----------

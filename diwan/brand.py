@@ -15,6 +15,7 @@ FIELDS = {  # key: (label, what to write, used as a list)
     "name": ("Brand name", "The name customers know you by", False),
     "positioning": ("Who we are", "One sentence: what we do, for whom, and why us", False),
     "audience": ("Who we talk to", "Who the customers are, in a sentence", False),
+    "different": ("What makes us different", "One or two sentences: why a client picks us over the others", False),
     "voice": ("How we sound", "3 to 5 words, e.g. warm, straight-talking", True),
     "say": ("Words and phrases we use", "Words that sound like you, comma-separated", True),
     "avoid": ("Words we never use", "Words you never want in a post, comma-separated", True),
@@ -24,6 +25,7 @@ FIELDS = {  # key: (label, what to write, used as a list)
     "colours": ("Our colours", "Two colours for posters, as hex: the dark one, then the accent, e.g. #0E121B, #E3B95C", True),
 }
 USED_BY = ["Idea generator", "Script writer", "Content writer", "Copywriter (review)"]
+POSITIONING = {"positioning", "audience", "different"}  # the Positioning agent's sheet
 
 
 def _split(v: str) -> list[str]:
@@ -60,6 +62,11 @@ def save(office: Office, values: dict, *, by: str, via: str = "typed") -> list[s
         if k in FIELDS and str(v or "").strip() != cur[k]["value"]:
             office.log.append("setting.changed", actor=by, content={"person": "brand", "key": k, "value": str(v or "").strip(), "via": via})
             changed.append(k)
+    if POSITIONING & set(changed):  # the Positioning agent keeps the sheet: who we serve, what we promise, what makes us different
+        p = profile(office)
+        office.log.append("positioning.updated", actor=by, agent="mpos", content={
+            "serve": p["audience"]["value"], "promise": p["positioning"]["value"], "different": p["different"]["value"],
+            "changed": sorted(POSITIONING & set(changed)), "text": "Positioning sheet updated: " + ", ".join(FIELDS[k][0].lower() for k in sorted(POSITIONING & set(changed)))})
     return changed
 
 
@@ -118,7 +125,11 @@ def draft(office: Office) -> dict:
     if not runner.has_model(c, system, user, schema=DRAFT_SCHEMA):
         return {"needs": "A model (META_API_KEY), or this month's budget, to draft it. You can type the profile yourself."}
     data = runner.call(c, system, user, schema=DRAFT_SCHEMA).data
-    return {"values": {k: (data.get(k) or "").strip() for k in FIELDS}, "sources": list(know) + list(posts), "by": "Brand brain (Muse Spark)"}
+    values = {k: (data.get(k) or "").strip() for k in FIELDS}
+    filled = [k for k, v in values.items() if v]
+    office.log.append("brand.drafted", actor="mbrand", agent="mbrand", content={  # proposed only: a person reads, edits and saves it
+        "fields": filled, "sources": len(know) + len(posts), "text": f"Brand profile drafted from {len(know) + len(posts)} sources: {len(filled)} fields filled, for a person to check and save"})
+    return {"values": values, "sources": list(know) + list(posts), "by": "Brand brain (Muse Spark)"}
 
 
 def colours(office: Office) -> tuple[tuple[int, int, int], tuple[int, int, int]]:

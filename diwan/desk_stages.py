@@ -201,7 +201,7 @@ def _record(office: Office, deal: str, by: str, amount: int, c: dict, *, approve
     compliance.begin(office, deal)
     finance.expect_deposit(office, deal)
     g = office.graph()
-    office.log.append("case.converted", actor=by, agent="ops", deal=deal, content={"amount": amount, "path": desk_rules.path_of(g, deal), "facts": [f.id for f in g.facts(deal)]})
+    office.log.append("case.converted", actor=by, agent="deal", deal=deal, content={"amount": amount, "path": desk_rules.path_of(g, deal), "facts": [f.id for f in g.facts(deal)]})
 
 
 def _is_back(g: Graph, deal: str, stage: str) -> bool:

@@ -133,7 +133,7 @@ def request_all(office: Office, deal: str, by: str, *, today: date | None = None
             continue
         tok = secrets.token_urlsafe(18)
         ours = party not in ("seller", "landlord")
-        office.log.append("docs.requested", actor=by, deal=deal, content={
+        office.log.append("docs.requested", actor=by, agent="deal", deal=deal, content={
             "token": tok, "party": party, "name": who, "kinds": kinds, "phone": phone if ours else t.get("other_phone"),
             "expires": ((today or date.today()) + timedelta(days=rules["sign_link_days"])).isoformat()})
         made.append(tok)
@@ -162,7 +162,7 @@ def refresh(office: Office, deal: str, by: str) -> None:
             if t.get("other_phone") and t["other_phone"] != r.get("phone"):
                 change["phone"] = t["other_phone"]
         if change:
-            office.log.append("docs.renewed", actor=by, deal=deal, content={"token": r["token"]} | change)
+            office.log.append("docs.renewed", actor=by, agent="deal", deal=deal, content={"token": r["token"]} | change)
     request_all(office, deal, by)
 
 
@@ -176,12 +176,12 @@ def ask(office: Office, deal: str, kinds: list[str], by: str, *, today: date | N
     expires = ((today or date.today()) + timedelta(days=days)).isoformat()
     mine = next((r for r in requests(office.log.list(deal=deal), deal) if r["party"] not in ("seller", "landlord")), None)
     if mine:
-        office.log.append("docs.renewed", actor=by, deal=deal, content={"token": mine["token"], "kinds": list(dict.fromkeys(mine["kinds"] + kinds)), "expires": max(expires, mine["expires"])})
+        office.log.append("docs.renewed", actor=by, agent="deal", deal=deal, content={"token": mine["token"], "kinds": list(dict.fromkeys(mine["kinds"] + kinds)), "expires": max(expires, mine["expires"])})
         return mine["token"]
     tok = secrets.token_urlsafe(18)
     phone = next((c.props.get("phone") for c in g.of("chat") if c.deal == deal), None)
     party = "tenant" if desk_rules.path(g, deal)["id"] == "rent" else "buyer"
-    office.log.append("docs.requested", actor=by, deal=deal, content={"token": tok, "party": party, "name": d["customer"], "kinds": kinds, "phone": phone, "expires": expires})
+    office.log.append("docs.requested", actor=by, agent="deal", deal=deal, content={"token": tok, "party": party, "name": d["customer"], "kinds": kinds, "phone": phone, "expires": expires})
     return tok
 
 
@@ -193,7 +193,7 @@ def renew(office: Office, token: str, by: str, *, today: date) -> None:
     d = g.nodes[f"deal:{r['deal']}"].props
     if by != d.get("broker") and by != roles.holder(g, "transactions") and by != roles.holder(g, "compliance") and PEOPLE.get(by, {}).get("role") != "Owner":
         raise PermissionError(f"Only {name(d.get('broker'))}, the transactions officer, the compliance officer or the owner renews a link.")
-    office.log.append("docs.renewed", actor=by, deal=r["deal"], content={"token": token, "expires": (today + timedelta(days=desk_rules.rules(g)["sign_link_days"])).isoformat()})
+    office.log.append("docs.renewed", actor=by, agent="deal", deal=r["deal"], content={"token": token, "expires": (today + timedelta(days=desk_rules.rules(g)["sign_link_days"])).isoformat()})
 
 
 def expired(events: list[dict], deal: str, today: date) -> list[str]:

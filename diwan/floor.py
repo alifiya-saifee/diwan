@@ -75,7 +75,9 @@ _r("stuck", ("self",), "attention.overdue agent.failed email.failed")
 _r("task", ("self",), "agent.pack agent.started agent.refused content.idea content.briefed content.scripted content.ready content.made "
                       "post.paused post.withdrawn campaign.started campaign.ended mchat.analysed")
 _r("note", ("self",), "meeting.started meeting.ended consent.given pocket.started pocket.ended")
-_r("note", ("self",), "steps.proposed")
+_r("note", ("self",), "steps.proposed positioning.updated brand.drafted")
+_r("task", ("self",), "transfer.chased")
+_r("money", ("self",), "invoice.checked")
 _r("task", ("owners",), "steps.approved")  # from the Meeting room to the room of each person given work
 
 QUIET |= set("""post.output_chosen listing.access agent.added agent.paused agent.removed agent.resumed autonomy.changed board.pinned board.unpinned calendar.blocked

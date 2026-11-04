@@ -98,7 +98,7 @@ ROSTER: list[Charter] = [
     C("transfer", "Transfer tracker", "NOC, trustee, transfer", "ops", None, "spark",
       "Tracks the developer NOC, the trustee appointment and transfer documents, and chases what is late.",
       "Checklist; developer and trustee replies", "Emails and portal statuses", "Checklist state with the next date and who is waiting",
-      "A reply arrives; a date passes", "Operations lead", "Flags any step with no date", ("draft",), ("send",), "Pay fees", hack=False),
+      "A reply arrives; a date passes", "Operations lead", "Flags any step with no date", ("draft",), ("send",), "Pay fees", "running", hack=False),
 
     C("fin", "Finance lead", "Money in and out", "nova", "lead", "rules",
       "Knows what money is expected, received and owed, and that every payment rests on current facts.",
@@ -114,7 +114,7 @@ ROSTER: list[Charter] = [
       "Drafts outgoing commission invoices from the live price and the owner's rate, and tracks them to paid. Second job: reads supplier invoices, checks VAT and TRN, and holds duplicates.",
       "The deal's facts and terms; invoice photos and PDFs", "The deal; the invoice; the ledger",
       "A draft invoice for a person to approve; a ledger row or a hold with the reason", "The owner's trigger; an invoice arrives", "Finance lead", "Unreadable fields go to finance",
-      ("hold", "record_fact"), ("approve",), "Pay", hack=False),
+      ("hold", "record_fact"), ("approve",), "Pay", "running", hack=False),
 
     C("comp", "Compliance lead", "Legal duties first", "nova", "lead", "open",
       "Receives every payer change first and makes sure the checks the law requires are prepared for the compliance officer.",
@@ -272,7 +272,7 @@ ROSTER: list[Charter] = [
     C("mplaybook", "Playbook", "Structures that work for us", "mlib", None, "rules", "Holds the structures that have worked, each with the posts that prove it.",
       "Playbook entries", "Our results", "Playbook", "A playbook entry is approved", "Script library", "—", ("draft",), (), "Keep an entry with no proof", "rules"),
     C("mpos", "Positioning", "Who we are for", "mlib", None, "rules", "Holds who we serve, what we promise and what makes us different.",
-      "The owner's words", "The owner's words", "Positioning sheet", "The owner changes it", "Script library", "—", ("draft",), (), "Rewrite it alone", "planned", hack=False),
+      "The owner's words", "The owner's words", "Positioning sheet", "The owner changes it", "Script library", "—", ("draft",), (), "Rewrite it alone", "rules", hack=False),
     C("mbrand", "Brand brain", "Voice, words, banned claims", "mlib", None, "spark", "Holds the brand voice, the words we use and avoid, and the lessons the team has taught, and learns the company from its public pages, every fact with the page it came from.",
       "Lessons, the owner's words, public pages about our company", "Our own material and public pages about our company", "Brand rules every writer loads; proposed knowledge cards", "A lesson is saved; a person asks it to learn from pages", "Script library", "—", ("draft",), (), "Drop a lesson", "rules"),
 ]
