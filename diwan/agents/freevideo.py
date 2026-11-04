@@ -22,16 +22,26 @@ W, H, FPS = 1080, 1920, 30
 WINDOWS = sys.platform == "win32"
 
 
+def _espeak() -> str | None:
+    """A Linux server has no voice of its own: espeak-ng (the Dockerfile installs it), when there is no Mac or Windows voice."""
+    return None if WINDOWS or shutil.which("say") else shutil.which("espeak-ng")
+
+
 def missing() -> list[str]:
-    return [x for x, ok in (("the computer's voice", WINDOWS or shutil.which("say")), ("ffmpeg", shutil.which("ffmpeg"))) if not ok]
+    return [x for x, ok in (("the computer's voice", WINDOWS or shutil.which("say") or _espeak()), ("ffmpeg", shutil.which("ffmpeg"))) if not ok]
 
 
 def voice() -> str:
-    return env("DIWAN_FREE_VOICE", "the Windows voice" if WINDOWS else "Samantha")
+    return env("DIWAN_FREE_VOICE", "the Windows voice" if WINDOWS else "the server's voice" if _espeak() else "Samantha")
 
 
 def _speak(text: str, path: Path) -> Path:
     """The line as a sound file."""
+    if (espeak := _espeak()):
+        out, words = path.with_suffix(".wav"), path.with_suffix(".txt")
+        words.write_text(text, encoding="utf-8")  # read from a file, so nothing in the script reaches a command line
+        _run(espeak, "-v", "en-us", "-s", "155", "-f", str(words), "-w", str(out))
+        return out
     if not WINDOWS:
         out = path.with_suffix(".aiff")
         _run("say", "-v", voice(), "-o", str(out), text)

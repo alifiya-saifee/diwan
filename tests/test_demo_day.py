@@ -87,3 +87,8 @@ def test_the_day_also_plays_inside_a_running_server():
 def test_a_price_change_pauses_the_post_that_said_the_old_price(office):
     paused = [e["content"] for e in office.log.list() if e["type"] == "post.paused"]
     assert paused and any("1,900,000" in p["why"] and "1,950,000" in p["why"] for p in paused)
+
+
+def test_the_demo_writes_for_every_platform(office):
+    from diwan import business, platforms
+    assert set(business.platforms(office)) == set(platforms.RULES)

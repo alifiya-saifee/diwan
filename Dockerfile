@@ -2,9 +2,10 @@
 FROM python:3.12-slim
 # fonts-noto-core has Noto Sans Arabic, and libfribidi0 lets Pillow join Arabic letters right to left: without them the
 # Arabic words are left off the pictures (eventpost.ARABIC_FONTS). deploy/start.py says at start which it found.
+# espeak-ng is the free video's voice on a server, which has no computer voice of its own (freevideo._espeak).
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core fonts-noto-core libfribidi0 \
+    && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core fonts-noto-core libfribidi0 espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

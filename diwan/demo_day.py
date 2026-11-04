@@ -127,7 +127,7 @@ def _parts(o: Office, now: datetime) -> list[tuple[str, callable]]:
         from diwan import business
         from diwan.agents import approvers, studio
         business.save(o, {"industry": "real estate brokerage", "country": "AE", "city": "Dubai", "permit": "yes", "languages": "English, Arabic",
-                          "posted_before": "no"}, by="maya")
+                          "platforms": "Instagram, Facebook, LinkedIn, TikTok, YouTube Shorts, Property Finder", "posted_before": "no"}, by="maya")
         approvers.save(o, {"script": "maya", "publish": "layla"}, by="layla")
         brand.save(o, {"name": "Diwan Realty", "positioning": "We help families buy their first home in Dubai.", "audience": "Families moving to Dubai",
                        "different": "We only sell homes we have visited ourselves.", "voice": "warm, straight-talking"}, by="maya")

@@ -24,3 +24,17 @@ def test_a_number_in_arabic_has_no_separator_the_font_cannot_draw():
         out = eventpost.arabic_text(said)
         assert "١٬٣٥٠٬٠٠٠" in out and "," not in out, out  # the Arabic separator: drawn, and the number stays in order
     assert eventpost.arabic_text("دبي، مارينا") == "دبي، مارينا"  # the Arabic comma between words stays
+
+
+def test_a_server_with_no_computer_voice_uses_espeak(monkeypatch, tmp_path):
+    which = {"say": None, "espeak-ng": "/usr/bin/espeak-ng", "ffmpeg": "/usr/bin/ffmpeg"}
+    monkeypatch.setattr(freevideo, "WINDOWS", False)
+    monkeypatch.setattr(freevideo.shutil, "which", lambda n: which.get(n))
+    ran = []
+    monkeypatch.setattr(freevideo, "_run", lambda *a: ran.append(a))
+    assert freevideo.missing() == [] and freevideo.voice() == "the server's voice"
+    out = freevideo._speak("Two bedrooms, sea view.", tmp_path / "line0")
+    assert out.suffix == ".wav" and ran[0][0] == "/usr/bin/espeak-ng" and "-w" in ran[0]
+    assert "Two bedrooms" not in " ".join(ran[0])  # the words go through a file, never the command line
+    which["espeak-ng"] = None
+    assert freevideo.missing() == ["the computer's voice"]
